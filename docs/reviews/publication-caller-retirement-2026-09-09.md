@@ -333,3 +333,17 @@ independent Errata scope, and revalidated/reverted provenance dates. Failed
 collection remains a failed collection rather than a fabricated candidate.
 Typecheck passes; the five-case runtime is pending, including the separately
 diagnosed native no-change contract gap. No global timeout changed.
+
+The reviewed native prior-identity provider `9a43a400` is incorporated as
+`43c80966`. Its production files are byte-identical; the sole test conflict was
+resolved to the exact reviewed operations file, including its earlier native
+fixture migration. The independent provider family passed 58/58 separately.
+
+The normative observation-count test now prepares native 100/124/149-record
+candidates with exact predecessor revisions, preserving the absent warning at
+24 and exact warning at 25. Historical search-repair projection tests explicitly
+seed real retained reservations through the proven recovery helper. The obsolete
+new aggregate over-budget approval now asserts the documented 410 retirement,
+unchanged run/failure state, catalogue head and immutable objects. Its former
+new-writer capacity error is intentionally retired; no limit was increased.
+Focused formatting and typecheck pass; these changed selections await runtime.

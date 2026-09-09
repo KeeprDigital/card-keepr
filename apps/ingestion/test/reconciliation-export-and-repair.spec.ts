@@ -3,6 +3,7 @@ import { buildCatalogueExport } from "../../../src/catalogue/export";
 import { canonicalJson, catalogueCandidateContract, catalogueStore, sha256 } from "../../../src/catalogue/shared";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { EMPTY_CATALOGUE_GZIP_HEX, GZIP_PROFILE_GOLDENS } from "./deterministic-gzip-golden";
+import { recoverHistoricalPublication } from "./historical-publication-fixture";
 import * as cardSearchQueries from "./query-helpers/card-search";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import {
@@ -279,12 +280,12 @@ test("heterogeneous empty plans inspect and publish every lineage independently 
   expect(forward.printings).toContain(printingId);
 }, 45_000);
 
-test("Card search repair permits only retained revisions and revalidates unfinished replay claims", async () => {
+test("historical Card search repair permits only retained revisions and revalidates unfinished replay claims", async () => {
   const publishScenario = async (sequence: number) => {
     const run = await collect(`/reconciliation/search-repair-retention-${sequence}`, `repair-retention-${sequence}`);
     const reconciled = await reconcile(run.id);
     expect(reconciled.response.status).toBe(200);
-    const published = await approve(reconciled.document);
+    const published = await recoverHistoricalPublication(run.id, `retained-search-repair-${run.id}`);
     expect(published.response.status).toBe(200);
     return requiredString(published.document, "resulting_revision_id");
   };
@@ -343,11 +344,11 @@ test("Card search repair permits only retained revisions and revalidates unfinis
   });
 }, 60_000);
 
-test("Card search repair binds exact target/current/idempotency and fails stale or conflicting requests closed", async () => {
+test("historical Card search repair binds exact target/current/idempotency and fails stale or conflicting requests closed", async () => {
   const run = await collect("/reconciliation/complete-empty-lineage", "guarded-search-repair-published-target");
   const reconciled = await reconcile(run.id);
   expect(reconciled.response.status).toBe(200);
-  const published = await approve(reconciled.document);
+  const published = await recoverHistoricalPublication(run.id, `retained-search-repair-${run.id}`);
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const request = {
@@ -381,12 +382,12 @@ test("Card search repair binds exact target/current/idempotency and fails stale 
   expect(stale.document).toMatchObject({ code: "current_revision_mismatch" });
 }, 60_000);
 
-test("publication and bounded Card search repair need no obsolete gram table and replay only their completed result", async () => {
+test("retained publication and bounded Card search repair need no obsolete gram table and replay only their completed result", async () => {
   await cardSearchQueries.dropObsoleteCardSearchTerms(testEnv.CATALOGUE_DB).run();
   const run = await collect("/reconciliation/complete-empty-lineage", "bounded-25-card-search-repair");
   const reconciled = await reconcile(run.id);
   expect(reconciled.response.status).toBe(200);
-  const published = await approve(reconciled.document);
+  const published = await recoverHistoricalPublication(run.id, `retained-search-repair-${run.id}`);
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const cards = Array.from({ length: 30 }, (_, index) => {
@@ -461,7 +462,7 @@ test("Card search repair rejects an oversized legacy Card before materializing i
   const run = await collect("/reconciliation/base", "oversized-legacy-search-repair");
   const reconciled = await reconcile(run.id);
   expect(reconciled.response.status).toBe(200);
-  const published = await approve(reconciled.document);
+  const published = await recoverHistoricalPublication(run.id, `retained-search-repair-${run.id}`);
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const oversizedCardId = "card_oversized_legacy_search_repair";
@@ -503,7 +504,7 @@ test("Card search repair rejects an oversized legacy Card before materializing i
   });
 }, 60_000);
 
-test("publication rejects an over-budget candidate before writing any immutable object", async () => {
+test("retired aggregate approval cannot start an over-budget publication or write immutable objects", async () => {
   const run = await collect("/reconciliation/export-component-over-budget", "reconcile-export-component-over-budget");
   const reconciled = await reconcile(run.id);
   if (reconciled.response.status !== 200) {
@@ -520,13 +521,11 @@ test("publication rejects an over-budget candidate before writing any immutable 
     .readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB)
     .first<{ current_revision_id: string }>();
 
-  expect(blocked.response.status).toBe(422);
-  expect(blocked.document).toMatchObject({
-    code: "publication_aggregate_too_large",
-  });
+  expect(blocked.response.status).toBe(410);
+  expect(blocked.document).toMatchObject({ code: "run_approval_retired" });
   expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({
-    state: "failed",
-    failure_code: "publication_aggregate_too_large",
+    state: "awaiting_approval",
+    failure_code: null,
   });
   expect(objectsAfter).toEqual(objectsBefore);
   expect(currentAfter).toEqual(currentBefore);
