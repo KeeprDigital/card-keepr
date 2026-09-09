@@ -35,7 +35,6 @@ test("native publication: the CLI publishes separated Product catalogue data con
   const ingestionEnv = join(directory, "ingestion.env");
   const apiEnv = join(directory, "api.env");
   const ingestionConfig = join(directory, "ingestion.wrangler.json");
-  const initialPlanPath = join(directory, "initial-source-plan.json");
   const multiPlanPath = join(directory, "multi-source-plan.json");
   const carryPlanPath = join(directory, "carry-source-plan.json");
   await Promise.all([
@@ -43,13 +42,6 @@ test("native publication: the CLI publishes separated Product catalogue data con
       mode: 0o600,
     }),
     writeFile(apiEnv, `API_BEARER_KEY=${apiKey}\n`, { mode: 0o600 }),
-    writeFile(
-      initialPlanPath,
-      JSON.stringify({
-        plans: [officialPlan("digimon", "digimon-en", "digimon-en@7")],
-      }),
-      { mode: 0o600 },
-    ),
     writeFile(
       multiPlanPath,
       JSON.stringify({
@@ -114,49 +106,6 @@ test("native publication: the CLI publishes separated Product catalogue data con
     KEEPR_INGESTION_URL: ingestion.url,
     KEEPR_ADMINISTRATION_KEY: administrationKey,
   };
-  const collected = await runCli(
-    ["source", "collect", "--plan-file", initialPlanPath, "--idempotency-key", "acceptance-product-collect", "--json"],
-    cliEnvironment,
-  );
-  assert.equal(collected.code, 0, `${collected.stdout}\n${collected.stderr}\n${ingestion.getOutput()}`);
-  const collectedRun = JSON.parse(collected.stdout);
-  const resumed = await runCli(["source", "resume", "--run-id", collectedRun.id, "--json"], cliEnvironment);
-  assert.equal(resumed.code, 0, resumed.stderr);
-  await waitForRunState(collectedRun.id, "sealed", cliEnvironment, ingestion, statePath);
-  // Only fetch partition bodies used by the assertions; the public API checks
-  // below verify published Product data. Reading every internal partition for
-  // every publication can exhaust the fixture request budget.
-  const inspected = await inspectNativeCollection(collectedRun.id, cliEnvironment, {
-    partitionKinds: ["inspection", "warnings", "shared_warnings"],
-  });
-  const inspection = inspected;
-  assert.equal(inspection.run_id, collectedRun.id);
-  assert.equal(inspection.counts.cards.added, 1);
-  assert.equal(inspection.counts.printings.added, 1);
-  assert.ok(
-    inspection.warnings.some(
-      ({ code, path, raw_value }) =>
-        code === "unknown_source_field" &&
-        path === "source_sidecar.raw.products[0].campaign_note" &&
-        raw_value === "Optional Official Source marketing copy",
-    ),
-  );
-  assert.ok(
-    inspection.warnings.some(
-      ({ code, path, raw_value }) =>
-        code === "unknown_source_field" &&
-        path === "source_sidecar.raw.products[0].vendor_metadata.merchandising.channel_code" &&
-        raw_value === "official-web",
-    ),
-  );
-  const [printingId] = inspection.changes
-    .filter((c) => c.entity_class === "printings" && c.change === "added")
-    .map((c) => c.entity_id);
-  const approved = await publishNativeCollection(inspection, "acceptance-product-approve", cliEnvironment, ingestion);
-  const published = approved;
-  let revisionId = published.resulting_revision_id;
-  assert.match(revisionId, /^catrev_/u);
-
   const multiCollected = await runCli(
     ["source", "collect", "--plan-file", multiPlanPath, "--idempotency-key", "acceptance-product-multi-plan", "--json"],
     cliEnvironment,
@@ -212,15 +161,31 @@ test("native publication: the CLI publishes separated Product catalogue data con
   const multiResumed = await runCli(["source", "resume", "--run-id", multiRun.id, "--json"], cliEnvironment);
   assert.equal(multiResumed.code, 0, multiResumed.stderr);
   await waitForRunState(multiRun.id, "sealed", cliEnvironment, ingestion, statePath);
-  const multiInspectionResult = await inspectNativeCollection(multiRun.id, cliEnvironment, { partitionKinds: [] });
+  // Inspect the Product-specific warnings once, across the declared collection.
+  // Publisher suites separately cover single-game preparation and identity counts.
+  const multiInspectionResult = await inspectNativeCollection(multiRun.id, cliEnvironment, {
+    partitionKinds: ["warnings", "shared_warnings"],
+  });
   const multiInspection = multiInspectionResult;
   assert.equal(multiInspection.ready, true);
+  for (const [path, value] of [
+    ["source_sidecar.raw.products[0].campaign_note", "Optional Official Source marketing copy"],
+    ["source_sidecar.raw.products[0].vendor_metadata.merchandising.channel_code", "official-web"],
+  ]) {
+    assert.ok(
+      multiInspection.warnings.some(
+        ({ code, path: observedPath, raw_value }) =>
+          code === "unknown_source_field" && observedPath === path && raw_value === value,
+      ),
+    );
+  }
+
   assert.deepEqual(
     Object.fromEntries(
       multiInspection.candidates.map((candidate) => [candidate.supported_game, candidate.expected_game_revision_id]),
     ),
     {
-      digimon: revisionId,
+      digimon: "catrev_spine_000",
       "one-piece": "catrev_spine_000",
       "fusion-world": "catrev_spine_000",
       gundam: "catrev_spine_000",
@@ -233,38 +198,16 @@ test("native publication: the CLI publishes separated Product catalogue data con
     ingestion,
   );
   const multiPublished = multiApproved;
-  assert.notEqual(multiPublished.resulting_revision_id, revisionId);
-  const allFiveRevisionId = multiPublished.resulting_revision_id;
+  const revisionId = multiPublished.resulting_revision_id;
+  assert.match(revisionId, /^catrev_/u);
   const observedDigimonRevisionId = multiPublished.publications.find(
     (publication) => publication.supported_game === "digimon",
   ).resulting_revision_id;
-  revisionId = allFiveRevisionId;
-
-  const carryCollected = await runCli(
-    [
-      "source",
-      "collect",
-      "--plan-file",
-      carryPlanPath,
-      "--idempotency-key",
-      "acceptance-product-carry-collect",
-      "--json",
-    ],
-    cliEnvironment,
-  );
-  assert.equal(carryCollected.code, 0, carryCollected.stderr);
-  const carryRun = JSON.parse(carryCollected.stdout);
-  assert.equal((await runCli(["source", "resume", "--run-id", carryRun.id, "--json"], cliEnvironment)).code, 0);
-  await waitForRunState(carryRun.id, "sealed", cliEnvironment, ingestion, statePath);
-  const carryInspectionResult = await inspectNativeCollection(carryRun.id, cliEnvironment, { partitionKinds: [] });
-  const carryInspection = carryInspectionResult;
-  const carryApproved = await publishNativeCollection(
-    carryInspection,
-    "acceptance-product-carry-approve",
-    cliEnvironment,
-    ingestion,
-  );
-  revisionId = carryApproved.resulting_revision_id;
+  const observedOnePieceRevisionId = multiPublished.publications.find(
+    (publication) => publication.supported_game === "one-piece",
+  ).resulting_revision_id;
+  // One later code-less refresh proves identity carry-forward. Repeating the
+  // identical refresh here only adds another publication and SQL backup.
   await stopWorker(ingestion);
 
   const api = await startWorker({
@@ -279,7 +222,15 @@ test("native publication: the CLI publishes separated Product catalogue data con
   assert.equal(catalogueResponse.status, 200);
   const catalogueDocument = await catalogueResponse.json();
   assert.equal(Object.hasOwn(catalogueDocument.data, "last_successful_checks"), false);
-  const publishedProducts = await nativeExportRecords(api.url, apiKey, revisionId, "products");
+  const [publishedProducts, publishedPrintings, publishedCards] = await Promise.all([
+    nativeExportRecords(api.url, apiKey, revisionId, "products"),
+    nativeExportRecords(api.url, apiKey, revisionId, "printings"),
+    nativeExportRecords(api.url, apiKey, revisionId, "cards"),
+  ]);
+  const digimonCard = publishedCards.find(({ game }) => game === "digimon");
+  assert.ok(digimonCard);
+  const printingId = publishedPrintings.find(({ card_id }) => card_id === digimonCard.id)?.id;
+  assert.ok(printingId, "Digimon Product relationships need a published Printing");
   const productOnly = publishedProducts.find(({ official_code }) => official_code === "BT-PRODUCT-ONLY");
   const cardBearing = publishedProducts.find(({ official_code }) => official_code === "BT-CARD-BEARING");
   assert.ok(productOnly);
@@ -313,8 +264,11 @@ test("native publication: the CLI publishes separated Product catalogue data con
   assert.equal(printingDocument.data.distribution_contexts[0].kind, "tournament_pack");
   assert.equal(printingDocument.data.distribution_contexts[0].product_id, cardBearing.id);
 
-  const [products, releases, contexts, relationships, cards, printings] = await Promise.all(
-    ["products", "releases", "distribution-contexts", "relationships", "cards", "printings"].map((component) =>
+  const products = publishedProducts,
+    cards = publishedCards,
+    printings = publishedPrintings;
+  const [releases, contexts, relationships] = await Promise.all(
+    ["releases", "distribution-contexts", "relationships"].map((component) =>
       nativeExportRecords(api.url, apiKey, revisionId, component),
     ),
   );
@@ -341,7 +295,7 @@ test("native publication: the CLI publishes separated Product catalogue data con
   );
   const currentOnePiece = products.find(({ official_code }) => official_code === "OP-RAW-01");
   assert.ok(currentOnePiece, JSON.stringify(products.map(({ name, official_code }) => ({ name, official_code }))));
-  assert.equal(currentOnePiece.lifecycle.last_observed_revision_id, revisionId);
+  assert.equal(currentOnePiece.lifecycle.last_observed_revision_id, observedOnePieceRevisionId);
   const establishedOnePiece = currentOnePiece;
   const establishedOnePieceResponse = await fetch(`${api.url}/v1/products/${establishedOnePiece.id}`, {
     headers,
@@ -531,8 +485,6 @@ test("native publication: the CLI publishes separated Product catalogue data con
   const codeLessOnePieceResponse = await fetch(`${provenanceApi.url}/v1/products/${codeLessOnePiece.id}`, { headers });
   assert.equal(codeLessOnePieceResponse.status, 200);
   const codeLessOnePieceDocument = await codeLessOnePieceResponse.json();
-
-  assert.equal(Object.hasOwn(codeLessOnePieceDocument, "provenance"), false);
 
   assert.equal(Object.hasOwn(codeLessOnePieceDocument, "provenance"), false);
 });

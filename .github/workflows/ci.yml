@@ -106,9 +106,7 @@ jobs:
   ingestion-tests:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
-    # A shard normally finishes in ~4 min. The workers pool occasionally
-    # wedges in per-file teardown after every test has passed (seen on main
-    # before sharding); the cap bounds what such a hang costs.
+    # Bound regressions and runtime teardown hangs, including setup time.
     timeout-minutes: 12
     strategy:
       fail-fast: false
@@ -128,7 +126,12 @@ jobs:
           key: node-modules-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.node.outputs.node-version }}-${{ hashFiles('package-lock.json', 'package.json', '.npmrc') }}
       - if: steps.node-modules.outputs.cache-hit != 'true'
         run: npm ci
-      - run: npm run test:workers:ingestion -- --shard=${{ matrix.shard }}/3
+      - name: Run ingestion tests with bounded temporary storage
+        run: |
+          test_tmp=$(mktemp -d)
+          sudo mount -t tmpfs -o "size=512m,mode=0700,uid=$(id -u),gid=$(id -g)" tmpfs "$test_tmp"
+          trap 'sudo umount "$test_tmp"; rmdir "$test_tmp"' EXIT
+          TMPDIR="$test_tmp" npm run test:workers:ingestion -- --shard=${{ matrix.shard }}/3
 
   # Routine acceptance only; full publisher/recovery journeys are explicit opt-in.
   # The shared runner caps each shard at two concurrent test files.
