@@ -423,6 +423,12 @@ async function prepareUnit(
     await nextPartition();
     return;
   }
+  // The retained candidate preserves historical context evidence; public records contain current contexts only.
+  if (partition.kind === "distribution_contexts" && records[cursor.record]!.value.observed === false) {
+    cursor.record++;
+    cursor.subrecord = cursor.text = cursor.chunk = 0;
+    return;
+  }
   const derived = await publicationRecord(partition.kind, records[cursor.record]!, cursor.subrecord ?? 0);
   const { kind, envelope } = derived;
   const value = consumerContent(envelope.value) as Record<string, unknown>;
