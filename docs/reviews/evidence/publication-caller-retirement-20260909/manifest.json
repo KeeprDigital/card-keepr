@@ -28,6 +28,46 @@
       "duration_seconds": 24.09,
       "interrupted": false,
       "notes": "Historical no-write/replay/recovery/cleanup and first native publication guards pass. Second native publication remains waiting_backup after15s because actual Workflow restore check throws Restored composition snapshot differs. Full background diagnostics retained. No checkpoint granted."
+    },
+    {
+      "file": "faithful-backup-first-runtime.log.gz",
+      "uncompressed_sha256": "32b6caca652b3b8e59f5d4e9b56bd91bb2be4914c7b427cb95b897faa262e55d",
+      "commit": "working tree before a8dafc76",
+      "node": "26.3.0",
+      "result": "1 failed (coverage observation); 1 unselected; both publications and restores completed",
+      "duration_seconds": 6.5,
+      "interrupted": false,
+      "notes": "Full raw output retained, including background workerd canceled/hung diagnostics where emitted. Actual SQL restore/query used; no synthetic verified checkpoint."
+    },
+    {
+      "file": "faithful-backup-focused-runtime.log.gz",
+      "uncompressed_sha256": "0097ed359c769b3744a2385382e23e6adc656711addba2de1c2d156cf580f0c9",
+      "commit": "working tree before a8dafc76",
+      "node": "22.23.2",
+      "result": "7 passed; 20 unselected",
+      "duration_seconds": 12.53,
+      "interrupted": false,
+      "notes": "Full raw output retained, including background workerd canceled/hung diagnostics where emitted. Actual SQL restore/query used; no synthetic verified checkpoint."
+    },
+    {
+      "file": "faithful-backup-a8dafc76-runtime.log.gz",
+      "uncompressed_sha256": "7c86f5a784e40ce885a56b195e275ce91c368fe7825057890710c344f0d70b75",
+      "commit": "a8dafc76f147e112a64edcdc5625355ccdeb819d",
+      "node": "22.23.2",
+      "result": "7 passed; 21 unselected",
+      "duration_seconds": 13.08,
+      "interrupted": false,
+      "notes": "Full raw output retained, including background workerd canceled/hung diagnostics where emitted. Actual SQL restore/query used; no synthetic verified checkpoint."
+    },
+    {
+      "file": "faithful-backup-node-contracts.log.gz",
+      "uncompressed_sha256": "da67a63e9d25cc9010a21e692fa8b97693f2398277f2daef54b826c44056fa93",
+      "commit": "a8dafc76f147e112a64edcdc5625355ccdeb819d",
+      "node": "22.23.2",
+      "result": "2 passed",
+      "duration_seconds": 0.066,
+      "interrupted": false,
+      "notes": "Full raw output retained, including background workerd canceled/hung diagnostics where emitted. Actual SQL restore/query used; no synthetic verified checkpoint."
     }
   ]
 }
