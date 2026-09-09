@@ -562,7 +562,7 @@ test.each(["lookup", "application"])(
   },
 );
 
-test.each(["associations", "application", "lookup"])(
+test.each(Array.from({ length: 5 }, () => ["associations", "application", "lookup"]).flat())(
   "reviewed identity %s prepare through durable bounded groups",
   async (failurePhase) => {
     const prior = await reconcile(

@@ -318,7 +318,7 @@ async function putImmutableBytes(
 ): Promise<string | undefined> {
   const existing = await bucket.head(key);
   if (existing !== null) {
-    assertMatchingObject(existing, bytes, digest);
+    await assertMatchingObject(bucket, existing, bytes, digest);
     return existing.customMetadata?.cleanup_writer_token;
   }
   await registerWriter();
@@ -333,12 +333,52 @@ async function putImmutableBytes(
   if (stored !== null) return writeToken;
   const concurrent = await bucket.head(key);
   if (concurrent === null) throw new Error("Immutable evidence write conflict");
-  assertMatchingObject(concurrent, bytes, digest);
+  await assertMatchingObject(bucket, concurrent, bytes, digest);
   return concurrent.customMetadata?.cleanup_writer_token;
 }
 
-function assertMatchingObject(object: R2Object, bytes: Uint8Array, digest: string): void {
+async function assertMatchingObject(
+  bucket: R2Bucket,
+  object: R2Object,
+  bytes: Uint8Array,
+  digest: string,
+): Promise<void> {
   if (object.size !== bytes.byteLength || object.customMetadata?.sha256 !== digest) {
+    try {
+      // Temporary #271 diagnostic branch only; never merge this instrumentation.
+      const expected = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
+      const retained = await bucket.get(object.key);
+      const actual = retained === null ? null : await retained.json<Record<string, unknown>>();
+      const header = (value: Record<string, unknown> | null) =>
+        value === null
+          ? null
+          : Object.fromEntries(
+              ["id", "source_snapshot_id", "parsed_at", "adapter_version", "record_count"].map((key) => [
+                key,
+                value[key],
+              ]),
+            );
+      console.error(
+        "[DEBUG-271-immutable]",
+        JSON.stringify({
+          key: object.key,
+          expected_size: bytes.byteLength,
+          retained_size: object.size,
+          expected_sha256: digest,
+          retained_sha256: object.customMetadata?.sha256,
+          expected_header: header(expected),
+          retained_header: header(actual),
+          differing_fields:
+            actual === null
+              ? null
+              : Array.from(new Set([...Object.keys(expected), ...Object.keys(actual)])).filter(
+                  (key) => canonicalJson(expected[key]) !== canonicalJson(actual[key]),
+                ),
+        }),
+      );
+    } catch (error) {
+      console.error("[DEBUG-271-immutable]", "Mismatch metadata unavailable", String(error));
+    }
     throw new Error("Immutable evidence object key collision");
   }
 }
