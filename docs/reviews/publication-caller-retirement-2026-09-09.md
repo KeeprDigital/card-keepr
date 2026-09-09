@@ -404,3 +404,14 @@ while export preparation still checks its actual wall clock. No production
 clock, deadline or effective-date activation rule is added. Historical D1
 Erratum immutability and typed-target guards remain actual retained-reservation
 recovery tests; native consumer cases read verified native records and exports.
+
+The unknown Card fix `36c8883d` now has both independent review axes clear:
+coordinator Spec and toolchain Standards found zero actionable findings against
+`adda135b`. At exact clean `44f68629ebc3e00af21aecc4baa0bf4f8c2cdd25`, the original
+known/unknown confirmation pair passed 2/2 in 8.78 seconds, then the full admission
+file passed 22/22 in 42.26 seconds. Both runs ended naturally, with no request or
+test deadline increased and no original identity/authority/owner decision
+assertion weakened. The host lease was returned after verifying no runtime
+process remained. Logs and hashes retain all background cancellation diagnostics.
+This closes the specific admission regression; other caller families and the
+full combined validation remain pending.

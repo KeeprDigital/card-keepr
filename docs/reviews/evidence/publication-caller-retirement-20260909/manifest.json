@@ -158,6 +158,26 @@
       "duration_seconds": 42.53,
       "interrupted": false,
       "notes": "Natural completion. Original deadlines and identity assertions retained; actual restored SQLite backups. Raw workerd cancellation diagnostics included; no isolated-capacity claim."
+    },
+    {
+      "file": "entity-admission-confirmation-focus-44f68629.log.gz",
+      "uncompressed_sha256": "438581a6f9fae9ac66aec4442741d4313926a1bf42451c9b6a5b2454a55f05ea",
+      "commit": "44f68629ebc3e00af21aecc4baa0bf4f8c2cdd25",
+      "node": "22.23.2",
+      "result": "2 passed; 20 unselected. Known and previously failing unknown publisher confirmation retain exact Card/Printing IDs, native source mappings and authority.",
+      "duration_seconds": 8.78,
+      "interrupted": false,
+      "notes": "Natural completion with unchanged deadlines and original assertions. Actual independently restored SQLite backup verification; all runtime cancellation diagnostics retained. Production fix36c8883d independently Standards/Spec reviewed with0 findings."
+    },
+    {
+      "file": "entity-admission-full-44f68629.log.gz",
+      "uncompressed_sha256": "3c87879efe619897c2932e780306a232fd3371c34ead641d8e082704e64ac9e5",
+      "commit": "44f68629ebc3e00af21aecc4baa0bf4f8c2cdd25",
+      "node": "22.23.2",
+      "result": "22 passed. Entire native admission file including owner rejection/reconsideration, unknown identity confirmation, historical pins and bounded interruption cases.",
+      "duration_seconds": 42.26,
+      "interrupted": false,
+      "notes": "Natural completion with unchanged deadlines and original assertions. Actual independently restored SQLite backup verification; all runtime cancellation diagnostics retained. Production fix36c8883d independently Standards/Spec reviewed with0 findings."
     }
   ]
 }
