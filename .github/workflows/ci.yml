@@ -99,7 +99,7 @@ jobs:
       - run: npm run test:domain
       # Full acceptance already includes smoke; only drafts need it here.
       - if: github.event_name == 'pull_request' && github.event.pull_request.draft
-        run: npm run test:acceptance:smoke
+        run: bash scripts/ci-test.sh npm run test:acceptance:smoke
 
   # Full integration runs when a PR is ready, on main, and on manual dispatch.
   # The ready_for_review event above also runs it without requiring a new push.
@@ -126,12 +126,7 @@ jobs:
           key: node-modules-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.node.outputs.node-version }}-${{ hashFiles('package-lock.json', 'package.json', '.npmrc') }}
       - if: steps.node-modules.outputs.cache-hit != 'true'
         run: npm ci
-      - name: Run ingestion tests with bounded temporary storage
-        run: |
-          test_tmp=$(mktemp -d)
-          sudo mount -t tmpfs -o "size=512m,mode=0700,uid=$(id -u),gid=$(id -g)" tmpfs "$test_tmp"
-          trap 'sudo umount "$test_tmp"; rmdir "$test_tmp"' EXIT
-          TMPDIR="$test_tmp" npm run test:workers:ingestion -- --shard=${{ matrix.shard }}/3
+      - run: bash scripts/ci-test.sh npm run test:workers:ingestion -- --shard=${{ matrix.shard }}/3
 
   # Routine acceptance only; full publisher/recovery journeys are explicit opt-in.
   # The shared runner caps each shard at two concurrent test files.
@@ -157,4 +152,4 @@ jobs:
           key: node-modules-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.node.outputs.node-version }}-${{ hashFiles('package-lock.json', 'package.json', '.npmrc') }}
       - if: steps.node-modules.outputs.cache-hit != 'true'
         run: npm ci
-      - run: npm run test:acceptance:shard -- --shard=${{ matrix.shard }}/3
+      - run: bash scripts/ci-test.sh npm run test:acceptance:shard -- --shard=${{ matrix.shard }}/3

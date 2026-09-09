@@ -104,9 +104,9 @@ test. This cleanup preserves their existing names.
   each allow at most two concurrent test files. Stress and extended acceptance
   run one file at a time. These are concurrency limits, not hard RAM quotas;
   Worker integration is still more expensive than domain tests.
-- Ingestion CI uses a disposable tmpfs capped at 512 MiB for temporary Worker
-  databases. This bounds its extra storage memory and avoids slow temporary
-  database writes on hosted disks. It does not change local storage settings,
+- Ingestion, acceptance and draft smoke CI use a disposable tmpfs capped at
+  512 MiB per runner for temporary Worker databases. This bounds its extra storage
+  memory and avoids slow temporary database writes on hosted disks. It does not change local storage settings,
   storage isolation, transactions, or SQL export/restore assertions. The mount
   is removed when the test step exits; hosted machines are disposable.
 - Routine acceptance tests time out after two minutes; ingestion tests and Worker
