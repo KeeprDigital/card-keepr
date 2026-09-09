@@ -1,3 +1,4 @@
+import { retainGameSemanticReceiptStatements } from "./game-publication-no-change-repository";
 import { failIndependentGamePreparation } from "./game-reconciliation-outcome";
 import { prepareRunWarningSummary } from "./reconciliation-warning-summary";
 import type { ObservationPlan } from "./reconciliation-plan-state";
@@ -92,6 +93,7 @@ export async function persistReviewableCandidate(
     );
     await database.batch([
       ...gameSeals,
+      ...retainGameSemanticReceiptStatements(database, input.runId, input.candidateCatalogueDigest),
       sealReconciliationOperationStatement(
         database,
         input.runId,

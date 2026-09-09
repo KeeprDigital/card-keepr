@@ -1,3 +1,4 @@
+import { acceptGameEvidenceStatements, latestAcceptanceCheckpointSql } from "./game-publication-no-change-repository";
 import { type CatalogueStore, repositoryStatements } from "../shared";
 
 export function retainPublicPackageManifest(
@@ -73,9 +74,7 @@ export function compositionGamesStatement(db: CatalogueStore, revision: string) 
 }
 export function publicationCheckpointStatement(db: CatalogueStore, revision: string) {
   return repositoryStatements(db)
-    .prepare(`SELECT CASE WHEN ?1='catrev_spine_000' OR EXISTS
- (SELECT 1 FROM catalogue_backup_attempts WHERE catalogue_revision_id=?1 AND state='verified'
- AND d1_bookmark IS NOT NULL AND manifest_sha256 IS NOT NULL) THEN 1 ELSE 0 END AS ready`)
+    .prepare(`SELECT CASE WHEN ${latestAcceptanceCheckpointSql("?1")} THEN 1 ELSE 0 END AS ready`)
     .bind(revision);
 }
 export function updatePublicationState(
@@ -140,8 +139,7 @@ export function publicationSwitchGuard(
  WHEN (SELECT current_revision_id FROM catalogue_state WHERE singleton=1)<>?3 THEN json_extract('{}','publication_composition_conflict')
  WHEN ?3<>'catrev_spine_000' AND NOT EXISTS(SELECT 1 FROM catalogue_composition_games WHERE catalogue_revision_id=?3)
  THEN json_extract('{}','publication_legacy_composition_unprepared')
- WHEN ?3<>'catrev_spine_000' AND NOT EXISTS(SELECT 1 FROM catalogue_backup_attempts WHERE catalogue_revision_id=?3
- AND state='verified' AND d1_bookmark IS NOT NULL AND manifest_sha256 IS NOT NULL) THEN json_extract('{}','publication_backup_pending')
+ WHEN NOT ${latestAcceptanceCheckpointSql("?3")} THEN json_extract('{}','publication_backup_pending')
  WHEN NOT EXISTS(SELECT 1 FROM verified_publication_compositions WHERE sha256=?4)
  THEN json_extract('{}','publication_composition_unverified')
  WHEN NOT EXISTS(SELECT 1 FROM game_publication_actions a WHERE a.publication_operation_id=?1
@@ -247,6 +245,7 @@ export function publicationSwitchStatements(
         `UPDATE game_publication_operations SET state='published',failure_code=NULL,resulting_revision_id=?,backup_attempt_id=?,published_at=? WHERE id=? AND generation=?`,
       )
       .bind(input.revision, input.backup, input.at, input.id, input.generation),
+    ...acceptGameEvidenceStatements(db, input.id),
   ];
 }
 

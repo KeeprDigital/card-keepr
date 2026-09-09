@@ -145,12 +145,27 @@ export function insertPendingBackupStatement(
   }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`INSERT OR IGNORE INTO catalogue_backup_attempts (
+    .prepare(`WITH intended AS (SELECT CASE WHEN ?7 IS NOT NULL THEN
+       (SELECT publication_operation_id FROM catalogue_backup_attempts WHERE idempotency_key=?7 AND catalogue_revision_id=?4)
+       ELSE json_extract(?2,'$.publication_operation_id') END AS operation_id)
+     INSERT OR IGNORE INTO catalogue_backup_attempts (
        idempotency_key, request_json, owner_token, catalogue_revision_id,
        state, object_key, started_at, linked_attempt_id, publication_operation_id, publication_ingestion_run_id
-     ) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?,
-       (SELECT publication_operation_id FROM catalogue_revisions WHERE id = ?),
-       (SELECT ingestion_run_id FROM catalogue_revisions WHERE id = ? AND publication_operation_id IS NOT NULL))`)
+     ) SELECT ?1,?2,?3,?4,'pending',?5,?6,?7,operation_id,
+       (SELECT candidate.ingestion_run_id FROM game_publication_operations publication
+        JOIN game_candidates candidate ON candidate.id=publication.candidate_id WHERE publication.id=operation_id)
+     FROM intended WHERE CASE
+       WHEN ?7 IS NOT NULL AND NOT EXISTS(SELECT 1 FROM catalogue_backup_attempts
+         WHERE idempotency_key=?7 AND catalogue_revision_id=?4)
+         THEN json_extract('{}','backup_acceptance_metadata_mismatch')
+       WHEN operation_id IS NOT json_extract(?2,'$.publication_operation_id')
+         THEN json_extract('{}','backup_acceptance_metadata_mismatch')
+       WHEN operation_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM game_publication_operations
+         WHERE id=operation_id AND state='published' AND resulting_revision_id=?4)
+         THEN json_extract('{}','backup_acceptance_metadata_mismatch')
+       WHEN operation_id IS NULL AND EXISTS(SELECT 1 FROM catalogue_revisions WHERE id=?4 AND publication_operation_id IS NOT NULL)
+         THEN json_extract('{}','backup_acceptance_metadata_mismatch')
+       ELSE 1 END`)
     .bind(
       input.idempotencyKey,
       input.requestJson,
@@ -159,8 +174,6 @@ export function insertPendingBackupStatement(
       input.objectKey,
       input.observedAt,
       input.linkedAttemptId,
-      input.expectedCurrentRevisionId,
-      input.expectedCurrentRevisionId,
     );
 }
 
