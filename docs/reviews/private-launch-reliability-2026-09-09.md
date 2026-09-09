@@ -399,3 +399,18 @@ combined CI verification remain required; this focused result does not close
 #271 or #253. Raw logs are retained in `/tmp/card-keepr-launch-20260909/` as
 `271-cli-multiple-requests-{red,green}.log` and
 `workflow-isolation-hosted-{red-2c5b7a50,reactivation-5f4094c8}.log`.
+
+
+### Original hosted identity sequence after the fix
+
+[Run 34343020426](https://github.com/KeeprDigital/card-keepr/actions/runs/34343020426)
+at diagnostic `3badd0b66cbb1f7e8c5b399b95fc61d3074ef48a` completed
+naturally with **15/15 selected cases passing** (8 unrelated cases filtered),
+400.62s total and 395.45s test time. The original keys, assertions and 30-second
+case deadlines remain unchanged; the earlier identical selection failed 7/15.
+The raw hosted output is retained as `identity-hosted-reset-green-3badd0b6.log`.
+This confirms the scoped collision fix against its original hosted reproducer.
+It does not replace the full suite or exact release-SHA required checks. Both
+independent Standards/Spec reviews are clear for `4c8e901c` → `c455f841`
+and `c455f841` → `5cf62613`. Temporary diagnostic code is excluded from the
+integration branch.
