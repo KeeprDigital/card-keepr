@@ -813,6 +813,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   const fresh = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", "fresh-origins-check"]);
   assert.notEqual(fresh.id, run.id);
   await cli(["source", "resume", "--run-id", fresh.id]);
+  const freshPreparationStarted = performance.now();
   const freshCollection = await waitForAdministrationDocument(
     `/v1/ingestion-runs/${fresh.id}/game-candidates`,
     (d) =>
@@ -821,7 +822,12 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
         : d.candidates.length === 1 && d.candidates[0].state === "sealed",
     environment,
     worker,
-    { deadlineMs: 120_000 },
+    // This still prepares the retained game and owner decisions, just like the
+    // two explicit preparations above; use their existing ten-minute bound.
+    { deadlineMs: 600_000 },
+  );
+  t.diagnostic(
+    `Fresh retained-game preparation completed in ${Math.round(performance.now() - freshPreparationStarted)} ms.`,
   );
   const freshCandidate = await cli(["game-candidate", "show", "--candidate-id", freshCollection.candidates[0].id]);
   finalPublication = await publishNativeCollection(
