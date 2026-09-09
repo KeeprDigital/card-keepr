@@ -196,6 +196,16 @@
       "duration_seconds": 56.39,
       "interrupted": false,
       "notes": "Node 22.23.2; all processes exited naturally. Original individual test deadlines preserved; raw workerd canceled/hung request diagnostics retained. This is functional proof, not isolate capacity evidence."
+    },
+    {
+      "file": "native-owner-insert-cause-5d551412.log.gz",
+      "uncompressed_sha256": "170dfff455ce12415f1dd031bf41f1649cf691b526762f6754159077fc43f3d8",
+      "commit": "5d55141231727ac1f400be8280c219575897d3e1 plus temporary exact-insert diagnostic",
+      "node": "22.23.2",
+      "result": "1 expected failure; 22 unselected. Native owner route returns409; exact repository insert proves SQLITE_CONSTRAINT_FOREIGNKEY.",
+      "duration_seconds": 6.57,
+      "interrupted": false,
+      "notes": "Actual original route oracle retained. Temporary diagnostic restored byte-for-byte after natural completion. No application guard changed; raw background diagnostics retained."
     }
   ]
 }

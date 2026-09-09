@@ -1,0 +1,19 @@
+# Native identity review targets
+
+Issue #274 must retain actual owner decisions when publication callers move to native per-game candidates. The two existing Card identity owner journeys reach a retained review with the exact previously published Printing, then the resolution route returns 409. At `5d55141231727ac1f400be8280c219575897d3e1`, a temporary diagnostic invoked the unchanged repository insert with that exact request and exposed `SQLITE_CONSTRAINT_FOREIGNKEY`: the schema17 decision table accepts only `reconciled_printings`, which native publication does not populate. The original route oracle remained failing; the diagnostic was removed exactly. The raw log and digest are retained in the caller-retirement evidence manifest.
+
+The coordinator reserved migration0032. Migration0031 remains the no-change provider's responsibility; its populated upgrade must be corrected and proven first.
+
+## Retained decision contract
+
+Keep the existing six public decision fields, immutable request replay, changed-request rejection, owner authorization and operation-idle checks. Preserve every historical decision and its SQLite rowid: existing preparations pin `identity_decision_cutoff`, so merely copying the values in a new order would change their reviewed decision set.
+
+Rebuild only the decision table to replace its exclusively legacy target reference with exactly one private target binding. A historical target continues to use the real `reconciled_printings` foreign key. A native target references both its immutable publication binding and the exact `publication_read_entities(candidate_id, 'printings', printing_id)` key. Foreign keys must continue preventing deletion of the referenced identity. Recreate all decision immutability, recovery and fresh-baseline handoff triggers.
+
+Choose native targets through the review's retained preparation and immutable accepted-evidence predecessor, using an index beginning with review ID and one exact native Printing key. This preserves an old reviewed target after the current game head advances. A native predecessor with a missing target fails closed; a legacy predecessor retains the historical lookup. The database insert guard must also require the target in the review's retained candidate list and match its Source Snapshot game and Source Lineage. Do not allocate a new identity, manufacture a legacy Printing or read a mutable current head to redefine old evidence.
+
+Keep the private binding fields out of the existing decision response. The complete backup already fingerprints the decision table, so the new columns are restored and verified with its other durable evidence; historical snapshots retain their recorded schema.
+
+## Required proof
+
+Prove the populated schema31-to32 upgrade preserves values, sparse rowids and creation-time cutoffs. Exercise missing, wrong-kind, cross-game, unpublished and changed-predecessor target failures; exact native and historical targets; referenced-target deletion; immutable decisions; recovery/handoff fencing; exact route replay and changed-key/request rejection. The two original native owner journeys must pass without weakening their identity or reviewed evidence assertions. Run the complete affected file after the focused proof and obtain independent Standards and Spec reviews before integration. This plan does not claim migration or native owner resolution complete.
