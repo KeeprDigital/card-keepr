@@ -19,6 +19,15 @@
       "duration_seconds": 4.64,
       "interrupted": false,
       "notes": "Full log retains workerd canceled/hung background request diagnostics; these are not suppressed or claimed as backup/restore proof."
+    },
+    {
+      "file": "focused-929bc80e.log.gz",
+      "uncompressed_sha256": "633d38846562a684dae65583dddb144cc3df91a5a41018ae54af0305ecab8b73",
+      "commit": "929bc80e",
+      "result": "6 passed; 1 failed; 21 unselected",
+      "duration_seconds": 24.09,
+      "interrupted": false,
+      "notes": "Historical no-write/replay/recovery/cleanup and first native publication guards pass. Second native publication remains waiting_backup after15s because actual Workflow restore check throws Restored composition snapshot differs. Full background diagnostics retained. No checkpoint granted."
     }
   ]
 }

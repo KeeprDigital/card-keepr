@@ -185,3 +185,24 @@ recovery objects, cleanup retry and CAS replay remain covered. Cleanup CAS and
 registered-prefix tests now inject an explicit pre-retirement reservation and
 observe its failed recovery, instead of invoking the deleted writer to create
 their seed. Their runtime validation remains pending.
+
+## Repeat-publication blocker
+
+At `929bc80e`, the next focused runtime selection exited naturally in 24.09
+seconds: six passed, one failed, 21 unselected. Historical no-write, both exact
+claim cases, cleanup CAS and registered-prefix fencing pass. Native extra-field,
+manifest/predecessor/generation, concurrent acknowledgement and first-publication
+checks pass. The second native publication remains `waiting_backup` after its
+15-second observation window, while the backup Workflow repeatedly reports
+`Restored composition snapshot differs`. The comparison was not weakened and no
+verified checkpoint was synthesized. Full evidence is retained beside prior logs.
+
+The Workers fixture Cloudflare API in `test/support/fake-publisher/cloudflare-api.ts`
+serves a comment-only SQL export, discards the upload and answers verification
+with hardcoded legacy fields or empty rows. It has no native composition-state,
+schema or table-page data. Thus it cannot prove the native restore checkpoint.
+This is a concrete fixture prerequisite for repeated publication callers, not
+evidence of a production restore defect. The coordinator separately reported
+real SQLite-backed native composed acceptance passing. Its
+`acceptance/helpers/native-recovery-cloudflare.mjs` is the existing faithful
+export/import/query model; adapting Workers fixtures needs scoped work and proof.
