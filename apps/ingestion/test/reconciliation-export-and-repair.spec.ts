@@ -3,6 +3,9 @@ import { buildCatalogueExport } from "../../../src/catalogue/export";
 import { canonicalJson, catalogueCandidateContract, catalogueStore, sha256 } from "../../../src/catalogue/shared";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { EMPTY_CATALOGUE_GZIP_HEX, GZIP_PROFILE_GOLDENS } from "./deterministic-gzip-golden";
+import { recoverHistoricalPublication } from "./historical-publication-fixture";
+import { nativeCandidateRecords } from "./native-candidate-helpers";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import * as cardSearchQueries from "./query-helpers/card-search";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import {
@@ -13,7 +16,6 @@ import {
   post,
   postFixtureEvidence,
   reconcile,
-  requiredFirst,
   requiredString,
   testEnv,
   waitForRunState,
@@ -197,10 +199,15 @@ test("heterogeneous empty plans inspect and publish every lineage independently 
     lineage: "fusion-world-en",
     adapter: "fixture-fusion-world-json@2",
   });
-  const seeded = await reconcile(seededRun.id);
-  const cardId = requiredString(requiredFirst(seeded.document, "cards"), "id");
-  const printingId = requiredString(requiredFirst(seeded.document, "printings"), "id");
-  expect((await approve(seeded.document)).response.status).toBe(200);
+  const seeded = await prepareNativeCandidate(seededRun.id, "fusion-world", "catrev_spine_000", "mixed-native-seed");
+  const seedRecords = await nativeCandidateRecords(String(seeded.id));
+  const cardId = String(seedRecords.cards![0]!.id);
+  const printingId = String(seedRecords.printings![0]!.id);
+  const seedPublication = await approveNativeCandidate(seeded, "mixed-native-seed-publish");
+  const gameHeads = {
+    "one-piece": "catrev_spine_000",
+    "fusion-world": requiredString(seedPublication.document, "resulting_revision_id"),
+  };
 
   const inspectOrder = async (lineages: readonly ("one-piece" | "fusion-world")[], suffix: string, publish = false) => {
     const started = await postFixtureEvidence({
@@ -228,47 +235,44 @@ test("heterogeneous empty plans inspect and publish every lineage independently 
       runId,
     );
     await waitForRunState(runId, "parsing");
-    const candidate = await reconcile(runId);
-    expect(candidate.response.status).toBe(200);
-    const inspected = await get(`/v1/ingestion-runs/${runId}/candidate`);
-    const result = {
-      cards: (
-        inspected.document.diff as {
-          cards: { missing_observations: string[] };
+    const result = { cards: [] as string[], printings: [] as string[] };
+    for (const game of lineages) {
+      const candidate = await prepareNativeCandidate(runId, game, gameHeads[game], `mixed-native-${game}-${suffix}`);
+      const records = await nativeCandidateRecords(String(candidate.id));
+      for (const warning of records.warnings ?? []) {
+        if (warning.code !== "record_not_observed") continue;
+        if (typeof warning.card_id === "string") result.cards.push(warning.card_id);
+        if (typeof warning.printing_id === "string") result.printings.push(warning.printing_id);
+      }
+      if (publish) {
+        const published = await approveNativeCandidate(candidate, `mixed-native-publish-${game}-${suffix}`);
+        gameHeads[game] = requiredString(published.document, "resulting_revision_id");
+        if (game === "fusion-world") {
+          const lifecycle = await get(`/v1/reconciliation/printings/${printingId}`);
+          expect(lifecycle.document).toMatchObject({
+            locators: {
+              current: [],
+              historical: [
+                expect.objectContaining({
+                  source_lineage: "fusion-world-en",
+                  current: false,
+                  last_missing_revision_id: gameHeads[game],
+                }),
+              ],
+            },
+          });
         }
-      ).cards.missing_observations,
-      printings: (
-        inspected.document.diff as {
-          printings: { missing_observations: string[] };
-        }
-      ).printings.missing_observations,
-    };
-    if (publish) {
-      const published = await approve(candidate.document);
-      expect(published.response.status).toBe(200);
-      const revisionId = requiredString(published.document, "resulting_revision_id");
-      const lifecycle = await get(`/v1/reconciliation/printings/${printingId}`);
-      expect(lifecycle.document).toMatchObject({
-        locators: {
-          current: [],
-          historical: [
-            expect.objectContaining({
-              source_lineage: "fusion-world-en",
-              current: false,
-              last_missing_revision_id: revisionId,
-            }),
-          ],
-        },
-      });
-    } else
-      expect(
-        (
-          await post(`/v1/ingestion-runs/${runId}/rejection`, {
-            candidate_digest: requiredString(candidate.document, "candidate_digest"),
-            idempotency_key: `reject-mixed-plan-empty-lineage-${suffix}`,
-          })
-        ).response.status,
-      ).toBe(200);
+      } else {
+        const abandoned = await post(`/v1/game-candidates/${candidate.id}/abandon`, {
+          generation: candidate.generation,
+          idempotency_key: `abandon-mixed-${game}-${suffix}`,
+        });
+        expect(abandoned.response.status, JSON.stringify(abandoned.document)).toBe(200);
+        expect(abandoned.document.state).toBe("abandoned");
+      }
+    }
+    result.cards.sort();
+    result.printings.sort();
     return result;
   };
 
@@ -280,13 +284,18 @@ test("heterogeneous empty plans inspect and publish every lineage independently 
 }, 45_000);
 
 test("Card search repair permits only retained revisions and revalidates unfinished replay claims", async () => {
+  let gameHead = "catrev_spine_000";
   const publishScenario = async (sequence: number) => {
     const run = await collect(`/reconciliation/search-repair-retention-${sequence}`, `repair-retention-${sequence}`);
-    const reconciled = await reconcile(run.id);
-    expect(reconciled.response.status).toBe(200);
-    const published = await approve(reconciled.document);
-    expect(published.response.status).toBe(200);
-    return requiredString(published.document, "resulting_revision_id");
+    const candidate = await prepareNativeCandidate(
+      run.id,
+      "one-piece",
+      gameHead,
+      `repair-retention-candidate-${sequence}`,
+    );
+    const published = await approveNativeCandidate(candidate, `repair-retention-publish-${sequence}`);
+    gameHead = requiredString(published.document, "resulting_revision_id");
+    return gameHead;
   };
   const revisionLineage = () =>
     publishedCatalogueQueries.inspectCatalogueState(testEnv.CATALOGUE_DB).all<{ revision_id: string; depth: number }>();
@@ -345,10 +354,13 @@ test("Card search repair permits only retained revisions and revalidates unfinis
 
 test("Card search repair binds exact target/current/idempotency and fails stale or conflicting requests closed", async () => {
   const run = await collect("/reconciliation/complete-empty-lineage", "guarded-search-repair-published-target");
-  const reconciled = await reconcile(run.id);
-  expect(reconciled.response.status).toBe(200);
-  const published = await approve(reconciled.document);
-  expect(published.response.status).toBe(200);
+  const candidate = await prepareNativeCandidate(
+    run.id,
+    "one-piece",
+    "catrev_spine_000",
+    "guarded-search-repair-candidate",
+  );
+  const published = await approveNativeCandidate(candidate, "guarded-search-repair-publish");
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const request = {
     target_revision_id: revisionId,
@@ -381,12 +393,13 @@ test("Card search repair binds exact target/current/idempotency and fails stale 
   expect(stale.document).toMatchObject({ code: "current_revision_mismatch" });
 }, 60_000);
 
-test("publication and bounded Card search repair need no obsolete gram table and replay only their completed result", async () => {
+test("retained legacy publication and bounded Card search repair need no obsolete gram table and replay only their completed result", async () => {
   await cardSearchQueries.dropObsoleteCardSearchTerms(testEnv.CATALOGUE_DB).run();
   const run = await collect("/reconciliation/complete-empty-lineage", "bounded-25-card-search-repair");
   const reconciled = await reconcile(run.id);
   expect(reconciled.response.status).toBe(200);
-  const published = await approve(reconciled.document);
+  // Explicit retained legacy projection seam; current publication never populates revision_cards.
+  const published = await recoverHistoricalPublication(run.id, "bounded-legacy-search-repair");
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const cards = Array.from({ length: 30 }, (_, index) => {
@@ -461,7 +474,8 @@ test("Card search repair rejects an oversized legacy Card before materializing i
   const run = await collect("/reconciliation/base", "oversized-legacy-search-repair");
   const reconciled = await reconcile(run.id);
   expect(reconciled.response.status).toBe(200);
-  const published = await approve(reconciled.document);
+  // Explicit retained legacy projection seam; current publication never populates revision_cards.
+  const published = await recoverHistoricalPublication(run.id, "oversized-legacy-search-repair");
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const oversizedCardId = "card_oversized_legacy_search_repair";
