@@ -1,4 +1,4 @@
-name: diagnostic-271-identity
+name: diagnostic-private-launch
 
 # Temporary diagnostic branch only. This job is not a release check and this
 # branch must never be merged. It cannot satisfy the required CI job set.
@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 jobs:
-  identity-reproduction:
+  native-product-reproduction:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -17,5 +17,15 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm ci
-      - name: Repeat the original identity sequence with corrected fixture reset
-        run: node node_modules/vitest/vitest.mjs run --config apps/ingestion/vitest.config.ts --maxWorkers=1 apps/ingestion/test/identity-corrections.spec.ts -t 'reviewed identity.*prepare through durable bounded groups'
+      - name: Measure the native Product callback on an isolated hosted runner
+        env:
+          KEEPR_TEST_SUITE: stress
+          KEEPR_CALLBACK_ARTIFACT: ${{ runner.temp }}/native-product-callbacks.json
+        run: node node_modules/vitest/vitest.mjs run --config apps/ingestion/vitest.config.ts --maxWorkers=1 --reporter=default --reporter=./test/support/reconciliation-callback-reporter.mjs apps/ingestion/test/game-reconciliation-scale.stress.spec.ts
+      - name: Retain callback evidence even on budget failure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-product-callbacks
+          path: ${{ runner.temp }}/native-product-callbacks.json
+          if-no-files-found: error
