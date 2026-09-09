@@ -1,20 +1,20 @@
 import { expect, test } from "vitest";
-import worker from "../src/index";
 import type { ReconciliationWorkflowParams } from "../../../src/catalogue/reconciliation";
-import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 import { canonicalJson, sha256Text } from "../../../src/catalogue/shared";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
+import worker from "../src/index";
+import { nativeCandidateRecords } from "./native-candidate-helpers";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import {
-  get,
   collect,
-  reconcile,
-  approve,
+  get,
   installReconciliationSuite,
   post,
   postFixtureEvidence,
   requiredString,
   testEnv,
 } from "./reconciliation-helpers";
+import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 
 installReconciliationSuite();
 
@@ -22,7 +22,13 @@ test.each(["base", "large-card-content"])(
   "preparation of %s checks its game predecessor independently of another game's publication",
   async (fixture) => {
     const seed = await collect("/reconciliation/base", "native-predecessor-seed");
-    const published = await approve((await reconcile(seed.id)).document);
+    const priorCandidate = await prepareNativeCandidate(
+      seed.id,
+      "one-piece",
+      "catrev_spine_000",
+      "native-predecessor-seed-candidate",
+    );
+    const published = await approveNativeCandidate(priorCandidate, "native-predecessor-seed-publication");
     expect(published.response.status).toBe(200);
     const revision = requiredString(published.document, "resulting_revision_id");
     const onePiece = await collect(`/reconciliation/${fixture}`, "native-predecessor-next");
@@ -395,9 +401,15 @@ test("abandonment releases only its game slot and a new intent creates a fresh c
 
 test("a native source change retains reconfirmable curated diagnostics without failing the collection", async () => {
   const originalSource = await collect("/reconciliation/curated-conflict-fanout-base", "native-curated-seed");
-  const seed = await reconcile(originalSource.id);
-  const card = (seed.document.cards as { id: string; name: string }[])[0]!;
-  const published = await approve(seed.document);
+  const seed = await prepareNativeCandidate(
+    originalSource.id,
+    "one-piece",
+    "catrev_spine_000",
+    "native-curated-seed-candidate",
+  );
+  const records = await nativeCandidateRecords(requiredString(seed, "id"));
+  const card = (records.cards as { id: string; name: string }[])[0]!;
+  const published = await approveNativeCandidate(seed, "native-curated-seed-publication");
   expect(published.response.status).toBe(200);
   const proposal = {
     game: "one-piece",
@@ -482,9 +494,15 @@ test("a native source change retains reconfirmable curated diagnostics without f
 
 test("invalid native curated composition fails terminally and replays its retained outcome", async () => {
   const source = await collect("/reconciliation/curated-composition-character", "native-invalid-curated-seed");
-  const seed = await reconcile(source.id);
-  const card = (seed.document.cards as { id: string }[])[0]!;
-  const published = await approve(seed.document);
+  const seed = await prepareNativeCandidate(
+    source.id,
+    "one-piece",
+    "catrev_spine_000",
+    "native-invalid-curated-seed-candidate",
+  );
+  const records = await nativeCandidateRecords(requiredString(seed, "id"));
+  const card = (records.cards as { id: string }[])[0]!;
+  const published = await approveNativeCandidate(seed, "native-invalid-curated-seed-publication");
   expect(published.response.status).toBe(200);
   const proposal = {
     game: "one-piece",
@@ -557,9 +575,15 @@ test("invalid native curated composition fails terminally and replays its retain
 
 test("a fresh native preparation pins later owner corrections and retains them across retirement", async () => {
   const source = await collect("/reconciliation/base", "native-fresh-curated-source");
-  const seed = await reconcile(source.id);
-  const card = (seed.document.cards as { id: string; name: string }[])[0]!;
-  const published = await approve(seed.document);
+  const seed = await prepareNativeCandidate(
+    source.id,
+    "one-piece",
+    "catrev_spine_000",
+    "native-fresh-curated-seed-candidate",
+  );
+  const inspected = await nativeCandidateRecords(requiredString(seed, "id"));
+  const card = (inspected.cards as { id: string; name: string }[])[0]!;
+  const published = await approveNativeCandidate(seed, "native-fresh-curated-seed-publication");
   expect(published.response.status).toBe(200);
   const proposal = {
     game: "one-piece",
@@ -729,65 +753,114 @@ test("native supplemental admission retains collection evidence and preparation-
   expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
 });
 
-test("native ambiguous matches retain review evidence under their preparation and source collection", async () => {
-  const seed = await reconcile(
-    (await collect("/reconciliation/canonical-official-ambiguous", "native-review-seed")).id,
-  );
-  const printingId = (seed.document.printings as { id: string }[])[0]!.id;
-  const published = await approve(seed.document);
-  expect(published.response.status).toBe(200);
-  for (const area of ["card_facts", "printing_details"]) {
-    expect(
-      (
-        await post("/v1/source-authorities", {
-          game: "one-piece",
-          locale: "en",
-          release_region: "OCEANIA",
-          area,
-          source_lineage: "limitless-one-piece-en",
-          expected_generation: "0",
-          rationale: "Synthetic native review",
-          idempotency_key: `native-review-${area}`,
-        })
-      ).response.status,
-    ).toBe(200);
-  }
-  const run = await collect("/reconciliation/canonical-tabular-ambiguous", "native-review-evidence", {
-    game: "one-piece",
-    lineage: "limitless-one-piece-en",
-    adapter: "fixture-one-piece-tabular@1",
-  });
-  const created = await post("/v1/game-candidates", {
-    ingestion_run_id: run.id,
-    supported_game: "one-piece",
-    expected_game_revision_id: published.document.resulting_revision_id,
-    idempotency_key: "native-review-intent",
-  });
-  expect(created.response.status).toBe(201);
-  const id = requiredString(created.document, "id");
-  let candidate = (await get(`/v1/game-candidates/${id}`)).document;
-  const deadline = Date.now() + 15000;
-  while (candidate.state === "preparing" && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 25));
-    candidate = (await get(`/v1/game-candidates/${id}`)).document;
-  }
-  expect(candidate, JSON.stringify(candidate)).toMatchObject({
-    state: "failed",
-    failure_code: "printing_reconciliation_blocked",
-  });
-  const reviews = await get(`/v1/reconciliation/identity-reviews?preparation_id=${id}`);
-  expect(reviews.response.status).toBe(200);
-  expect(reviews.document.reviews).toEqual([
-    expect.objectContaining({
-      preparation_id: id,
+test.each([
+  { seedEvidence: "weak", nextEvidence: "weak", carriedRefresh: false },
+  { seedEvidence: "weak", nextEvidence: "weak", carriedRefresh: true },
+  { seedEvidence: "official", nextEvidence: "weak", carriedRefresh: false },
+  { seedEvidence: "official", nextEvidence: "official", carriedRefresh: false },
+])(
+  "native ambiguous matches and proven identities preserve $seedEvidence to $nextEvidence evidence after carried refresh: $carriedRefresh",
+  async ({ seedEvidence, nextEvidence, carriedRefresh }) => {
+    const source = await collect(
+      `/reconciliation/canonical-official${seedEvidence === "weak" ? "-ambiguous" : ""}`,
+      "native-review-seed",
+    );
+    const seed = await prepareNativeCandidate(
+      source.id,
+      "one-piece",
+      "catrev_spine_000",
+      "native-review-seed-candidate",
+    );
+    const records = await nativeCandidateRecords(requiredString(seed, "id"));
+    const printingId = (records.printings as { id: string }[])[0]!.id;
+    let published = await approveNativeCandidate(seed, "native-review-seed-publication");
+    expect(published.response.status).toBe(200);
+    if (carriedRefresh) {
+      const unrelated = await collect("/reconciliation/base", "native-review-unobserved");
+      const refresh = await prepareNativeCandidate(
+        unrelated.id,
+        "one-piece",
+        requiredString(published.document, "resulting_revision_id"),
+        "native-review-unobserved-candidate",
+      );
+      const carried = await nativeCandidateRecords(requiredString(refresh, "id"));
+      expect(carried.printings).toEqual(expect.arrayContaining([expect.objectContaining({ id: printingId })]));
+      published = await approveNativeCandidate(refresh, "native-review-unobserved-publication");
+      expect(published.response.status).toBe(200);
+    }
+    for (const area of ["card_facts", "printing_details"]) {
+      expect(
+        (
+          await post("/v1/source-authorities", {
+            game: "one-piece",
+            locale: "en",
+            release_region: "OCEANIA",
+            area,
+            source_lineage: "limitless-one-piece-en",
+            expected_generation: "0",
+            rationale: "Synthetic native review",
+            idempotency_key: `native-review-${area}`,
+          })
+        ).response.status,
+      ).toBe(200);
+    }
+    const run = await collect(
+      `/reconciliation/canonical-tabular${nextEvidence === "weak" ? "-ambiguous" : ""}`,
+      "native-review-evidence",
+      {
+        game: "one-piece",
+        lineage: "limitless-one-piece-en",
+        adapter: "fixture-one-piece-tabular@1",
+      },
+    );
+    const created = await post("/v1/game-candidates", {
       ingestion_run_id: run.id,
-      source_lineage: "limitless-one-piece-en",
-      candidate_printing_ids: [printingId],
-      evidence: expect.any(Object),
-    }),
-  ]);
-  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
-});
+      supported_game: "one-piece",
+      expected_game_revision_id: published.document.resulting_revision_id,
+      idempotency_key: "native-review-intent",
+    });
+    expect(created.response.status).toBe(201);
+    const id = requiredString(created.document, "id");
+    let candidate = (await get(`/v1/game-candidates/${id}`)).document;
+    const deadline = Date.now() + 15000;
+    while (candidate.state === "preparing" && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      candidate = (await get(`/v1/game-candidates/${id}`)).document;
+    }
+    if (nextEvidence === "official") {
+      expect(candidate, JSON.stringify(candidate)).toMatchObject({ state: "sealed" });
+      const matched = await nativeCandidateRecords(id);
+      expect(matched.printings).toEqual([expect.objectContaining({ id: printingId })]);
+      expect((await get(`/v1/reconciliation/identities/${printingId}?preparation_id=${id}`)).document.mappings).toEqual(
+        [
+          expect.objectContaining({
+            preparation_id: id,
+            ingestion_run_id: run.id,
+            source_lineage: "limitless-one-piece-en",
+          }),
+        ],
+      );
+      expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
+      return;
+    }
+    expect(candidate, JSON.stringify(candidate)).toMatchObject({
+      state: "failed",
+      failure_code: "printing_reconciliation_blocked",
+    });
+    const reviews = await get(`/v1/reconciliation/identity-reviews?preparation_id=${id}`);
+    expect(reviews.response.status).toBe(200);
+    expect(reviews.document.reviews).toEqual([
+      expect.objectContaining({
+        preparation_id: id,
+        ingestion_run_id: run.id,
+        source_lineage: "limitless-one-piece-en",
+        candidate_printing_ids: [printingId],
+        evidence: expect.any(Object),
+      }),
+    ]);
+    expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
+  },
+);
 
 test("an owner can abandon an expired sealed candidate and create a fresh preparation without reviving old writers", async () => {
   const source = await collect("/reconciliation/base", "sealed-abandon-source");
