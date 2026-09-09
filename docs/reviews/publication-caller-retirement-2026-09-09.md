@@ -286,3 +286,20 @@ fixtures and the existing recovery observer, not production writes into obsolete
 tables. The coordinator authorized a dedicated historical fixture for that scope.
 Both failed and green logs are retained with digests. All runs exited naturally;
 the runtime lease was handed to the native ambiguity diagnosis lane.
+
+The historical helper at `b2caf3a9` is prepared with exact retained candidate and
+catalogue digests, lifecycle-bound export bytes, verified historical image bytes,
+an explicitly seeded old reservation, the original expired-lease observer and
+exact replay. It then waits for the real backup checkpoint. The two retained
+materializer tests now use that fixture; their prior native-seed failure is not
+hidden. Typecheck passes; dedicated runtime is queued behind the ambiguity lane.
+
+All current-publication callers in `identity-corrections.spec.ts` now prepare
+native candidates with explicit predecessor revisions. Existing collection keys,
+owner attestations, correction decisions and all eleven cases remain. Controlled
+fault cases capture the real native creation/resume dispatch, drive it through
+the existing Workflow driver, and read phase checkpoints through the existing
+integrity-checked repository seam. They retain four failed retries, intermediate
+cursor and 100-call bounds, deadlines, immutable old exports and exact identity
+assertions. The historical empty-correction-pin case retains its legacy resume
+seam. Typecheck passes; native runtime proof is still pending.
