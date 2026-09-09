@@ -234,15 +234,13 @@ test("a known locator with contradictory retained material evidence fails the na
   });
   expect(created.response.status).toBe(201);
   const [conflict] = await waitForNativeCandidates(conflictRun.id, 1, 15_000, { "one-piece": "failed" });
-  expect(conflict?.outcome).toMatchObject({
-    state: "failed",
-    diagnostics: [
-      {
-        code: "printing_match_contradictory",
-        locator: "/official/conflict",
-      },
-    ],
-  });
+  expect(conflict?.outcome).toMatchObject({ state: "failed" });
+  // The operation envelope is a bounded code/detail summary. The exact
+  // retained diagnostic, including its locator, belongs to the candidate pages.
+  const diagnostics = await nativeCandidateRecords(requiredString(conflict ?? {}, "id"));
+  expect([...(diagnostics.warnings ?? []), ...(diagnostics.shared_warnings ?? [])]).toMatchObject([
+    { code: "printing_match_contradictory", locator: "/official/conflict" },
+  ]);
 });
 
 test("same-lineage authoritative Card evolution updates canonical facts while preserving identity", async () => {

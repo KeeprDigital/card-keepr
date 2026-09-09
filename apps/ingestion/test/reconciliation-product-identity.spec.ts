@@ -14,6 +14,7 @@ import {
   collectRequests,
   exportComponentRecords,
   exportManifest,
+  get,
   installReconciliationSuite,
   postFixtureEvidence,
   requiredFirst,
@@ -362,21 +363,20 @@ test("identical Product facts are a semantic no-change while source freshness ad
   const firstCandidate = await prepareProductCandidate(firstRun.id, "catrev_spine_000", "one-piece");
   const firstPublished = await approveNativeCandidate(firstCandidate.header, `publish-${firstCandidate.header.id}`);
   const revisionId = requiredString(firstPublished.document, "resulting_revision_id");
-  const firstFreshness = await sourceEvidenceQueries
-    .readSourceFreshnessCheckedAtForIdenticalProductFactsAreSemanticNoChangeWhileSource(testEnv.CATALOGUE_DB)
-    .first<{ checked_at: string }>();
+  const firstFreshness = await productSourceFreshness();
+  expect(firstFreshness).toMatchObject({ checked_at: expect.any(String), ingestion_run_id: firstRun.id });
 
   const secondRun = await collect("/reconciliation/product-standalone-v1", "product-semantic-second");
   const secondCandidate = await prepareProductCandidate(secondRun.id, revisionId, "one-piece");
   expect(secondCandidate.header.manifest_digest).not.toBe(firstCandidate.header.manifest_digest);
+  expect(await productSourceFreshness()).toEqual(firstFreshness);
   const secondPublished = await approveNativeCandidate(secondCandidate.header, `publish-${secondCandidate.header.id}`);
   expect(secondPublished.document).toMatchObject({
     resulting_revision_id: revisionId,
   });
-  const secondFreshness = await sourceEvidenceQueries
-    .readSourceFreshnessCheckedAtForIdenticalProductFactsAreSemanticNoChangeWhileSource(testEnv.CATALOGUE_DB)
-    .first<{ checked_at: string }>();
-  expect(secondFreshness?.checked_at).not.toBe(firstFreshness?.checked_at);
+  const secondFreshness = await productSourceFreshness();
+  expect(secondFreshness).toMatchObject({ checked_at: expect.any(String), ingestion_run_id: secondRun.id });
+  expect(String(secondFreshness?.checked_at) > String(firstFreshness?.checked_at)).toBe(true);
 }, 45_000);
 
 test("Product observations and disappearance remain scoped to their Source Lineage", async () => {
@@ -566,11 +566,11 @@ test("Product freshness is emitted only for an actually checked Product surface"
     .readSourceSnapshotsRetrievedAt(testEnv.CATALOGUE_DB)
     .bind(checkedRun.id)
     .first<{ retrieved_at: string }>();
-  expect(
-    await sourceEvidenceQueries
-      .readSourceFreshnessCheckedAtForIdenticalProductFactsAreSemanticNoChangeWhileSource(testEnv.CATALOGUE_DB)
-      .first<{ checked_at: string }>(),
-  ).toEqual({ checked_at: checkedSnapshot?.retrieved_at });
+  const checkedFreshness = await productSourceFreshness();
+  expect(checkedFreshness).toMatchObject({
+    checked_at: checkedSnapshot?.retrieved_at,
+    ingestion_run_id: checkedRun.id,
+  });
 
   const noCheckRun = await collect("/reconciliation/base", "product-freshness-no-check");
   const noCheckCandidate = await prepareProductCandidate(noCheckRun.id, checkedRevision, "one-piece");
@@ -578,6 +578,7 @@ test("Product freshness is emitted only for an actually checked Product surface"
     (await approveNativeCandidate(noCheckCandidate.header, `publish-${noCheckCandidate.header.id}`)).document,
     "resulting_revision_id",
   );
+  expect(await productSourceFreshness()).toEqual(checkedFreshness);
   expect(await exportManifest(noCheckRevision)).not.toHaveProperty("source_freshness");
   expect(await exportComponentRecords(noCheckRevision, "products")).toContainEqual(
     expect.objectContaining({
@@ -662,6 +663,13 @@ async function prepareProductCandidate(runId: string, predecessor: string, game:
   const header = await prepareNativeCandidate(runId, game, predecessor, `product-prepare-${runId}`);
   const records = await nativeCandidateRecords(requiredString(header, "id"));
   return { header, records };
+}
+
+async function productSourceFreshness() {
+  const status = await get("/v1/status");
+  expect(status.response.status).toBe(200);
+  const rows = status.document.source_freshness as Record<string, unknown>[];
+  return rows.find(({ game, area }) => game === "one-piece" && area === "products-and-releases");
 }
 
 async function expectProductEvidenceInvalid(runId: string, predecessor: string, detail: string) {
