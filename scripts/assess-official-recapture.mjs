@@ -6,9 +6,14 @@ import { sha256, validateGolden } from "./retained-source-integrity.mjs";
 
 // Reassess an immutable downloaded artifact with today's adapters without a
 // network request. Old artifacts may contain only the old retained range.
-export async function assessRetainedRecapture({ fixturesDirectory, captureDirectory, outputFile }) {
+export async function assessRetainedRecapture({
+  fixturesDirectory,
+  captureDirectory,
+  outputFile,
+  reviewedBaselinesDirectory,
+}) {
   const original = JSON.parse(await readFile(join(captureDirectory, "report.json"), "utf8"));
-  const assess = await createOfficialSourceAssessment({ fixturesDirectory });
+  const assess = await createOfficialSourceAssessment({ fixturesDirectory, reviewedBaselinesDirectory });
   const captures = [];
   for (const capture of original.captures) {
     let assessment;
@@ -80,12 +85,18 @@ export async function assessRetainedRecapture({ fixturesDirectory, captureDirect
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  if (process.argv.length !== 4)
-    throw new Error("Usage: node scripts/assess-official-recapture.mjs <artifact-directory> <new-report-file>");
+  if (process.argv.length !== 4 && !(process.argv.length === 5 && process.argv[4] === "--reviewed-baselines"))
+    throw new Error(
+      "Usage: node scripts/assess-official-recapture.mjs <artifact-directory> <new-report-file> [--reviewed-baselines]",
+    );
   const result = await assessRetainedRecapture({
     fixturesDirectory: resolve(import.meta.dirname, "../acceptance/fixtures/retained-official-source"),
     captureDirectory: resolve(process.argv[2]),
     outputFile: resolve(process.argv[3]),
+    reviewedBaselinesDirectory:
+      process.argv[4] === "--reviewed-baselines"
+        ? resolve(import.meta.dirname, "../acceptance/fixtures/retained-official-source/monitoring")
+        : undefined,
   });
   console.log(JSON.stringify(result.summary, null, 2));
   if (!result.ok) process.exitCode = 1;
