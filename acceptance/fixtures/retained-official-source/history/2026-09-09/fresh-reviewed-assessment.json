@@ -1,0 +1,1744 @@
+{
+  "ok": true,
+  "summary": {
+    "unchanged": 13,
+    "cosmetic_drift": 37,
+    "out_of_scope": 10
+  },
+  "captures": [
+    {
+      "adapter_version": "digimon-en@7",
+      "category": "unchanged",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "monitoring/digimon-en-card-list-appmon-leaf.json.gz",
+      "baseline_full_body_sha256": "aa54372640aea9a5961ca3925899a330e04a7275a6a26b048db93f05561c1375",
+      "expected_observations_sha256": "de24eab768a8b258f8ccffb57a6ee1d522aed6b2d7dfe097640e2b3511130315",
+      "actual_observations_sha256": "de24eab768a8b258f8ccffb57a6ee1d522aed6b2d7dfe097640e2b3511130315",
+      "observation_count": 1,
+      "request_count": 179,
+      "file": "digimon-en-card-list-appmon-leaf.json",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522204&cardcategory=Digimon&color=Purple",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "b6d0b24d0f719bfd2f64a150ac1c0043fed8ed701caf63b8b03ae776c3f75ece",
+      "actual_full_body_sha256": "aa54372640aea9a5961ca3925899a330e04a7275a6a26b048db93f05561c1375"
+    },
+    {
+      "adapter_version": "digimon-en@7",
+      "category": "unchanged",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "monitoring/digimon-en-card-list-bt01-leaf.json.gz",
+      "baseline_full_body_sha256": "ec21fa46a80f9d06d5293f18e8b9e591e50e828a4097b4dd907f20c456d4cb66",
+      "expected_observations_sha256": "3b5086dab195bc271555e8daed782e92393b807538d8522e6fed1f395db3552b",
+      "actual_observations_sha256": "3b5086dab195bc271555e8daed782e92393b807538d8522e6fed1f395db3552b",
+      "observation_count": 24,
+      "request_count": 198,
+      "file": "digimon-en-card-list-bt01-leaf.json",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522001&cardcategory=Digimon&color=Blue",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "f0059b9115c9875b864f5df2eca80dd9767e36fa4e19c4def916825cf88a937f",
+      "actual_full_body_sha256": "ec21fa46a80f9d06d5293f18e8b9e591e50e828a4097b4dd907f20c456d4cb66"
+    },
+    {
+      "adapter_version": "digimon-en@7",
+      "category": "unchanged",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "monitoring/digimon-en-card-list-promo-leaf.json.gz",
+      "baseline_full_body_sha256": "cfb9f8065f25d4d4440e956c61dceea372a91138d50976ba4cf34262e58be5d8",
+      "expected_observations_sha256": "c4b406ff52de8874ccb991373f0c7c88e8e16382750de0e6ba3c6446343bc6bd",
+      "actual_observations_sha256": "c4b406ff52de8874ccb991373f0c7c88e8e16382750de0e6ba3c6446343bc6bd",
+      "observation_count": 19,
+      "request_count": 195,
+      "file": "digimon-en-card-list-promo-leaf.json",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522901&cardcategory=Digimon&color=Red",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "acb2543e7510c921c8d55bc33dae90703044b17e4dfb07055af33219e27d9b37",
+      "actual_full_body_sha256": "cfb9f8065f25d4d4440e956c61dceea372a91138d50976ba4cf34262e58be5d8"
+    },
+    {
+      "adapter_version": "digimon-en@7",
+      "category": "unchanged",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "monitoring/digimon-en-card-list-related-qa-leaf.json.gz",
+      "baseline_full_body_sha256": "329d06ea5e9d7eb5f96bc61c65138f97e82e66a8468653624f6317c2dcd2e55b",
+      "expected_observations_sha256": "f4cde9d9d5b6ce5a393f0c2b1501eacc5b3f5b918e8173608e35b2322da48561",
+      "actual_observations_sha256": "f4cde9d9d5b6ce5a393f0c2b1501eacc5b3f5b918e8173608e35b2322da48561",
+      "observation_count": 5,
+      "request_count": 185,
+      "file": "digimon-en-card-list-related-qa-leaf.json",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522035&cardcategory=Digimon&color=Black",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "397bf7f67db4d6a82e9057475f6e9371f72b6fa1b0491af34975739322609c8d",
+      "actual_full_body_sha256": "329d06ea5e9d7eb5f96bc61c65138f97e82e66a8468653624f6317c2dcd2e55b"
+    },
+    {
+      "adapter_version": "digimon-en@7",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "digimon-en-restructured-card-search.json",
+      "baseline_full_body_sha256": "8864fca763faa23cbac064a6269d5a0d2d93af882e4e3591fbe652977ba264bf",
+      "expected_observations_sha256": "b6987bdbf7559522ecd0156829448c263d9f0adb63892c5ffea44102318fe744",
+      "actual_observations_sha256": "b6987bdbf7559522ecd0156829448c263d9f0adb63892c5ffea44102318fe744",
+      "observation_count": 1,
+      "request_count": 3,
+      "file": "digimon-en-discovery.json",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size"
+      ],
+      "expected_full_body_sha256": "8864fca763faa23cbac064a6269d5a0d2d93af882e4e3591fbe652977ba264bf",
+      "actual_full_body_sha256": "d6e1b37e930a844cf145a1c5cc0775f8b827393dae1edcc9df2fb36301164b00"
+    },
+    {
+      "file": "digimon-en-policy.json",
+      "source_url": "https://world.digimoncard.com/rule/restriction_card/",
+      "status": "skipped",
+      "category": "out_of_scope",
+      "actionable": false,
+      "reason": "ADR 0014 eligibility capture; raw evidence remains preserved."
+    },
+    {
+      "adapter_version": "digimon-en@7",
+      "category": "unchanged",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "monitoring/digimon-en-product-gift-box.json.gz",
+      "baseline_full_body_sha256": "03fd2d10500fd2ed4b6db57c7f159cefe328b89cfd68f6e78ec032ccb552ba06",
+      "expected_observations_sha256": "d1bbeffd8e5c42f3dd7f13eb4ce0f54c6f1b461bff91f9a79d6d703fe9ad1f8a",
+      "actual_observations_sha256": "d1bbeffd8e5c42f3dd7f13eb4ce0f54c6f1b461bff91f9a79d6d703fe9ad1f8a",
+      "observation_count": 1,
+      "request_count": 295,
+      "file": "digimon-en-product-gift-box.json",
+      "source_url": "https://world.digimoncard.com/products/goods/gift_box.php",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "003dbab28a09f4f343fc1309a30487b45cf7f57c658b2e7c7b3f13d8bc768053",
+      "actual_full_body_sha256": "03fd2d10500fd2ed4b6db57c7f159cefe328b89cfd68f6e78ec032ccb552ba06"
+    },
+    {
+      "adapter_version": "digimon-en@7",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "digimon-en-product-starter-deck.json",
+      "baseline_full_body_sha256": "31aff5ddb2c7b02b9c355965af1b0281082f928dc7dfdd2bb045a601c9b37905",
+      "expected_observations_sha256": "40a1309d9ca3caf8a259f6e77221002b1f66ea0287c247dd0f2ca6b86dfbc2ad",
+      "actual_observations_sha256": "40a1309d9ca3caf8a259f6e77221002b1f66ea0287c247dd0f2ca6b86dfbc2ad",
+      "observation_count": 1,
+      "request_count": 62,
+      "file": "digimon-en-product-starter-deck.json",
+      "source_url": "https://world.digimoncard.com/products/deck/st-24/",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "31aff5ddb2c7b02b9c355965af1b0281082f928dc7dfdd2bb045a601c9b37905",
+      "actual_full_body_sha256": "9515edf58fff9802c5f8ffae6fbe56683032a7946271063a93a6490b29919f9b"
+    },
+    {
+      "adapter_version": "digimon-en@7",
+      "category": "unchanged",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "monitoring/digimon-en-product-theme-booster.json.gz",
+      "baseline_full_body_sha256": "a40bf1a568b734aace146dea1ae5986aeb562aae85493b0d257ca3d40d7a0a98",
+      "expected_observations_sha256": "685a518217abe8a3789e91179d78252af5a88f55188944b8d4b582897e7210ab",
+      "actual_observations_sha256": "685a518217abe8a3789e91179d78252af5a88f55188944b8d4b582897e7210ab",
+      "observation_count": 1,
+      "request_count": 292,
+      "file": "digimon-en-product-theme-booster.json",
+      "source_url": "https://world.digimoncard.com/products/pack/ex-01.php",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "33722dc59e9aca9073d9f108613f0d9867f6fe9896382cff01f5baae4a419513",
+      "actual_full_body_sha256": "a40bf1a568b734aace146dea1ae5986aeb562aae85493b0d257ca3d40d7a0a98"
+    },
+    {
+      "adapter_version": "digimon-en@7",
+      "category": "unchanged",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "monitoring/digimon-en-restructured-card-search.json.gz",
+      "baseline_full_body_sha256": "d6e1b37e930a844cf145a1c5cc0775f8b827393dae1edcc9df2fb36301164b00",
+      "expected_observations_sha256": "375d9d95c869f5702fbed0e5a7314580df046dace361cac0b48295023cbd7c28",
+      "actual_observations_sha256": "375d9d95c869f5702fbed0e5a7314580df046dace361cac0b48295023cbd7c28",
+      "observation_count": 1,
+      "request_count": 172,
+      "file": "digimon-en-restructured-card-search.json",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "8864fca763faa23cbac064a6269d5a0d2d93af882e4e3591fbe652977ba264bf",
+      "actual_full_body_sha256": "d6e1b37e930a844cf145a1c5cc0775f8b827393dae1edcc9df2fb36301164b00"
+    },
+    {
+      "adapter_version": "digimon-en@7",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "digimon-en-rules-hub.json",
+      "baseline_full_body_sha256": "d200327fe189b867a14cff2bb3cfcc0bf26e04895421dcd39e18d4413f97e1db",
+      "expected_observations_sha256": "ee92ce702a25ee64aebbeda4aa260567c1a398a445d4a804b54808d9a9522f48",
+      "actual_observations_sha256": "ee92ce702a25ee64aebbeda4aa260567c1a398a445d4a804b54808d9a9522f48",
+      "observation_count": 1,
+      "request_count": 0,
+      "file": "digimon-en-rules-hub.json",
+      "source_url": "https://world.digimoncard.com/rule/",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "d200327fe189b867a14cff2bb3cfcc0bf26e04895421dcd39e18d4413f97e1db",
+      "actual_full_body_sha256": "7751106d0803cf7fc154950eb0aac4f9104d5c545ca9e62d04a879cf97d28f11"
+    },
+    {
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "fusion-world-en-card-detail-battle.json",
+      "baseline_full_body_sha256": "bb9f3d565ea9939cea9c6e9270581e92102fe44aaa5d945a663555996fa92c06",
+      "expected_observations_sha256": "b97edaaa210746cc16bf77320e9b29d761bbc857820294c816570f5246c5d003",
+      "actual_observations_sha256": "b97edaaa210746cc16bf77320e9b29d761bbc857820294c816570f5246c5d003",
+      "observation_count": 1,
+      "request_count": 2,
+      "file": "fusion-world-en-card-detail-battle.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=ST01-002",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "bb9f3d565ea9939cea9c6e9270581e92102fe44aaa5d945a663555996fa92c06",
+      "actual_full_body_sha256": "4314ebd9f89893bb0af949923838cd22e7785adaef54216e8deb14849091d0ed"
+    },
+    {
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "fusion-world-en-card-detail-energy-marker-p1.json",
+      "baseline_full_body_sha256": "34b60738ba29fe2cbae7c8c706249d7b1ecc3eea8fee6c49b635e4fefd272f5e",
+      "expected_observations_sha256": "bfc9e0dfbed04dec33a15932c9b6bfe18332f36af3b67ac56bfe8e4d31b10489",
+      "actual_observations_sha256": "bfc9e0dfbed04dec33a15932c9b6bfe18332f36af3b67ac56bfe8e4d31b10489",
+      "observation_count": 1,
+      "request_count": 2,
+      "file": "fusion-world-en-card-detail-energy-marker-p1.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=E-148&p=_p1",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "34b60738ba29fe2cbae7c8c706249d7b1ecc3eea8fee6c49b635e4fefd272f5e",
+      "actual_full_body_sha256": "be8590f3b59566f18b0de0b9f057761677c0d10523a27511ceebc3dc6530df7e"
+    },
+    {
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "fusion-world-en-card-detail-energy-marker.json",
+      "baseline_full_body_sha256": "8c168a6c66d3a7a1e8cb054d73d33079d9f92a6f65f1b2cebaa8be0944b2b791",
+      "expected_observations_sha256": "7cb643365993fa453a2fd5443b791b2fe2f0a36bf0b2c89f161ca419989014fc",
+      "actual_observations_sha256": "7cb643365993fa453a2fd5443b791b2fe2f0a36bf0b2c89f161ca419989014fc",
+      "observation_count": 1,
+      "request_count": 2,
+      "file": "fusion-world-en-card-detail-energy-marker.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=E-148",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "8c168a6c66d3a7a1e8cb054d73d33079d9f92a6f65f1b2cebaa8be0944b2b791",
+      "actual_full_body_sha256": "34000f35ca03939833fbd3ba7f36ccc19fccc59cca82c26bc2a48a9352773c01"
+    },
+    {
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "fusion-world-en-card-detail-errata-leader-p1.json",
+      "baseline_full_body_sha256": "2f441fc66a10e81759570f466929ff5a8a709a98a8765c7b4129ff45e28b81ac",
+      "expected_observations_sha256": "e64dcec782d0301111c5c94f9b318b14f80b2a7dc2573d968939c7134843cbee",
+      "actual_observations_sha256": "e64dcec782d0301111c5c94f9b318b14f80b2a7dc2573d968939c7134843cbee",
+      "observation_count": 1,
+      "request_count": 3,
+      "file": "fusion-world-en-card-detail-errata-leader-p1.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FS10-01&p=_p1",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "2f441fc66a10e81759570f466929ff5a8a709a98a8765c7b4129ff45e28b81ac",
+      "actual_full_body_sha256": "d455125b1809b8b0c8ddc7923bef86b12f3a499f0b6569a8c645181ab41122b6"
+    },
+    {
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "fusion-world-en-card-detail-errata-leader.json",
+      "baseline_full_body_sha256": "ded74a8aeccf1369248b17148b63868f61c6adcb0e6a8f05e9972348fe052641",
+      "expected_observations_sha256": "b837b296e3e2609cc7e8b45d2b86b166dc7afc4249dcf28407d28e6ddfa19aad",
+      "actual_observations_sha256": "b837b296e3e2609cc7e8b45d2b86b166dc7afc4249dcf28407d28e6ddfa19aad",
+      "observation_count": 1,
+      "request_count": 3,
+      "file": "fusion-world-en-card-detail-errata-leader.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FS10-01",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "ded74a8aeccf1369248b17148b63868f61c6adcb0e6a8f05e9972348fe052641",
+      "actual_full_body_sha256": "02e12a673f00d32b0ee0a3df5b885bd8d524bac94b4873e03bbe5690544dd2b7"
+    },
+    {
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "fusion-world-en-card-detail-errata-skills.json",
+      "baseline_full_body_sha256": "5cadc76613d228eedced2ee0ceef649681bc1b1a904f4aded0bd4a8f8fbaac74",
+      "expected_observations_sha256": "f9630baabf0dd91786d765b9ed98a7d4fff305c212ee775f92b19189cf780a81",
+      "actual_observations_sha256": "f9630baabf0dd91786d765b9ed98a7d4fff305c212ee775f92b19189cf780a81",
+      "observation_count": 1,
+      "request_count": 2,
+      "file": "fusion-world-en-card-detail-errata-skills.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=SB01-039",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "5cadc76613d228eedced2ee0ceef649681bc1b1a904f4aded0bd4a8f8fbaac74",
+      "actual_full_body_sha256": "65a8ce924924462d426d64768629d4ad66fcb27256aa46b6dc971f6ecbea9117"
+    },
+    {
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "fusion-world-en-card-detail-errata-traits.json",
+      "baseline_full_body_sha256": "6916546f329f04728f2f5d82287bb90a7a1dad2040688d58681bc6429ec0a8a2",
+      "expected_observations_sha256": "24b00cd72b2e628223a4c3de0a2e77e8ea3dcbfa96e196ef56db679a17ba1e9e",
+      "actual_observations_sha256": "24b00cd72b2e628223a4c3de0a2e77e8ea3dcbfa96e196ef56db679a17ba1e9e",
+      "observation_count": 1,
+      "request_count": 1,
+      "file": "fusion-world-en-card-detail-errata-traits.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FP-088",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "6916546f329f04728f2f5d82287bb90a7a1dad2040688d58681bc6429ec0a8a2",
+      "actual_full_body_sha256": "bb63abcb98aba73579278c6f825a2087a03f9af3e458efd260133afe641c9a73"
+    },
+    {
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "fusion-world-en-card-detail-leader-p1.json",
+      "baseline_full_body_sha256": "ccf9c52bc27be1e4894540a1a6a044fa1d73cf4f6045fba8dd133c58db5ee57b",
+      "expected_observations_sha256": "71a13fbe7558ed4ac4564bc0938e964fa29c6f26c9c30bd112e0c1684cf23d48",
+      "actual_observations_sha256": "71a13fbe7558ed4ac4564bc0938e964fa29c6f26c9c30bd112e0c1684cf23d48",
+      "observation_count": 1,
+      "request_count": 3,
+      "file": "fusion-world-en-card-detail-leader-p1.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=ST01-001&p=_p1",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "ccf9c52bc27be1e4894540a1a6a044fa1d73cf4f6045fba8dd133c58db5ee57b",
+      "actual_full_body_sha256": "3a479e6071c5ec7faf2b3cdb979f0adfe629ca8e0494852472b2520c15ce86a2"
+    },
+    {
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "fusion-world-en-card-detail-leader.json",
+      "baseline_full_body_sha256": "ff84c6e23d0d0a38fce3ec280e5f90a85fb192495c3b5eb8e0800ffba0f93577",
+      "expected_observations_sha256": "ec5a913cf4ce888621adf6e97df1efff2dd5f2fa0cec9eded9e922ceee71b798",
+      "actual_observations_sha256": "ec5a913cf4ce888621adf6e97df1efff2dd5f2fa0cec9eded9e922ceee71b798",
+      "observation_count": 1,
+      "request_count": 3,
+      "file": "fusion-world-en-card-detail-leader.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=ST01-001",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "ff84c6e23d0d0a38fce3ec280e5f90a85fb192495c3b5eb8e0800ffba0f93577",
+      "actual_full_body_sha256": "2f29cd29443e64e13c845bea701bece121673f2e363d48cd6bd7f72d291eaef7"
+    },
+    {
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "fusion-world-en-card-detail-promo.json",
+      "baseline_full_body_sha256": "3c09a0f01875549e5139b304bc5e9da678923e341170d6e772916917f36c9413",
+      "expected_observations_sha256": "cde95e4c9a2475322e088f4de6db542cffb612e81780daec719834b019fbcee5",
+      "actual_observations_sha256": "cde95e4c9a2475322e088f4de6db542cffb612e81780daec719834b019fbcee5",
+      "observation_count": 1,
+      "request_count": 1,
+      "file": "fusion-world-en-card-detail-promo.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/detail.php?card_no=FP-001",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "3c09a0f01875549e5139b304bc5e9da678923e341170d6e772916917f36c9413",
+      "actual_full_body_sha256": "7afd500dfb387d39d0a97ebc79ee1404d3df4bcdaf955b904237af6d7c17be4e"
+    },
+    {
+      "file": "fusion-world-en-legality-history-news.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/news/01_399.html",
+      "status": "skipped",
+      "category": "out_of_scope",
+      "actionable": false,
+      "reason": "ADR 0014 eligibility capture; raw evidence remains preserved."
+    },
+    {
+      "file": "fusion-world-en-policy-detail.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/news/01_305.html",
+      "status": "skipped",
+      "category": "out_of_scope",
+      "actionable": false,
+      "reason": "ADR 0014 eligibility capture; raw evidence remains preserved."
+    },
+    {
+      "file": "fusion-world-en-policy-live.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/news/01_31.html",
+      "status": "skipped",
+      "category": "out_of_scope",
+      "actionable": false,
+      "reason": "ADR 0014 eligibility capture; raw evidence remains preserved."
+    },
+    {
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "monitoring/fusion-world-en-product-starter-deck.json.gz",
+      "baseline_full_body_sha256": "f3b2691f2ff2b75f455bf584c11cda23c482d76eb2606eba1b897317129c9a09",
+      "expected_observations_sha256": "f7a8b0e209a33a25231af1c66ec65040a63df795d0a21b52ed667d1fa9a6a388",
+      "actual_observations_sha256": "f7a8b0e209a33a25231af1c66ec65040a63df795d0a21b52ed667d1fa9a6a388",
+      "observation_count": 1,
+      "request_count": 21,
+      "file": "fusion-world-en-product-starter-deck.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/products/02_229.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "23f233c125d5647873c2a133421d9065c03da2573585590df8089ef9a6e43a92",
+      "actual_full_body_sha256": "647d623c63d859df9a11ea00003aba7d05910d1fb679c95c700d084ace646e50"
+    },
+    {
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "monitoring/fusion-world-en-product-story-booster.json.gz",
+      "baseline_full_body_sha256": "d798df45b8bc48844dec7f66ae9e698bcf2aba807f86eeb19f321866bc4aa258",
+      "expected_observations_sha256": "d78fec20ee32c9f01fca89b1bc0ee09dc0233fded738b9bae77f7ddfaf39bc48",
+      "actual_observations_sha256": "d78fec20ee32c9f01fca89b1bc0ee09dc0233fded738b9bae77f7ddfaf39bc48",
+      "observation_count": 1,
+      "request_count": 23,
+      "file": "fusion-world-en-product-story-booster.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/products/01_401.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "74edf1b5eee05c1b997d35a9296803d82a88e9930f56dd9138cb1b3cdb9c6278",
+      "actual_full_body_sha256": "645c1b0cbc0ce9752aade57c2bf9d8ebaa7b75fbe40d61f13f200d47f29532a4"
+    },
+    {
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "monitoring/fusion-world-en-product-winter-booster.json.gz",
+      "baseline_full_body_sha256": "077b20b10fe40360d1be124ed5c080c491315806dc1effe477aa074cecacf134",
+      "expected_observations_sha256": "1fef79abf21d7f1d571c29697d3678c60376e2b028b364f43724f59403893b12",
+      "actual_observations_sha256": "1fef79abf21d7f1d571c29697d3678c60376e2b028b364f43724f59403893b12",
+      "observation_count": 1,
+      "request_count": 22,
+      "file": "fusion-world-en-product-winter-booster.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/products/01_477.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "553820eccd491b2119be3b54c703e93c734c785e80e2e0c467dab4aca9801261",
+      "actual_full_body_sha256": "8013f02a48d14d07622d4238fac4522f297913998ea72125e56a1b54632083bd"
+    },
+    {
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "monitoring/fusion-world-en-products-hub.json.gz",
+      "baseline_full_body_sha256": "3d002472100d427ffd8506d1c968b56d2a59f4edaf3448fd5ae6d72c55773253",
+      "expected_observations_sha256": "abc0cb99ea9c74bcaa683026d29c167f931d8ba95939e957042d5da881376ce0",
+      "actual_observations_sha256": "86e5d8f673d3bf7d4be388498ab31b9f41b33b6685983a6eeb965c8993af7d42",
+      "observation_count": 18,
+      "request_count": 36,
+      "changed_paths": [
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.67.url",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.67.label",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.68.url",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.68.label",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.69.url",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.69.label",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.71.url",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.71.label",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.72.url",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.72.label",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.73.url",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.73.label",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.62",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.63",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.64",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.66",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.67",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.68",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.label_values.MSRP",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.1.value",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.15.path",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.15.value",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.16.path",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.17.path",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.17.value",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.19.path",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.20.path",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.20.value",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.21.path",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.21.value"
+      ],
+      "changes": [
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.67.url",
+          "expected": "https://www.dbs-cardgame.com/fw/en/products/01_477.html",
+          "actual": "https://www.dbs-cardgame.com/fw/en/products/01_479.html"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.67.label",
+          "expected": "BOOSTER PACK -REACH THE GOD- [FB12]\nRELEASE\nWinter, 2026\nMSRP\n4.99 USD",
+          "actual": "STARTER DECK THE PRINCE OF SAIYAN [FS14]\nRELEASE\nTBA\nMSRP\n15.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.68.url",
+          "expected": "https://www.dbs-cardgame.com/fw/en/products/01_479.html",
+          "actual": "https://www.dbs-cardgame.com/fw/en/products/01_478.html"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.68.label",
+          "expected": "STARTER DECK THE PRINCE OF SAIYAN [FS14]\nRELEASE\nTBA\nMSRP\n15.99 USD",
+          "actual": "STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]\nRELEASE\nTBA\nMSRP\n15.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.69.url",
+          "expected": "https://www.dbs-cardgame.com/fw/en/products/01_478.html",
+          "actual": "https://www.dbs-cardgame.com/fw/en/products/01_477.html"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.69.label",
+          "expected": "STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]\nRELEASE\nTBA\nMSRP\n15.99 USD",
+          "actual": "BOOSTER PACK -REACH THE GOD- [FB12]\nRELEASE\nWinter, 2026\nMSRP\n4.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.71.url",
+          "expected": "https://www.dbs-cardgame.com/fw/en/products/03_241.html",
+          "actual": "https://www.dbs-cardgame.com/fw/en/products/03_242.html"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.71.label",
+          "expected": "Premium Card Collection 03\nRELEASE\n.\nMSRP\n15.00 USD",
+          "actual": "OFFICIAL CARD SLEEVE Limited Edition 06 -Vegeta-\nRELEASE\n.\nMSRP\n15.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.72.url",
+          "expected": "https://www.dbs-cardgame.com/fw/en/products/03_240.html",
+          "actual": "https://www.dbs-cardgame.com/fw/en/products/03_241.html"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.72.label",
+          "expected": "OFFICIAL PLAYMAT & CARD SET Limited Edition 02\nRELEASE\n.\nMSRP\n43.00 USD",
+          "actual": "Premium Card Collection 03\nRELEASE\n.\nMSRP\n15.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.73.url",
+          "expected": "https://www.dbs-cardgame.com/fw/en/products/03_242.html",
+          "actual": "https://www.dbs-cardgame.com/fw/en/products/03_240.html"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.73.label",
+          "expected": "OFFICIAL CARD SLEEVE Limited Edition 06 -Vegeta-\nRELEASE\n.\nMSRP\n15.00 USD",
+          "actual": "OFFICIAL PLAYMAT & CARD SET Limited Edition 02\nRELEASE\n.\nMSRP\n43.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.62",
+          "expected": "BOOSTER PACK -REACH THE GOD- [FB12]\nRELEASE\nWinter, 2026\nMSRP\n4.99 USD",
+          "actual": "STARTER DECK THE PRINCE OF SAIYAN [FS14]\nRELEASE\nTBA\nMSRP\n15.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.63",
+          "expected": "STARTER DECK THE PRINCE OF SAIYAN [FS14]\nRELEASE\nTBA\nMSRP\n15.99 USD",
+          "actual": "STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]\nRELEASE\nTBA\nMSRP\n15.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.64",
+          "expected": "STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]\nRELEASE\nTBA\nMSRP\n15.99 USD",
+          "actual": "BOOSTER PACK -REACH THE GOD- [FB12]\nRELEASE\nWinter, 2026\nMSRP\n4.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.66",
+          "expected": "Premium Card Collection 03\nRELEASE\n.\nMSRP\n15.00 USD",
+          "actual": "OFFICIAL CARD SLEEVE Limited Edition 06 -Vegeta-\nRELEASE\n.\nMSRP\n15.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.67",
+          "expected": "OFFICIAL PLAYMAT & CARD SET Limited Edition 02\nRELEASE\n.\nMSRP\n43.00 USD",
+          "actual": "Premium Card Collection 03\nRELEASE\n.\nMSRP\n15.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.68",
+          "expected": "OFFICIAL CARD SLEEVE Limited Edition 06 -Vegeta-\nRELEASE\n.\nMSRP\n15.00 USD",
+          "actual": "OFFICIAL PLAYMAT & CARD SET Limited Edition 02\nRELEASE\n.\nMSRP\n43.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.label_values.MSRP",
+          "expected": "15.00 USD",
+          "actual": "43.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.1.value",
+          "expected": "15.00 USD",
+          "actual": "43.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.15.path",
+          "expected": "source_sidecar.raw.official_surfaces[0].document.label_values.BOOSTER PACK -REACH THE GOD- [FB12]",
+          "actual": "source_sidecar.raw.official_surfaces[0].document.label_values.STARTER DECK THE PRINCE OF SAIYAN [FS14]"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.15.value",
+          "expected": "RELEASE\nWinter, 2026\nMSRP\n4.99 USD",
+          "actual": "RELEASE\nTBA\nMSRP\n15.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.16.path",
+          "expected": "source_sidecar.raw.official_surfaces[0].document.label_values.STARTER DECK THE PRINCE OF SAIYAN [FS14]",
+          "actual": "source_sidecar.raw.official_surfaces[0].document.label_values.STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.17.path",
+          "expected": "source_sidecar.raw.official_surfaces[0].document.label_values.STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]",
+          "actual": "source_sidecar.raw.official_surfaces[0].document.label_values.BOOSTER PACK -REACH THE GOD- [FB12]"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.17.value",
+          "expected": "RELEASE\nTBA\nMSRP\n15.99 USD",
+          "actual": "RELEASE\nWinter, 2026\nMSRP\n4.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.19.path",
+          "expected": "source_sidecar.raw.official_surfaces[0].document.label_values.Premium Card Collection 03",
+          "actual": "source_sidecar.raw.official_surfaces[0].document.label_values.OFFICIAL CARD SLEEVE Limited Edition 06 -Vegeta-"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.20.path",
+          "expected": "source_sidecar.raw.official_surfaces[0].document.label_values.OFFICIAL PLAYMAT & CARD SET Limited Edition 02",
+          "actual": "source_sidecar.raw.official_surfaces[0].document.label_values.Premium Card Collection 03"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.20.value",
+          "expected": "RELEASE\n.\nMSRP\n43.00 USD",
+          "actual": "RELEASE\n.\nMSRP\n15.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.21.path",
+          "expected": "source_sidecar.raw.official_surfaces[0].document.label_values.OFFICIAL CARD SLEEVE Limited Edition 06 -Vegeta-",
+          "actual": "source_sidecar.raw.official_surfaces[0].document.label_values.OFFICIAL PLAYMAT & CARD SET Limited Edition 02"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.21.value",
+          "expected": "RELEASE\n.\nMSRP\n15.00 USD",
+          "actual": "RELEASE\n.\nMSRP\n43.00 USD"
+        }
+      ],
+      "file": "fusion-world-en-products-hub.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/products/",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "f9fdb5a2a514ebfc50066a19843dabec6e27a4b51515ba240d4ba200432808b7",
+      "actual_full_body_sha256": "dcc68711a7f4721786963ad1a9e0c7bbc67331e79c5d26e2c6eafee0fae7f3d2",
+      "cosmetic_equivalence_rule": "Fusion exact Product item permutation within the same publisher status section; every item byte retained."
+    },
+    {
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "monitoring/fusion-world-en-products-page2.json.gz",
+      "baseline_full_body_sha256": "560f63a6c67fcd1debe64861ac13a91769c3f6df13f4d788ad00efe9949413ef",
+      "expected_observations_sha256": "fc8fc93d5952c16fecec69787c64c23a0ee6b1d5003f8866258e1f8dffee0af0",
+      "actual_observations_sha256": "e012215161f032fda89b72a3c5954145b834146b0127990d5177855f19c1a124",
+      "observation_count": 18,
+      "request_count": 43,
+      "changed_paths": [
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.67.url",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.67.label",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.68.url",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.68.label",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.69.url",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.69.label",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.71.url",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.71.label",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.72.url",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.72.label",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.73.url",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.73.label",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.62",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.63",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.64",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.66",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.67",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.68",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.label_values.MSRP",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.1.value",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.15.path",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.15.value",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.16.path",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.17.path",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.17.value",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.19.path",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.20.path",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.20.value",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.21.path",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.21.value"
+      ],
+      "changes": [
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.67.url",
+          "expected": "https://www.dbs-cardgame.com/fw/en/products/01_477.html",
+          "actual": "https://www.dbs-cardgame.com/fw/en/products/01_479.html"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.67.label",
+          "expected": "BOOSTER PACK -REACH THE GOD- [FB12]\nRELEASE\nWinter, 2026\nMSRP\n4.99 USD",
+          "actual": "STARTER DECK THE PRINCE OF SAIYAN [FS14]\nRELEASE\nTBA\nMSRP\n15.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.68.url",
+          "expected": "https://www.dbs-cardgame.com/fw/en/products/01_479.html",
+          "actual": "https://www.dbs-cardgame.com/fw/en/products/01_478.html"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.68.label",
+          "expected": "STARTER DECK THE PRINCE OF SAIYAN [FS14]\nRELEASE\nTBA\nMSRP\n15.99 USD",
+          "actual": "STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]\nRELEASE\nTBA\nMSRP\n15.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.69.url",
+          "expected": "https://www.dbs-cardgame.com/fw/en/products/01_478.html",
+          "actual": "https://www.dbs-cardgame.com/fw/en/products/01_477.html"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.69.label",
+          "expected": "STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]\nRELEASE\nTBA\nMSRP\n15.99 USD",
+          "actual": "BOOSTER PACK -REACH THE GOD- [FB12]\nRELEASE\nWinter, 2026\nMSRP\n4.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.71.url",
+          "expected": "https://www.dbs-cardgame.com/fw/en/products/03_241.html",
+          "actual": "https://www.dbs-cardgame.com/fw/en/products/03_242.html"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.71.label",
+          "expected": "Premium Card Collection 03\nRELEASE\n.\nMSRP\n15.00 USD",
+          "actual": "OFFICIAL CARD SLEEVE Limited Edition 06 -Vegeta-\nRELEASE\n.\nMSRP\n15.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.72.url",
+          "expected": "https://www.dbs-cardgame.com/fw/en/products/03_240.html",
+          "actual": "https://www.dbs-cardgame.com/fw/en/products/03_241.html"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.72.label",
+          "expected": "OFFICIAL PLAYMAT & CARD SET Limited Edition 02\nRELEASE\n.\nMSRP\n43.00 USD",
+          "actual": "Premium Card Collection 03\nRELEASE\n.\nMSRP\n15.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.73.url",
+          "expected": "https://www.dbs-cardgame.com/fw/en/products/03_242.html",
+          "actual": "https://www.dbs-cardgame.com/fw/en/products/03_240.html"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.73.label",
+          "expected": "OFFICIAL CARD SLEEVE Limited Edition 06 -Vegeta-\nRELEASE\n.\nMSRP\n15.00 USD",
+          "actual": "OFFICIAL PLAYMAT & CARD SET Limited Edition 02\nRELEASE\n.\nMSRP\n43.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.62",
+          "expected": "BOOSTER PACK -REACH THE GOD- [FB12]\nRELEASE\nWinter, 2026\nMSRP\n4.99 USD",
+          "actual": "STARTER DECK THE PRINCE OF SAIYAN [FS14]\nRELEASE\nTBA\nMSRP\n15.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.63",
+          "expected": "STARTER DECK THE PRINCE OF SAIYAN [FS14]\nRELEASE\nTBA\nMSRP\n15.99 USD",
+          "actual": "STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]\nRELEASE\nTBA\nMSRP\n15.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.64",
+          "expected": "STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]\nRELEASE\nTBA\nMSRP\n15.99 USD",
+          "actual": "BOOSTER PACK -REACH THE GOD- [FB12]\nRELEASE\nWinter, 2026\nMSRP\n4.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.66",
+          "expected": "Premium Card Collection 03\nRELEASE\n.\nMSRP\n15.00 USD",
+          "actual": "OFFICIAL CARD SLEEVE Limited Edition 06 -Vegeta-\nRELEASE\n.\nMSRP\n15.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.67",
+          "expected": "OFFICIAL PLAYMAT & CARD SET Limited Edition 02\nRELEASE\n.\nMSRP\n43.00 USD",
+          "actual": "Premium Card Collection 03\nRELEASE\n.\nMSRP\n15.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.68",
+          "expected": "OFFICIAL CARD SLEEVE Limited Edition 06 -Vegeta-\nRELEASE\n.\nMSRP\n15.00 USD",
+          "actual": "OFFICIAL PLAYMAT & CARD SET Limited Edition 02\nRELEASE\n.\nMSRP\n43.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.label_values.MSRP",
+          "expected": "15.00 USD",
+          "actual": "43.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.1.value",
+          "expected": "15.00 USD",
+          "actual": "43.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.15.path",
+          "expected": "source_sidecar.raw.official_surfaces[0].document.label_values.BOOSTER PACK -REACH THE GOD- [FB12]",
+          "actual": "source_sidecar.raw.official_surfaces[0].document.label_values.STARTER DECK THE PRINCE OF SAIYAN [FS14]"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.15.value",
+          "expected": "RELEASE\nWinter, 2026\nMSRP\n4.99 USD",
+          "actual": "RELEASE\nTBA\nMSRP\n15.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.16.path",
+          "expected": "source_sidecar.raw.official_surfaces[0].document.label_values.STARTER DECK THE PRINCE OF SAIYAN [FS14]",
+          "actual": "source_sidecar.raw.official_surfaces[0].document.label_values.STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.17.path",
+          "expected": "source_sidecar.raw.official_surfaces[0].document.label_values.STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]",
+          "actual": "source_sidecar.raw.official_surfaces[0].document.label_values.BOOSTER PACK -REACH THE GOD- [FB12]"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.17.value",
+          "expected": "RELEASE\nTBA\nMSRP\n15.99 USD",
+          "actual": "RELEASE\nWinter, 2026\nMSRP\n4.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.19.path",
+          "expected": "source_sidecar.raw.official_surfaces[0].document.label_values.Premium Card Collection 03",
+          "actual": "source_sidecar.raw.official_surfaces[0].document.label_values.OFFICIAL CARD SLEEVE Limited Edition 06 -Vegeta-"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.20.path",
+          "expected": "source_sidecar.raw.official_surfaces[0].document.label_values.OFFICIAL PLAYMAT & CARD SET Limited Edition 02",
+          "actual": "source_sidecar.raw.official_surfaces[0].document.label_values.Premium Card Collection 03"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.20.value",
+          "expected": "RELEASE\n.\nMSRP\n43.00 USD",
+          "actual": "RELEASE\n.\nMSRP\n15.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.21.path",
+          "expected": "source_sidecar.raw.official_surfaces[0].document.label_values.OFFICIAL CARD SLEEVE Limited Edition 06 -Vegeta-",
+          "actual": "source_sidecar.raw.official_surfaces[0].document.label_values.OFFICIAL PLAYMAT & CARD SET Limited Edition 02"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.21.value",
+          "expected": "RELEASE\n.\nMSRP\n15.00 USD",
+          "actual": "RELEASE\n.\nMSRP\n43.00 USD"
+        }
+      ],
+      "file": "fusion-world-en-products-page2.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/products/?page=2",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "812a278faf12f2d2531d8d42f35cfa457534d88b77df1dc1aec544d20e644a16",
+      "actual_full_body_sha256": "289eec400212737ec69fd5f970d1fc395c46378697c7e7b08621f0d729b7480b",
+      "cosmetic_equivalence_rule": "Fusion exact Product item permutation within the same publisher status section; every item byte retained."
+    },
+    {
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "monitoring/fusion-world-en-products-starter-tag.json.gz",
+      "baseline_full_body_sha256": "fb6ae7cfb0372676c4c5bf6acd8258f57ec019357a887b5531255a955ca826b6",
+      "expected_observations_sha256": "6fb7255c4c90030a2c1d432d766a0f991d7858312f830866e3b578de0b09f6d5",
+      "actual_observations_sha256": "4d0e5c953d6bea0c0fdf6c2a2c9e1875aadca042fe06901427e2ff819cf3b587",
+      "observation_count": 18,
+      "request_count": 35,
+      "changed_paths": [
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.65.url",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.65.label",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.66.url",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.66.label",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.67.url",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.67.label",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.69.url",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.69.label",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.70.url",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.70.label",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.71.url",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.71.label",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.59",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.60",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.61",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.63",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.64",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.65",
+        "$.observations.0.source_sidecar.raw.official_surfaces.0.document.label_values.MSRP",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.1.value",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.15.path",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.15.value",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.16.path",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.17.path",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.17.value",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.19.path",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.20.path",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.20.value",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.21.path",
+        "$.observations.0.source_sidecar.unmapped_optional_fields.21.value"
+      ],
+      "changes": [
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.65.url",
+          "expected": "https://www.dbs-cardgame.com/fw/en/products/01_477.html",
+          "actual": "https://www.dbs-cardgame.com/fw/en/products/01_479.html"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.65.label",
+          "expected": "BOOSTER PACK -REACH THE GOD- [FB12]\nRELEASE\nWinter, 2026\nMSRP\n4.99 USD",
+          "actual": "STARTER DECK THE PRINCE OF SAIYAN [FS14]\nRELEASE\nTBA\nMSRP\n15.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.66.url",
+          "expected": "https://www.dbs-cardgame.com/fw/en/products/01_479.html",
+          "actual": "https://www.dbs-cardgame.com/fw/en/products/01_478.html"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.66.label",
+          "expected": "STARTER DECK THE PRINCE OF SAIYAN [FS14]\nRELEASE\nTBA\nMSRP\n15.99 USD",
+          "actual": "STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]\nRELEASE\nTBA\nMSRP\n15.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.67.url",
+          "expected": "https://www.dbs-cardgame.com/fw/en/products/01_478.html",
+          "actual": "https://www.dbs-cardgame.com/fw/en/products/01_477.html"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.67.label",
+          "expected": "STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]\nRELEASE\nTBA\nMSRP\n15.99 USD",
+          "actual": "BOOSTER PACK -REACH THE GOD- [FB12]\nRELEASE\nWinter, 2026\nMSRP\n4.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.69.url",
+          "expected": "https://www.dbs-cardgame.com/fw/en/products/03_241.html",
+          "actual": "https://www.dbs-cardgame.com/fw/en/products/03_242.html"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.69.label",
+          "expected": "Premium Card Collection 03\nRELEASE\n.\nMSRP\n15.00 USD",
+          "actual": "OFFICIAL CARD SLEEVE Limited Edition 06 -Vegeta-\nRELEASE\n.\nMSRP\n15.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.70.url",
+          "expected": "https://www.dbs-cardgame.com/fw/en/products/03_240.html",
+          "actual": "https://www.dbs-cardgame.com/fw/en/products/03_241.html"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.70.label",
+          "expected": "OFFICIAL PLAYMAT & CARD SET Limited Edition 02\nRELEASE\n.\nMSRP\n43.00 USD",
+          "actual": "Premium Card Collection 03\nRELEASE\n.\nMSRP\n15.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.71.url",
+          "expected": "https://www.dbs-cardgame.com/fw/en/products/03_242.html",
+          "actual": "https://www.dbs-cardgame.com/fw/en/products/03_240.html"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_links.71.label",
+          "expected": "OFFICIAL CARD SLEEVE Limited Edition 06 -Vegeta-\nRELEASE\n.\nMSRP\n15.00 USD",
+          "actual": "OFFICIAL PLAYMAT & CARD SET Limited Edition 02\nRELEASE\n.\nMSRP\n43.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.59",
+          "expected": "BOOSTER PACK -REACH THE GOD- [FB12]\nRELEASE\nWinter, 2026\nMSRP\n4.99 USD",
+          "actual": "STARTER DECK THE PRINCE OF SAIYAN [FS14]\nRELEASE\nTBA\nMSRP\n15.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.60",
+          "expected": "STARTER DECK THE PRINCE OF SAIYAN [FS14]\nRELEASE\nTBA\nMSRP\n15.99 USD",
+          "actual": "STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]\nRELEASE\nTBA\nMSRP\n15.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.61",
+          "expected": "STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]\nRELEASE\nTBA\nMSRP\n15.99 USD",
+          "actual": "BOOSTER PACK -REACH THE GOD- [FB12]\nRELEASE\nWinter, 2026\nMSRP\n4.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.63",
+          "expected": "Premium Card Collection 03\nRELEASE\n.\nMSRP\n15.00 USD",
+          "actual": "OFFICIAL CARD SLEEVE Limited Edition 06 -Vegeta-\nRELEASE\n.\nMSRP\n15.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.64",
+          "expected": "OFFICIAL PLAYMAT & CARD SET Limited Edition 02\nRELEASE\n.\nMSRP\n43.00 USD",
+          "actual": "Premium Card Collection 03\nRELEASE\n.\nMSRP\n15.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.publication_entries.65",
+          "expected": "OFFICIAL CARD SLEEVE Limited Edition 06 -Vegeta-\nRELEASE\n.\nMSRP\n15.00 USD",
+          "actual": "OFFICIAL PLAYMAT & CARD SET Limited Edition 02\nRELEASE\n.\nMSRP\n43.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.raw.official_surfaces.0.document.label_values.MSRP",
+          "expected": "15.00 USD",
+          "actual": "43.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.1.value",
+          "expected": "15.00 USD",
+          "actual": "43.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.15.path",
+          "expected": "source_sidecar.raw.official_surfaces[0].document.label_values.BOOSTER PACK -REACH THE GOD- [FB12]",
+          "actual": "source_sidecar.raw.official_surfaces[0].document.label_values.STARTER DECK THE PRINCE OF SAIYAN [FS14]"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.15.value",
+          "expected": "RELEASE\nWinter, 2026\nMSRP\n4.99 USD",
+          "actual": "RELEASE\nTBA\nMSRP\n15.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.16.path",
+          "expected": "source_sidecar.raw.official_surfaces[0].document.label_values.STARTER DECK THE PRINCE OF SAIYAN [FS14]",
+          "actual": "source_sidecar.raw.official_surfaces[0].document.label_values.STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.17.path",
+          "expected": "source_sidecar.raw.official_surfaces[0].document.label_values.STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]",
+          "actual": "source_sidecar.raw.official_surfaces[0].document.label_values.BOOSTER PACK -REACH THE GOD- [FB12]"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.17.value",
+          "expected": "RELEASE\nTBA\nMSRP\n15.99 USD",
+          "actual": "RELEASE\nWinter, 2026\nMSRP\n4.99 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.19.path",
+          "expected": "source_sidecar.raw.official_surfaces[0].document.label_values.Premium Card Collection 03",
+          "actual": "source_sidecar.raw.official_surfaces[0].document.label_values.OFFICIAL CARD SLEEVE Limited Edition 06 -Vegeta-"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.20.path",
+          "expected": "source_sidecar.raw.official_surfaces[0].document.label_values.OFFICIAL PLAYMAT & CARD SET Limited Edition 02",
+          "actual": "source_sidecar.raw.official_surfaces[0].document.label_values.Premium Card Collection 03"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.20.value",
+          "expected": "RELEASE\n.\nMSRP\n43.00 USD",
+          "actual": "RELEASE\n.\nMSRP\n15.00 USD"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.21.path",
+          "expected": "source_sidecar.raw.official_surfaces[0].document.label_values.OFFICIAL CARD SLEEVE Limited Edition 06 -Vegeta-",
+          "actual": "source_sidecar.raw.official_surfaces[0].document.label_values.OFFICIAL PLAYMAT & CARD SET Limited Edition 02"
+        },
+        {
+          "path": "$.observations.0.source_sidecar.unmapped_optional_fields.21.value",
+          "expected": "RELEASE\n.\nMSRP\n15.00 USD",
+          "actual": "RELEASE\n.\nMSRP\n43.00 USD"
+        }
+      ],
+      "file": "fusion-world-en-products-starter-tag.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/products/?tags=StarterDecks&page=1",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "3441883f7fb4b7f5688381e2aadd49dcb7554857a9fc9cd7478fae099db824ae",
+      "actual_full_body_sha256": "fa5d3662e5a5e91d6d0e5afab62b139937f3dea164161e14ee16b5e261aa2818",
+      "cosmetic_equivalence_rule": "Fusion exact Product item permutation within the same publisher status section; every item byte retained."
+    },
+    {
+      "adapter_version": "fusion-world-en@9",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "monitoring/fusion-world-en-restructured-card-search.json.gz",
+      "baseline_full_body_sha256": "7d200b1e47ce87078ec9216eeb754dcc4e7a72a94988ba8266146e143a77c98b",
+      "expected_observations_sha256": "38deda0d0c8b49a79364bbf9c23a53c2a5d367edd04378b310e093828318a6d6",
+      "actual_observations_sha256": "38deda0d0c8b49a79364bbf9c23a53c2a5d367edd04378b310e093828318a6d6",
+      "observation_count": 172,
+      "request_count": 199,
+      "file": "fusion-world-en-restructured-card-search.json",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583301",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "fa1e0da1737cb46c3eedd5ae1f1a1d0ed47deefd987de48f9f724dfaa2db7cea",
+      "actual_full_body_sha256": "df93a72d6b0cb914d345477e97263b3bb47f56dec21a2cc88dee787e6d8e9610"
+    },
+    {
+      "adapter_version": "gundam-en-asia@7",
+      "category": "unchanged",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "monitoring/gundam-en-asia-card-detail-dash-live.json.gz",
+      "baseline_full_body_sha256": "ee953c992615c8667ed1c9a3b5e95c32f8569d34e0663a8b2c0a460155689f69",
+      "expected_observations_sha256": "04aa1b1dbbe3beb083d3ee178fb351b9fe45d1301ee6d0419a65b248c502881c",
+      "actual_observations_sha256": "04aa1b1dbbe3beb083d3ee178fb351b9fe45d1301ee6d0419a65b248c502881c",
+      "observation_count": 1,
+      "request_count": 3,
+      "file": "gundam-en-asia-card-detail-dash-live.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/cards/detail.php?detailSearch=GD02-016",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "72c8313a09b72d27fe6c71997f36f11da9cb20203c9e834f250b955768a3e126",
+      "actual_full_body_sha256": "ee953c992615c8667ed1c9a3b5e95c32f8569d34e0663a8b2c0a460155689f69"
+    },
+    {
+      "adapter_version": "gundam-en-asia@7",
+      "category": "unchanged",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "monitoring/gundam-en-asia-card-list-complete-live.json.gz",
+      "baseline_full_body_sha256": "09f2b911b7ea629c63fad5aca63e10ce465c7215b9d700a09fdbc438ca6e7e13",
+      "expected_observations_sha256": "da0e6bd7eea37101ee4ef6d0321c07e984976848fb3755378d34c849277b4cb9",
+      "actual_observations_sha256": "da0e6bd7eea37101ee4ef6d0321c07e984976848fb3755378d34c849277b4cb9",
+      "observation_count": 1,
+      "request_count": 375,
+      "file": "gundam-en-asia-card-list-complete-live.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/cards/index.php?package=619102",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "3b678f7fb36732fdcbed089b6d365bfe21a6f630047dbc2f31338747cbb32b0e",
+      "actual_full_body_sha256": "09f2b911b7ea629c63fad5aca63e10ce465c7215b9d700a09fdbc438ca6e7e13"
+    },
+    {
+      "adapter_version": "gundam-en-asia@7",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "gundam-en-asia-restructured-card-search.json",
+      "baseline_full_body_sha256": "3cc0d146b170502bee3ec7e62a9fdaf78ea73b8088f74d138748476c81473ffa",
+      "expected_observations_sha256": "e0aea5bffe7388160cf0ac1aef12e284da58d6c48c547c3fc52bd5d886080a0a",
+      "actual_observations_sha256": "e0aea5bffe7388160cf0ac1aef12e284da58d6c48c547c3fc52bd5d886080a0a",
+      "observation_count": 1,
+      "request_count": 3,
+      "file": "gundam-en-asia-discovery.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/cards/index.php",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size"
+      ],
+      "expected_full_body_sha256": "3cc0d146b170502bee3ec7e62a9fdaf78ea73b8088f74d138748476c81473ffa",
+      "actual_full_body_sha256": "7606bbb648ebb3dd369dbba31c448e07f4e8d12c951b46ed31bf870834a02a5f"
+    },
+    {
+      "adapter_version": "gundam-en-asia@7",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "monitoring/gundam-en-asia-errata-listing.json.gz",
+      "baseline_full_body_sha256": "9ccfff805aa30b9914d6f5ee3325cf3597e25c964f7fb43b2f99777e9c5d03d0",
+      "expected_observations_sha256": "d2ecce45e19d7032b408fb51f59d8c74090a0ffa2e544653dd101ddc403e01b4",
+      "actual_observations_sha256": "1df956bf224a3e56892dd28a36e543af7e1e20cb45d8119bae040ea187705471",
+      "observation_count": 1,
+      "request_count": 8,
+      "changed_paths": [
+        "$.requests.2.url",
+        "$.requests.3.url",
+        "$.requests.4.url"
+      ],
+      "changes": [
+        {
+          "path": "$.requests.2.url",
+          "expected": "https://www.gundam-gcg.com/gcg/bccard/asia-en/news/2026/06/01/8v5CTEcRpLBTfoj1/thumb_03.webp?_=39381c72b7a1d42b1887515dedd4d447",
+          "actual": "https://www.gundam-gcg.com/gcg/bccard/asia-en/news/2026/06/01/8v5CTEcRpLBTfoj1/thumb_03.webp?_=205a5d9e5c39ba40de253ab144c5be1d"
+        },
+        {
+          "path": "$.requests.3.url",
+          "expected": "https://www.gundam-gcg.com/gcg/bccard/asia-en/news/2026/06/01/oMeHYhGI0rtGxXGo/thumb_01.webp?_=39381c72b7a1d42b1887515dedd4d447",
+          "actual": "https://www.gundam-gcg.com/gcg/bccard/asia-en/news/2026/06/01/oMeHYhGI0rtGxXGo/thumb_01.webp?_=205a5d9e5c39ba40de253ab144c5be1d"
+        },
+        {
+          "path": "$.requests.4.url",
+          "expected": "https://www.gundam-gcg.com/gcg/bccard/asia-en/news/2026/06/01/Ym3S2PegVz3yiaR7/thumb_02.webp?_=39381c72b7a1d42b1887515dedd4d447",
+          "actual": "https://www.gundam-gcg.com/gcg/bccard/asia-en/news/2026/06/01/Ym3S2PegVz3yiaR7/thumb_02.webp?_=205a5d9e5c39ba40de253ab144c5be1d"
+        }
+      ],
+      "file": "gundam-en-asia-errata-listing.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/news/?subcategory=news&tag=all&page=1",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "5ae78bf07eec81af4487afe6309fc045c90c96f365b763ad2f19473a20dac30d",
+      "actual_full_body_sha256": "576ed70bcdc51706fdfd952ae88fb44aea8a92c343efe5d52751a78e43441363",
+      "cosmetic_equivalence_rule": "Version token on three reviewed decorative collaboration thumbnails; Printing Image URLs remain exact."
+    },
+    {
+      "adapter_version": "gundam-en-asia@7",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "gundam-en-asia-news-hub.json",
+      "baseline_full_body_sha256": "6bfb1a587431fece22fa0193142f5bb27e01fa41850293b5125812706a72646d",
+      "expected_observations_sha256": "65e5e481fb50012be595b045dd7e1a5acffb8f24075d63ef0646d73212bad13a",
+      "actual_observations_sha256": "65e5e481fb50012be595b045dd7e1a5acffb8f24075d63ef0646d73212bad13a",
+      "observation_count": 1,
+      "request_count": 0,
+      "file": "gundam-en-asia-news-hub.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/news/",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "6bfb1a587431fece22fa0193142f5bb27e01fa41850293b5125812706a72646d",
+      "actual_full_body_sha256": "452f627ff8485eb7328766f06ff3100253f88a2c207df0f58792a06a3df8221e"
+    },
+    {
+      "file": "gundam-en-asia-policy-detail.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/news/01_279.html",
+      "status": "skipped",
+      "category": "out_of_scope",
+      "actionable": false,
+      "reason": "ADR 0014 eligibility capture; raw evidence remains preserved."
+    },
+    {
+      "file": "gundam-en-asia-policy.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/rules/",
+      "status": "skipped",
+      "category": "out_of_scope",
+      "actionable": false,
+      "reason": "ADR 0014 eligibility capture; raw evidence remains preserved."
+    },
+    {
+      "adapter_version": "gundam-en-asia@7",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "gundam-en-asia-product-anniversary-set.json",
+      "baseline_full_body_sha256": "d7511f52e820cbb8b4113d2d43267e0bedb8899d2997c97aa82ba19957b5bf00",
+      "expected_observations_sha256": "fa54ff876babd6dfacb67eb0bff81808f57485ed3bd88ac78f62a6bcfe81f47a",
+      "actual_observations_sha256": "fa54ff876babd6dfacb67eb0bff81808f57485ed3bd88ac78f62a6bcfe81f47a",
+      "observation_count": 1,
+      "request_count": 6,
+      "file": "gundam-en-asia-product-anniversary-set.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/products/pb03.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "d7511f52e820cbb8b4113d2d43267e0bedb8899d2997c97aa82ba19957b5bf00",
+      "actual_full_body_sha256": "e8eb47865c3a9c622c8fe490c1c9d992650b92dcc455565777566b0fd9d5d822"
+    },
+    {
+      "adapter_version": "gundam-en-asia@7",
+      "category": "unchanged",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "monitoring/gundam-en-asia-product-booster.json.gz",
+      "baseline_full_body_sha256": "9d959e3ca80e0468bdade3bb7df6e64fda8a1c93f54e033af9bf962f4023a02b",
+      "expected_observations_sha256": "085a78cda581f9f68e9ee167a573f4d6eea43261d23f76d41fc254340de6457d",
+      "actual_observations_sha256": "085a78cda581f9f68e9ee167a573f4d6eea43261d23f76d41fc254340de6457d",
+      "observation_count": 1,
+      "request_count": 54,
+      "file": "gundam-en-asia-product-booster.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/products/gd05.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "d8a49d8f15f885edd0190e8dab2d5fc9b50b31be5d2ba27bffd05cea23ad5784",
+      "actual_full_body_sha256": "9d959e3ca80e0468bdade3bb7df6e64fda8a1c93f54e033af9bf962f4023a02b"
+    },
+    {
+      "adapter_version": "gundam-en-asia@7",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "gundam-en-asia-product-card-case.json",
+      "baseline_full_body_sha256": "31ff00bee5d9b4156a24fb8e7a611e8bd9511576f77c299dd68e6e751f9b0550",
+      "expected_observations_sha256": "eb98a492210a6ce2d31ff028540180789c06c2c9006a46be5267a415d9b3c82c",
+      "actual_observations_sha256": "eb98a492210a6ce2d31ff028540180789c06c2c9006a46be5267a415d9b3c82c",
+      "observation_count": 1,
+      "request_count": 2,
+      "file": "gundam-en-asia-product-card-case.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/products/deck-case02.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "31ff00bee5d9b4156a24fb8e7a611e8bd9511576f77c299dd68e6e751f9b0550",
+      "actual_full_body_sha256": "1590f8846021ffd3c7356a3937ae7b91fefc11ebfe165b64dabd4f8f7e259278"
+    },
+    {
+      "adapter_version": "gundam-en-asia@7",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "gundam-en-asia-product-deck-build-box.json",
+      "baseline_full_body_sha256": "8e166af19bd29d3d680639686f30d5c11d2aab7cc3b9374b770236a3c496978f",
+      "expected_observations_sha256": "45743ab9f27b11aa83d5bce2f32e4a1b011bb7ab7e851fd07490eda548ff64b7",
+      "actual_observations_sha256": "45743ab9f27b11aa83d5bce2f32e4a1b011bb7ab7e851fd07490eda548ff64b7",
+      "observation_count": 1,
+      "request_count": 9,
+      "file": "gundam-en-asia-product-deck-build-box.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/products/deck-build-box.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "8e166af19bd29d3d680639686f30d5c11d2aab7cc3b9374b770236a3c496978f",
+      "actual_full_body_sha256": "5da5f4fc3eb2ede20808d58f5e3c01b486b0a2b06a26e0fe90ae8f16886aaaf8"
+    },
+    {
+      "adapter_version": "gundam-en-asia@7",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "gundam-en-asia-restructured-card-search.json",
+      "baseline_full_body_sha256": "3cc0d146b170502bee3ec7e62a9fdaf78ea73b8088f74d138748476c81473ffa",
+      "expected_observations_sha256": "fb5da6a40f6c65ab4bdb82053fbea20cfdfe37a4f83f6e2eeca3e1fc2f83e69b",
+      "actual_observations_sha256": "fb5da6a40f6c65ab4bdb82053fbea20cfdfe37a4f83f6e2eeca3e1fc2f83e69b",
+      "observation_count": 1,
+      "request_count": 21,
+      "file": "gundam-en-asia-restructured-card-search.json",
+      "source_url": "https://www.gundam-gcg.com/asia-en/cards/",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "3cc0d146b170502bee3ec7e62a9fdaf78ea73b8088f74d138748476c81473ffa",
+      "actual_full_body_sha256": "7606bbb648ebb3dd369dbba31c448e07f4e8d12c951b46ed31bf870834a02a5f"
+    },
+    {
+      "adapter_version": "gundam-en-us@7",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "gundam-en-us-restructured-card-search.json",
+      "baseline_full_body_sha256": "a50888ca95e35c9e7c7eba56fee2a82667b2d25c547fcf47c9d6240ced7d3283",
+      "expected_observations_sha256": "afd7384cfbd070ae545aa1e04da0f1c5224f9c2ebbc617bc77cdf2dbb7ff0bbd",
+      "actual_observations_sha256": "afd7384cfbd070ae545aa1e04da0f1c5224f9c2ebbc617bc77cdf2dbb7ff0bbd",
+      "observation_count": 1,
+      "request_count": 3,
+      "file": "gundam-en-us-discovery.json",
+      "source_url": "https://www.gundam-gcg.com/en/cards/index.php",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size"
+      ],
+      "expected_full_body_sha256": "a50888ca95e35c9e7c7eba56fee2a82667b2d25c547fcf47c9d6240ced7d3283",
+      "actual_full_body_sha256": "ed24498aa3a92bde9e0b5f958763e55b06168c49bb963dbbf9fbddd70c51a1d5"
+    },
+    {
+      "adapter_version": "gundam-en-us@7",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "gundam-en-us-news-hub.json",
+      "baseline_full_body_sha256": "492b3eed2846b86c43aeebb64fad925b7d2033e5547820878e549b37322ae23e",
+      "expected_observations_sha256": "1c990be4552fa4f53f1757ba8dc49684d69e312cf052f5fdbcebadf3ce0b5fe8",
+      "actual_observations_sha256": "1c990be4552fa4f53f1757ba8dc49684d69e312cf052f5fdbcebadf3ce0b5fe8",
+      "observation_count": 1,
+      "request_count": 0,
+      "file": "gundam-en-us-news-hub.json",
+      "source_url": "https://www.gundam-gcg.com/en/news/",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "492b3eed2846b86c43aeebb64fad925b7d2033e5547820878e549b37322ae23e",
+      "actual_full_body_sha256": "ff537e9d240e7930beafdd421db2892520f23e217986023f8daf3b187fc417c6"
+    },
+    {
+      "file": "gundam-en-us-policy-detail.json",
+      "source_url": "https://www.gundam-gcg.com/en/news/01_279.html",
+      "status": "skipped",
+      "category": "out_of_scope",
+      "actionable": false,
+      "reason": "ADR 0014 eligibility capture; raw evidence remains preserved."
+    },
+    {
+      "file": "gundam-en-us-policy.json",
+      "source_url": "https://www.gundam-gcg.com/en/rules/",
+      "status": "skipped",
+      "category": "out_of_scope",
+      "actionable": false,
+      "reason": "ADR 0014 eligibility capture; raw evidence remains preserved."
+    },
+    {
+      "adapter_version": "gundam-en-us@7",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "gundam-en-us-product-card-case.json",
+      "baseline_full_body_sha256": "b2f2d9e50eaeec11d92accf4fa816d83b999e7981c9117e7240307c3c59bd589",
+      "expected_observations_sha256": "7b3bf023b81aa971c9c019e9651ccb863bdaeb4b0f3dc55a362aba40b5cfcb4e",
+      "actual_observations_sha256": "7b3bf023b81aa971c9c019e9651ccb863bdaeb4b0f3dc55a362aba40b5cfcb4e",
+      "observation_count": 1,
+      "request_count": 2,
+      "file": "gundam-en-us-product-card-case.json",
+      "source_url": "https://www.gundam-gcg.com/en/products/deck-case02.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "b2f2d9e50eaeec11d92accf4fa816d83b999e7981c9117e7240307c3c59bd589",
+      "actual_full_body_sha256": "ce553cea6c49fb57b55a2cf4db246f2cb30b4f085efb6fb8e799d7e7b2f4d331"
+    },
+    {
+      "adapter_version": "gundam-en-us@7",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "gundam-en-us-product-playmat.json",
+      "baseline_full_body_sha256": "bbf44a21fc3100808f6cc90557fb9b1dca6145cab04d589fabc9962c52d67f6c",
+      "expected_observations_sha256": "98bc53c08c76dc4a62832f7b45ada09da317ae80fd852f5dd2d2ecabdad9cde7",
+      "actual_observations_sha256": "98bc53c08c76dc4a62832f7b45ada09da317ae80fd852f5dd2d2ecabdad9cde7",
+      "observation_count": 1,
+      "request_count": 2,
+      "file": "gundam-en-us-product-playmat.json",
+      "source_url": "https://www.gundam-gcg.com/en/products/playmat01.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "bbf44a21fc3100808f6cc90557fb9b1dca6145cab04d589fabc9962c52d67f6c",
+      "actual_full_body_sha256": "e122169957f963d40c53e86229c1369fff0ff3fde672c149691ad2208a22d1d4"
+    },
+    {
+      "adapter_version": "gundam-en-us@7",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "gundam-en-us-restructured-card-search.json",
+      "baseline_full_body_sha256": "a50888ca95e35c9e7c7eba56fee2a82667b2d25c547fcf47c9d6240ced7d3283",
+      "expected_observations_sha256": "2004e762438f2457f3dab1e9901c417d54ecb9412aa9e18c6643879d5af488de",
+      "actual_observations_sha256": "2004e762438f2457f3dab1e9901c417d54ecb9412aa9e18c6643879d5af488de",
+      "observation_count": 1,
+      "request_count": 21,
+      "file": "gundam-en-us-restructured-card-search.json",
+      "source_url": "https://www.gundam-gcg.com/en/cards/index.php",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "a50888ca95e35c9e7c7eba56fee2a82667b2d25c547fcf47c9d6240ced7d3283",
+      "actual_full_body_sha256": "ed24498aa3a92bde9e0b5f958763e55b06168c49bb963dbbf9fbddd70c51a1d5"
+    },
+    {
+      "file": "one-piece-en-block-policy-topic.json",
+      "source_url": "https://en.onepiece-cardgame.com/topics/013.php",
+      "status": "skipped",
+      "category": "out_of_scope",
+      "actionable": false,
+      "reason": "ADR 0014 eligibility capture; raw evidence remains preserved."
+    },
+    {
+      "adapter_version": "one-piece-en@6",
+      "category": "unchanged",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "monitoring/one-piece-en-card-list.json.gz",
+      "baseline_full_body_sha256": "9ad39cdad8993fa3564185d3536dcbd1abbc7c19e5a13b19a30465c8a9c371da",
+      "expected_observations_sha256": "64104fc992fcb6d601abc11c77b7307cb46147bfd86341b2fe02fe4e79536be2",
+      "actual_observations_sha256": "64104fc992fcb6d601abc11c77b7307cb46147bfd86341b2fe02fe4e79536be2",
+      "observation_count": 1,
+      "request_count": 61,
+      "file": "one-piece-en-card-list.json",
+      "source_url": "https://en.onepiece-cardgame.com/cardlist/?series=569001&freewords=ST01-001",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "93a49866c157de61bf503a81beb0b9951e98f658bf68687e060a4d616eb3872d",
+      "actual_full_body_sha256": "9ad39cdad8993fa3564185d3536dcbd1abbc7c19e5a13b19a30465c8a9c371da"
+    },
+    {
+      "adapter_version": "one-piece-en@6",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "one-piece-en-don-rules-hub.json",
+      "baseline_full_body_sha256": "b532c2761fb8621b744a9618f48e1141030b82f77c07ece02e5a00ad3f8414b8",
+      "expected_observations_sha256": "0b70c2620b5ff4100c5fca978b23e905905db90c50056a025b75b47c136f62af",
+      "actual_observations_sha256": "0b70c2620b5ff4100c5fca978b23e905905db90c50056a025b75b47c136f62af",
+      "observation_count": 1,
+      "request_count": 0,
+      "file": "one-piece-en-don-rules-hub.json",
+      "source_url": "https://en.onepiece-cardgame.com/rules/",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256",
+        "range_end_exclusive"
+      ],
+      "expected_full_body_sha256": "b532c2761fb8621b744a9618f48e1141030b82f77c07ece02e5a00ad3f8414b8",
+      "actual_full_body_sha256": "443c74a9c9e628246aebd87955848e811971cc5df34459200f11efbaf20741d9"
+    },
+    {
+      "file": "one-piece-en-policy.json",
+      "source_url": "https://en.onepiece-cardgame.com/rules/restriction/",
+      "status": "skipped",
+      "category": "out_of_scope",
+      "actionable": false,
+      "reason": "ADR 0014 eligibility capture; raw evidence remains preserved."
+    },
+    {
+      "adapter_version": "one-piece-en@6",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "one-piece-en-product-anniversary-set.json",
+      "baseline_full_body_sha256": "d4c325e3fe10e0cc7bf3da3229dea2402087b2b60d49a76a2c01cf91c765280a",
+      "expected_observations_sha256": "ba21cffe9acf9fca6e00a0f9d92949a8cccd3d86b90708cb14fca579062fc443",
+      "actual_observations_sha256": "ba21cffe9acf9fca6e00a0f9d92949a8cccd3d86b90708cb14fca579062fc443",
+      "observation_count": 1,
+      "request_count": 1,
+      "file": "one-piece-en-product-anniversary-set.json",
+      "source_url": "https://en.onepiece-cardgame.com/products/other/3rd_anniversary_set.php",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "d4c325e3fe10e0cc7bf3da3229dea2402087b2b60d49a76a2c01cf91c765280a",
+      "actual_full_body_sha256": "9746cda0e71a4dde34e09333240c88f022c923fae89b80d334f2b733e22a3790"
+    },
+    {
+      "adapter_version": "one-piece-en@6",
+      "category": "unchanged",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "one-piece-en-product-booster-stub.json",
+      "baseline_full_body_sha256": "b2e1c643c4e9b3ec519b370107d53f40bf653c900e70dd1dab4ee01d8e3f7f4c",
+      "expected_observations_sha256": "0ba971e94b72837331ff776cc1507bf34b3f59032a299fcf17562cb21827e8d5",
+      "actual_observations_sha256": "0ba971e94b72837331ff776cc1507bf34b3f59032a299fcf17562cb21827e8d5",
+      "observation_count": 1,
+      "request_count": 0,
+      "file": "one-piece-en-product-booster-stub.json",
+      "source_url": "https://en.onepiece-cardgame.com/products/op17.html",
+      "status": "unchanged",
+      "differences": [],
+      "expected_full_body_sha256": "b2e1c643c4e9b3ec519b370107d53f40bf653c900e70dd1dab4ee01d8e3f7f4c",
+      "actual_full_body_sha256": "b2e1c643c4e9b3ec519b370107d53f40bf653c900e70dd1dab4ee01d8e3f7f4c"
+    },
+    {
+      "adapter_version": "one-piece-en@6",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "one-piece-en-product-card-collection.json",
+      "baseline_full_body_sha256": "38683e6759993bdc6617e7622209325f0bd53b5e6518c6e6ad98694153b559a0",
+      "expected_observations_sha256": "b28ba564c61c6d8bc842790fa72328a128fc4db8096a548118cca41ebabc1bf5",
+      "actual_observations_sha256": "b28ba564c61c6d8bc842790fa72328a128fc4db8096a548118cca41ebabc1bf5",
+      "observation_count": 1,
+      "request_count": 0,
+      "file": "one-piece-en-product-card-collection.json",
+      "source_url": "https://en.onepiece-cardgame.com/products/card_collection_asl.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "38683e6759993bdc6617e7622209325f0bd53b5e6518c6e6ad98694153b559a0",
+      "actual_full_body_sha256": "48f9c55f2e485122b12ee4d75ee7957efbc1e7979100f3cebf33bb37556bbcf4"
+    },
+    {
+      "adapter_version": "one-piece-en@6",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "one-piece-en-product-sleeve.json",
+      "baseline_full_body_sha256": "225c3f1014548ea14a3d34fd2aa2ee68b368c36e104a0a65e7415e380b263d7a",
+      "expected_observations_sha256": "0b10bbb297c6b3177e3c27d9e020a46da478bd6d1a9f4b306c5533619fd076ed",
+      "actual_observations_sha256": "0b10bbb297c6b3177e3c27d9e020a46da478bd6d1a9f4b306c5533619fd076ed",
+      "observation_count": 1,
+      "request_count": 2,
+      "file": "one-piece-en-product-sleeve.json",
+      "source_url": "https://en.onepiece-cardgame.com/products/sleeve041.html",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "225c3f1014548ea14a3d34fd2aa2ee68b368c36e104a0a65e7415e380b263d7a",
+      "actual_full_body_sha256": "6b5b2a90932da1897543016f95f8bba5880abe66f52f3d1bb951a2392c7fe109"
+    },
+    {
+      "adapter_version": "one-piece-en@6",
+      "category": "unchanged",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "monitoring/one-piece-en-restructured-discovery.json.gz",
+      "baseline_full_body_sha256": "9efff60c30161e3835e998832b2d33784359e710bdf263bad122f18c8d347a7e",
+      "expected_observations_sha256": "59d193eb2369d258ae2475e6dc1dbb1618a349a652a26bea0449177f71a63370",
+      "actual_observations_sha256": "59d193eb2369d258ae2475e6dc1dbb1618a349a652a26bea0449177f71a63370",
+      "observation_count": 155,
+      "request_count": 220,
+      "file": "one-piece-en-restructured-discovery.json",
+      "source_url": "https://en.onepiece-cardgame.com/cardlist/?series=569116",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "27e169e3345d29cbe60c8e4db87647a16b3adf37de299c5ca64dc3b185a09fe6",
+      "actual_full_body_sha256": "9efff60c30161e3835e998832b2d33784359e710bdf263bad122f18c8d347a7e"
+    },
+    {
+      "adapter_version": "one-piece-en@6",
+      "category": "cosmetic_drift",
+      "actionable": false,
+      "comparison": "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      "baseline_file": "one-piece-en-rules-hub.json",
+      "baseline_full_body_sha256": "c9de2076bf785f2a42b94aecdd6fac97540f488ae709e726b216ec0be787e916",
+      "expected_observations_sha256": "0b70c2620b5ff4100c5fca978b23e905905db90c50056a025b75b47c136f62af",
+      "actual_observations_sha256": "0b70c2620b5ff4100c5fca978b23e905905db90c50056a025b75b47c136f62af",
+      "observation_count": 1,
+      "request_count": 0,
+      "file": "one-piece-en-rules-hub.json",
+      "source_url": "https://en.onepiece-cardgame.com/rules/",
+      "status": "drift",
+      "differences": [
+        "full_body_sha256",
+        "full_body_size",
+        "body_sha256"
+      ],
+      "expected_full_body_sha256": "c9de2076bf785f2a42b94aecdd6fac97540f488ae709e726b216ec0be787e916",
+      "actual_full_body_sha256": "443c74a9c9e628246aebd87955848e811971cc5df34459200f11efbaf20741d9"
+    }
+  ]
+}

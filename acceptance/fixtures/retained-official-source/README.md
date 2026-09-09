@@ -230,8 +230,12 @@ The report's `category` and `actionable` describe the monitoring comparison.
 The older `status`, `differences` and `expected_full_body_sha256` continue to show
 the byte comparison against the top-level regression capture; consequently a
 reviewed source may correctly have `status: drift` and `category: unchanged`.
-Semantic comparison still includes all observations, raw source sidecars and
-requests. Image query parameters and optional source fields are not normalized.
+Raw comparison still includes all observations, raw source sidecars and
+requests. Printing Image query parameters and optional source values stay exact.
+Two reviewed display equivalences are reported separately: complete Fusion
+Product-item permutations within the same status section, and a version token
+on three exact decorative Gundam collaboration thumbnail paths. Every other
+content, status, URL and token remains subject to exact comparison.
 
 Offline replay preserves historical comparison by default. To explicitly use
 the reviewed monitoring baseline, append `--reviewed-baselines`:

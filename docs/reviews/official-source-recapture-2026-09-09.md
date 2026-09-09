@@ -256,3 +256,51 @@ Spec review and toolchain Standards review each found no actionable findings,
 independently verified four retained complete body digests and checked the
 Fusion-only policy and both exact Gundam root URLs. These reviews do not assert
 that the separate monitoring-baseline commit or required future schedule passed.
+
+## Repeated capture and reviewed display equivalence
+
+A fresh complete manual recapture after baseline selection exited 1, reporting
+33 cosmetic, 4 semantic, 13 unchanged and 10 excluded captures. This failed run
+is retained as `fresh-capture.tar.gz` and `fresh-before-cosmetic-review.json`.
+It exposed recurring display differences rather than a new publisher Card or
+Product fact. The four complete repeat responses are also retained individually
+under `history/2026-09-09/cosmetic-repeat/` for focused regression checks.
+
+The three Fusion Product pages reorder complete `prpductListItem cardCol` entries
+within COMING SOON. This changes raw observation order, sidecar publication-link
+order and the generic last-seen MSRP aggregate, while each complete item retains
+its contents and status section. The comparison-only rule sorts exact complete
+item bodies only inside the exact `prpductList` within each recognized AVAILABLE
+NOW or COMING SOON section, then invokes the current adapter again. It neither
+moves an item across statuses nor drops an item, field, value or unknown markup.
+Unsupported list structure receives no equivalence. This rule is limited to the
+three reviewed Fusion Product captures.
+
+The Gundam errata page also regenerates a 32-hex `?_=` token on three decorative
+collaboration thumbnails. Only those three exact HTTPS hostname/path pairs and
+that exact single-query shape receive a comparison-only stable token. Every
+observation and every other request remains exact; in particular actual Printing
+Image URLs, changed paths and added query parameters remain actionable.
+
+Both original raw responses must parse and discover successfully before either
+rule is considered. Reports retain original body/output digests, changed paths
+and values, with a separate `cosmetic_equivalence_rule`; the original evidence
+is never rewritten. Exceptions during comparison leave the drift actionable.
+The coordinator explicitly approved these narrow rules after reviewing the
+repeated-capture findings. They improve the initial deliberately exact monitor
+without turning unreviewed fields into ignored differences.
+
+Reassessment of that same fresh artifact now passes: 37 cosmetic, 13 unchanged,
+10 excluded and no actionable failures (`fresh-reviewed-assessment.json`). Node
+regressions cover all four real repeat captures and prove changed Product names,
+Release dates, MSRP content, movement across status sections, thumbnail paths,
+extra query parameters, actual Printing Image query values, Card facts and
+structural rejection remain actionable. The preceding failed fresh run remains
+failed evidence; replay success is not claimed as a new network or scheduled run.
+
+Fresh archive SHA-256:
+`e76a43a83bb3447a523f5cabc1f967e20d3ac27eaa834c8777b69b6d906912da`.
+Final focused validation passes 14 Node recapture tests. Most recent full domain
+validation passes 46 files / 252 tests and typecheck; those production files
+have not changed since. No heavy runtime test or live environment operation ran
+in this lane. Full runtime validation and integration remain coordinator-owned.

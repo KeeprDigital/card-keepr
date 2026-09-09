@@ -4,6 +4,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { build } from "esbuild";
 import { validateGolden } from "./retained-source-integrity.mjs";
+import { reviewedCosmeticComparison } from "./official-source-cosmetic-comparison.mjs";
 
 // These exact captures preserve the old eligibility evidence and regression
 // census, but ADR 0014 removed their acquisition from the current card scope.
@@ -151,16 +152,34 @@ export async function createOfficialSourceAssessment({ fixturesDirectory, review
     const expectedDigest = digest(expected);
     const actualDigest = digest(observed);
     const semanticChanged = expectedDigest !== actualDigest;
+    let cosmetic = null;
+    if (semanticChanged) {
+      try {
+        const comparison = reviewedCosmeticComparison({
+          name,
+          baseline: { bytes: Buffer.from(baseline.body_base64, "base64"), content_type: baseline.content_type },
+          actual: { bytes, content_type: actual.content_type },
+          expected,
+          observed,
+          observe,
+        });
+        if (comparison && digest(comparison.expected) === digest(comparison.observed)) cosmetic = comparison.rule;
+      } catch {
+        // A comparison-only rule cannot turn a rejection into success.
+      }
+    }
     return {
       ...base,
-      category: semanticChanged
-        ? "semantic_drift"
-        : baseline.full_body_sha256 !== actual.full_body_sha256
-          ? "cosmetic_drift"
-          : "unchanged",
-      actionable: semanticChanged,
+      category:
+        semanticChanged && !cosmetic
+          ? "semantic_drift"
+          : baseline.full_body_sha256 !== actual.full_body_sha256
+            ? "cosmetic_drift"
+            : "unchanged",
+      actionable: semanticChanged && !cosmetic,
       comparison:
-        "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+        "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      ...(cosmetic ? { cosmetic_equivalence_rule: cosmetic } : {}),
       baseline_file: fullGolden?.name ?? name,
       baseline_full_body_sha256: baseline.full_body_sha256,
       expected_observations_sha256: expectedDigest,
