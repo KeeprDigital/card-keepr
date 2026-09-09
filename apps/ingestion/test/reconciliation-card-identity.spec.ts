@@ -1,16 +1,18 @@
-import * as reconciliationQueries from "./query-helpers/reconciliation";
 import { expect, test } from "vitest";
+import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import * as reconciliationQueries from "./query-helpers/reconciliation";
 import {
-  installReconciliationSuite,
-  testEnv,
   approve,
   collect,
   exportComponentRecords,
   get,
+  installReconciliationSuite,
   post,
   reconcile,
   requiredFirst,
   requiredString,
+  testEnv,
 } from "./reconciliation-helpers";
 
 installReconciliationSuite();
@@ -858,10 +860,9 @@ test("Gundam cross-locale formatting normalizes while substantive shared-fact co
 // Synthetic source fixture exercises the authenticated administration boundary.
 test("opaque identities retain inspectable source mappings before and after publication", async () => {
   const run = await collect("/reconciliation/base", "opaque-mapping");
-  const candidate = await reconcile(run.id);
-  expect(candidate.response.status).toBe(200);
-  const printing = requiredFirst(candidate.document, "printings");
-  const mapped = await get(`/v1/reconciliation/identities/${printing.id}`);
+  const candidate = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", "opaque-mapping-candidate");
+  const printing = requiredFirst(await nativeCandidateRecords(String(candidate.id)), "printings");
+  const mapped = await get(`/v1/reconciliation/identities/${printing.id}?preparation_id=${candidate.id}`);
   expect(mapped.response.status).toBe(200);
   expect(mapped.document).toMatchObject({
     id: printing.id,
@@ -869,21 +870,37 @@ test("opaque identities retain inspectable source mappings before and after publ
     allocation: "opaque",
     mappings: [expect.objectContaining({ source_lineage: "one-piece-en", ingestion_run_id: run.id })],
   });
-  await approve(candidate.document);
+  const published = await approveNativeCandidate(candidate, "opaque-mapping-publication");
+  const publishedMappings = await get(`/v1/reconciliation/identities/${printing.id}?preparation_id=${candidate.id}`);
+  expect(publishedMappings.response.status).toBe(200);
   const refreshedRun = await collect("/reconciliation/new-locator", "opaque-mapping-refresh");
-  const refreshed = await reconcile(refreshedRun.id);
-  expect(refreshed.response.status).toBe(200);
-  expect(requiredFirst(refreshed.document, "printings").id).toBe(printing.id);
-  const history = await get(`/v1/reconciliation/identities/${printing.id}`);
+  const refreshed = await prepareNativeCandidate(
+    refreshedRun.id,
+    "one-piece",
+    String(published.document.resulting_revision_id),
+    "opaque-mapping-refresh-candidate",
+  );
+  expect(requiredFirst(await nativeCandidateRecords(String(refreshed.id)), "printings").id).toBe(printing.id);
+  const history = await get(`/v1/reconciliation/identities/${printing.id}?preparation_id=${refreshed.id}`);
   expect(history.response.status).toBe(200);
-  expect((history.document.mappings as unknown[]).length).toBeGreaterThan(1);
+  expect(history.document.mappings).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ preparation_id: refreshed.id, ingestion_run_id: refreshedRun.id }),
+    ]),
+  );
+  expect(
+    (mapped.document.mappings as unknown[]).length + (history.document.mappings as unknown[]).length,
+  ).toBeGreaterThan(1);
+  expect((await get(`/v1/reconciliation/identities/${printing.id}?preparation_id=${candidate.id}`)).document).toEqual(
+    publishedMappings.document,
+  );
 });
 
 test("synthetic exact cross-source evidence retains one consumer Printing after an explicit authority change", async () => {
-  const initial = await reconcile((await collect("/reconciliation/canonical-official", "cross-official")).id);
-  expect(initial.response.status).toBe(200);
-  const printing = requiredFirst(initial.document, "printings");
-  await approve(initial.document);
+  const run = await collect("/reconciliation/canonical-official", "cross-official");
+  const initial = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", "cross-official-candidate");
+  const printing = requiredFirst(await nativeCandidateRecords(String(initial.id)), "printings");
+  const seedPublished = await approveNativeCandidate(initial, "cross-official-publication");
   for (const area of ["card_facts", "printing_details"]) {
     const designated = await post("/v1/source-authorities", {
       game: "one-piece",
@@ -902,11 +919,16 @@ test("synthetic exact cross-source evidence retains one consumer Printing after 
     lineage: "limitless-one-piece-en",
     adapter: "fixture-one-piece-tabular@1",
   });
-  const matched = await reconcile(other.id);
-  expect(matched.response.status).toBe(200);
-  expect(matched.document.printings).toHaveLength(1);
-  expect(requiredFirst(matched.document, "printings").id).toBe(printing.id);
-  const published = await approve(matched.document);
+  const matched = await prepareNativeCandidate(
+    other.id,
+    "one-piece",
+    String(seedPublished.document.resulting_revision_id),
+    "cross-tabular-candidate",
+  );
+  const records = await nativeCandidateRecords(String(matched.id));
+  expect(records.printings).toHaveLength(1);
+  expect(requiredFirst(records, "printings").id).toBe(printing.id);
+  const published = await approveNativeCandidate(matched, "cross-tabular-publication");
   expect(published.response.status).toBe(200);
   const exported = await exportComponentRecords(
     requiredString(published.document, "resulting_revision_id"),
@@ -918,20 +940,21 @@ test("synthetic exact cross-source evidence retains one consumer Printing after 
 
 test("synthetic missing publisher number stays unknown through candidate and consumer export", async () => {
   const run = await collect("/reconciliation/identity-missing-number", "missing-number");
-  const candidate = await reconcile(run.id);
-  expect(candidate.response.status).toBe(200);
-  expect(requiredFirst(candidate.document, "cards").official_identity).toEqual({ kind: "unknown", value: null });
-  const published = await approve(candidate.document);
+  const candidate = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", "missing-number-candidate");
+  const records = await nativeCandidateRecords(String(candidate.id));
+  expect(requiredFirst(records, "cards").official_identity).toEqual({ kind: "unknown", value: null });
+  const published = await approveNativeCandidate(candidate, "missing-number-publication");
   expect(published.response.status, JSON.stringify(published.document)).toBe(200);
   const cards = await exportComponentRecords(requiredString(published.document, "resulting_revision_id"), "cards");
   expect(cards[0]).toMatchObject({ official_identity: { kind: "unknown", value: null } });
 });
 
 test("equal source-local artwork labels require owner evidence review across sources", async () => {
-  const first = await reconcile((await collect("/reconciliation/canonical-official-ambiguous", "review-official")).id);
-  expect(first.response.status).toBe(200);
-  const printingId = requiredString(requiredFirst(first.document, "printings"), "id");
-  await approve(first.document);
+  const firstRun = await collect("/reconciliation/canonical-official-ambiguous", "review-official");
+  const first = await prepareNativeCandidate(firstRun.id, "one-piece", "catrev_spine_000", "review-official-candidate");
+  const printingId = requiredString(requiredFirst(await nativeCandidateRecords(String(first.id)), "printings"), "id");
+  const publication = await approveNativeCandidate(first, "review-official-publication");
+  const predecessor = String(publication.document.resulting_revision_id);
   for (const area of ["card_facts", "printing_details"]) {
     expect(
       (
@@ -950,16 +973,22 @@ test("equal source-local artwork labels require owner evidence review across sou
   }
   const source = { game: "one-piece", lineage: "limitless-one-piece-en", adapter: "fixture-one-piece-tabular@1" };
   const run = await collect("/reconciliation/canonical-tabular-ambiguous", "review-ambiguous", source);
-  const blocked = await reconcile(run.id);
-  expect(blocked.response.status).toBe(409);
-  const reviews = await get(`/v1/reconciliation/identity-reviews?run_id=${run.id}`);
+  const blocked = await prepareFailedNativeIdentity(run.id, "one-piece", predecessor, "review-ambiguous-candidate");
+  const reviews = await get(`/v1/reconciliation/identity-reviews?run_id=${run.id}&preparation_id=${blocked.id}`);
   expect(reviews.response.status).toBe(200);
   const review = requiredFirst(reviews.document, "reviews");
   expect(review).toMatchObject({ candidate_printing_ids: [printingId], source_lineage: "limitless-one-piece-en" });
   expect(review.evidence).toBeDefined();
   const repeatedRun = await collect("/reconciliation/canonical-tabular-ambiguous", "review-unresolved-retry", source);
-  expect((await reconcile(repeatedRun.id)).response.status).toBe(409);
-  const repeatedReviews = await get(`/v1/reconciliation/identity-reviews?run_id=${repeatedRun.id}`);
+  const repeated = await prepareFailedNativeIdentity(
+    repeatedRun.id,
+    "one-piece",
+    predecessor,
+    "review-unresolved-candidate",
+  );
+  const repeatedReviews = await get(
+    `/v1/reconciliation/identity-reviews?run_id=${repeatedRun.id}&preparation_id=${repeated.id}`,
+  );
   expect(repeatedReviews.document.reviews).toHaveLength(1);
   const request = {
     printing_id: printingId,
@@ -972,41 +1001,61 @@ test("equal source-local artwork labels require owner evidence review across sou
     resolved.document,
   );
   const retry = await collect("/reconciliation/canonical-tabular-ambiguous", "review-retry", source);
-  const matched = await reconcile(retry.id);
-  expect(matched.response.status).toBe(200);
-  expect(requiredFirst(matched.document, "printings").id).toBe(printingId);
-  expect((await approve(matched.document)).response.status).toBe(200);
+  const matched = await prepareNativeCandidate(retry.id, "one-piece", predecessor, "review-retry-candidate");
+  expect(requiredFirst(await nativeCandidateRecords(String(matched.id)), "printings").id).toBe(printingId);
+  expect((await approveNativeCandidate(matched, "review-retry-publication")).response.status).toBe(200);
 });
 
 test("missing-number Printing keeps both opaque IDs when its source locator changes", async () => {
-  const original = await reconcile((await collect("/reconciliation/identity-missing-number", "unknown-original")).id);
-  expect(original.response.status).toBe(200);
-  await approve(original.document);
-  const moved = await reconcile((await collect("/reconciliation/identity-missing-number-moved", "unknown-moved")).id);
-  expect(moved.response.status).toBe(200);
-  expect(moved.document.cards).toHaveLength(1);
-  expect(moved.document.printings).toHaveLength(1);
-  expect(requiredFirst(moved.document, "cards").id).toBe(requiredFirst(original.document, "cards").id);
-  expect(requiredFirst(moved.document, "printings").id).toBe(requiredFirst(original.document, "printings").id);
+  const originalRun = await collect("/reconciliation/identity-missing-number", "unknown-original");
+  const original = await prepareNativeCandidate(
+    originalRun.id,
+    "one-piece",
+    "catrev_spine_000",
+    "unknown-original-candidate",
+  );
+  const originalRecords = await nativeCandidateRecords(String(original.id));
+  const published = await approveNativeCandidate(original, "unknown-original-publication");
+  const movedRun = await collect("/reconciliation/identity-missing-number-moved", "unknown-moved");
+  const moved = await prepareNativeCandidate(
+    movedRun.id,
+    "one-piece",
+    String(published.document.resulting_revision_id),
+    "unknown-moved-candidate",
+  );
+  const records = await nativeCandidateRecords(String(moved.id));
+  expect(records.cards).toHaveLength(1);
+  expect(records.printings).toHaveLength(1);
+  expect(requiredFirst(records, "cards").id).toBe(requiredFirst(originalRecords, "cards").id);
+  expect(requiredFirst(records, "printings").id).toBe(requiredFirst(originalRecords, "printings").id);
 });
 
 test("owner can traverse all retained source mappings without repeating pages", async () => {
-  const candidate = await reconcile((await collect("/reconciliation/identity-many-mappings", "mapping-pages")).id);
-  expect(candidate.response.status).toBe(200);
-  const id = requiredString(requiredFirst(candidate.document, "printings"), "id");
-  const first = await get(`/v1/reconciliation/identities/${id}`);
+  const run = await collect("/reconciliation/identity-many-mappings", "mapping-pages");
+  const candidate = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", "mapping-pages-candidate");
+  const id = requiredString(requiredFirst(await nativeCandidateRecords(String(candidate.id)), "printings"), "id");
+  const first = await get(`/v1/reconciliation/identities/${id}?preparation_id=${candidate.id}`);
   expect(first.document.mappings).toHaveLength(100);
-  const second = await get(`/v1/reconciliation/identities/${id}?after=${first.document.next_cursor}`);
+  const second = await get(
+    `/v1/reconciliation/identities/${id}?preparation_id=${candidate.id}&after=${first.document.next_cursor}`,
+  );
   expect(second.document.mappings).toHaveLength(1);
   expect(second.document.next_cursor).toBeNull();
 });
 
 test("missing-number cross-source evidence reviews the existing Card and Printing instead of creating duplicates", async () => {
-  const first = await reconcile((await collect("/reconciliation/identity-missing-number", "unknown-cross-first")).id);
-  expect(first.response.status).toBe(200);
-  const cardId = requiredString(requiredFirst(first.document, "cards"), "id");
-  const printingId = requiredString(requiredFirst(first.document, "printings"), "id");
-  await approve(first.document);
+  const firstRun = await collect("/reconciliation/identity-missing-number", "unknown-cross-first");
+  const first = await prepareNativeCandidate(
+    firstRun.id,
+    "one-piece",
+    "catrev_spine_000",
+    "unknown-cross-first-candidate",
+  );
+  const firstRecords = await nativeCandidateRecords(String(first.id));
+  const cardId = requiredString(requiredFirst(firstRecords, "cards"), "id");
+  const printingId = requiredString(requiredFirst(firstRecords, "printings"), "id");
+  const publication = await approveNativeCandidate(first, "unknown-cross-first-publication");
+  const predecessor = String(publication.document.resulting_revision_id);
   for (const area of ["card_facts", "printing_details"]) {
     expect(
       (
@@ -1025,8 +1074,11 @@ test("missing-number cross-source evidence reviews the existing Card and Printin
   }
   const source = { game: "one-piece", lineage: "limitless-one-piece-en", adapter: "fixture-one-piece-tabular@1" };
   const run = await collect("/reconciliation/identity-missing-number-tabular", "unknown-cross-review", source);
-  expect((await reconcile(run.id)).response.status).toBe(409);
-  const review = requiredFirst((await get(`/v1/reconciliation/identity-reviews?run_id=${run.id}`)).document, "reviews");
+  const failed = await prepareFailedNativeIdentity(run.id, "one-piece", predecessor, "unknown-cross-review-candidate");
+  const review = requiredFirst(
+    (await get(`/v1/reconciliation/identity-reviews?run_id=${run.id}&preparation_id=${failed.id}`)).document,
+    "reviews",
+  );
   expect(review.candidate_printing_ids).toEqual([printingId]);
   expect(
     (
@@ -1037,38 +1089,70 @@ test("missing-number cross-source evidence reviews the existing Card and Printin
       })
     ).response.status,
   ).toBe(200);
-  const changed = await reconcile(
-    (await collect("/reconciliation/identity-missing-number-tabular-changed", "unknown-cross-changed-artwork", source))
-      .id,
+  const changedRun = await collect(
+    "/reconciliation/identity-missing-number-tabular-changed",
+    "unknown-cross-changed-artwork",
+    source,
   );
-  expect(changed.response.status).toBe(409);
-  expect(changed.document.publishable).toBe(false);
-  const matched = await reconcile(
-    (await collect("/reconciliation/identity-missing-number-tabular", "unknown-cross-retry", source)).id,
+  const changed = await prepareFailedNativeIdentity(
+    changedRun.id,
+    "one-piece",
+    predecessor,
+    "unknown-cross-changed-candidate",
   );
-  expect(matched.response.status).toBe(200);
-  expect(matched.document.cards).toHaveLength(1);
-  expect(requiredFirst(matched.document, "cards").id).toBe(cardId);
-  expect(requiredFirst(matched.document, "printings").id).toBe(printingId);
-  expect((await approve(matched.document)).response.status).toBe(200);
-  const later = await reconcile(
-    (await collect("/reconciliation/identity-missing-number-tabular", "unknown-cross-later", source)).id,
+  expect(changed.outcome).toMatchObject({ publishable: false });
+  const matchedRun = await collect("/reconciliation/identity-missing-number-tabular", "unknown-cross-retry", source);
+  const matched = await prepareNativeCandidate(
+    matchedRun.id,
+    "one-piece",
+    predecessor,
+    "unknown-cross-retry-candidate",
   );
-  expect(later.response.status).toBe(200);
-  expect(requiredFirst(later.document, "printings").id).toBe(printingId);
+  const matchedRecords = await nativeCandidateRecords(String(matched.id));
+  expect(matchedRecords.cards).toHaveLength(1);
+  expect(requiredFirst(matchedRecords, "cards").id).toBe(cardId);
+  expect(requiredFirst(matchedRecords, "printings").id).toBe(printingId);
+  const matchedPublication = await approveNativeCandidate(matched, "unknown-cross-retry-publication");
+  const laterRun = await collect("/reconciliation/identity-missing-number-tabular", "unknown-cross-later", source);
+  const later = await prepareNativeCandidate(
+    laterRun.id,
+    "one-piece",
+    String(matchedPublication.document.resulting_revision_id),
+    "unknown-cross-later-candidate",
+  );
+  expect(requiredFirst(await nativeCandidateRecords(String(later.id)), "printings").id).toBe(printingId);
 });
 
 test("equal unknown Card facts and distinct artwork require identity review, not automatic Card equivalence", async () => {
-  const first = await reconcile(
-    (await collect("/reconciliation/identity-missing-number", "unknown-equivalence-first")).id,
+  const run = await collect("/reconciliation/identity-missing-number", "unknown-equivalence-first");
+  const first = await prepareNativeCandidate(
+    run.id,
+    "one-piece",
+    "catrev_spine_000",
+    "unknown-equivalence-first-candidate",
   );
-  await approve(first.document);
-  const distinct = await reconcile(
-    (await collect("/reconciliation/identity-missing-number-distinct", "unknown-equivalence-distinct")).id,
+  const published = await approveNativeCandidate(first, "unknown-equivalence-first-publication");
+  const distinctRun = await collect("/reconciliation/identity-missing-number-distinct", "unknown-equivalence-distinct");
+  const distinct = await prepareFailedNativeIdentity(
+    distinctRun.id,
+    "one-piece",
+    String(published.document.resulting_revision_id),
+    "unknown-equivalence-distinct-candidate",
   );
-  expect(distinct.response.status).toBe(409);
-  expect(distinct.document.publishable).toBe(false);
-  expect(distinct.document.diagnostics).toEqual(
-    expect.arrayContaining([expect.objectContaining({ code: "canonical_card_conflict" })]),
-  );
+  expect(distinct.outcome).toMatchObject({
+    publishable: false,
+    diagnostics: expect.arrayContaining([expect.objectContaining({ code: "canonical_card_conflict" })]),
+  });
 });
+
+async function prepareFailedNativeIdentity(runId: string, game: string, predecessor: string, key: string) {
+  const created = await post("/v1/game-candidates", {
+    ingestion_run_id: runId,
+    supported_game: game,
+    expected_game_revision_id: predecessor,
+    idempotency_key: key,
+  });
+  expect(created.response.status, JSON.stringify(created.document)).toBe(201);
+  const [candidate] = await waitForNativeCandidates(runId, 1, 15_000, { [game]: "failed" });
+  return candidate!;
+}
