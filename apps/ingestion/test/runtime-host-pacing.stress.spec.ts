@@ -37,10 +37,22 @@ test("collection is sequential per hostname and different hostnames progress con
   const run = await response.json<CollectionDocument>();
   const completed = await resumeCollection(run.id);
   expect(completed.collection_completed_at).toEqual(expect.any(String));
-  const attempts = Object.fromEntries(
-    completed.diagnostics.map((attempt) => [attempt.request_id, Date.parse(attempt.requested_at)]),
-  );
-  expect(attempts["second-a"]! - attempts["first-a"]!).toBeGreaterThanOrEqual(500);
-  expect(attempts["second-b"]! - attempts["first-b"]!).toBeGreaterThanOrEqual(500);
-  expect(Math.abs(attempts["first-a"]! - attempts["first-b"]!)).toBeLessThan(500);
+  // The retained graph assigns canonical Source Request identities. Resolve
+  // each attempt through its Source Snapshot rather than fixture input labels.
+  const requestedAt = (url: string) => {
+    const snapshot = completed.snapshots.find((item) => item.request.url === url);
+    expect(snapshot, `retained snapshot for ${url}`).toBeDefined();
+    const attempt = completed.diagnostics.find((item) => item.id === snapshot!.retrieval.fetch_attempt_id);
+    expect(attempt, `fetch attempt for ${url}`).toBeDefined();
+    const timestamp = Date.parse(attempt!.requested_at);
+    expect(Number.isFinite(timestamp), `requested_at for ${url}`).toBe(true);
+    return timestamp;
+  };
+  const firstA = requestedAt("https://pacing-a-official-source.invalid/sequence/1");
+  const secondA = requestedAt("https://pacing-a-official-source.invalid/sequence/2");
+  const firstB = requestedAt("https://pacing-b-official-source.invalid/sequence/1");
+  const secondB = requestedAt("https://pacing-b-official-source.invalid/sequence/2");
+  expect(secondA - firstA).toBeGreaterThanOrEqual(500);
+  expect(secondB - firstB).toBeGreaterThanOrEqual(500);
+  expect(Math.abs(firstA - firstB)).toBeLessThan(500);
 });
