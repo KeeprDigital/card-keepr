@@ -99,8 +99,10 @@ export type CompositionVerificationQuery =
   | { kind: "composition-state"; revisionId: string }
   | { kind: "composition-page"; table: CompositionSnapshotTable; after: number }
   | { kind: "composition-schema"; after: string }
+  | { kind: "composition-accepted-roots" }
   | { kind: "foreign-keys" };
 export function compositionVerificationQuery(input: CompositionVerificationQuery) {
+  if (input.kind === "composition-accepted-roots") return acceptedEvidenceArtifactRootsQuery();
   if (input.kind === "composition-schema")
     return {
       sql: `SELECT name,type,sql FROM sqlite_schema WHERE name>? AND sql IS NOT NULL
@@ -179,13 +181,28 @@ export function compositionArtifactRootsStatement(db: CatalogueStore, revisionId
     .bind(revisionId);
 }
 
-/** At most one current accepted private root per supported game, including same-revision evidence. */
-export function acceptedEvidenceArtifactRootsStatement(db: CatalogueStore) {
-  return repositoryStatements(db).prepare(`SELECT head.supported_game,candidate.id AS candidate_id,
+export type AcceptedEvidenceArtifactRoot = {
+  supported_game: string;
+  candidate_id: string;
+  preparation_id: string;
+  manifest_digest: string;
+  root_digest: string;
+};
+
+function acceptedEvidenceArtifactRootsQuery() {
+  return {
+    sql: `SELECT head.supported_game,candidate.id AS candidate_id,
     candidate.preparation_id,candidate.manifest_digest,prepared.root_digest
     FROM game_accepted_candidates head JOIN game_candidates candidate ON candidate.id=head.candidate_id
     LEFT JOIN publication_preparations prepared ON prepared.candidate_id=candidate.id
       AND prepared.state='verified' AND prepared.manifest_digest=candidate.manifest_digest
       AND prepared.generation=candidate.generation
-    WHERE candidate.state='published' ORDER BY head.supported_game LIMIT 5`);
+    WHERE candidate.state='published' ORDER BY head.supported_game LIMIT 5`,
+    params: [],
+  };
+}
+
+/** At most one current accepted private root per supported game, including same-revision evidence. */
+export function acceptedEvidenceArtifactRootsStatement(db: CatalogueStore) {
+  return repositoryStatements(db).prepare(acceptedEvidenceArtifactRootsQuery().sql);
 }

@@ -1,3 +1,4 @@
+import type { CompositionSnapshotEvidence } from "./composition-verification";
 import { type CatalogueStore, sha256Text, StreamingSha256 } from "../shared";
 import {
   compositionArtifactRootsStatement,
@@ -18,6 +19,7 @@ export async function verifyCompositionArtifacts(
   bucket: R2Bucket,
   images: R2Bucket,
   revisionId: string,
+  acceptedSnapshot?: Pick<CompositionSnapshotEvidence, "schema_migration_level" | "accepted_evidence_roots">,
 ) {
   const members = (
     await compositionArtifactRootsStatement(db, revisionId).all<{
@@ -82,7 +84,11 @@ export async function verifyCompositionArtifacts(
     const components = await verifyReference(bucket, images, publicRoot.artifacts, 0, undefined, true);
     if (components !== member.component_count) throw new Error("Public export component count mismatch.");
   }
-  const accepted = (await acceptedEvidenceArtifactRootsStatement(db).all<PrivateRoot>()).results;
+  if (acceptedSnapshot && acceptedSnapshot.schema_migration_level < 31) return;
+  const accepted = acceptedSnapshot
+    ? acceptedSnapshot.accepted_evidence_roots
+    : (await acceptedEvidenceArtifactRootsStatement(db).all<PrivateRoot>()).results;
+  if (!Array.isArray(accepted)) throw new Error("Accepted private evidence snapshot is missing.");
   if (
     accepted.length !== members.length ||
     accepted.some((candidate) => !members.some((member) => member.supported_game === candidate.supported_game))
