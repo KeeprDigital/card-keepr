@@ -17,5 +17,5 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm ci
-      - name: Verify shared fixture cleanup removes idle R2 storage
-        run: node node_modules/vitest/vitest.mjs run --config apps/ingestion/vitest.config.ts --maxWorkers=1 apps/ingestion/test/workflow-isolation.spec.ts
+      - name: Repeat the original identity sequence with corrected fixture reset
+        run: node node_modules/vitest/vitest.mjs run --config apps/ingestion/vitest.config.ts --maxWorkers=1 apps/ingestion/test/identity-corrections.spec.ts -t 'reviewed identity.*prepare through durable bounded groups'
