@@ -1,9 +1,4 @@
-import {
-  env,
-  introspectWorkflow,
-  reset,
-  type WorkflowIntrospector,
-} from "cloudflare:test";
+import { env, introspectWorkflow, reset, type WorkflowIntrospector } from "cloudflare:test";
 import { afterEach, beforeEach } from "vitest";
 
 const workflows = [
@@ -22,12 +17,14 @@ export function installWorkflowIsolation(): void {
 
   afterEach(async () => {
     try {
-      await Promise.all(
-        introspectors.map((introspector) => introspector.dispose()),
-      );
+      await Promise.all(introspectors.map((introspector) => introspector.dispose()));
     } finally {
       introspectors = [];
-      await reset();
+      await resetTestStorage();
     }
   });
+}
+
+export async function resetTestStorage(): Promise<void> {
+  await reset();
 }

@@ -17,5 +17,5 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm ci
-      - name: Compare reset of active, explicitly evicted and idle R2 objects
-        run: node node_modules/vitest/vitest.mjs run --config apps/ingestion/vitest.config.ts --maxWorkers=1 apps/ingestion/test/identity-r2-reset-probe.spec.ts
+      - name: Verify shared fixture cleanup removes idle R2 storage
+        run: node node_modules/vitest/vitest.mjs run --config apps/ingestion/vitest.config.ts --maxWorkers=1 apps/ingestion/test/workflow-isolation.spec.ts
