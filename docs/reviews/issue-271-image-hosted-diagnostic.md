@@ -1,0 +1,3 @@
+# Isolated hosted image duration diagnostic
+
+Temporary manual-only diagnostic branch. Never merge its workflow. Base fbd090e4 failed the 30-second native128-image test on hosted CI and then its job was cancelled after36minutes; the last callback log arrived36.57seconds into the test. Run the unchanged128x100KiB stream/publication/image-byte assertions under the repository's existing120-second multi-image integration-test bound to measure complete hosted duration. This changes only test orchestration time, not production generation/deadline, budgets, image counts, byte limits or hash assertions. Preserve the original failure; only consider a reviewed harness-bound correction after a natural complete result.
