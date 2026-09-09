@@ -20,7 +20,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          /usr/bin/time -v timeout 300s node node_modules/vitest/vitest.mjs run --config apps/ingestion/vitest.config.ts --maxWorkers=1 --testTimeout=120000 --reporter=default apps/ingestion/test/reconciliation-curated-conflicts.spec.ts apps/ingestion/test/reconciliation-progress.spec.ts -t 'all 32 changed Curated Revisions|persistent curated edits retain Release ownership' > /tmp/native-curation.log 2>&1
+          /usr/bin/time -v timeout 300s node node_modules/vitest/vitest.mjs run --config apps/ingestion/vitest.config.ts --maxWorkers=1 --reporter=default apps/ingestion/test/reconciliation-curated-conflicts.spec.ts apps/ingestion/test/reconciliation-progress.spec.ts -t 'all 32 changed Curated Revisions|persistent curated edits retain Release ownership' > /tmp/native-curation.log 2>&1
           result=$?
           tail -80 /tmp/native-curation.log
           exit "$result"
