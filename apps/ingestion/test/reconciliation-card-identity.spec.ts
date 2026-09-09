@@ -1044,11 +1044,27 @@ test("equal source-local artwork labels require owner evidence review across sou
     rationale: "Owner inspected both retained depictions and established the same issued Printing",
     idempotency_key: "resolve-identity",
   };
+  const invalidTarget = await post(`/v1/reconciliation/identity-reviews/${review.id}/resolve`, {
+    ...request,
+    printing_id: "unreviewed-printing",
+  });
+  expect(invalidTarget.response.status).toBe(422);
+  expect(invalidTarget.document.code).toBe("identity_review_target_invalid");
   const resolved = await post(`/v1/reconciliation/identity-reviews/${review.id}/resolve`, request);
-  expect(resolved.response.status).toBe(200);
+  expect(resolved.response.status, JSON.stringify(resolved.document)).toBe(200);
+  expect(resolved.document).not.toHaveProperty("native_candidate_id");
+  expect(resolved.document).not.toHaveProperty("historical_printing_id");
   expect((await post(`/v1/reconciliation/identity-reviews/${review.id}/resolve`, request)).document).toEqual(
     resolved.document,
   );
+  for (const changed of [
+    { ...request, rationale: "A different owner decision" },
+    { ...request, idempotency_key: "different-identity-decision" },
+  ]) {
+    const refused = await post(`/v1/reconciliation/identity-reviews/${review.id}/resolve`, changed);
+    expect(refused.response.status).toBe(409);
+    expect(refused.document.code).toBe("identity_review_already_resolved");
+  }
   const retry = await collect("/reconciliation/canonical-tabular-ambiguous", "review-retry", source);
   const matched = await prepareNativeCandidate(retry.id, "one-piece", predecessor, "review-retry-candidate");
   expect(requiredFirst(await nativeCandidateRecords(String(matched.id)), "printings").id).toBe(printingId);
