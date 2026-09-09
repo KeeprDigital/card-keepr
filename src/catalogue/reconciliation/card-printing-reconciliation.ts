@@ -1,5 +1,11 @@
 import { type CheckedCardScope } from "./scoped-disappearance";
-import { nativePrintingMatches, nativePrintingsAtLocator, retainPrintingLocator } from "./native-printing-locators";
+import {
+  nativePrintingMatches,
+  nativePrintingsAtLocator,
+  nativePrintingLocatorKey,
+  nativePrintingLocatorStateKey,
+  retainPrintingLocator,
+} from "./native-printing-locators";
 import {
   nativePreparationFailureCode,
   type NativePreparationGuardState,
@@ -268,6 +274,12 @@ export async function reconcileRetainedCardPrintingEvidence(
     "prior_printing_identities",
     (identity) => identity.compatibility.card_id,
   );
+  const priorPrintingLocators = new ReconciliationReducerIndex<NativePrintingIdentity>(
+    database,
+    runId,
+    "prior_printing_locators",
+    (identity) => nativePrintingLocatorKey(identity.locators[0]!),
+  );
   const printingImages = new ReconciliationReducerIndex<CataloguePrintingImage>(database, runId, "printing_images");
   const selectedGames = JSON.parse(run.selected_games_json) as SupportedGame[];
   const priorErrata = new ReconciliationErrataState(database, runId, "prior_errata");
@@ -286,6 +298,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     printings: printings.position,
     priorPrintings: priorPrintings.position,
     priorPrintingIdentities: priorPrintingIdentities.position,
+    priorPrintingLocators: priorPrintingLocators.position,
     printingImages: printingImages.position,
     priorProducts: priorProducts.positions,
     priorErrata: priorErrata.position,
@@ -297,6 +310,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     printings.resumeAt(positions.printings);
     priorPrintings.resumeAt(positions.priorPrintings);
     priorPrintingIdentities.resumeAt(positions.priorPrintingIdentities ?? 0);
+    priorPrintingLocators.resumeAt(positions.priorPrintingLocators ?? 0);
     printingImages.resumeAt(positions.printingImages);
     priorProducts.resumeAt(positions.priorProducts);
     priorErrata.resumeAt(positions.priorErrata);
@@ -322,6 +336,9 @@ export async function reconcileRetainedCardPrintingEvidence(
               await priorPrintings.seed(printing.id, printing);
               await printings.seed(printing.id, printing);
               if (identity) await priorPrintingIdentities.seed(printing.id, identity);
+            },
+            printingLocator: async (identity) => {
+              await priorPrintingLocators.seed(nativePrintingLocatorStateKey(identity), identity);
             },
             image: async (image) => {
               await printingImages.seed(image.id, image);
@@ -994,6 +1011,7 @@ export async function reconcileRetainedCardPrintingEvidence(
               revision: run.expected_current_revision_id,
               game: observation.supportedGame,
               through: priorPrintingIdentities.position,
+              locatorThrough: priorPrintingLocators.position,
             },
             compatibility,
             { locator, variantKey: observation.variantKey, reviewed: reviewedPrintingId !== null },
