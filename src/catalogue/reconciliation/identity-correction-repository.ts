@@ -81,8 +81,12 @@ export function insertCorrectionStatement(
       (SELECT current_revision_id FROM catalogue_state WHERE singleton = 1) = ? AND (SELECT COALESCE(MAX(sequence), 0) FROM identity_correction_decisions) = ? AND NOT EXISTS (
       SELECT 1 FROM operation_state WHERE singleton = 1 AND (active_ingestion_run_id IS NOT NULL OR recovery_health = 'blocked'
       OR (active_production_release_id IS NOT NULL AND active_production_release_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))))
+      AND NOT EXISTS(SELECT 1 FROM json_each(?3,'$.assignment_evidence') evidence
+        WHERE json_type(evidence.value,'$.preparation_id') IS NOT NULL AND NOT EXISTS(
+          SELECT 1 FROM game_accepted_candidates head JOIN game_candidates candidate ON candidate.id=head.candidate_id
+          WHERE head.supported_game=?4 AND candidate.preparation_id=json_extract(evidence.value,'$.preparation_id')))
       THEN 1 ELSE json_extract('{}', 'identity_correction_conflict') END`)
-        .bind(revision, cutoff),
+        .bind(revision, cutoff, row.reviewed_json, row.game),
     ],
     statement: repositoryStatements(database)
       .prepare(`INSERT INTO identity_correction_decisions
@@ -145,10 +149,24 @@ export function publishCorrectionStatements(
   );
 }
 
-export function correctionPrintingMappingStatement(database: CatalogueStore, id: string) {
+export function correctionPrintingMappingStatement(
+  database: CatalogueStore,
+  id: string,
+  revision: string,
+  game: string,
+) {
   return repositoryStatements(database)
-    .prepare(`SELECT source_observation_id, source_snapshot_id, evidence_json
-    FROM canonical_source_mappings WHERE entity_id = ? AND entity_kind = 'printing'
-    ORDER BY mapped_at DESC, rowid DESC LIMIT 1`)
-    .bind(id);
+    .prepare(`SELECT mapping.preparation_id, mapping.source_observation_id, mapping.source_snapshot_id,
+      mapping.evidence_json, mapping.mapped_at, mapping.rowid AS mapping_order
+      FROM game_accepted_candidates AS member
+      JOIN game_candidates AS candidate ON candidate.id=member.candidate_id
+      JOIN reconciliation_source_mappings AS mapping ON mapping.preparation_id=candidate.preparation_id
+      WHERE (SELECT current_revision_id FROM catalogue_state WHERE singleton=1)=?2 AND member.supported_game=?3
+        AND mapping.entity_id=?1 AND mapping.entity_kind='printing'
+      UNION ALL SELECT NULL AS preparation_id, source_observation_id, source_snapshot_id,
+        evidence_json, mapped_at, rowid AS mapping_order
+      FROM canonical_source_mappings WHERE entity_id=?1 AND entity_kind='printing'
+        AND NOT EXISTS(SELECT 1 FROM catalogue_revisions WHERE id=?2 AND publication_operation_id IS NOT NULL)
+      ORDER BY mapped_at DESC, mapping_order DESC LIMIT 1`)
+    .bind(id, revision, game);
 }

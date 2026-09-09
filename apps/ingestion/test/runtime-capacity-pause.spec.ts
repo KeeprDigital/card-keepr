@@ -163,11 +163,12 @@ test("a paused Ingestion Run fails closed on every advancing operation", async (
       .first("count"),
   ).toBe(0);
 
-  // Reconciliation, evidence retry, approval, candidate rejection, and the
-  // generic retry interface all refuse a paused run. Collection resume is
+  // Reconciliation, evidence retry, candidate rejection and generic retry
+  // refuse a paused run; the retired approval route explicitly reports 410.
+  // Collection resume is
   // deliberately absent: issue #65 made it the single sanctioned exit from a
   // Capacity Pause, covered by runtime-capacity-resume.spec.ts.
-  const gated: ReadonlyArray<readonly [string, unknown, string]> = [
+  const gated: ReadonlyArray<readonly [string, unknown, string, number?]> = [
     [
       `/v1/ingestion-runs/${runId}/reconciliation`,
       {
@@ -188,7 +189,8 @@ test("a paused Ingestion Run fails closed on every advancing operation", async (
         expected_current_revision_id: pausedRun.expected_current_revision_id,
         idempotency_key: "paused_gate_approval_001",
       },
-      "run_not_awaiting_approval",
+      "run_approval_retired",
+      410,
     ],
     [
       `/v1/ingestion-runs/${runId}/rejection`,
@@ -200,10 +202,10 @@ test("a paused Ingestion Run fails closed on every advancing operation", async (
     ],
     [`/v1/ingestion-runs/${runId}/retry`, { idempotency_key: "paused_gate_retry_001" }, "source_run_not_terminal"],
   ];
-  for (const [pathname, body, code] of gated) {
+  for (const [pathname, body, code, status = 409] of gated) {
     const response = await administrationRequest(pathname, "POST", body);
     const problem = await response.json<{ code?: string }>();
-    expect({ pathname, status: response.status, code: problem.code }).toEqual({ pathname, status: 409, code });
+    expect({ pathname, status: response.status, code: problem.code }).toEqual({ pathname, status, code });
   }
   const candidate = await administrationRequest(`/v1/ingestion-runs/${runId}/candidate`, "GET");
   expect(candidate.status).toBe(409);

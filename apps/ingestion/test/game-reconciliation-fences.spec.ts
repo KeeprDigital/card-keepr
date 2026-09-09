@@ -1,31 +1,25 @@
-import { catalogueStore } from "../../../src/catalogue/shared";
-import { readSourceObservation } from "../../../src/catalogue/reconciliation/reconciliation-source-observation";
-import { expect, test } from "vitest";
 import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
+import { expect, test } from "vitest";
 import type { ReconciliationWorkflowParams } from "../../../src/catalogue/reconciliation";
+import { readSourceObservation } from "../../../src/catalogue/reconciliation/reconciliation-source-observation";
+import { catalogueStore } from "../../../src/catalogue/shared";
 import worker from "../src/index";
-import {
-  approve,
-  collect,
-  get,
-  installReconciliationSuite,
-  reconcile,
-  requiredString,
-  post,
-  testEnv,
-} from "./reconciliation-helpers";
+import { nativeCandidateRecords } from "./native-candidate-helpers";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import { replaceGameHeadForFence } from "./query-helpers/game-candidates";
 import {
   setOperationStateRecoveryHealth,
   setOperationStateRecoveryHealthForRecoveryHealthGatesFixtureEvidenceInjectionReconciliationBeforeMutation,
 } from "./query-helpers/ingestion";
+import { collect, get, installReconciliationSuite, post, requiredString, testEnv } from "./reconciliation-helpers";
 import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 
 installReconciliationSuite();
 
 test.each(["resume", "seal"])("a changed game predecessor fences native %s", async (boundary) => {
-  const seed = await reconcile((await collect("/reconciliation/base", `native-${boundary}-seed`)).id);
-  const published = await approve(seed.document);
+  const source = await collect("/reconciliation/base", `native-${boundary}-seed`);
+  const seed = await prepareNativeCandidate(source.id, "one-piece", "catrev_spine_000", `native-${boundary}-candidate`);
+  const published = await approveNativeCandidate(seed, `native-${boundary}-publication`);
   expect(published.response.status).toBe(200);
   const predecessor = requiredString(published.document, "resulting_revision_id");
   const run = await collect("/reconciliation/base", `native-${boundary}-evidence`);
@@ -138,7 +132,8 @@ test.each(["resume", "seal"])("a changed game predecessor fences native %s", asy
 
 test("an authority change between policy read and creation cannot produce mixed native pins", async () => {
   const run = await collect("/reconciliation/base", "native-policy-race-source");
-  const published = await approve((await reconcile(run.id)).document);
+  const seed = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", "native-policy-race-candidate");
+  const published = await approveNativeCandidate(seed, "native-policy-race-publication");
   expect(published.response.status).toBe(200);
   const intent = {
     ingestion_run_id: run.id,
@@ -261,11 +256,17 @@ test("concurrent exact native intents create one operation and replay its origin
 });
 
 test("a native preparation excludes a supplemental proposal whose owner link arrived after its decision pin", async () => {
-  const initial = await reconcile(
-    (await collect("/reconciliation/canonical-official", "native-admission-pin-seed")).id,
+  const initialSource = await collect("/reconciliation/canonical-official", "native-admission-pin-seed");
+  const initial = await prepareNativeCandidate(
+    initialSource.id,
+    "one-piece",
+    "catrev_spine_000",
+    "native-admission-pin-candidate",
   );
-  const cardId = (initial.document.cards as { id: string }[])[0]!.id;
-  expect((await approve(initial.document)).response.status).toBe(200);
+  const initialRecords = await nativeCandidateRecords(requiredString(initial, "id"));
+  const cardId = (initialRecords.cards as { id: string }[])[0]!.id;
+  const initialPublished = await approveNativeCandidate(initial, "native-admission-pin-publication");
+  expect(initialPublished.response.status).toBe(200);
   for (const area of ["card_facts", "printing_details"]) {
     const response = await worker.fetch(
       new Request("https://card-keepr.invalid/v1/source-authorities", {
@@ -291,8 +292,13 @@ test("a native preparation excludes a supplemental proposal whose owner link arr
     lineage: "limitless-one-piece-en",
     adapter: "fixture-one-piece-tabular@1",
   });
-  const unresolved = await reconcile(source.id);
-  const published = await approve(unresolved.document);
+  const unresolved = await prepareNativeCandidate(
+    source.id,
+    "one-piece",
+    requiredString(initialPublished.document, "resulting_revision_id"),
+    "native-admission-unresolved-candidate",
+  );
+  const published = await approveNativeCandidate(unresolved, "native-admission-unresolved-publication");
   expect(published.response.status, JSON.stringify(published.document)).toBe(200);
   const proposal = ((await get("/v1/entity-proposals?game=one-piece")).document.proposals as { id: string }[])[0]!;
   let params: ReconciliationWorkflowParams | undefined;
@@ -326,7 +332,7 @@ test("a native preparation excludes a supplemental proposal whose owner link arr
       body: JSON.stringify({
         action: "link",
         card_id: cardId,
-        printing_id: (initial.document.printings as { id: string }[])[0]!.id,
+        printing_id: (initialRecords.printings as { id: string }[])[0]!.id,
         exception: {
           scope: ["identity"],
           attestation: "Synthetic owner inspection establishes the existing Printing identity.",
@@ -370,16 +376,19 @@ test("a native preparation excludes a supplemental proposal whose owner link arr
 test.each(["link", "reject"])(
   "a native preparation preserves its snapshot when a new proposal receives a later owner %s",
   async (action) => {
-    const seed = await reconcile(
-      (
-        await collect(
-          action === "link" ? "/reconciliation/canonical-official" : "/reconciliation/card-without-printing",
-          "native-new-proposal-seed",
-        )
-      ).id,
+    const initialSource = await collect(
+      action === "link" ? "/reconciliation/canonical-official" : "/reconciliation/card-without-printing",
+      "native-new-proposal-seed",
     );
-    const card = (seed.document.cards as { id: string }[])[0]!;
-    const published = await approve(seed.document);
+    const seed = await prepareNativeCandidate(
+      initialSource.id,
+      "one-piece",
+      "catrev_spine_000",
+      "native-new-proposal-candidate",
+    );
+    const records = await nativeCandidateRecords(requiredString(seed, "id"));
+    const card = (records.cards as { id: string }[])[0]!;
+    const published = await approveNativeCandidate(seed, "native-new-proposal-publication");
     expect(published.response.status).toBe(200);
     for (const area of ["card_facts", "printing_details"])
       expect(

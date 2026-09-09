@@ -1,3 +1,4 @@
+import { nativeNoChangeState } from "./query-helpers/native-no-change";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import { advancePublicationExports } from "../../../src/catalogue/ingestion";
 import { prepareCatalogueExportDeletion, confirmCatalogueExportDeletion } from "../../../src/catalogue/export";
@@ -331,8 +332,9 @@ test.each(["contention", "backup-wait expiry"])("whole-candidate approval and %s
   }
   const members = (await currentGameMembers(testEnv.CATALOGUE_DB)).results;
   expect(members).toHaveLength(2);
+  expect((await nativeNoChangeState(testEnv.CATALOGUE_DB))!.accepted_candidate).toBe(second.id);
   expect(members.find((member) => member.supported_game === "one-piece")).toMatchObject({
-    candidate_id: second.id,
+    candidate_id: id,
     card_ids: initialMembers[0]!.card_ids,
   });
   expect(members.find((member) => member.supported_game === "fusion-world")).toMatchObject({

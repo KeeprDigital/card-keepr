@@ -264,3 +264,72 @@ The Errata target-guard and evidence-retention repository tests now seed through
 real native preparation/publication. Their existing invalid-target, sibling
 rollback and every-observation retention assertions remain intact. Typechecking
 is required before their dedicated runtime selection; no runtime claim yet.
+
+## Native export reader and historical materializer distinction
+
+`378e60756ad8f1f2bf350b5db85f046695abe2b6` updates the existing export fixture
+reader to follow native public routes and all four-component pages, verifying
+manifest checksums, compressed/uncompressed sizes and digests, and record counts.
+It preserves legacy direct decoding and returns actual native public records.
+`exportManifest` returns an honest native first page with its cursor. A 32-Card
+case proves full traversal, exact public IDs/type/game, failed corrupt-manifest
+references, missing components and same-size damaged gzip, then restores all
+bytes. Exact Node22.23.2 runtime passed 1/1 in 9.01s. Coordinator Spec and capacity
+agent Standards independently reviewed fixed `88c41fbd..378e6075`; both are clear.
+
+The preceding three-file run passed the reader and duplicate-relationship case
+but failed two attempted native seed migrations in 16.90s. Those tests exercise
+retained historical materializer tables, which native publication does not fill:
+Errata target lookup was null and old evidence-retention counts were zero. Their
+assertions are retained. They require actual pre-retirement reservation/export
+fixtures and the existing recovery observer, not production writes into obsolete
+tables. The coordinator authorized a dedicated historical fixture for that scope.
+Both failed and green logs are retained with digests. All runs exited naturally;
+the runtime lease was handed to the native ambiguity diagnosis lane.
+
+The historical helper at `b2caf3a9` is prepared with exact retained candidate and
+catalogue digests, lifecycle-bound export bytes, verified historical image bytes,
+an explicitly seeded old reservation, the original expired-lease observer and
+exact replay. It then waits for the real backup checkpoint. The two retained
+materializer tests now use that fixture; their prior native-seed failure is not
+hidden. Typecheck passes; dedicated runtime is queued behind the ambiguity lane.
+
+All current-publication callers in `identity-corrections.spec.ts` now prepare
+native candidates with explicit predecessor revisions. Existing collection keys,
+owner attestations, correction decisions and all eleven cases remain. Controlled
+fault cases capture the real native creation/resume dispatch, drive it through
+the existing Workflow driver, and read phase checkpoints through the existing
+integrity-checked repository seam. They retain four failed retries, intermediate
+cursor and 100-call bounds, deadlines, immutable old exports and exact identity
+assertions. The historical empty-correction-pin case retains its legacy resume
+seam. Typecheck passes; native runtime proof is still pending.
+
+Historical provider `ad42319e` passes all three retained materializer cases across
+two files on Node22.23.2 in 5.66 seconds at the exact committed head. The earlier
+5.30-second run passed one case and failed two before recovery because the
+evidence-run summary intentionally omits the candidate digest. A 3.04-second
+state probe confirmed the run was awaiting approval; the existing `/candidate`
+inspection supplies the exact immutable binding. That fixture-only correction
+passed in 6.33 seconds before commit, then passed the fixed-head run above.
+The helper verifies original image/export bytes, recovers an actual expired
+historical reservation, checks exact replay and waits for actual SQL restore
+verification. Every original Errata/retention assertion passes without filling
+legacy tables from native publication. Full red/green logs and digests are
+retained. Background canceled/hung diagnostics remain visible; every run exited
+naturally. Independent review of the historical provider is still required.
+
+The four-file historical provider is independently clear against fixed
+`664c51e5..ad42319e`: coordinator Spec and capacity-agent Standards found no
+actionable findings. Reviewed idle-R2 reset provider `c455f841` was cherry-picked
+as `a11f10d7`, retaining all four configured Workflow bindings before the pending
+identity suite.
+
+`source-refresh-publication.spec.ts` now observes actual collection-triggered
+native candidates and approves their exact manifests. The existing decision to
+decline the first supplemental intake is expressed as native abandonment. All
+checks remain: same consumer revision for no-change refresh, supplemental carry,
+immutable earlier checks, withdrawal/reinstatement, incomplete 100-to-1 coverage,
+independent Errata scope, and revalidated/reverted provenance dates. Failed
+collection remains a failed collection rather than a fabricated candidate.
+Typecheck passes; the five-case runtime is pending, including the separately
+diagnosed native no-change contract gap. No global timeout changed.

@@ -4,6 +4,7 @@ import { startOrObserveCatalogueBackupWorkflow } from "../../../src/catalogue/ba
 import type { WorkflowStep } from "cloudflare:workers";
 import {
   advanceGamePublication,
+  gamePublicationHasUnchangedFacts,
   pauseGamePublication,
   dispatchGamePublication,
   inspectPublication,
@@ -20,41 +21,46 @@ export async function runGamePublicationWorkflow(
   let waits = work.waits ?? 0;
   const shard = work.shard ?? 0;
   let sequence = 0;
+  const unchanged = await step.do("classify accepted game facts", () =>
+    gamePublicationHasUnchangedFacts(catalogueStore(env.CATALOGUE_DB), work.id),
+  );
   for (let unit = 0; unit < 16; unit++) {
     const attempt = shard * 16 + unit;
-    const exports = await step
-      .do(
-        `prepare public export ${attempt}`,
-        { retries: { limit: 3, delay: 250, backoff: "exponential" }, timeout: "1 minute" },
-        async () => {
-          const db = catalogueStore(env.CATALOGUE_DB);
-          const owner = await inspectPublication(db, work.id);
-          if (owner.generation !== work.generation) return { state: "writer_fenced" };
-          if (["published", "failed", "retry_paused"].includes(owner.state)) return { state: owner.state };
-          if (owner.deadline <= new Date().toISOString()) return { state: "invalid" };
-          if (!(await reservePublicExportAttempt(db, work.id, work.generation, shard))) {
-            await pauseGamePublication(db, work.id, work.generation, "public_export_workflow_budget_exhausted");
-            return { state: "retry_paused" };
-          }
-          return advancePublicationExports(
-            { ...env, CATALOGUE_DB: catalogueStore(env.CATALOGUE_DB) },
-            work.id,
-            work.generation,
-            `public-export:${work.id}:${work.generation}:${attempt}`,
-          );
-        },
-      )
-      .catch(async (error) => {
-        await step.do("pause public export after retry exhaustion", () =>
-          pauseGamePublication(
-            catalogueStore(env.CATALOGUE_DB),
-            work.id,
-            work.generation,
-            "public_export_retry_exhausted",
-          ),
-        );
-        throw error;
-      });
+    const exports = unchanged
+      ? { state: "unchanged" }
+      : await step
+          .do(
+            `prepare public export ${attempt}`,
+            { retries: { limit: 3, delay: 250, backoff: "exponential" }, timeout: "1 minute" },
+            async () => {
+              const db = catalogueStore(env.CATALOGUE_DB);
+              const owner = await inspectPublication(db, work.id);
+              if (owner.generation !== work.generation) return { state: "writer_fenced" };
+              if (["published", "failed", "retry_paused"].includes(owner.state)) return { state: owner.state };
+              if (owner.deadline <= new Date().toISOString()) return { state: "invalid" };
+              if (!(await reservePublicExportAttempt(db, work.id, work.generation, shard))) {
+                await pauseGamePublication(db, work.id, work.generation, "public_export_workflow_budget_exhausted");
+                return { state: "retry_paused" };
+              }
+              return advancePublicationExports(
+                { ...env, CATALOGUE_DB: catalogueStore(env.CATALOGUE_DB) },
+                work.id,
+                work.generation,
+                `public-export:${work.id}:${work.generation}:${attempt}`,
+              );
+            },
+          )
+          .catch(async (error) => {
+            await step.do("pause public export after retry exhaustion", () =>
+              pauseGamePublication(
+                catalogueStore(env.CATALOGUE_DB),
+                work.id,
+                work.generation,
+                "public_export_retry_exhausted",
+              ),
+            );
+            throw error;
+          });
     if ("sequence" in exports && typeof exports.sequence === "number") sequence = exports.sequence;
     if (exports.state === "retry_paused" || exports.state === "writer_fenced")
       return { result_json: JSON.stringify(await inspectPublication(catalogueStore(env.CATALOGUE_DB), work.id)) };

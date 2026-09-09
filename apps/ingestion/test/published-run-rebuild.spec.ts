@@ -1,8 +1,15 @@
 import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { expect, test } from "vitest";
-import { catalogueStore, rebuildRunProjection } from "../../../src/catalogue/shared";
-import { injectFixturePublication } from "./fixture-plan-injection";
+import { buildCatalogueExport } from "../../../src/catalogue/export";
+import {
+  catalogueRevisionIdentity,
+  catalogueStore,
+  canonicalJson,
+  rebuildRunProjection,
+} from "../../../src/catalogue/shared";
+import { fixtureCandidate } from "../../../test/support/catalogue-fixture";
+import { seedRunFixtureStatement } from "./query-helpers/run-events";
 import * as queries from "./query-helpers/published-run-rebuild";
 
 const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
@@ -35,14 +42,6 @@ function requiredString(document: Record<string, unknown>, key: string): string 
   return value;
 }
 
-async function approve(run: Record<string, unknown>, key: string) {
-  return request(`/v1/ingestion-runs/${requiredString(run, "id")}/approval`, {
-    candidate_digest: requiredString(run, "candidate_digest"),
-    expected_current_revision_id: requiredString(run, "expected_current_revision_id"),
-    idempotency_key: key,
-  });
-}
-
 async function administrationSnapshot(runIds: readonly string[]) {
   const shown = await Promise.all(runIds.map((id) => request(`/v1/ingestion-runs/${id}`)));
   const candidates = await Promise.all(
@@ -57,28 +56,12 @@ async function administrationSnapshot(runIds: readonly string[]) {
   return { shown, candidates, recentRuns: status.recent_runs };
 }
 
-test("published and no-change runs rebuild exact administration documents from immutable history", async () => {
+test("historical published and no-change runs rebuild exact administration documents from immutable history", async () => {
   await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
-  const started = await injectFixturePublication(
-    testEnv.CATALOGUE_DB,
-    testEnv.CATALOGUE_EXPORTS,
-    {
-      fixture: "first-catalogue",
-      selected_games: ["one-piece"],
-      idempotency_key: "published_rebuild_start",
-    },
-    observedAt,
-  );
-  const published = await approve(started, "published_rebuild_approval");
+  const [publishedRunId, unchangedRunId] = await seedHistoricalPublishedRuns();
+  const published = await request(`/v1/ingestion-runs/${publishedRunId}`);
   expect(published).toMatchObject({ state: "published", publication_outcome: "revision" });
-  const retry = await request(
-    `/v1/ingestion-runs/${requiredString(published, "id")}/retry`,
-    {
-      idempotency_key: "published_rebuild_retry",
-    },
-    201,
-  );
-  const unchanged = await approve(retry, "published_rebuild_no_change");
+  const unchanged = await request(`/v1/ingestion-runs/${unchangedRunId}`);
   expect(unchanged).toMatchObject({
     state: "published",
     publication_outcome: "no_change",
@@ -136,3 +119,61 @@ test("published and no-change runs rebuild exact administration documents from i
     );
   }
 });
+
+async function seedHistoricalPublishedRuns(): Promise<readonly [string, string]> {
+  // These synthetic records represent retained history predating route retirement.
+  // The established event fixture writes the accepted state path and immutable
+  // payload chunks; no new approval, publication, or recovery grant is executed.
+  const { candidate, digest } = await fixtureCandidate("first-catalogue", ["one-piece"]);
+  const publishedId = "run_historical_published_rebuild";
+  const unchangedId = "run_historical_no_change_rebuild";
+  const revision = await catalogueRevisionIdentity({
+    runId: publishedId,
+    candidateDigest: digest,
+    expectedCurrentRevisionId: "catrev_spine_000",
+  });
+  const exported = await buildCatalogueExport(candidate, digest, revision, observedAt);
+  for (const [id, predecessor, outcome] of [
+    [publishedId, "catrev_spine_000", "revision"],
+    [unchangedId, revision, "no_change"],
+  ] as const) {
+    const approval = {
+      action: "approved",
+      approved_at: observedAt,
+      candidate_digest: digest,
+      expected_current_revision_id: predecessor,
+    };
+    await seedRunFixtureStatement(testEnv.CATALOGUE_DB, {
+      id,
+      state: "published",
+      started_at: observedAt,
+      terminal_at: observedAt,
+      expected_current_revision_id: predecessor,
+      linked_run_id: outcome === "no_change" ? publishedId : null,
+      selected_games_json: '["one-piece"]',
+      candidate_json: canonicalJson(candidate),
+      candidate_digest: digest,
+      candidate_catalogue_digest: digest,
+      candidate_created_at: observedAt,
+      approval_deadline: "2026-09-11T00:00:00.000Z",
+      approval_json: canonicalJson(approval),
+      approval_history_json: canonicalJson([approval]),
+      approval_idempotency_key: `${id}-approval`,
+      publication_outcome: outcome,
+      published_revision_id: outcome === "revision" ? revision : null,
+      resulting_revision_id: revision,
+      freshness_checked_at: observedAt,
+      ...(outcome === "revision"
+        ? {
+            publication_revision_id: revision,
+            publication_started_at: observedAt,
+            publication_reconcile_after: "2026-09-04T00:05:00.000Z",
+            publication_manifest_digest: exported.manifest.manifest_sha256,
+            publication_writer_token: `writer:${revision}`,
+            export_manifest_digest: exported.manifest.manifest_sha256,
+          }
+        : {}),
+    }).run();
+  }
+  return [publishedId, unchangedId];
+}

@@ -288,7 +288,13 @@ async function validateIdentityAssignment(
   if (target.game !== input.game) invalid("The replacement must belong to the same Supported Game.");
   const evidence = [];
   for (const printingId of Object.keys(input.printing_assignments)) {
-    const mapping = await correctionPrintingMappingStatement(database, printingId).first<{
+    const mapping = await correctionPrintingMappingStatement(
+      database,
+      printingId,
+      state.current_revision_id,
+      input.game,
+    ).first<{
+      preparation_id: string | null;
       source_observation_id: string;
       source_snapshot_id: string;
       evidence_json: string;
@@ -299,6 +305,7 @@ async function validateIdentityAssignment(
       invalid("Every assigned Printing must have retained evidence associating it with the split Card.");
     evidence.push({
       printing_id: printingId,
+      ...(mapping.preparation_id === null ? {} : { preparation_id: mapping.preparation_id }),
       source_observation_id: mapping.source_observation_id,
       source_snapshot_id: mapping.source_snapshot_id,
       evidence: observed,
