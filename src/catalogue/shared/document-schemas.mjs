@@ -1,3 +1,4 @@
+import { curatedFieldDocumentSchema } from "./curated-field-schemas.ts";
 import { activeRunStages as stages, ingestionRunStates as states } from "./ingestion-run-state.ts";
 
 // Persisted document shapes. Semantic relationships remain with their domain codec.
@@ -13,7 +14,7 @@ const object = (properties, required = Object.keys(properties), additionalProper
   required,
   additionalProperties,
 });
-const selectedGames = array({ enum: ["one-piece", "fusion-world", "digimon", "gundam"] }, { minItems: 1 });
+const selectedGames = array({ enum: ["one-piece", "fusion-world", "digimon", "gundam", "riftbound"] }, { minItems: 1 });
 const approval = object({
   action: { const: "approved" },
   approved_at: string,
@@ -92,7 +93,7 @@ const evidenceRequest = object(
   true,
 );
 const nonempty = { ...string, pattern: "[\\s\\S]" };
-const game = { enum: ["one-piece", "fusion-world", "digimon", "gundam"] };
+const game = { enum: ["one-piece", "fusion-world", "digimon", "gundam", "riftbound"] };
 const record = { type: "object" };
 const curatedFieldTarget = object({
   kind: { const: "field" },
@@ -141,7 +142,9 @@ const card = object(
     game,
     official_identity: {
       anyOf: [
+        object({ kind: { const: "unknown" }, value: { type: "null" } }),
         object({ kind: { const: "card_number" }, value: nonempty }),
+        object({ kind: { const: "publisher_name" }, value: nonempty }),
         object({ kind: { const: "functional_designation" }, value: { const: "DON!!" } }),
       ],
     },
@@ -181,6 +184,15 @@ const candidate = object(
   {
     contract: { const: "card-keepr-catalogue-candidate@1" },
     selected_games: selectedGames,
+    identity_corrections: array(
+      object({
+        id: opaque,
+        game,
+        entity_kind: { enum: ["card", "printing"] },
+        action: { enum: ["merge", "split"] },
+        replacement_ids: array(opaque, { minItems: 1 }),
+      }),
+    ),
     cards: array(card),
     printings: array(printing),
     printing_images: {},
@@ -211,6 +223,7 @@ const proposalFieldTarget = {
   properties: { ...curatedFieldTarget.properties, entity_id: proposalIdentity },
 };
 export const documentSchemas = {
+  curatedField: curatedFieldDocumentSchema,
   record,
   candidate,
   proposalEvidence,
@@ -230,13 +243,15 @@ export const documentSchemas = {
   stringRecord,
   evidencePlan: object(
     {
+      participation: { enum: ["required", "optional"] },
+      coverage: object({ locale: { const: "en" }, area: string, subset: string }),
       supported_game: string,
       source_lineage: string,
       game_profile_version: string,
       adapter_version: string,
       requests: array(evidenceRequest),
     },
-    undefined,
+    ["supported_game", "source_lineage", "game_profile_version", "adapter_version", "requests"],
     true,
   ),
 };

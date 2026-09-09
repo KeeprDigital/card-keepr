@@ -1,0 +1,11 @@
+
+ RUN  v4.1.10 /Users/marcus/.codex/worktrees/55a9/card-keepr
+
+NOSENTRY R2MultipartUpload::getUploadId called
+console warning; message = Called .text() on an HTTP body which does not appear to be text. The body's Content-Type is "application/octet-stream". The result will probably be corrupted. Consider checking the Content-Type header before interpreting entities as text.
+
+ Test Files  2 passed (2)
+      Tests  25 passed (25)
+   Start at  18:08:39
+   Duration  9.09s (transform 1.38s, setup 0ms, import 3.17s, tests 7.57s, environment 0ms)
+

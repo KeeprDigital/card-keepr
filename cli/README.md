@@ -65,3 +65,45 @@ Profiles use only `KEEPR_<TARGET>_API_KEY` and
 unscoped credentials and URL overrides are not inherited. Explicit mutation
 `--environment` must match the selected target. See
 [isolated dev](../docs/runbooks/isolated-dev.md) for provisioning and release gates.
+
+## Source administration
+
+`keepr source registry`, `keepr source authorities`, and `keepr source designate`
+inspect shared game/source registrations and explicitly select scoped Source
+Authority. See [the request and replay contract](../docs/contracts/source-authority.md).
+
+Source refresh plans fix `participation` (`required` by default, or `optional`)
+before collection. Use `source collect --plan-file` to declare several Sources;
+a single-plan command also accepts `--participation` and `--subset complete`.
+`source registry` lists each adapter's declared complete area. A narrower refresh
+is a **new plan** using an independently complete adapter, such as the One Piece
+Errata adapter; arbitrary page or set subsets are rejected until an adapter
+provides their completeness contract. Retrying a failed plan preserves its scope
+and participation. Source selection never transfers Source Authority.
+
+An optional availability outage excludes that whole Source scope from
+reconciliation and carries accepted facts forward with a candidate warning.
+Its partial snapshots and attempts remain inspectable. Required partial capture,
+parser/identity uncertainty, evidence integrity failures, and substantial
+unexplained coverage loss block the planned refresh. Capacity, storage retry and
+Workflow pauses retain their existing recovery behavior.
+
+`source show --run-id … --json` includes `source_coverage`: the declared scope,
+planned/observed request counts, successful check time, underlying content capture
+time, latest capture and revalidation counts. Successful checks require complete
+reconciled evidence. Failed/partial checks never update successful check times;
+publication itself does not make content new. A no-change refresh may verify
+unchanged content again. Scope evidence is administration-only.
+
+Use `source lifecycle --lineage …` to inspect source status/history and
+`source set-lifecycle --lineage … --state retired --expected-generation 0
+--rationale 'Source stopped publishing' --idempotency-key …` for an explicit
+retirement. The same command with `--state active` reactivates a Source at its
+current generation. Retirement requires idle operations and explicit revision of
+any Source Authority designation first; it retains accepted entities and history
+and blocks new collection/retry plans. It does not withdraw a Printing.
+
+A complete check may report a Printing no longer observed while retaining its
+identity. Explicit withdrawal and later reinstatement are attributable lifecycle
+assertions, preserving the same identity and earlier evidence. Conflicting or
+out-of-order assertions block reconciliation; absence is never reinstatement.

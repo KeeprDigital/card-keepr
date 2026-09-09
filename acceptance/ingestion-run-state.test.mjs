@@ -52,6 +52,8 @@ test("repository batches enforce all 726 Ingestion Run transition and terminatio
     candidate_digest TEXT, candidate_catalogue_digest TEXT, candidate_created_at TEXT,
     approval_deadline TEXT, terminal_at TEXT, approved_candidate_digest TEXT, approved_expected_revision_id TEXT, approved_at TEXT
   );
+  CREATE TABLE ingestion_collection_reservations (ingestion_run_id TEXT PRIMARY KEY);
+  INSERT INTO ingestion_collection_reservations VALUES ('run');
   CREATE TABLE ingestion_run_terminations (ingestion_run_id TEXT PRIMARY KEY);
   CREATE TABLE operation_state (singleton INTEGER, active_ingestion_run_id TEXT, recovery_health TEXT);
   INSERT INTO operation_state VALUES (1, 'run', 'healthy');
@@ -99,6 +101,7 @@ test("a retained termination decision cannot fail a paused run with a missing fa
   ) VALUES ('run', '2026-09-04T00:00:00.000Z', 'catrev_spine_000', 'start_run');
   INSERT INTO ingestion_run_current (ingestion_run_id, state, last_event_sequence, last_event_id, completed_stage_count)
   VALUES ('run', 'paused', 1, 'guard-fixture', 1);
+  INSERT INTO ingestion_collection_reservations VALUES ('run');
   UPDATE operation_state SET active_ingestion_run_id = 'run' WHERE singleton = 1;
   INSERT INTO ingestion_run_terminations VALUES (
     'run', 'owner_requested', '2026-09-04T00:01:00.000Z', '2026-09-04T00:02:00.000Z', 'terminate_run', '${"a".repeat(64)}', '{}'

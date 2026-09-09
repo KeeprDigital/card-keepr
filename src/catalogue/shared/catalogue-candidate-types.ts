@@ -10,7 +10,7 @@ import type { CuratedProvenanceBearing } from "./curated-provenance";
 
 export const catalogueCandidateContract = "card-keepr-catalogue-candidate@1" as const;
 
-export type SupportedGame = "one-piece" | "fusion-world" | "digimon" | "gundam";
+export type SupportedGame = "one-piece" | "fusion-world" | "digimon" | "gundam" | "riftbound";
 
 export type CatalogueCandidate = {
   contract: typeof catalogueCandidateContract;
@@ -26,6 +26,13 @@ export type CatalogueCandidate = {
   product_observed_lineages?: readonly string[];
   source_checks?: readonly CatalogueSourceCheck[];
   errata?: readonly CatalogueErratum[];
+  identity_corrections?: readonly {
+    id: string;
+    game: SupportedGame;
+    entity_kind: "card" | "printing";
+    action: "merge" | "split";
+    replacement_ids: readonly string[];
+  }[];
 };
 
 export type CatalogueSourceCheck = {
@@ -38,6 +45,8 @@ export type CatalogueCard = CuratedProvenanceBearing & {
   id: string;
   game: SupportedGame;
   official_identity:
+    | { kind: "unknown"; value: null }
+    | { kind: "publisher_name"; value: string }
     | {
         kind: "card_number";
         value: string;
@@ -49,7 +58,7 @@ export type CatalogueCard = CuratedProvenanceBearing & {
   name: string;
   effective_rules_text: string | null;
   game_data: {
-    profile: "one-piece@1" | "fusion-world@1" | "digimon@1" | "gundam@1";
+    profile: "one-piece@1" | "fusion-world@1" | "digimon@1" | "gundam@1" | "riftbound@1";
     attributes: Record<string, unknown>;
   };
 };
@@ -57,13 +66,20 @@ export type CatalogueCard = CuratedProvenanceBearing & {
 export type CataloguePrinting = CuratedProvenanceBearing & {
   id: string;
   card_id: string;
+  /** Private, manifest-bound source identities retained across native refreshes. */
+  locator_evidence?: readonly {
+    source_lineage: string;
+    locator: string;
+    variant_key: string | null;
+    source_observation_id: string;
+  }[];
   rarity: {
     normalized: string | null;
     raw: string | null;
   };
   printed_rules_text: string | null;
   game_data: {
-    profile: "one-piece@1" | "fusion-world@1" | "digimon@1" | "gundam@1";
+    profile: "one-piece@1" | "fusion-world@1" | "digimon@1" | "gundam@1" | "riftbound@1";
     attributes: Record<string, unknown>;
   } | null;
 };
@@ -79,7 +95,7 @@ export type CataloguePrintingImage = {
   content_byte_length: number;
   object_key: string;
   source_url: string;
-  content_base64: string;
+  content_base64?: string;
 };
 
 // Errata.

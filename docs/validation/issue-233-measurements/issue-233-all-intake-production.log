@@ -1,0 +1,633 @@
+
+ RUN  v4.1.10 /Users/marcus/.codex/worktrees/55a9/card-keepr
+
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+NOSENTRY R2MultipartUpload::getUploadId called
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+NOSENTRY R2MultipartUpload::getUploadId called
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"d8583996-b3bd-4271-bcc9-0b91ead61acc","method":"GET","route":"/v1/ingestion-runs/:ref"},"status":200,"duration_ms":5,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":26,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"63b5919d-143c-4504-aaa6-c77de640551b","method":"POST","route":"/v1/ingestion-runs/:ref/collection/resume"},"status":202,"duration_ms":6,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":8,"batch_calls":1,"batch_statements":1}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":1,"workflow":{"step":"load retained hostname Workflow identities","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":6,"batch_calls":2,"batch_statements":4}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":1,"workflow":{"step":"load pending evidence page 0 barrier 0","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":6,"batch_calls":2,"batch_statements":4}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":4,"workflow":{"step":"recover pending hostname workflows stage 0","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":7,"batch_calls":3,"batch_statements":5}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":1,"workflow":{"step":"record hostname Workflow identities stage 0","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":8,"batch_calls":3,"batch_statements":7}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":3,"workflow":{"step":"finalize collection barrier stage 0","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":9,"batch_calls":2,"batch_statements":4}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-host-48e6fd107197f469cd15fbc0eaca425ab946f54793216609546fa3b4baacd256","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-host"},"status":200,"duration_ms":2,"workflow":{"step":"read run state stage 0","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":6,"batch_calls":2,"batch_statements":4}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"af46cd6f-e9e1-4421-99f7-6c8f72aac278","method":"POST","route":"/v1/ingestion-runs/:ref/collection/resume"},"status":202,"duration_ms":6,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":7,"batch_calls":1,"batch_statements":1}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-host-48e6fd107197f469cd15fbc0eaca425ab946f54793216609546fa3b4baacd256","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-host"},"status":200,"duration_ms":2,"workflow":{"step":"load shard page 0 stage 0","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":6,"batch_calls":2,"batch_statements":4}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"2e530b18-afdf-487e-8509-7f9029712bbc","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":10,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-host-48e6fd107197f469cd15fbc0eaca425ab946f54793216609546fa3b4baacd256","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-host"},"status":200,"duration_ms":38,"workflow":{"step":"collect stage 0 batch 0 from 0 pass 0","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":65,"batch_calls":6,"batch_statements":15}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-host-48e6fd107197f469cd15fbc0eaca425ab946f54793216609546fa3b4baacd256","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-host"},"status":200,"duration_ms":1,"workflow":{"step":"reload shard page 0 stage 0","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":6,"batch_calls":2,"batch_statements":4}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"ced80401-1e36-4d60-96f9-28d46e2ace78","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":5,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"0e65fafc-2bc4-4bcb-af97-43c4353ea960","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":5,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"1d0a0db4-4310-4ca4-af55-0d82e35e2651","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":6,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"4ecdc5a1-9607-4721-a28d-64de06dcc5f5","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":6,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"4074c11d-355a-4e17-8378-65044e41105e","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":6,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"d62842fc-584c-4ac7-aebd-0fd623c69d2e","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":6,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"e432e4bc-d762-43d0-b588-67de6004eac3","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":7,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"f952b53f-2215-48fe-b178-94856e994e98","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":5,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"0a40045b-9302-42c2-ab62-54929e8d87f7","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":6,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"3557ec36-d1a3-4075-8b92-695382a85ec7","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":7,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"7cca2afd-9132-445e-9f51-ddec8466fe7a","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":5,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"86bd1a3d-6f2b-4be9-9a26-f1335af97b69","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":8,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"b1bdd715-d086-41a2-b362-c613fad9fcb6","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":6,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"b74246a8-1981-4ceb-a560-8d682815268b","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":7,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"2f58f287-8a2e-44ad-8e31-7536accd4319","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":9,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"172f6d2a-d135-476e-a49a-8cf2697eedda","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":7,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"3cb1f21f-6cd0-419d-8744-86785d6386ad","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":7,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"b3162aa8-4a2a-440e-bf44-67a86cff27b4","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":7,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"c409bcf9-5ba1-4301-97d5-7d56cf705435","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":7,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"7bacfe4b-1543-4f24-a3c0-0db8a286f571","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":9,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"17a4bf11-025b-44a4-a0a3-bc965b0c29ce","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":8,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"e9e68be9-838c-47b1-ad32-757a51ad525b","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":6,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"c117c8c3-948d-4406-83b2-9b89f34c9170","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":8,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"f7e8a09c-135f-4b43-9776-8a75fb7cceac","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":8,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"a56c6d40-7acc-4fb1-aec2-86db0e1b7408","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":9,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"e0e815c9-f032-4e3c-8602-9b4f89290e0d","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":8,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"5b99f5a8-1479-45d2-82fb-da5a20e147e0","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":8,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"de384d61-188a-4976-8d5b-faa928f25d86","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":8,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":1,"workflow":{"step":"load pending evidence page 0 barrier 1","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":6,"batch_calls":2,"batch_statements":4}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":1,"workflow":{"step":"record hostname Workflow identities stage 1","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":8,"batch_calls":3,"batch_statements":7}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":3,"workflow":{"step":"finalize collection barrier stage 1","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":17,"batch_calls":3,"batch_statements":12}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":6,"workflow":{"step":"read reconciliation dispatch","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":22,"batch_calls":3,"batch_statements":12}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":8,"workflow":{"step":"reconcile retained Official Source evidence","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":20,"batch_calls":4,"batch_statements":8}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":4,"workflow":{"step":"reconcile retained Official Source evidence-unit-1","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":20,"batch_calls":4,"batch_statements":8}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":4,"workflow":{"step":"reconcile retained Official Source evidence-unit-2","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":21,"batch_calls":5,"batch_statements":10}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":4,"workflow":{"step":"reconcile retained Official Source evidence-unit-3","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":21,"batch_calls":5,"batch_statements":10}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":4,"workflow":{"step":"reconcile retained Official Source evidence-unit-4","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":19,"batch_calls":4,"batch_statements":8}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":3,"workflow":{"step":"reconcile retained Official Source evidence-unit-5","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":19,"batch_calls":4,"batch_statements":8}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":8,"workflow":{"step":"reconcile retained Official Source evidence-unit-6","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":23,"batch_calls":5,"batch_statements":10}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":3,"workflow":{"step":"reconcile retained Official Source evidence-unit-7","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":21,"batch_calls":4,"batch_statements":8}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":3,"workflow":{"step":"reconcile retained Official Source evidence-unit-8","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":5,"batch_statements":10}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":2,"workflow":{"step":"reconcile retained Official Source evidence-unit-9","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":18,"batch_calls":4,"batch_statements":8}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":2,"workflow":{"step":"reconcile retained Official Source evidence-unit-10","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":18,"batch_calls":4,"batch_statements":8}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":5,"workflow":{"step":"reconcile retained Official Source evidence-unit-11","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":24,"batch_calls":4,"batch_statements":8}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":5,"workflow":{"step":"reconcile retained Official Source evidence-unit-12","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":5,"batch_statements":10}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":3,"workflow":{"step":"reconcile retained Official Source evidence-unit-13","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":24,"batch_calls":4,"batch_statements":8}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":3,"workflow":{"step":"reconcile retained Official Source evidence-unit-14","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":24,"batch_calls":5,"batch_statements":10}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"workflow.step.completed","runtime":"ingestion","request":{"id":"evidence-run_9f3f0f8998b8219c107fcd9b9c3cd573b6151063cd8e53009016134cda726917","method":"WORKFLOW","route":"/workflows/card-keepr-evidence-ingestion"},"status":200,"duration_ms":5,"workflow":{"step":"reconcile retained Official Source evidence-unit-15","step_count":1},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":42,"batch_calls":4,"batch_statements":24}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"149f0950-5dff-4b61-9c50-6da2efe4f100","method":"GET","route":"/v1/ingestion-runs/:ref/evidence"},"status":200,"duration_ms":6,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":25,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"f7fea319-d77c-4630-90c5-08eb5d23dd78","method":"GET","route":"/v1/source-snapshots/:ref/content"},"status":200,"duration_ms":1,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":3,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"d6a5265e-9470-4dd1-8abf-31aaad2b4649","method":"GET","route":"/v1/source-observation-sets/:ref/content"},"status":200,"duration_ms":1,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":3,"batch_calls":0,"batch_statements":0}}
+
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: D1_ERROR: synthetic_initial_parse_d1_outage: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_TRIGGER)
+    at D1DatabaseSessionAlwaysPrimary._sendOrThrow (cloudflare-internal:d1-api:146:19)
+    at cloudflare-internal:d1-api:97:27
+    at atomicBatch (/Users/marcus/.codex/worktrees/55a9/card-keepr/src/catalogue/shared/catalogue-store-repository.ts:117:19)
+    at finalizeParseOperation (/Users/marcus/.codex/worktrees/55a9/card-keepr/src/catalogue/source-evidence/source-evidence-parsing.ts:272:3)
+    at parseCapturedRequest (/Users/marcus/.codex/worktrees/55a9/card-keepr/src/catalogue/source-evidence/source-evidence-capture.ts:620:28)
+    at persistCapturedRequest (/Users/marcus/.codex/worktrees/55a9/card-keepr/src/catalogue/source-evidence/source-evidence-batch.ts:218:5)
+uncaught exception; source = Uncaught (in promise); stack = Error: D1_ERROR: synthetic_initial_parse_d1_outage: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_TRIGGER)
+    at D1DatabaseSessionAlwaysPrimary._sendOrThrow (cloudflare-internal:d1-api:146:19)
+    at cloudflare-internal:d1-api:97:27
+    at atomicBatch (/Users/marcus/.codex/worktrees/55a9/card-keepr/src/catalogue/shared/catalogue-store-repository.ts:117:19)
+    at finalizeParseOperation (/Users/marcus/.codex/worktrees/55a9/card-keepr/src/catalogue/source-evidence/source-evidence-parsing.ts:272:3)
+    at parseCapturedRequest (/Users/marcus/.codex/worktrees/55a9/card-keepr/src/catalogue/source-evidence/source-evidence-capture.ts:620:28)
+    at persistCapturedRequest (/Users/marcus/.codex/worktrees/55a9/card-keepr/src/catalogue/source-evidence/source-evidence-batch.ts:218:5)
+uncaught exception; source = Uncaught (in promise); stack = Error: D1_ERROR: synthetic_initial_parse_d1_outage: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_TRIGGER)
+    at D1DatabaseSessionAlwaysPrimary._sendOrThrow (cloudflare-internal:d1-api:146:19)
+    at cloudflare-internal:d1-api:97:27
+    at atomicBatch (/Users/marcus/.codex/worktrees/55a9/card-keepr/src/catalogue/shared/catalogue-store-repository.ts:117:19)
+    at finalizeParseOperation (/Users/marcus/.codex/worktrees/55a9/card-keepr/src/catalogue/source-evidence/source-evidence-parsing.ts:272:3)
+    at parseCapturedRequest (/Users/marcus/.codex/worktrees/55a9/card-keepr/src/catalogue/source-evidence/source-evidence-capture.ts:620:28)
+    at persistCapturedRequest (/Users/marcus/.codex/worktrees/55a9/card-keepr/src/catalogue/source-evidence/source-evidence-batch.ts:218:5)
+uncaught exception; source = Uncaught (in promise); stack = Error: D1_ERROR: synthetic_initial_parse_d1_outage: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_TRIGGER)
+    at D1DatabaseSessionAlwaysPrimary._sendOrThrow (cloudflare-internal:d1-api:146:19)
+    at cloudflare-internal:d1-api:97:27
+    at atomicBatch (/Users/marcus/.codex/worktrees/55a9/card-keepr/src/catalogue/shared/catalogue-store-repository.ts:117:19)
+    at finalizeParseOperation (/Users/marcus/.codex/worktrees/55a9/card-keepr/src/catalogue/source-evidence/source-evidence-parsing.ts:272:3)
+    at parseCapturedRequest (/Users/marcus/.codex/worktrees/55a9/card-keepr/src/catalogue/source-evidence/source-evidence-capture.ts:620:28)
+    at persistCapturedRequest (/Users/marcus/.codex/worktrees/55a9/card-keepr/src/catalogue/source-evidence/source-evidence-batch.ts:218:5)
+uncaught exception; source = Uncaught (in promise); stack = Error: D1_ERROR: synthetic_initial_parse_d1_outage: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_TRIGGER)
+    at async doWrapper (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:13496:53)
+    at async Context.do (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:13768:17)
+uncaught exception; source = Uncaught (in promise); stack = Error: D1_ERROR: synthetic_initial_parse_d1_outage: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_TRIGGER)
+    at async doWrapper (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:13496:53)
+    at async Context.do (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:13768:17)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; exception = workerd/api/actor-state.c++:1178: failed: broken.outputGateBroken; jsg.Error: Aborting engine: User called restart
+stack: 102574b28
+uncaught exception; exception = workerd/api/actor-state.c++:1178: failed: broken.outputGateBroken; jsg.Error: Aborting engine: User called restart
+stack: 102574b28
+uncaught exception; exception = workerd/api/actor-state.c++:1178: failed: broken.outputGateBroken; jsg.Error: Aborting engine: User called restart
+stack: 102574b28
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+An RPC stub was not disposed properly. You must call dispose() on all stubs in order to let the other side know that you are no longer using them. You cannot rely on the garbage collector for this because it may take arbitrarily long before actually collecting unreachable objects. As a shortcut, calling dispose() on the result of an RPC call disposes all stubs within it.
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: Engine was never started
+    at Engine.getStatus (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:14488:15)
+uncaught exception; source = Uncaught (in promise); stack = Error: instance.not_found
+    at WorkflowBinding.get (file:///Users/marcus/.codex/worktrees/55a9/card-keepr/node_modules/miniflare/dist/src/workers/workflows/binding.worker.js:15099:13)
+ ❯ apps/ingestion/test/runtime-workflow-collection.spec.ts (12 tests | 1 failed) 26536ms
+   × a successful Official Source response is snapshotted before parsing 1486ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/ingestion/test/runtime-workflow-collection.spec.ts > a successful Official Source response is snapshotted before parsing
+AssertionError: Target cannot be null or undefined.
+ ❯ apps/ingestion/test/runtime-workflow-collection.spec.ts:138:44
+    136|     adapter_version: "fixture-one-piece-json@3",
+    137|   });
+    138|   expect(observationDocument.observations).toHaveLength(1);
+       |                                            ^
+    139|
+    140|   const shown = await administrationRequest(`/v1/ingestion-runs/${plan…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 15 passed (16)
+   Start at  18:57:02
+   Duration  28.48s (transform 1.25s, setup 0ms, import 3.16s, tests 38.84s, environment 0ms)
+

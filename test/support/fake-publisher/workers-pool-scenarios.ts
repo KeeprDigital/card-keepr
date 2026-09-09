@@ -39,10 +39,24 @@ function rewrittenOnePieceCompleteResponse(request: Request, markerPattern: RegE
 
 function paginatedGundamCollectionResponse(request: Request, officialNavigation: string): Response | null {
   const url = new URL(request.url);
-  const markedScenario = productionSourceFixtureMarker(request.headers) === "card-keepr-gundam-pagination-v4";
+  const marker = productionSourceFixtureMarker(request.headers);
+  const bounded = marker === "card-keepr-gundam-pagination-bounded";
+  const markedScenario = bounded || marker === "card-keepr-gundam-pagination-v4";
+  const cardCount = bounded ? 12 : 4;
+  const validLocator = (locator: string) =>
+    /^GD02-\d{3}$/u.test(locator) && Number(locator.slice(5)) >= 1 && Number(locator.slice(5)) <= cardCount;
   if (!markedScenario || (!url.pathname.startsWith("/asia-en/") && !url.pathname.startsWith("/jp/images/cards/card/")))
     return null;
-  if (/^\/jp\/images\/cards\/card\/GD02-00[1-4]\.png$/u.test(url.pathname)) {
+  if (
+    url.pathname.startsWith("/jp/images/cards/card/") &&
+    url.pathname.endsWith(".png") &&
+    validLocator(
+      url.pathname
+        .split("/")
+        .at(-1)!
+        .replace(/\.png$/u, ""),
+    )
+  ) {
     return new Response(
       new Uint8Array([
         0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00,
@@ -70,7 +84,14 @@ function paginatedGundamCollectionResponse(request: Request, officialNavigation:
         },
       );
     }
-    const locators = page === 1 ? ["GD02-001", "GD02-002"] : ["GD02-002", "GD02-003", "GD02-004"];
+    const locators = bounded
+      ? Array.from(
+          { length: page === 1 ? 10 : 3 },
+          (_, index) => `GD02-${String(index + (page === 1 ? 1 : 10)).padStart(3, "0")}`,
+        )
+      : page === 1
+        ? ["GD02-001", "GD02-002"]
+        : ["GD02-002", "GD02-003", "GD02-004"];
     const pageIdentity = page === 1 ? "" : `<input type="hidden" name="page" value="${page}">`;
     const pager =
       page === 1 ? '<div class="pager"><a href="?package=619102&amp;page=2">2</a></div>' : '<div class="pager"></div>';
@@ -78,7 +99,7 @@ function paginatedGundamCollectionResponse(request: Request, officialNavigation:
       `<html><title>CARDS | GUNDAM CARD GAME</title>
       ${officialNavigation}<main><section>
       <input type="hidden" name="package" value="619102">${pageIdentity}
-      <div class="resultTxt"><span class="num">4</span>cards found.</div>
+      <div class="resultTxt"><span class="num">${cardCount}</span>cards found.</div>
       <ul>${locators
         .map((locator) => `<li class="cardItem"><a data-src="detail.php?detailSearch=${locator}">Card</a></li>`)
         .join("")}</ul>${pager}</section></main></html>`,
@@ -89,7 +110,7 @@ function paginatedGundamCollectionResponse(request: Request, officialNavigation:
   }
   if (url.pathname === "/asia-en/cards/detail.php") {
     const locator = url.searchParams.get("detailSearch");
-    if (locator === null || !/^GD02-00[1-4]$/u.test(locator)) return null;
+    if (locator === null || !validLocator(locator)) return null;
     return new Response(
       `<html><main><article class="article cardDetailPageCol">
       <div class="cardNo">${locator}</div><div class="rarity">C</div><div class="blockIcon">-</div>
@@ -708,6 +729,19 @@ export const workersPoolSyntheticHostScenario: PublisherScenario = async (contex
     return new Response("unknown synthetic Official Source", {
       status: 404,
     });
+  }
+  if (url.pathname === "/source-refresh-revalidated" || url.pathname === "/source-refresh-reverted") {
+    const previous = request.headers.get("if-none-match");
+    if (url.pathname === "/source-refresh-revalidated" && previous === '"refresh-A"')
+      return new Response(null, { status: 304, headers: { etag: '"refresh-A"' } });
+    const document = reconciliationSourceDocument("base", "discovery", url.href);
+    const changed = url.pathname === "/source-refresh-reverted" && previous === '"refresh-A"';
+    if (changed) {
+      for (const observation of document.cards ?? []) {
+        if ("card" in observation && observation.card) observation.card.name = "Changed publisher name";
+      }
+    }
+    return Response.json(document, { headers: { etag: changed ? '"refresh-B"' : '"refresh-A"' } });
   }
   if (url.pathname === "/cards") {
     return new Response('{"cards":[{"card_number":"OP01-001","name":"Roronoa Zoro"}]}', {

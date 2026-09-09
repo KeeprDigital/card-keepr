@@ -1,26 +1,43 @@
 import { createHash } from "node:crypto";
-import { readFile, readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { dirname, join, resolve } from "node:path";
+import { after } from "node:test";
+import { inspect, parseEnv } from "node:util";
 import { build } from "esbuild";
 import { Miniflare } from "miniflare";
-import { parseEnv } from "node:util";
-import { after } from "node:test";
-import { createMigrationLedger, appliedMigrations, recordMigration } from "./query-helpers/migrations.mjs";
 import { unstable_getMiniflareWorkerOptions, unstable_splitSqlQuery } from "wrangler";
+import { nativeOperationalTimeline } from "./native-capacity-metrics.mjs";
+import { profileNativeIsolates } from "./native-isolate-metrics.mjs";
+import { appliedMigrations, createMigrationLedger, recordMigration } from "./query-helpers/migrations.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const groups = new Map();
 const bundles = new Map();
+let profileSequence = 0;
 
 // A setup failure can occur before a test installs its per-handle cleanup.
 // The file-level hook still closes any runtime created before that failure.
 after(async () => {
+  const failures = [];
   for (const group of groups.values()) {
-    await Promise.all([...group.handles].map((handle) => handle.dispose()));
-    if (group.runtime && !group.disposing) await group.runtime.dispose();
+    const results = await Promise.allSettled([...group.handles].map((handle) => handle.dispose()));
+    for (const result of results) if (result.status === "rejected") failures.push(result.reason);
+    try {
+      if (group.stopProfile) await group.stopProfile();
+    } catch (error) {
+      failures.push(error);
+    } finally {
+      group.stopProfile = undefined;
+      try {
+        if (group.runtime && !group.disposing) await group.runtime.dispose();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
   }
   groups.clear();
+  if (failures.length) throw new AggregateError(failures, "Native runtime cleanup failed");
 });
 
 function identity(statePath, id) {
@@ -93,7 +110,16 @@ async function bundle(main, define) {
   return bundles.get(key);
 }
 
-export async function startInprocessWorker({ config, envFile, pacingMode, port, registryPath, statePath, vars }) {
+export async function startInprocessWorker({
+  config,
+  envFile,
+  outboundService,
+  pacingMode,
+  port,
+  registryPath,
+  statePath,
+  vars,
+}) {
   const key = registryPath ?? dirname(resolve(statePath));
   let group = groups.get(key);
   if (!group) {
@@ -111,6 +137,7 @@ export async function startInprocessWorker({ config, envFile, pacingMode, port, 
   const options = {
     ...prepared.workerOptions,
     name: prepared.raw.name,
+    ...(outboundService ? { outboundService } : {}),
     modules: true,
     script: await bundle(prepared.main, prepared.define),
     bindings: {
@@ -124,22 +151,33 @@ export async function startInprocessWorker({ config, envFile, pacingMode, port, 
   const server = createServer(async (request, response) => {
     try {
       await group.serial;
-      // RPC carries headers as data past Miniflare's localhost CSRF filter.
+      // Carry original headers as data past Miniflare's localhost CSRF filter.
+      // Fetch stays asynchronous: a first RPC call can block Node in Atomics.wait
+      // while workerd blocks on the operational-log pipe that Node must drain.
       // The application itself receives the original Origin, including malformed values.
       const worker = await group.runtime.getWorker("acceptance-http-bridge");
       const chunks = [];
       for await (const chunk of request) chunks.push(chunk);
       const body = ["GET", "HEAD"].includes(request.method) ? undefined : Buffer.concat(chunks);
-      const result = await worker.dispatch(options.name, `http://127.0.0.1:${port}${request.url}`, {
-        method: request.method,
-        headers: request.headers,
+      const result = await worker.fetch("http://acceptance-bridge.invalid/dispatch", {
+        method: "POST",
+        headers: {
+          "x-acceptance-dispatch": encodeURIComponent(
+            JSON.stringify({
+              name: options.name,
+              url: `http://127.0.0.1:${port}${request.url}`,
+              method: request.method,
+              headers: request.headers,
+            }),
+          ),
+        },
         body,
       });
       response.writeHead(result.status, Object.fromEntries(result.headers));
       if (result.body) for await (const chunk of result.body) response.write(chunk);
       response.end();
     } catch (error) {
-      group.output += `${error.stack}\n`;
+      group.output += `[acceptance-http-bridge] ${request.method} ${request.url}\n${inspect(error, { depth: 4 })}\n`;
       response.writeHead(500).end(String(error));
     }
   });
@@ -147,10 +185,12 @@ export async function startInprocessWorker({ config, envFile, pacingMode, port, 
     group.workers.set(options.name, options);
     const all = {
       ...group.options,
+      ...(process.env.KEEPR_CAPACITY_OUTPUT_PREFIX ? { inspectorPort: 0 } : {}),
       handleRuntimeStdio: (stdout, stderr) => {
         for (const stream of [stdout, stderr])
           stream.on("data", (chunk) => {
             group.output += chunk.toString();
+            group.timeline?.observe(chunk.toString(), stream);
           });
       },
       workers: [
@@ -162,15 +202,34 @@ export async function startInprocessWorker({ config, envFile, pacingMode, port, 
           compatibilityDate: "2026-07-29",
           script: `import { WorkerEntrypoint } from "cloudflare:workers";
         export default class extends WorkerEntrypoint {
-          async dispatch(name, url, init) { return this.env[name].fetch(url, init); }
+          async fetch(request) {
+            const { name, url, method, headers } = JSON.parse(decodeURIComponent(request.headers.get("x-acceptance-dispatch")));
+            return this.env[name].fetch(url, {
+              method, headers, body: method === "GET" || method === "HEAD" ? undefined : request.body,
+            });
+          }
         }`,
           serviceBindings: Object.fromEntries([...group.workers.keys()].map((name) => [name, name])),
         },
       ],
     };
+    if (group.stopProfile) {
+      await group.stopProfile();
+      group.stopProfile = undefined;
+    }
+    if (process.env.KEEPR_CAPACITY_OUTPUT_PREFIX) group.timeline = nativeOperationalTimeline();
     if (group.runtime) await group.runtime.setOptions(all);
     else group.runtime = new Miniflare(all);
     await group.runtime.ready;
+    if (process.env.KEEPR_CAPACITY_OUTPUT_PREFIX) {
+      const offset = group.output.length;
+      group.stopProfile = await profileNativeIsolates(
+        group.runtime,
+        `${process.env.KEEPR_CAPACITY_OUTPUT_PREFIX}-isolate-${++profileSequence}.json`,
+        { directory: dirname(resolve(statePath)), output: () => group.output.slice(offset), timeline: group.timeline },
+        { sampleIntervalMs: Number(process.env.KEEPR_CAPACITY_SAMPLE_INTERVAL_MS ?? 3000) },
+      );
+    }
   });
   await group.serial;
   await new Promise((done, reject) => {
@@ -192,9 +251,17 @@ export async function startInprocessWorker({ config, envFile, pacingMode, port, 
       await new Promise((done) => server.close(done));
       group.handles.delete(handle);
       if (group.handles.size === 0) {
-        group.disposing ??= group.runtime.dispose();
-        await group.disposing;
-        groups.delete(key);
+        try {
+          if (group.stopProfile) await group.stopProfile();
+        } finally {
+          group.stopProfile = undefined;
+          group.disposing ??= group.runtime.dispose();
+          try {
+            await group.disposing;
+          } finally {
+            groups.delete(key);
+          }
+        }
       }
     },
   };

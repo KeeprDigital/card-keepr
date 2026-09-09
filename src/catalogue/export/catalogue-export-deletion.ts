@@ -1,5 +1,6 @@
 import { type CatalogueStore, canonicalJson, compareUtf8, sha256Text } from "../shared";
 import * as exportStatements from "./export-repository";
+import { isNativeExportPackage, nativeExportDeletionScope } from "./native-export-deletion";
 import {
   catalogueExportDeletionPlanInsertStatement,
   catalogueExportStatement,
@@ -109,10 +110,11 @@ export async function prepareCatalogueExportDeletion(
   }
 
   const prefix = `catalogue-exports/${request.catalogue_revision_id}/`;
-  const resolvedObjects = await verifiedExportObjects(bucket, catalogueExport, prefix);
+  const resolvedObjects = await verifiedExportObjects(database, bucket, catalogueExport, prefix);
   const objectKeys = resolvedObjects.objectKeys;
   const objectSetDigest = await sha256Text(canonicalJson(objectKeys));
   const dependencies: Record<string, string>[] = [
+    ...(resolvedObjects.dependencies ?? []),
     {
       code: "catalogue_consumers_may_depend",
       severity: "warning",
@@ -239,7 +241,9 @@ export async function confirmCatalogueExportDeletion(
   ) {
     throw problem(409, "catalogue_export_changed", "The plan no longer names the exact available immutable export.");
   }
-  const exactKeys = await listObjectKeys(bucket, `catalogue-exports/${plan.catalogue_revision_id}/`);
+  const exactKeys = isNativeExportPackage(catalogueExport.manifest_key)
+    ? (await verifiedExportObjects(database, bucket, catalogueExport, "")).objectKeys
+    : await listObjectKeys(bucket, `catalogue-exports/${plan.catalogue_revision_id}/`);
   const exactDigest = await sha256Text(canonicalJson(exactKeys));
   if (exactDigest !== plan.object_set_digest) {
     throw problem(409, "catalogue_export_changed", "The Catalogue Export object set changed after preparation.");
@@ -483,15 +487,13 @@ async function executeDeletion(
       if ((await renewLease()) === null) return staleOwnerResponse();
       remaining.push(await bucket.head(key));
     }
-    const remainingPrefix = await listObjectKeys(
-      bucket,
-      `catalogue-exports/${plan.catalogue_revision_id}/`,
-      async () => {
-        if ((await renewLease()) === null) {
-          throw new DeletionExecutionLeaseLost();
-        }
-      },
-    );
+    const remainingPrefix = isNativeExportPackage(manifestKey)
+      ? []
+      : await listObjectKeys(bucket, `catalogue-exports/${plan.catalogue_revision_id}/`, async () => {
+          if ((await renewLease()) === null) {
+            throw new DeletionExecutionLeaseLost();
+          }
+        });
     if (remaining.some((object) => object !== null) || remainingPrefix.length !== 0) {
       throw new Error("A bound Catalogue Export object remains present.");
     }
@@ -774,10 +776,22 @@ async function listObjectKeys(bucket: R2Bucket, prefix: string, beforeList?: () 
 }
 
 async function verifiedExportObjects(
+  database: CatalogueStore,
   bucket: R2Bucket,
   catalogueExport: ExportRow,
   prefix: string,
-): Promise<{ objectKeys: string[]; componentNames: string[] }> {
+): Promise<{ objectKeys: string[]; componentNames: string[]; dependencies?: Record<string, string>[] }> {
+  if (isNativeExportPackage(catalogueExport.manifest_key)) {
+    try {
+      return await nativeExportDeletionScope(database, bucket, catalogueExport);
+    } catch (error) {
+      throw problem(
+        409,
+        "unsafe_export_object_scope",
+        error instanceof Error ? error.message : "The native export reference evidence is unavailable.",
+      );
+    }
+  }
   const manifestObject = await bucket.get(catalogueExport.manifest_key);
   if (manifestObject === null || manifestObject.size > 1_048_576) {
     throw problem(409, "unsafe_export_object_scope", "The verified manifest is unavailable.");

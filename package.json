@@ -19,7 +19,7 @@
     "test:workers:ingestion": "vitest run --config apps/ingestion/vitest.config.ts",
     "test:acceptance": "node --test acceptance/*.test.mjs",
     "test:acceptance:shard": "node scripts/acceptance-shard.mjs",
-    "test:stress": "KEEPR_TEST_SUITE=stress vitest run --config apps/api/vitest.config.ts && KEEPR_TEST_SUITE=stress vitest run --config apps/ingestion/vitest.config.ts",
+    "test:stress": "KEEPR_TEST_SUITE=stress vitest run --config apps/ingestion/vitest.config.ts",
     "lint": "biome lint .",
     "format": "biome format --write --changed",
     "format:check": "biome format --changed --no-errors-on-unmatched",

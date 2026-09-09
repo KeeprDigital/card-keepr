@@ -1,6 +1,9 @@
+import { catalogueStore } from "../../../src/catalogue/shared";
+import { readSourceObservation } from "../../../src/catalogue/reconciliation/reconciliation-source-observation";
 import { expect, test } from "vitest";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
 import { canonicalJson, sha256 } from "../../../src/catalogue/shared";
+import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import * as curatedQueries from "./query-helpers/curated";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
@@ -21,6 +24,42 @@ import {
 } from "./reconciliation-helpers";
 
 installReconciliationSuite();
+
+async function waitForNativeCandidate(runId: string): Promise<Record<string, unknown>> {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const listed = await get(`/v1/ingestion-runs/${runId}/game-candidates`);
+    expect(listed.response.status).toBe(200);
+    const candidates = listed.document.candidates as Record<string, unknown>[];
+    if (candidates.length > 0) {
+      expect(candidates).toHaveLength(1);
+      const candidate = await get(`/v1/game-candidates/${candidates[0]!.id}`);
+      expect(candidate.response.status).toBe(200);
+      if (candidate.document.state !== "preparing") {
+        expect(candidate.document).toMatchObject({
+          state: "sealed",
+          ingestion_run_id: runId,
+          supported_game: "fusion-world",
+          manifest_digest: expect.any(String),
+        });
+        return candidate.document;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`collection ${runId} did not seal its native candidate`);
+}
+
+async function abandonNativeCandidate(candidate: Record<string, unknown>) {
+  expect(
+    (
+      await post(`/v1/game-candidates/${candidate.id}/abandon`, {
+        generation: candidate.generation,
+        idempotency_key: `abandon-${candidate.id}`,
+      })
+    ).response.status,
+  ).toBe(200);
+}
 
 test("a complete zero-match blocks publication unless retained evidence proves a demonstrably novel appearance", async () => {
   const run = await collect("/reconciliation/not-demonstrably-novel", "reconcile-not-novel");
@@ -127,7 +166,9 @@ test("unknown controlled vocabulary remains retained evidence, warns, and stays 
   const observationSetId = requiredString(requiredFirst(run.document, "observation_sets"), "id");
   const retained = await get(`/v1/source-observation-sets/${observationSetId}/content`);
   expect(retained.response.status).toBe(200);
-  expect(JSON.stringify(retained.document)).toContain("etched-future");
+  expect(
+    JSON.stringify(await readSourceObservation(catalogueStore(testEnv.CATALOGUE_DB), observationSetId, 0)),
+  ).toContain("etched-future");
   const rejected = await post(`/v1/ingestion-runs/${run.id}/rejection`, {
     candidate_digest: requiredString(reconciled.document, "candidate_digest"),
     idempotency_key: "reject-unknown-vocabulary",
@@ -307,22 +348,18 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
   };
   const resumed = await post(`/v1/ingestion-runs/${run.id}/collection/resume`, {});
   expect(resumed.response.status).toBe(202);
-  const completed = await waitForRunState(run.id, "awaiting_approval");
-  expect(completed).toMatchObject({
-    state: "awaiting_approval",
-  });
-  const candidate = await get(`/v1/ingestion-runs/${run.id}/candidate`);
-  expect(candidate.response.status).toBe(200);
-  expect(candidate.document).toMatchObject({
-    run_id: run.id,
-    candidate_digest: expect.any(String),
-    expected_current_revision_id: expect.any(String),
-    diff: {
-      cards: { added: [] },
-      printings: { added: [] },
-    },
-  });
-  expect((await approve(candidate.document)).response.status).toBe(200);
+  const candidate = await waitForNativeCandidate(run.id);
+  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
+  const partitionPage = await get(`/v1/game-candidates/${candidate.id}/partitions`);
+  expect(partitionPage.response.status).toBe(200);
+  expect(partitionPage.document.next_cursor).toBeNull();
+  const partitions = partitionPage.document.partitions as { kind: string; record_count: number }[];
+  expect(
+    partitions
+      .filter(({ kind }) => kind === "cards" || kind === "printings")
+      .reduce((count, partition) => count + partition.record_count, 0),
+  ).toBe(0);
+  await abandonNativeCandidate(candidate);
 });
 
 test("new collection rejects an unregistered adapter version while retained snapshots reparse with their exact capturing version", async () => {
@@ -347,7 +384,7 @@ test("new collection rejects an unregistered adapter version while retained snap
   const runId = requiredString(started.document, "id");
   expect((await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
 
-  await waitForRunState(runId, "awaiting_approval");
+  const candidate = await waitForNativeCandidate(runId);
   const snapshot = await sourceEvidenceQueries
     .readSourceSnapshotsId(testEnv.CATALOGUE_DB)
     .bind(runId)
@@ -362,15 +399,7 @@ test("new collection rejects an unregistered adapter version while retained snap
     source_snapshot_id: snapshot.id,
     adapter_version: "fusion-world-en@9",
   });
-  const candidate = await get(`/v1/ingestion-runs/${runId}/candidate`);
-  expect(
-    (
-      await post(`/v1/ingestion-runs/${runId}/rejection`, {
-        candidate_digest: requiredString(candidate.document, "candidate_digest"),
-        idempotency_key: "reject-active-adapter-retained-reparse-source",
-      })
-    ).response.status,
-  ).toBe(200);
+  await abandonNativeCandidate(candidate);
 }, 30_000);
 
 test("complete image evidence publishes an unidentified artwork once without collapsing a new locator", async () => {
@@ -394,7 +423,14 @@ test("complete image evidence publishes an unidentified artwork once without col
     });
     expect(started.response.status).toBe(201);
     const runId = requiredString(started.document, "id");
-    expect((await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
+    // This test exercises compatibility publication; production parents now prepare native candidates.
+    await collectFixtureEvidence(
+      testEnv.CATALOGUE_DB,
+      testEnv.EVIDENCE_OBJECTS,
+      testEnv.OFFICIAL_SOURCE_TRANSPORT,
+      runId,
+    );
+    await reconcile(runId, {}, 20_000);
     const state = await waitForRunState(runId, expectedState, 20_000, 250);
     if (expectedState === "failed") return state;
     const candidate = await get(`/v1/ingestion-runs/${runId}/candidate`);

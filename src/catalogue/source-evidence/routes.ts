@@ -1,3 +1,9 @@
+import { importRetainedSourceRecords } from "./source-record-migration";
+import { advanceStagingCleanup } from "./staging-cleanup";
+import { inspectEvidenceCleanup, inspectEvidenceCleanupResults, advanceEvidenceCleanup } from "./evidence-cleanup";
+import { sourceLifecycleHistory, decideSourceLifecycle } from "./source-lifecycle";
+import { sourceAuthorities, selectSourceAuthority } from "./source-authority";
+import { publishers, sources, sourceLineages, gameProfileRegistrations, sourceAdapterRegistrations } from "../adapters";
 import {
   assertOnlyFields,
   readAdministrationBody,
@@ -25,12 +31,128 @@ type Environment = {
   EVIDENCE_HOST_WORKFLOW: Parameters<typeof pauseEvidenceCollection>[2];
   EVIDENCE_INGESTION_WORKFLOW: Parameters<typeof resumeEvidenceRun>[1];
   EVIDENCE_OBJECTS: R2Bucket;
+  PRINTING_IMAGES: R2Bucket;
+  CATALOGUE_EXPORTS: R2Bucket;
   SOURCE_HOST_PACING_INTERVAL_MS: string;
   SOURCE_HOST_PACING_MODE: string;
 };
 type Context = RouteContext<Environment> & { observedAt: string };
 
 export const sourceEvidenceRoutes = [
+  route<Context>("POST", "/v1/source-observation-sets/:observationSet/records", async ({ env, request }, params) => {
+    assertOnlyFields(await readAdministrationBody(request), []);
+    return Response.json(
+      await importRetainedSourceRecords(env.CATALOGUE_DB, env.EVIDENCE_OBJECTS, params.observationSet!),
+    );
+  }),
+  route<Context>("GET", "/v1/evidence-cleanups/:cleanup/objects", async ({ env, request }, params) =>
+    Response.json(
+      await inspectEvidenceCleanupResults(
+        env.CATALOGUE_DB,
+        params.cleanup!,
+        new URL(request.url).searchParams.get("after") ?? "",
+      ),
+    ),
+  ),
+  route<Context>("GET", "/v1/evidence-cleanups/:cleanup", async ({ env }, params) =>
+    Response.json(await inspectEvidenceCleanup(env.CATALOGUE_DB, params.cleanup!)),
+  ),
+  route<Context>("POST", "/v1/evidence-cleanups/:cleanup/advance", async ({ request, env, observedAt }, params) => {
+    assertOnlyFields(await readAdministrationBody(request), []);
+    const intent = await inspectEvidenceCleanup(env.CATALOGUE_DB, params.cleanup!);
+    return Response.json(
+      await (intent.scope === "staging"
+        ? advanceStagingCleanup(env.CATALOGUE_DB, env, params.cleanup!, observedAt)
+        : advanceEvidenceCleanup(env.CATALOGUE_DB, env.EVIDENCE_OBJECTS, params.cleanup!, observedAt)),
+    );
+  }),
+  route<Context>("GET", "/v1/source-lineages/:lineage/lifecycle", async ({ env }, params) =>
+    Response.json(await sourceLifecycleHistory(env.CATALOGUE_DB, params.lineage!)),
+  ),
+  route<Context>("POST", "/v1/source-lineages/:lineage/lifecycle", async ({ request, env, observedAt }, params) => {
+    const body = await readAdministrationBody(request);
+    assertOnlyFields(body, ["state", "expected_generation", "rationale", "idempotency_key"]);
+    return Response.json(
+      await decideSourceLifecycle(
+        env.CATALOGUE_DB,
+        params.lineage!,
+        {
+          state: requiredString(body, "state"),
+          expected_generation: requiredString(body, "expected_generation"),
+          rationale: requiredString(body, "rationale"),
+          idempotency_key: requiredString(body, "idempotency_key"),
+        },
+        observedAt,
+      ),
+    );
+  }),
+  route<Context>("GET", "/v1/source-authorities", async ({ env }) =>
+    Response.json(await sourceAuthorities(env.CATALOGUE_DB)),
+  ),
+  route<Context>("POST", "/v1/source-authorities", async ({ request, env, observedAt }) => {
+    const body = await readAdministrationBody(request);
+    const fields = [
+      "game",
+      "locale",
+      "release_region",
+      "area",
+      "source_lineage",
+      "expected_generation",
+      "rationale",
+      "idempotency_key",
+    ];
+    assertOnlyFields(body, fields);
+    const input = {
+      game: requiredString(body, "game"),
+      locale: requiredString(body, "locale"),
+      release_region: requiredString(body, "release_region"),
+      area: requiredString(body, "area"),
+      source_lineage: requiredString(body, "source_lineage"),
+      expected_generation: requiredString(body, "expected_generation"),
+      rationale: requiredString(body, "rationale"),
+      idempotency_key: requiredString(body, "idempotency_key"),
+    };
+    return Response.json(await selectSourceAuthority(env.CATALOGUE_DB, input, observedAt));
+  }),
+  route<Context>("GET", "/v1/source-registry", async ({ env }) =>
+    Response.json({
+      publishers,
+      sources,
+      lineages: sourceLineages,
+      lifecycle: await Promise.all(sourceLineages.map(({ id }) => sourceLifecycleHistory(env.CATALOGUE_DB, id))),
+      profiles: gameProfileRegistrations(),
+      adapters: sourceAdapterRegistrations.map(
+        ({
+          adapterVersion,
+          sourceLineage,
+          supportedGame,
+          gameProfileVersion,
+          parserContract,
+          requestSurface,
+          reconciliationCapability,
+          coverageContracts,
+        }) => ({
+          adapter_version: adapterVersion,
+          source_lineage: sourceLineage,
+          game: supportedGame,
+          game_profile: gameProfileVersion,
+          parser_contract: parserContract,
+          transport_permission: requestSurface,
+          coverage_contracts: Object.entries(coverageContracts ?? {}).map(([subset, contract]) => ({
+            subset,
+            description: contract.description,
+            required_surfaces: contract.requiredSurfaces,
+          })),
+          coverage: { locale: "en", area: reconciliationCapability, subset: "complete" },
+        }),
+      ),
+      definitions: {
+        before_go_live: "edit_in_place",
+        after_go_live: "immutable_versions",
+        correction: "fresh_collection",
+      },
+    }),
+  ),
   route<Context>("POST", "/v1/ingestion-runs/evidence", async ({ request, env, requestId }) => {
     const body = await readAdministrationBody(request);
     if (body.plans !== undefined) {
@@ -44,9 +166,19 @@ export const sourceEvidenceRoutes = [
         { status: 201 },
       );
     }
-    assertOnlyFields(body, ["supported_game", "source_lineage", "adapter_version", "idempotency_key", "requests"]);
+    assertOnlyFields(body, [
+      "supported_game",
+      "source_lineage",
+      "adapter_version",
+      "idempotency_key",
+      "requests",
+      "participation",
+      "subset",
+    ]);
     return Response.json(
       await startEvidenceRun(env.CATALOGUE_DB, {
+        ...(body.participation === undefined ? {} : { participation: requiredString(body, "participation") }),
+        ...(body.subset === undefined ? {} : { subset: requiredString(body, "subset") }),
         supported_game: requiredString(body, "supported_game"),
         source_lineage: requiredString(body, "source_lineage"),
         adapter_version: requiredString(body, "adapter_version"),

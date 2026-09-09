@@ -1,0 +1,6 @@
+
+> check:catalogue-boundary
+> node scripts/catalogue-import-boundary.mjs
+
+Checked 1353 relative imports across 352 modules.
+No catalogue boundary violation.

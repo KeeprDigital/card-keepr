@@ -1,3 +1,4 @@
+import { publishCorrectionStatements } from "./identity-correction-repository";
 import { requiredSourceAdapter } from "../adapters";
 import { curatedPublicationStatements } from "../curated";
 import {
@@ -135,15 +136,18 @@ export async function reconciliationPublication(
   const cards = new Map(candidate.cards.map((card) => [card.id, card]));
   const printings = new Map(candidate.printings.map((printing) => [printing.id, printing]));
   const cardPlans = groupedPlans(
-    plans.filter((plan) => plan.observation_kind === "card_printing"),
+    plans.filter((plan) => plan.observation_kind === "card_printing" && cards.has(plan.card_id)),
     (plan) => plan.card_id,
   );
   const cardEvidencePlans = groupedPlans(
-    plans.filter((plan) => plan.observation_kind === "card_printing"),
+    plans.filter((plan) => plan.observation_kind === "card_printing" && cards.has(plan.card_id)),
     (plan) => plan.card_id,
   );
   const printingPlans = groupedPlans(
-    plans.filter((plan) => plan.observation_kind === "card_printing" && plan.printing_id !== null),
+    plans.filter(
+      (plan) =>
+        plan.observation_kind === "card_printing" && plan.printing_id !== null && printings.has(plan.printing_id),
+    ),
     (plan) => plan.printing_id!,
   );
   const [existingCards, existingPrintings, existingMemberships, existingLocators] = await Promise.all([
@@ -216,7 +220,7 @@ export async function reconciliationPublication(
     result.cardLifecycles[cardId] = normalizedLifecycle(
       existing?.first_revision_id ?? revisionId,
       revisionId,
-      existing?.withdrawn === 1 || withdraw,
+      withdraw ? withdrawal?.state === "withdrawn" : existing?.withdrawn === 1,
       withdrawalLifecycle.revisionId,
       withdrawalLifecycle.evidenceJson,
     );
@@ -269,7 +273,7 @@ export async function reconciliationPublication(
     result.printingLifecycles[printingId] = normalizedLifecycle(
       existing?.first_revision_id ?? revisionId,
       revisionId,
-      existing?.withdrawn === 1 || withdraw,
+      withdraw ? withdrawal?.state === "withdrawn" : existing?.withdrawn === 1,
       withdrawalLifecycle.revisionId,
       withdrawalLifecycle.evidenceJson,
     );
@@ -352,6 +356,7 @@ export async function reconciliationPublication(
     revisionId,
   );
   result.statements.push(
+    ...publishCorrectionStatements(database, revisionId, candidate.identity_corrections ?? []),
     ...publicationStatements(database, publicationRows, plans, revisionId),
     ...errataPublicationStatements(database, candidate.errata ?? [], observedProvenance, revisionId),
     ...(await curatedPublicationStatements(database, runId, revisionId)),
@@ -848,9 +853,10 @@ function cardPersistenceRow(
     id: plan.card_id,
     supported_game: card.game,
     official_identity_kind: card.official_identity.kind,
-    official_identity_value: card.official_identity.value,
+    // Unknown numbers are keyed internally by opaque Card ID, never projected as numbers.
+    official_identity_value: card.official_identity.value ?? card.id,
     first_revision_id: existing?.first_revision_id ?? revisionId,
-    withdrawn: withdraw ? 1 : 0,
+    withdrawn: withdraw ? (withdrawal?.state === "withdrawn" ? 1 : 0) : (existing?.withdrawn ?? 0),
     withdrawal_revision_id: lifecycle.revisionId,
     withdrawal_evidence_json: lifecycle.evidenceJson,
     new_transition: lifecycle.newTransition ? 1 : 0,
@@ -875,7 +881,7 @@ function printingPersistenceRow(
     rarity_normalized: compatibility.rarity_normalized,
     treatment: compatibility.treatment,
     first_revision_id: existing?.first_revision_id ?? revisionId,
-    withdrawn: withdraw ? 1 : 0,
+    withdrawn: withdraw ? (withdrawal?.state === "withdrawn" ? 1 : 0) : (existing?.withdrawn ?? 0),
     withdrawal_revision_id: lifecycle.revisionId,
     withdrawal_evidence_json: lifecycle.evidenceJson,
     new_transition: lifecycle.newTransition ? 1 : 0,
@@ -1120,7 +1126,7 @@ function resolvedWithdrawalLifecycle(
   revisionId: string | null;
   evidenceJson: string | null;
 } {
-  const newTransition = withdraw && existing?.withdrawn !== 1;
+  const newTransition = withdraw && (withdrawal?.state === "withdrawn") !== (existing?.withdrawn === 1);
   return {
     newTransition,
     revisionId: newTransition ? revisionId : (existing?.withdrawal_revision_id ?? null),

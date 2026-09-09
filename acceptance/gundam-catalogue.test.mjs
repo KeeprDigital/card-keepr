@@ -1,3 +1,10 @@
+import {
+  inspectNativeCollection,
+  publishNativeCollection,
+  waitForNativeCollection,
+  nativeCheckpointTransport,
+  nativeExportRecords,
+} from "./helpers/native-catalogue-runtime.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -6,8 +13,6 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import {
   applyMigrations,
-  waitForRunState as awaitRunState,
-  exportRecords,
   runCli,
   startWorker,
   stopWorker,
@@ -53,7 +58,7 @@ function lineageUrls(locale) {
   };
 }
 
-test("the owner publishes a complete Gundam catalogue from both English lineages", async (t) => {
+test("native publication: the owner publishes a complete Gundam catalogue from both English lineages", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "card-keepr-gundam-"));
   const statePath = join(directory, "shared-state");
   const administrationKey = randomUUID();
@@ -87,7 +92,10 @@ test("the owner publishes a complete Gundam catalogue from both English lineages
     config: "acceptance/fixtures/synthetic-official-source.wrangler.jsonc",
     statePath: join(directory, "source-state"),
   });
+  t.after(() => stopWorker(source));
+  const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory, ingestionConfig);
   const ingestion = await startWorker({
+    ...checkpointTransport,
     config: ingestionConfig,
     envFile: ingestionEnv,
     statePath,
@@ -114,7 +122,7 @@ test("the owner publishes a complete Gundam catalogue from both English lineages
   const run = JSON.parse(collected.stdout);
   const resumed = await runCli(["source", "resume", "--run-id", run.id, "--json"], cliEnvironment);
   assert.equal(resumed.code, 0, resumed.stderr);
-  const completed = await waitForRunState(run.id, "awaiting_approval", cliEnvironment, {
+  const completed = await waitForRunState(run.id, "sealed", cliEnvironment, {
     getOutput: () => `${ingestion.getOutput()}\n${source.getOutput()}`,
   });
   assert.deepEqual(
@@ -154,38 +162,20 @@ test("the owner publishes a complete Gundam catalogue from both English lineages
     );
   }
 
-  const inspected = await runCli(["candidate", "inspect", "--run-id", run.id, "--json"], cliEnvironment);
-  assert.equal(inspected.code, 0, inspected.stderr);
-  const inspection = JSON.parse(inspected.stdout);
-  assert.equal(inspection.diff.summary.cards_added, 1, "both lineages converge on one Card");
-  assert.equal(inspection.diff.summary.printings_added, 1, "both lineages converge on one Printing");
+  const inspected = await inspectNativeCollection(run.id, cliEnvironment);
+  const inspection = inspected;
+  assert.equal(inspection.counts.cards.added, 1, "both lineages converge on one Card");
+  assert.equal(inspection.counts.printings.added, 1, "both lineages converge on one Printing");
   assert.ok(
-    inspection.diff.warnings.some(
+    inspection.warnings.some(
       ({ code, raw_value }) =>
         code === "unknown_source_field" && raw_value === "Optional Official Source marketing copy",
     ),
     "unknown publisher Product fields remain visible for schema review",
   );
 
-  const approved = await runCli(
-    [
-      "run",
-      "approve",
-      "--run-id",
-      run.id,
-      "--candidate-digest",
-      inspection.candidate_digest,
-      "--expected-current-revision",
-      "catrev_spine_000",
-      "--idempotency-key",
-      "gundam-complete-approve",
-      "--yes",
-      "--json",
-    ],
-    cliEnvironment,
-  );
-  assert.equal(approved.code, 0, `${approved.stdout}\n${approved.stderr}\n${ingestion.getOutput()}`);
-  const revisionId = JSON.parse(approved.stdout).resulting_revision_id;
+  const approved = await publishNativeCollection(inspection, "gundam-complete-approve", cliEnvironment, ingestion);
+  const revisionId = approved.resulting_revision_id;
   assert.match(revisionId, /^catrev_/u);
   await stopWorker(ingestion);
 
@@ -243,7 +233,7 @@ test("the owner publishes a complete Gundam catalogue from both English lineages
 
   const [cards, printings, products, releases, contexts, relationships] = await Promise.all(
     ["cards", "printings", "products", "releases", "distribution-contexts", "relationships"].map((component) =>
-      exportRecords(api.port, apiKey, revisionId, component),
+      nativeExportRecords(api.url, apiKey, revisionId, component),
     ),
   );
   assert.equal(cards.length, 1);
@@ -304,14 +294,12 @@ function gundamPlan() {
 // inspection the CLI would have produced, which names the blocking evidence.
 async function waitForRunState(runId, expectedState, environment, worker) {
   try {
-    return await awaitRunState(runId, expectedState, environment, worker, {
+    return await waitForNativeCollection(runId, expectedState, environment, worker, {
       deadlineMs: 40_000,
     });
   } catch (error) {
-    const inspected = await runCli(["candidate", "inspect", "--run-id", runId, "--json"], environment);
-    error.message += `\ncandidate inspection: ${JSON.stringify(
-      inspected.code === 0 ? JSON.parse(inspected.stdout) : { code: inspected.code, stdout: inspected.stdout },
-    )}`;
+    const inspected = await runCli(["game-candidate", "list", "--run-id", runId, "--json"], environment);
+    error.message += `\ncandidate status: ${inspected.stdout} ${inspected.stderr}`;
     throw error;
   }
 }

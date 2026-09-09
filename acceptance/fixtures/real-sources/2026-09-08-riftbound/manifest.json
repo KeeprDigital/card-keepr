@@ -1,0 +1,158 @@
+{
+  "classification": "retained-real-publisher-public-mapper-responses",
+  "captures": [
+    {
+      "id": "riftbound-cards-0",
+      "url": "https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards?locale=en_US&from=0&limit=200",
+      "finalUrl": "https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards?locale=en_US&from=0&limit=200",
+      "startedAt": "2026-09-07T17:19:29.058331+00:00",
+      "completedAt": "2026-09-07T17:19:29.953107+00:00",
+      "status": 200,
+      "body": "raw/cards-0.json",
+      "headers": "raw/cards-0.headers",
+      "bytes": 537388,
+      "sha256": "585618a1c78dea5b5a9a4839fbc64ad5f36c5f25de2bb604a06c1f5e678f27b9",
+      "headersSha256": "6259ded8137b66019d1bdb01bbaa814f8a5302c88eab66b28bce500e43a9c78d",
+      "requestHeaders": {
+        "User-Agent": "CardKeepr evidence research",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "application/json"
+    },
+    {
+      "id": "riftbound-cards-200",
+      "url": "https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards?locale=en_US&from=200&limit=200",
+      "finalUrl": "https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards?locale=en_US&from=200&limit=200",
+      "startedAt": "2026-09-07T17:19:30.964082+00:00",
+      "completedAt": "2026-09-07T17:19:32.029194+00:00",
+      "status": 200,
+      "body": "raw/cards-200.json",
+      "headers": "raw/cards-200.headers",
+      "bytes": 531208,
+      "sha256": "07ebe3c8efec73c2c076e0e462ab6ac8103aa662e0785e991bb987b470eec3aa",
+      "headersSha256": "0390ab81aacb986df180571beb0749a67b2b466ff31bfb06f5bb35506ed9ded2",
+      "requestHeaders": {
+        "User-Agent": "CardKeepr evidence research",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "application/json"
+    },
+    {
+      "id": "riftbound-cards-400",
+      "url": "https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards?locale=en_US&from=400&limit=200",
+      "finalUrl": "https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards?locale=en_US&from=400&limit=200",
+      "startedAt": "2026-09-07T17:19:33.030927+00:00",
+      "completedAt": "2026-09-07T17:19:34.323132+00:00",
+      "status": 200,
+      "body": "raw/cards-400.json",
+      "headers": "raw/cards-400.headers",
+      "bytes": 571020,
+      "sha256": "8506885fadf101395a142451bc3a7ec16ff0d228eb5570c29ec3109eea7e9ab4",
+      "headersSha256": "c70f85fa75f02c003ba8b021a1408718e07bb0d4267edeab8a0037441a0498d4",
+      "requestHeaders": {
+        "User-Agent": "CardKeepr evidence research",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "application/json"
+    },
+    {
+      "id": "riftbound-cards-600",
+      "url": "https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards?locale=en_US&from=600&limit=200",
+      "finalUrl": "https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards?locale=en_US&from=600&limit=200",
+      "startedAt": "2026-09-07T17:19:35.328201+00:00",
+      "completedAt": "2026-09-07T17:19:36.727175+00:00",
+      "status": 200,
+      "body": "raw/cards-600.json",
+      "headers": "raw/cards-600.headers",
+      "bytes": 528034,
+      "sha256": "9765709c4327ce4468a9e870c6f80ae3da681412130c827d99f1ef7d90dc3239",
+      "headersSha256": "df692e83e94e0976ea3da2cd4bcb0a9d727f239d36b6565aba099902a37f4705",
+      "requestHeaders": {
+        "User-Agent": "CardKeepr evidence research",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "application/json"
+    },
+    {
+      "id": "riftbound-cards-800",
+      "url": "https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards?locale=en_US&from=800&limit=200",
+      "finalUrl": "https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards?locale=en_US&from=800&limit=200",
+      "startedAt": "2026-09-07T17:19:37.737730+00:00",
+      "completedAt": "2026-09-07T17:19:38.753560+00:00",
+      "status": 200,
+      "body": "raw/cards-800.json",
+      "headers": "raw/cards-800.headers",
+      "bytes": 547234,
+      "sha256": "cb7c3fae6b9bb6588ea9845e91ae722f8684994c8be836c79beaa5e2861e8434",
+      "headersSha256": "98b2377ea59beb477597820a9b33b04730a1b04547c7a9fcd2b749f4cc968a17",
+      "requestHeaders": {
+        "User-Agent": "CardKeepr evidence research",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "application/json"
+    },
+    {
+      "id": "riftbound-cards-1000",
+      "url": "https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards?locale=en_US&from=1000&limit=200",
+      "finalUrl": "https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards?locale=en_US&from=1000&limit=200",
+      "startedAt": "2026-09-07T17:19:39.762720+00:00",
+      "completedAt": "2026-09-07T17:19:41.027433+00:00",
+      "status": 200,
+      "body": "raw/cards-1000.json",
+      "headers": "raw/cards-1000.headers",
+      "bytes": 533245,
+      "sha256": "bb1ad26b0c2cfffb8e7fa541d60e33d872269b6a1ceb7be1e02263e11076aa06",
+      "headersSha256": "0d416c8df1f5283a542d8fe369ec041f14176f2528c470c428660dcb95c1892a",
+      "requestHeaders": {
+        "User-Agent": "CardKeepr evidence research",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "application/json"
+    },
+    {
+      "id": "riftbound-sets",
+      "url": "https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_sets?locale=en_US&from=0&limit=200",
+      "finalUrl": "https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_sets?locale=en_US&from=0&limit=200",
+      "startedAt": "2026-09-07T17:19:42.038018+00:00",
+      "completedAt": "2026-09-07T17:19:42.549304+00:00",
+      "status": 200,
+      "body": "raw/sets.json",
+      "headers": "raw/sets.headers",
+      "bytes": 966,
+      "sha256": "d54973cdcf141c8fb5bc92b5db00395f1ebee40a0abc461c420bf1f97f73eb8b",
+      "headersSha256": "950fcb36b7293fe914c797e2dc30fd817a64fd1ef6a8ff6ea6318bf9b76e155a",
+      "requestHeaders": {
+        "User-Agent": "CardKeepr evidence research",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "application/json"
+    }
+  ],
+  "coverage": {
+    "locale": "en-us",
+    "scope": "Every record returned by all linked pages of the public English Riftbound gallery mapper at capture time; separate set inventory.",
+    "returnedRecords": 1189,
+    "uniqueIds": 1189,
+    "bySet": {
+      "UNL": 288,
+      "VEN": 237,
+      "OGN": 352,
+      "SFD": 288,
+      "OGS": 24
+    },
+    "publisherMetadataTotal": 1197,
+    "pageReturnedCounts": [
+      200,
+      198,
+      200,
+      198,
+      198,
+      195
+    ],
+    "bodyBytes": 3249095,
+    "headerBytes": 5973,
+    "upstreamCountMeaning": "Unresolved: the publisher reports1197 while all six linked pages return1189 unique records, equal to the2026-09-06 embedded gallery. No extra8 physical cards or records are inferred.",
+    "images": "No new image bodies in this capture; six original representative bodies remain in2026-09-06.",
+    "sets": 5
+  }
+}

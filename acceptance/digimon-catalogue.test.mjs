@@ -1,3 +1,10 @@
+import {
+  inspectNativeCollection,
+  publishNativeCollection,
+  waitForNativeCollection,
+  nativeCheckpointTransport,
+  nativeExportRecords,
+} from "./helpers/native-catalogue-runtime.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -6,8 +13,6 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import {
   applyMigrations,
-  waitForRunState as awaitRunState,
-  exportRecords,
   runCli,
   startWorker,
   stopWorker,
@@ -16,7 +21,7 @@ import {
 
 const root = resolve(import.meta.dirname, "..");
 
-test("the owner publishes a complete Digimon catalogue consumed through authenticated HTTP", async (t) => {
+test("native publication: the owner publishes a complete Digimon catalogue consumed through authenticated HTTP", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "card-keepr-digimon-boundary-"));
   const statePath = join(directory, "shared-state");
   const administrationKey = randomUUID();
@@ -50,7 +55,10 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
     config: "acceptance/fixtures/synthetic-official-source.wrangler.jsonc",
     statePath: join(directory, "source-state"),
   });
+  t.after(() => stopWorker(source));
+  const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory, ingestionConfig);
   const ingestion = await startWorker({
+    ...checkpointTransport,
     config: ingestionConfig,
     envFile: ingestionEnv,
     statePath,
@@ -97,14 +105,19 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
   const noErrataResumed = await runCli(["source", "resume", "--run-id", noErrataRun.id, "--json"], cliEnvironment);
   assert.equal(noErrataResumed.code, 0, noErrataResumed.stderr);
   const noErrataFailed = await waitForRunState(noErrataRun.id, "failed", cliEnvironment, ingestion);
+  const noErrataEvidenceResponse = await fetch(`${ingestion.url}/v1/ingestion-runs/${noErrataRun.id}/evidence`, {
+    headers: { authorization: `Bearer ${administrationKey}` },
+  });
+  assert.equal(noErrataEvidenceResponse.status, 200);
+  const noErrataEvidence = await noErrataEvidenceResponse.json();
   assert.equal(
     noErrataFailed.failure_code,
     "printing_reconciliation_blocked",
     JSON.stringify(
-      noErrataFailed.snapshots
+      noErrataEvidence.snapshots
         .filter(
           (snapshot) =>
-            !noErrataFailed.observation_sets.some(({ source_snapshot_id }) => source_snapshot_id === snapshot.id),
+            !noErrataEvidence.observation_sets.some(({ source_snapshot_id }) => source_snapshot_id === snapshot.id),
         )
         .map(({ request }) => request.url),
     ),
@@ -121,7 +134,7 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
   const run = JSON.parse(collected.stdout);
   const resumed = await runCli(["source", "resume", "--run-id", run.id, "--json"], cliEnvironment);
   assert.equal(resumed.code, 0, resumed.stderr);
-  const completed = await waitForRunState(run.id, "awaiting_approval", cliEnvironment, ingestion);
+  const completed = await waitForRunState(run.id, "sealed", cliEnvironment, ingestion);
   const cardListSnapshots = completed.snapshots.filter(({ request }) => request.url.includes("/cards/index.php"));
   assert.deepEqual(
     cardListSnapshots.map(({ request }) => request.url),
@@ -170,50 +183,31 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
     "the exact leaf summary must count each retained observation once",
   );
 
-  const inspected = await runCli(["candidate", "inspect", "--run-id", run.id, "--json"], cliEnvironment);
-  assert.equal(inspected.code, 0, inspected.stderr);
-  const inspection = JSON.parse(inspected.stdout);
-  const replayedInspection = await runCli(["candidate", "inspect", "--run-id", run.id, "--json"], cliEnvironment);
-  assert.equal(replayedInspection.code, 0, replayedInspection.stderr);
-  const replay = JSON.parse(replayedInspection.stdout);
-  assert.equal(
-    replay.candidate_digest,
-    inspection.candidate_digest,
+  const inspected = await inspectNativeCollection(run.id, cliEnvironment);
+  const inspection = inspected;
+  const replayedInspection = await inspectNativeCollection(run.id, cliEnvironment);
+  const replay = replayedInspection;
+  assert.deepEqual(
+    replay.manifest_digests,
+    inspection.manifest_digests,
     "replaying the controlled source candidate must preserve its digest",
   );
-  assert.deepEqual(replay.diff, inspection.diff);
-  assert.equal(inspection.diff.summary.cards_added, 1);
-  assert.equal(inspection.diff.summary.printings_added, 2);
+  assert.deepEqual(replay.changes, inspection.changes);
+  assert.equal(inspection.counts.cards.added, 1);
+  assert.equal(inspection.counts.printings.added, 2);
   assert.ok(
-    inspection.diff.warnings.some(
+    inspection.warnings.some(
       ({ code, raw_value }) => code === "unknown_source_field" && raw_value === "Retain this future mechanic verbatim",
     ),
     "unknown labelled mechanics must remain visible for schema review",
   );
   assert.ok(
-    inspection.diff.warnings.some(({ code }) => code === "product_relationship_unresolved"),
+    inspection.warnings.some(({ code }) => code === "product_relationship_unresolved"),
     "a fuzzy Product label must remain unresolved",
   );
 
-  const approved = await runCli(
-    [
-      "run",
-      "approve",
-      "--run-id",
-      run.id,
-      "--candidate-digest",
-      inspection.candidate_digest,
-      "--expected-current-revision",
-      "catrev_spine_000",
-      "--idempotency-key",
-      "digimon-complete-approve",
-      "--yes",
-      "--json",
-    ],
-    cliEnvironment,
-  );
-  assert.equal(approved.code, 0, `${approved.stdout}\n${approved.stderr}\n${ingestion.getOutput()}`);
-  const revisionId = JSON.parse(approved.stdout).resulting_revision_id;
+  const approved = await publishNativeCollection(inspection, "digimon-complete-approve", cliEnvironment, ingestion);
+  const revisionId = approved.resulting_revision_id;
   await stopWorker(ingestion);
 
   api = await startWorker({
@@ -280,7 +274,7 @@ test("the owner publishes a complete Digimon catalogue consumed through authenti
 
   const [cards, printings, relationships, errata] = await Promise.all(
     ["cards", "printings", "relationships", "errata"].map((component) =>
-      exportRecords(api.port, apiKey, revisionId, component),
+      nativeExportRecords(api.url, apiKey, revisionId, component),
     ),
   );
   assert.equal(cards.length, 1);
@@ -339,14 +333,12 @@ function digimonPlan(marker) {
 // inspection the CLI would have produced, which names the blocking evidence.
 async function waitForRunState(runId, expectedState, environment, worker) {
   try {
-    return await awaitRunState(runId, expectedState, environment, worker, {
+    return await waitForNativeCollection(runId, expectedState, environment, worker, {
       deadlineMs: 30_000,
     });
   } catch (error) {
-    const inspected = await runCli(["candidate", "inspect", "--run-id", runId, "--json"], environment);
-    error.message += `\ncandidate inspection: ${JSON.stringify(
-      inspected.code === 0 ? JSON.parse(inspected.stdout) : { code: inspected.code, stdout: inspected.stdout },
-    )}`;
+    const inspected = await runCli(["game-candidate", "list", "--run-id", runId, "--json"], environment);
+    error.message += `\ncandidate status: ${inspected.stdout} ${inspected.stderr}`;
     throw error;
   }
 }

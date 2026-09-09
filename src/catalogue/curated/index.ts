@@ -4,6 +4,10 @@
 
 export {
   CuratedRevisionSourceChangeError,
+  CuratedDraftSourceChangeError,
+  CuratedDraftInvalidError,
+  type CuratedDraftCursor,
+  applyPinnedCuratedRevisionsToDraft,
   applyPinnedCuratedRevisions,
   assertCuratedGamesUnblocked,
   createCuratedRevision,
@@ -19,10 +23,14 @@ export {
   retireCuratedRevision,
   showCuratedRevision,
   stripCuratedRevisionEffects,
+  restoreCuratedEntitySourceFields,
   supersedeCuratedRevision,
   validateCuratedRevision,
 } from "./curated-revisions";
 
 export { curatedRoutes } from "./routes";
 
-export { curatedRunStartGuardStatement } from "./curated-guard-repository";
+export { curatedRunStartGuardStatement, curatedPreparationStartGuardStatement } from "./curated-guard-repository";
+
+export { CuratedConflictStorageError } from "./curated-conflict-preparation";
+export { pinNativeCuratedRevisionSelectionStatement } from "./curated-repository";

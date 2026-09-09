@@ -1,6 +1,3 @@
-import { createServer } from "vite";
-import { renderRunFixtureSql } from "./run-event-fixture.mjs";
-
 export const productionRegistrations = (database) =>
   database.prepare(
     "SELECT * FROM source_adapter_versions WHERE adapter_origin = 'production' ORDER BY adapter_version",
@@ -26,26 +23,20 @@ export function snapshot(database) {
     }));
 }
 
-let runFixtureSql;
-async function seedRun(database) {
-  if (runFixtureSql === undefined) {
-    const vite = await createServer({
-      configFile: false,
-      server: { middlewareMode: true },
-      appType: "custom",
-      logLevel: "error",
-    });
-    try {
-      runFixtureSql = await renderRunFixtureSql(vite, {
-        id: "adapter-isolation-run",
-        state: "planning",
-        selected_games_json: '["one-piece"]',
-      });
-    } finally {
-      await vite.close();
-    }
-  }
-  database.exec(runFixtureSql);
+// This fixture deliberately targets schema 12, before retirement migration 13.
+// A current repository seeder also writes tables introduced in later migrations.
+function seedRun(database) {
+  database.exec(`INSERT INTO ingestion_runs
+    (id, started_at, expected_current_revision_id, idempotency_key)
+    VALUES ('adapter-isolation-run', '2026-09-04T00:00:00.000Z', 'catrev_spine_000', 'adapter-isolation-run');
+    INSERT INTO ingestion_run_events
+    (ingestion_run_id, sequence_number, event_id, event_kind, occurred_at, from_state, to_state, payload_json)
+    VALUES ('adapter-isolation-run', 1, 'adapter-isolation-created', 'created',
+      '2026-09-04T00:00:00.000Z', NULL, 'planning', '{}');
+    INSERT INTO ingestion_run_current
+    (ingestion_run_id, last_event_sequence, last_event_id, state, completed_stage_count)
+    VALUES ('adapter-isolation-run', 1, 'adapter-isolation-created', 'planning', 0);
+    INSERT INTO ingestion_run_selected_games VALUES ('adapter-isolation-run', 0, 'one-piece');`);
 }
 
 /** All evidence links are valid; each adapter field can independently name a

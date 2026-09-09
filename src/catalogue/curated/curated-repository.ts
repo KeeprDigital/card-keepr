@@ -1,3 +1,4 @@
+import { nextLiveIngestionReservationSql } from "../shared";
 import {
   curatedOwnerMutationGuardStatement,
   curatedTargetAvailabilityGuardStatement,
@@ -30,7 +31,7 @@ export type CuratedRevisionRow = {
 };
 
 export function curatedRevisionStatement(database: CatalogueStore, revisionId: string): D1PreparedStatement {
-  return repositoryStatements(database).prepare("SELECT * FROM curated_revisions WHERE id = ?").bind(revisionId);
+  return repositoryStatements(database).prepare("SELECT * FROM curated_revision_read WHERE id = ?").bind(revisionId);
 }
 
 export type CuratedLifecycleMutationInput = {
@@ -194,7 +195,7 @@ export function filteredCuratedRevisionsStatement(
   input: Readonly<{ game: string | null; target: string | null; status: string | null }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT * FROM curated_revisions
+    .prepare(`SELECT * FROM curated_revision_read
      WHERE (? IS NULL OR game = ?)
        AND (? IS NULL OR target_key = ?)
        AND (? IS NULL OR status = ?)
@@ -217,9 +218,12 @@ export function curatedRunSelectedGamesStatement(
 ): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(
-      `SELECT (SELECT json_group_array(game) FROM (
+      `SELECT CASE WHEN preparation.supported_game IS NOT NULL THEN json_array(preparation.supported_game)
+      ELSE (SELECT json_group_array(game) FROM (
         SELECT game FROM ingestion_run_selected_games WHERE ingestion_run_id = identity.id ORDER BY ordinal
-      )) AS selected_games_json FROM ingestion_runs AS identity WHERE identity.id = ?`,
+      )) END AS selected_games_json FROM ingestion_runs AS identity
+      LEFT JOIN reconciliation_operations AS preparation ON preparation.id = ?1
+      WHERE identity.id = COALESCE(preparation.ingestion_run_id, ?1)`,
     )
     .bind(input.runId);
 }
@@ -233,12 +237,12 @@ export function activeCuratedRevisionsStatement(
             revision.event_version,
             COALESCE((
               SELECT json_extract(event.event_json, '$.reviewed_source_digest')
-              FROM curated_revision_events AS event
+              FROM curated_revision_event_read AS event
               WHERE event.revision_id = revision.id
                 AND event.kind = 'reaffirmed'
               ORDER BY event.event_version DESC LIMIT 1
             ), revision.reviewed_source_digest) AS reviewed_source_digest
-     FROM curated_revisions AS revision
+     FROM curated_revision_read AS revision
      WHERE revision.status = 'active'
        AND revision.game IN (SELECT value FROM json_each(?))
        AND (revision.effective_from IS NULL OR revision.effective_from <= ?)
@@ -265,7 +269,7 @@ export function insertCuratedSourceChangeEventStatement(
   return repositoryStatements(database)
     .prepare(`INSERT INTO curated_revision_events (revision_id, event_version, kind, event_json, created_at, author)
          SELECT ?, ?, 'source_change_detected', ?, ?, 'system'
-         WHERE EXISTS (SELECT 1 FROM curated_revisions WHERE id = ? AND status = 'reconfirmation_required' AND event_version = ?)`)
+         WHERE EXISTS (SELECT 1 FROM curated_revision_read WHERE id = ? AND status = 'reconfirmation_required' AND event_version = ?)`)
     .bind(
       input.revisionId,
       input.eventVersion,
@@ -313,7 +317,7 @@ export function blockingCuratedRevisionStatement(
   input: Readonly<{ selectedGamesJson: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT id, game FROM curated_revisions
+    .prepare(`SELECT id, game FROM curated_revision_read
      WHERE status = 'reconfirmation_required'
        AND game IN (SELECT value FROM json_each(?))
      ORDER BY id LIMIT 1`)
@@ -328,7 +332,7 @@ export function pinnedCuratedRevisionsStatement(
     .prepare(`SELECT revision.id, revision.proposal_json, revision.content_digest,
             pin.reviewed_source_digest
      FROM ingestion_run_curated_revisions AS pin
-     JOIN curated_revisions AS revision ON revision.id = pin.revision_id
+     JOIN curated_revision_read AS revision ON revision.id = pin.revision_id
      WHERE pin.ingestion_run_id = ? ORDER BY pin.ordinal`)
     .bind(input.runId);
 }
@@ -361,7 +365,7 @@ export function releaseCuratedRunStatement(
   input: Readonly<{ runId: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`UPDATE operation_state SET active_ingestion_run_id = NULL
+    .prepare(`UPDATE operation_state SET active_ingestion_run_id = ${nextLiveIngestionReservationSql}
          WHERE singleton = 1 AND active_ingestion_run_id = ?`)
     .bind(input.runId);
 }
@@ -394,7 +398,7 @@ export function curatedRunPinInspectionStatement(
     .prepare(`SELECT pin.ordinal, pin.revision_id, pin.content_digest,
             revision.proposal_json
      FROM ingestion_run_curated_revisions AS pin
-     JOIN curated_revisions AS revision ON revision.id = pin.revision_id
+     JOIN curated_revision_read AS revision ON revision.id = pin.revision_id
      WHERE pin.ingestion_run_id = ? ORDER BY pin.ordinal`)
     .bind(input.runId);
 }
@@ -413,7 +417,7 @@ export function insertPublishedCuratedProvenanceStatement(
      FROM ingestion_runs AS run
      JOIN catalogue_curated_provenance AS prior
        ON prior.catalogue_revision_id = run.expected_current_revision_id
-     JOIN curated_revisions AS prior_revision
+     JOIN curated_revision_read AS prior_revision
        ON prior_revision.id = prior.curated_revision_id
      WHERE run.id = ?
        AND NOT EXISTS (
@@ -430,7 +434,7 @@ export function insertPublishedCuratedProvenanceStatement(
               'rationale', json_extract(revision.proposal_json, '$.rationale')
             )
      FROM ingestion_run_curated_revisions AS pin
-     JOIN curated_revisions AS revision ON revision.id = pin.revision_id
+     JOIN curated_revision_read AS revision ON revision.id = pin.revision_id
      WHERE pin.ingestion_run_id = ?`)
     .bind(input.revisionId, input.runId, input.revisionId, input.runId);
 }
@@ -446,7 +450,7 @@ export function curatedRevisionStatusStatement(
   input: Readonly<{ revisionId: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare("SELECT status, event_version FROM curated_revisions WHERE id = ?")
+    .prepare("SELECT status, event_version FROM curated_revision_read WHERE id = ?")
     .bind(input.revisionId);
 }
 
@@ -468,7 +472,7 @@ export function insertLegacyCuratedSourceChangeEventStatement(
   return repositoryStatements(database)
     .prepare(`INSERT INTO curated_revision_events (revision_id, event_version, kind, event_json, created_at, author)
          SELECT ?, ?, 'source_change_detected', ?, ?, 'system'
-         WHERE EXISTS (SELECT 1 FROM curated_revisions WHERE id = ? AND status = 'reconfirmation_required' AND event_version = ?)`)
+         WHERE EXISTS (SELECT 1 FROM curated_revision_read WHERE id = ? AND status = 'reconfirmation_required' AND event_version = ?)`)
     .bind(
       input.revisionId,
       input.eventVersion,
@@ -507,7 +511,7 @@ export function curatedPendingConflictStatement(
   input: Readonly<{ id: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT event_json FROM curated_revision_events
+    .prepare(`SELECT event_json FROM curated_revision_event_read
      WHERE revision_id = ? AND kind = 'source_change_detected'
      ORDER BY event_version DESC LIMIT 1`)
     .bind(input.id);
@@ -528,7 +532,7 @@ export function curatedReaffirmedSourceDigestStatement(
 ): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`SELECT json_extract(event_json, '$.reviewed_source_digest') AS digest
-     FROM curated_revision_events
+     FROM curated_revision_event_read
      WHERE revision_id = ? AND kind = 'reaffirmed'
      ORDER BY event_version DESC LIMIT 1`)
     .bind(input.revisionId);
@@ -540,7 +544,7 @@ export function curatedRevisionEventHistoryStatement(
 ): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(
-      "SELECT kind, event_version, event_json, created_at, author FROM curated_revision_events WHERE revision_id = ? ORDER BY event_version",
+      "SELECT kind, event_version, event_json, created_at, author FROM curated_revision_event_read WHERE revision_id = ? ORDER BY event_version",
     )
     .bind(input.id);
 }
@@ -599,4 +603,42 @@ export function curatedEntityDocumentStatement(
   return repositoryStatements(database)
     .prepare(`SELECT document_json FROM ${table} WHERE catalogue_revision_id = ? AND ${idColumn} = ?`)
     .bind(input.revisionId, input.entityId);
+}
+
+export function nextPinnedCuratedRevisionStatement(
+  database: CatalogueStore,
+  runId: string,
+  after: number,
+): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare(`SELECT pin.ordinal, revision.id, revision.proposal_json,
+    revision.content_digest, pin.reviewed_source_digest, 1 AS active
+    FROM ingestion_run_curated_revisions AS pin
+    JOIN curated_revision_read AS revision ON revision.id = pin.revision_id
+    WHERE pin.ingestion_run_id = ?1 AND pin.ordinal > ?2
+      AND NOT EXISTS (SELECT 1 FROM reconciliation_operations WHERE id = ?1 AND supported_game IS NOT NULL)
+    UNION ALL
+    SELECT revision.rowid AS ordinal, revision.id, revision.proposal_json, revision.content_digest,
+      COALESCE((SELECT json_extract(event.event_json, '$.reviewed_source_digest')
+        FROM curated_revision_events AS event
+        WHERE event.revision_id = revision.id AND event.kind = 'reaffirmed' AND event.rowid <= pin.event_cutoff
+        ORDER BY event.rowid DESC LIMIT 1), revision.reviewed_source_digest) AS reviewed_source_digest,
+      (SELECT event.kind IN ('authored', 'reaffirmed') FROM curated_revision_events AS event
+        WHERE event.revision_id = revision.id AND event.rowid <= pin.event_cutoff
+        ORDER BY event.rowid DESC LIMIT 1) AS active
+    FROM reconciliation_curated_pins AS pin
+    JOIN reconciliation_operations AS preparation ON preparation.id = pin.preparation_id
+    JOIN curated_revisions AS revision ON revision.game = preparation.supported_game
+    WHERE pin.preparation_id = ?1 AND revision.rowid > ?2 AND revision.rowid <= pin.revision_cutoff
+    ORDER BY ordinal LIMIT 1`)
+    .bind(runId, after);
+}
+
+/** Creation pins immutable history cutoffs; later callbacks seek one revision at a time. */
+export function pinNativeCuratedRevisionSelectionStatement(database: CatalogueStore, preparationId: string) {
+  return repositoryStatements(database)
+    .prepare(`INSERT INTO reconciliation_curated_pins (preparation_id, revision_cutoff, event_cutoff)
+      VALUES (?, COALESCE((SELECT MAX(rowid) FROM curated_revisions), 0),
+        COALESCE((SELECT MAX(rowid) FROM curated_revision_events), 0))`)
+    .bind(preparationId);
 }

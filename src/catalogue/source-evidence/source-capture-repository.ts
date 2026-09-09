@@ -351,7 +351,8 @@ export function reusableSnapshotsStatement(
 ): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`SELECT * FROM source_snapshots
-       WHERE source_lineage = ? AND request_url = ?
+       WHERE NOT EXISTS(SELECT 1 FROM evidence_cleanup_objects reclaimed WHERE reclaimed.object_key=source_snapshots.content_object_key)
+         AND source_lineage = ? AND request_url = ?
          AND adapter_version = ? AND representation_fingerprint = ?
          AND (
            json_extract(response_headers_json, '$.etag') IS NOT NULL

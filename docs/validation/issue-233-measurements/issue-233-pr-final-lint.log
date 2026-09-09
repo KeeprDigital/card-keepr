@@ -1,0 +1,359 @@
+acceptance/curated-native-runtime.test.mjs:75:9 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    73 │       await writeFile(
+    74 │         `${capacityOutput}.phases.json`,
+  > 75 │         JSON.stringify(
+       │         ^^^^^^^^^^^^^^^
+  > 76 │           {
+        ...
+  > 82 │           2,
+  > 83 │         ) + "\n",
+       │         ^^^^^^^^
+    84 │       );
+    85 │     }
+  
+  i Unsafe fix: Use a template literal.
+  
+     73  73 │         await writeFile(
+     74  74 │           `${capacityOutput}.phases.json`,
+     75     │ - ········JSON.stringify(
+         75 │ + ········`${JSON.stringify(
+     76  76 │             {
+     77  77 │               limitation:
+    ······· │ 
+     81  81 │             null,
+     82  82 │             2,
+     83     │ - ········)·+·"\n",
+         83 │ + ········)}\n`,
+     84  84 │         );
+     85  85 │       }
+  
+
+acceptance/helpers/native-isolate-metrics.mjs:154:11 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    152 │         await writeFile(
+    153 │           destination,
+  > 154 │           JSON.stringify(
+        │           ^^^^^^^^^^^^^^^
+  > 155 │             {
+         ...
+  > 176 │             2,
+  > 177 │           ) + "\n",
+        │           ^^^^^^^^
+    178 │         );
+    179 │       } finally {
+  
+  i Unsafe fix: Use a template literal.
+  
+    152 152 │           await writeFile(
+    153 153 │             destination,
+    154     │ - ··········JSON.stringify(
+        154 │ + ··········`${JSON.stringify(
+    155 155 │               {
+    156 156 │                 contract: "card-keepr-local-isolate-measurements@1",
+    ······· │ 
+    175 175 │               null,
+    176 176 │               2,
+    177     │ - ··········)·+·"\n",
+        177 │ + ··········)}\n`,
+    178 178 │           );
+    179 179 │         } finally {
+  
+
+acceptance/native-capacity-metrics.test.mjs:68:5 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    66 │   const started = performance.now();
+    67 │   const line = (step) =>
+  > 68 │     JSON.stringify({
+       │     ^^^^^^^^^^^^^^^^
+  > 69 │       contract: "card-keepr-operational-log@1",
+        ...
+  > 76 │       payload: "secret-source-body",
+  > 77 │     }) + "\n";
+       │     ^^^^^^^^^
+    78 │   const first = line("first");
+    79 │   timeline.observe(first.slice(0, 20), "stdout");
+  
+  i Unsafe fix: Use a template literal.
+  
+     66  66 │     const started = performance.now();
+     67  67 │     const line = (step) =>
+     68     │ - ····JSON.stringify({
+         68 │ + ····`${JSON.stringify({
+     69  69 │         contract: "card-keepr-operational-log@1",
+     70  70 │         event: "workflow.step.completed",
+    ······· │ 
+     75  75 │         status: 200,
+     76  76 │         payload: "secret-source-body",
+     77     │ - ····})·+·"\n";
+         77 │ + ····})}\n`;
+     78  78 │     const first = line("first");
+     79  79 │     timeline.observe(first.slice(0, 20), "stdout");
+  
+
+acceptance/one-piece-two-source.test.mjs:65:24 lint/complexity/useLiteralKeys  FIXABLE  ━━━━━━━━━━━━
+
+  i The computed expression can be simplified without the use of a string literal.
+  
+    63 │         delete headers["transfer-encoding"];
+    64 │         delete headers["content-encoding"];
+  > 65 │         delete headers["connection"];
+       │                        ^^^^^^^^^^^^
+    66 │         return [capture.url, { ...capture, bodyBytes, headers, headerByteLength: headerBytes.length }];
+    67 │       }),
+  
+  i Unsafe fix: Use a literal key instead.
+  
+     63  63 │           delete headers["transfer-encoding"];
+     64  64 │           delete headers["content-encoding"];
+     65     │ - ········delete·headers["connection"];
+         65 │ + ········delete·headers.connection;
+     66  66 │           return [capture.url, { ...capture, bodyBytes, headers, headerByteLength: headerBytes.length }];
+     67  67 │         }),
+  
+
+acceptance/one-piece-two-source.test.mjs:610:58 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    608 │   metrics.complete_journey_driver_cpu_microseconds = process.cpuUsage(initialCpu);
+    609 │   if (process.env.KEEPR_P001_METRICS_PATH)
+  > 610 │     await writeFile(process.env.KEEPR_P001_METRICS_PATH, JSON.stringify(metrics, null, 2) + "\n");
+        │                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    611 │   t.diagnostic(
+    612 │     JSON.stringify({ source: metrics.source, export: exportBytes, elapsed_ms: metrics.complete_journey_elapsed_ms }),
+  
+  i Unsafe fix: Use a template literal.
+  
+    608 608 │     metrics.complete_journey_driver_cpu_microseconds = process.cpuUsage(initialCpu);
+    609 609 │     if (process.env.KEEPR_P001_METRICS_PATH)
+    610     │ - ····await·writeFile(process.env.KEEPR_P001_METRICS_PATH,·JSON.stringify(metrics,·null,·2)·+·"\n");
+        610 │ + ····await·writeFile(process.env.KEEPR_P001_METRICS_PATH,·`${JSON.stringify(metrics,·null,·2)}\n`);
+    611 611 │     t.diagnostic(
+    612 612 │       JSON.stringify({ source: metrics.source, export: exportBytes, elapsed_ms: metrics.complete_journey_elapsed_ms }),
+  
+
+acceptance/reconciliation-capacity-probe.test.mjs:93:5 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+     91 │   await writeFile(
+     92 │     `${prefix}-workload.json`,
+   > 93 │     JSON.stringify(
+        │     ^^^^^^^^^^^^^^^
+   > 94 │       {
+         ...
+  > 107 │       2,
+  > 108 │     ) + "\n",
+        │     ^^^^^^^^
+    109 │   );
+    110 │   await stopWorker(worker);
+  
+  i Unsafe fix: Use a template literal.
+  
+     91  91 │     await writeFile(
+     92  92 │       `${prefix}-workload.json`,
+     93     │ - ····JSON.stringify(
+         93 │ + ····`${JSON.stringify(
+     94  94 │         {
+     95  95 │           scope:
+    ······· │ 
+    106 106 │         null,
+    107 107 │         2,
+    108     │ - ····)·+·"\n",
+        108 │ + ····)}\n`,
+    109 109 │     );
+    110 110 │     await stopWorker(worker);
+  
+
+acceptance/riftbound-catalogue.test.mjs:1023:63 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    1021 │     measuredEvidence.complete_journey_elapsed_ms = performance.now() - startedAt;
+    1022 │     measuredEvidence.complete_journey_driver_cpu_microseconds = process.cpuUsage(initialCpu);
+  > 1023 │     await writeFile(process.env.KEEPR_RIFTBOUND_METRICS_PATH, JSON.stringify(measuredEvidence, null, 2) + "\n");
+         │                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    1024 │   }
+    1025 │ });
+  
+  i Unsafe fix: Use a template literal.
+  
+    1021 1021 │       measuredEvidence.complete_journey_elapsed_ms = performance.now() - startedAt;
+    1022 1022 │       measuredEvidence.complete_journey_driver_cpu_microseconds = process.cpuUsage(initialCpu);
+    1023      │ - ····await·writeFile(process.env.KEEPR_RIFTBOUND_METRICS_PATH,·JSON.stringify(measuredEvidence,·null,·2)·+·"\n");
+         1023 │ + ····await·writeFile(process.env.KEEPR_RIFTBOUND_METRICS_PATH,·`${JSON.stringify(measuredEvidence,·null,·2)}\n`);
+    1024 1024 │     }
+    1025 1025 │   });
+  
+
+apps/ingestion/test/source-record-intake.spec.ts:522:13 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    520 │       name: `card ${index}`,
+    521 │       text: "historic text ".repeat(4000),
+  > 522 │       lone: "x".repeat(32769) + "\ud800",
+        │             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    523 │       replacement: "x".repeat(32769) + "\ufffd",
+    524 │       escaped: "\u0000\udfff".repeat(20000),
+  
+  i Unsafe fix: Use a template literal.
+  
+    520 520 │         name: `card ${index}`,
+    521 521 │         text: "historic text ".repeat(4000),
+    522     │ - ······lone:·"x".repeat(32769)·+·"\ud800",
+        522 │ + ······lone:·`${"x".repeat(32769)}\ud800`,
+    523 523 │         replacement: "x".repeat(32769) + "\ufffd",
+    524 524 │         escaped: "\u0000\udfff".repeat(20000),
+  
+
+apps/ingestion/test/source-record-intake.spec.ts:523:20 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    521 │       text: "historic text ".repeat(4000),
+    522 │       lone: "x".repeat(32769) + "\ud800",
+  > 523 │       replacement: "x".repeat(32769) + "\ufffd",
+        │                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    524 │       escaped: "\u0000\udfff".repeat(20000),
+    525 │       ["field".repeat(8000) + "\ud800"]: "distinct key",
+  
+  i Unsafe fix: Use a template literal.
+  
+    521 521 │         text: "historic text ".repeat(4000),
+    522 522 │         lone: "x".repeat(32769) + "\ud800",
+    523     │ - ······replacement:·"x".repeat(32769)·+·"\ufffd",
+        523 │ + ······replacement:·`${"x".repeat(32769)}\ufffd`,
+    524 524 │         escaped: "\u0000\udfff".repeat(20000),
+    525 525 │         ["field".repeat(8000) + "\ud800"]: "distinct key",
+  
+
+apps/ingestion/test/source-record-intake.spec.ts:525:8 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    523 │       replacement: "x".repeat(32769) + "\ufffd",
+    524 │       escaped: "\u0000\udfff".repeat(20000),
+  > 525 │       ["field".repeat(8000) + "\ud800"]: "distinct key",
+        │        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    526 │     },
+    527 │   }));
+  
+  i Unsafe fix: Use a template literal.
+  
+    523 523 │         replacement: "x".repeat(32769) + "\ufffd",
+    524 524 │         escaped: "\u0000\udfff".repeat(20000),
+    525     │ - ······["field".repeat(8000)·+·"\ud800"]:·"distinct·key",
+        525 │ + ······[`${"field".repeat(8000)}\ud800`]:·"distinct·key",
+    526 526 │       },
+    527 527 │     }));
+  
+
+test/domain/canonical-serialization.spec.ts:46:5 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    44 │     "\ud800",
+    45 │     "\udfff",
+  > 46 │     "x".repeat(32767) + "😀",
+       │     ^^^^^^^^^^^^^^^^^^^^^^^^
+    47 │     "x".repeat(32767) + "\ud800!",
+    48 │     "e\u0301".repeat(40000),
+  
+  i Unsafe fix: Use a template literal.
+  
+     44  44 │       "\ud800",
+     45  45 │       "\udfff",
+     46     │ - ····"x".repeat(32767)·+·"😀",
+         46 │ + ····`${"x".repeat(32767)}😀`,
+     47  47 │       "x".repeat(32767) + "\ud800!",
+     48  48 │       "e\u0301".repeat(40000),
+  
+
+test/domain/canonical-serialization.spec.ts:47:5 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    45 │     "\udfff",
+    46 │     "x".repeat(32767) + "😀",
+  > 47 │     "x".repeat(32767) + "\ud800!",
+       │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    48 │     "e\u0301".repeat(40000),
+    49 │   ];
+  
+  i Unsafe fix: Use a template literal.
+  
+     45  45 │       "\udfff",
+     46  46 │       "x".repeat(32767) + "😀",
+     47     │ - ····"x".repeat(32767)·+·"\ud800!",
+         47 │ + ····`${"x".repeat(32767)}\ud800!`,
+     48  48 │       "e\u0301".repeat(40000),
+     49  49 │     ];
+  
+
+test/support/canonical-encoding-probe.mjs:41:5 lint/style/useTemplate  FIXABLE  ━━━━━━━━━━━━━━━━━━━━
+
+  i Template literals are preferred over string concatenation.
+  
+    39 │   await writeFile(
+    40 │     destination,
+  > 41 │     JSON.stringify(
+       │     ^^^^^^^^^^^^^^^
+  > 42 │       {
+        ...
+  > 58 │       2,
+  > 59 │     ) + "\n",
+       │     ^^^^^^^^
+    60 │   );
+    61 │ } finally {
+  
+  i Unsafe fix: Use a template literal.
+  
+    39 39 │     await writeFile(
+    40 40 │       destination,
+    41    │ - ····JSON.stringify(
+       41 │ + ····`${JSON.stringify(
+    42 42 │         {
+    43 43 │           scope:
+    ····· │ 
+    57 57 │         null,
+    58 58 │         2,
+    59    │ - ····)·+·"\n",
+       59 │ + ····)}\n`,
+    60 60 │     );
+    61 61 │   } finally {
+  
+
+test/support/fake-publisher/reconciliation-documents.ts:7:64 lint/correctness/noUnusedFunctionParameters  FIXABLE  ━━━━━━━━━━
+
+  ! This parameter surface is unused.
+  
+    5 │ // https://<scenario>-official-source.invalid/reconciliation/<scenario>. Every
+    6 │ // document is a pure function of the scenario, surface, and request URL.
+  > 7 │ export function reconciliationSourceDocument(scenario: string, surface: string, requestUrl: string) {
+      │                                                                ^^^^^^^
+    8 │   const capacity = /^capacity-(tier-[12])-page-([0-9]+)$/u.exec(scenario);
+    9 │   if (capacity) {
+  
+  i Unused parameters might be the result of an incomplete refactoring.
+  
+  i Unsafe fix: If this is intentional, prepend surface with an underscore.
+  
+       5    5 │   // https://<scenario>-official-source.invalid/reconciliation/<scenario>. Every
+       6    6 │   // document is a pure function of the scenario, surface, and request URL.
+       7      │ - export·function·reconciliationSourceDocument(scenario:·string,·surface:·string,·requestUrl:·string)·{
+            7 │ + export·function·reconciliationSourceDocument(scenario:·string,·_surface:·string,·requestUrl:·string)·{
+       8    8 │     const capacity = /^capacity-(tier-[12])-page-([0-9]+)$/u.exec(scenario);
+       9    9 │     if (capacity) {
+  
+
+Checked 63 files in 262ms. No fixes applied.
+Found 1 warning.
+Found 13 infos.

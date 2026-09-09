@@ -1,9 +1,756 @@
 import { createHash } from "node:crypto";
+import { capacityByteShare, capacityPrintingsPerPage, syntheticCapacityTier } from "./capacity-workloads.ts";
 
 // Synthetic reconciliation source documents served from
 // https://<scenario>-official-source.invalid/reconciliation/<scenario>. Every
 // document is a pure function of the scenario, surface, and request URL.
 export function reconciliationSourceDocument(scenario: string, surface: string, requestUrl: string) {
+  const capacity = /^capacity-(tier-[12])-page-([0-9]+)$/u.exec(scenario);
+  if (capacity) {
+    const tier = syntheticCapacityTier(capacity[1]!);
+    const page = Number(capacity[2]);
+    const pages = tier.printings / capacityPrintingsPerPage;
+    const structuredBytes = capacityByteShare(tier.structuredBytes, pages, page);
+    const cards = Array.from({ length: capacityPrintingsPerPage }, (_, offset) => {
+      const index = page * capacityPrintingsPerPage + offset;
+      const observation = printingObservation({
+        game: "one-piece",
+        profile: "one-piece@1",
+        cardNumber: `SYN-${String(index + 1).padStart(6, "0")}`,
+        name: `Synthetic capacity Card ${index + 1}`,
+        locator: `capacity-${tier.id}-${index}`,
+        lineageMarker: `capacity-${tier.id}-${index}`,
+        cardAttributes: onePieceLeaderAttributes(),
+        printingAttributes: { illustration_types: [] },
+      });
+      observation.appearance_evidence.images = (["front", "back"] as const).map((role, face) => {
+        const imageIndex = index * 2 + face;
+        const bytes = Buffer.from(
+          deterministicNoise(imageIndex + 1, capacityByteShare(tier.imageBytes, tier.images, imageIndex)),
+        );
+        return {
+          ...observation.appearance_evidence.images[0]!,
+          role,
+          source_url: `https://official-source.invalid/images/capacity-${tier.id}-${imageIndex}.png`,
+          content_base64: bytes.toString("base64"),
+          content_sha256: createHash("sha256").update(bytes).digest("hex"),
+        };
+      });
+      return observation;
+    });
+    // Census structured input separately from the synthetic adapter's inline
+    // base64 transport encoding. Each page remains below its 16 MiB contract.
+    const metadata = {
+      cards: cards.map((card) => ({
+        ...card,
+        appearance_evidence: {
+          ...card.appearance_evidence,
+          images: card.appearance_evidence.images.map(({ content_base64: _bytes, ...image }) => image),
+        },
+      })),
+    };
+    const remaining = structuredBytes - Buffer.byteLength(JSON.stringify(metadata));
+    if (remaining < 0) throw new Error("Capacity fixture metadata exceeds its accepted byte census");
+    cards[0]!.card.effective_rules_text += "x".repeat(remaining);
+    return { cards };
+  }
+  if (scenario.startsWith("inspection-")) {
+    const observation = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber: "OP01-001",
+      name: "Inspection Card",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: {},
+      locator: "/inspection/stable",
+      lineageMarker: "one-piece",
+      memberships: { products: ["INSPECT-01"], distribution_contexts: [], source_buckets: ["main-list"] },
+    });
+    if (scenario === "inspection-image")
+      observation.appearance_evidence.images = [
+        fixturePrintingImage(
+          "front",
+          "https://official-source.invalid/images/OP01-001.png",
+          `sha256:${"a".repeat(64)}`,
+          "inspection-changed-bytes",
+        ),
+      ];
+    return {
+      cards: [
+        {
+          ...observation,
+          product_release_catalogue: {
+            products: [
+              {
+                reference: { kind: "official_code", value: "INSPECT-01" },
+                official_code: "INSPECT-01",
+                name: scenario === "inspection-product" ? "Revised Product" : "Inspection Product",
+                releases: [
+                  {
+                    event_key: "inspection-release",
+                    region: "EN-OCEANIA",
+                    date: { precision: "month", value: scenario === "inspection-release" ? "2026-10" : "2026-09" },
+                    status: "announced",
+                  },
+                ],
+              },
+            ],
+            distribution_contexts: [],
+            relationships: [],
+          },
+        },
+      ],
+    };
+  }
+  if (scenario === "capacity-product-identity-fanout" || scenario === "capacity-product-identity-fanout-base") {
+    const base = scenario.endsWith("-base");
+    return {
+      cards: [
+        {
+          card: {
+            game: "one-piece",
+            official_identity: { kind: "card_number", value: "OP92-997" },
+            name: "Synthetic Product identity Card",
+            effective_rules_text: "Initial rules.",
+            game_data: { profile: "one-piece@1", attributes: onePieceLeaderAttributes() },
+          },
+          completeness: completeEvidence(),
+          memberships: { products: [], distribution_contexts: [], source_buckets: [] },
+          product_release_catalogue: {
+            products: Array.from({ length: base ? 9 : 1 }, (_, index) => ({
+              reference: base
+                ? { kind: "official_code", value: `MATCH-${index}` }
+                : { kind: "name", value: "Shared Product name" },
+              official_code: base ? `MATCH-${index}` : null,
+              name: "Shared Product name",
+              releases: [{ region: "EN-OCEANIA", date: { precision: "month", value: "2026-12" }, status: "announced" }],
+            })),
+            distribution_contexts: [],
+            relationships: [],
+          },
+        },
+      ],
+    };
+  }
+  if (scenario === "capacity-card-inline-errata") {
+    return {
+      cards: [
+        {
+          card: {
+            game: "one-piece",
+            official_identity: { kind: "card_number", value: "OP92-998" },
+            name: "Synthetic high-degree Errata Card",
+            effective_rules_text: "Initial rules.",
+            game_data: { profile: "one-piece@1", attributes: onePieceLeaderAttributes() },
+          },
+          completeness: completeEvidence(),
+          memberships: { products: [], distribution_contexts: [], source_buckets: [] },
+          errata: Array.from({ length: 9 }, (_, index) => ({
+            authority: "official_errata",
+            field: "effective_rules_text",
+            target_type: "card",
+            effective_from: `2026-07-${String(index + 1).padStart(2, "0")}`,
+            official_wording: `Official correction ${index + 1}.`,
+            corrected_value: `Corrected rules ${index + 1}.`,
+          })),
+        },
+      ],
+    };
+  }
+  if (scenario === "capacity-product-input-fanout") {
+    return {
+      cards: [
+        {
+          card: {
+            game: "one-piece",
+            official_identity: { kind: "card_number", value: "OP92-999" },
+            name: "Synthetic Product fanout Card",
+            effective_rules_text: "Official rules without an appearance.",
+            game_data: { profile: "one-piece@1", attributes: onePieceLeaderAttributes() },
+          },
+          completeness: completeEvidence(),
+          memberships: { products: [], distribution_contexts: [], source_buckets: [] },
+          product_release_catalogue: {
+            products: Array.from({ length: 25 }, (_, index) => ({
+              reference: { kind: "official_code", value: `FAN-${index}` },
+              official_code: `FAN-${index}`,
+              name: `Synthetic Product ${index}`,
+              releases: [{ region: "EN-OCEANIA", date: { precision: "month", value: "2026-12" }, status: "announced" }],
+            })),
+            distribution_contexts: [],
+            relationships: [],
+          },
+        },
+      ],
+    };
+  }
+  if (scenario === "identity-chain-card-surface") {
+    return {
+      cards: Array.from({ length: 32 }, (_, index) => ({
+        card: {
+          game: "one-piece",
+          official_identity: { kind: "card_number", value: `OP96-${String(index + 1).padStart(3, "0")}` },
+          name: `Synthetic reviewed Card ${index}`,
+          effective_rules_text: "Official effective rules",
+          game_data: { profile: "one-piece@1", attributes: onePieceLeaderAttributes() },
+        },
+        completeness: completeEvidence(),
+        memberships: { products: [], distribution_contexts: [], source_buckets: [] },
+      })),
+    };
+  }
+  if (scenario === "dedicated-errata-work-units") {
+    return {
+      cards: Array.from({ length: 32 }, (_, index) => ({
+        kind: "official_erratum",
+        game: "one-piece",
+        target: {
+          type: "card",
+          official_identity: { kind: "card_number", value: `OP96-${String(index + 1).padStart(3, "0")}` },
+        },
+        published_on: "2026-07-31",
+        effective_from: null,
+        observed_printed_rules_text: "Official printed rules",
+        corrected_rules_text: `Corrected rules for Card ${index}`,
+        official_wording: `The corrected rules for Card ${index} apply to all Printings.`,
+        applies_to_parallel_printings: true,
+        source: {
+          fragment: `#errata_work_unit_${index}`,
+          display_name: `OP96-${String(index + 1).padStart(3, "0")} Synthetic reviewed Card ${index}`,
+          image_url: `https://en.onepiece-cardgame.com/images/rules/cards/OP96-${String(index + 1).padStart(3, "0")}.png`,
+        },
+        completeness: completeEvidence(),
+      })),
+    };
+  }
+  if (
+    scenario === "card-only-work-units" ||
+    scenario === "card-only-work-units-changed" ||
+    scenario === "curated-lookup-relationships"
+  ) {
+    return {
+      cards: Array.from({ length: 32 }, (_, offset) => {
+        const index = offset + (scenario.endsWith("changed") ? 8 : 0);
+        return {
+          card: {
+            game: "one-piece",
+            official_identity: { kind: "card_number", value: `OP92-${String(index + 1).padStart(3, "0")}` },
+            name: `Synthetic Card without Printing ${index}`,
+            effective_rules_text: "Official rules without an appearance.",
+            game_data: { profile: "one-piece@1", attributes: onePieceLeaderAttributes() },
+          },
+          completeness: completeEvidence(),
+          memberships: { products: [], distribution_contexts: [], source_buckets: [] },
+          product_release_catalogue: {
+            products: [
+              {
+                reference: { kind: "official_code", value: `WU-${index}` },
+                official_code: `WU-${index}`,
+                name: `Synthetic Product ${index} ${"Source product text. ".repeat(200)}`,
+                releases: [
+                  { region: "EN-OCEANIA", date: { precision: "month", value: "2026-12" }, status: "announced" },
+                ],
+              },
+            ],
+            distribution_contexts: [
+              {
+                key: `work-unit-context-${index}`,
+                kind: "promotion",
+                label: `Synthetic Context ${index} ${"Source context text. ".repeat(200)}`,
+                product_reference: { kind: "official_code", value: `WU-${index}` },
+                evidence_category: "explicit",
+              },
+            ],
+            relationships:
+              scenario === "curated-lookup-relationships"
+                ? [
+                    {
+                      kind: "distribution-context-product",
+                      context_key: `work-unit-context-${index}`,
+                      product_reference: { kind: "official_code", value: `WU-${index}` },
+                      resolution: "explicit",
+                      evidence_category: "explicit",
+                    },
+                  ]
+                : [],
+          },
+        };
+      }),
+    };
+  }
+  if (scenario === "metadata-request-pages") {
+    const index = Number(new URL(requestUrl).searchParams.get("request"));
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: `OP93-${String(index + 1).padStart(3, "0")}`,
+          name: `Synthetic metadata page ${index}`,
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: `/official/metadata-page/${index}`,
+          lineageMarker: `metadata-page-${index}`,
+        }),
+      ],
+    };
+  }
+  if (scenario === "erratum-target-large-text") {
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP01-001",
+          name: "Synthetic Erratum target",
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: "/official/erratum-target",
+          lineageMarker: "erratum-target",
+        }),
+        ...Array.from({ length: 2 }, (_, index) => ({
+          kind: "official_erratum",
+          game: "one-piece",
+          target: { type: "card", official_identity: { kind: "card_number", value: "OP01-001" } },
+          published_on: "2026-07-31",
+          effective_from: null,
+          observed_printed_rules_text: "Official printed rules",
+          corrected_rules_text: "Official effective rules",
+          official_wording: "Synthetic wording. ".repeat(35000),
+          applies_to_parallel_printings: true,
+          source: {
+            fragment: `#large_erratum_${index}`,
+            display_name: "OP01-001 Synthetic Erratum target",
+            image_url: "https://en.onepiece-cardgame.com/images/rules/cards/OP01-001.png",
+          },
+          completeness: completeEvidence(),
+        })),
+      ],
+    };
+  }
+  if (scenario.startsWith("identity-correction-")) {
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: scenario.startsWith("identity-correction-renumbered") ? "OP94-002" : "OP94-001",
+          name: "Synthetic corrected identity",
+          locator:
+            scenario === "identity-correction-discovered" ? "/official/correction/new" : "/official/correction/stable",
+          lineageMarker:
+            scenario === "identity-correction-discovered" || scenario.endsWith("contradictory") ? "different" : "same",
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+        }),
+      ],
+    };
+  }
+  if (scenario === "identity-many-mappings") {
+    return {
+      cards: Array.from({ length: 101 }, (_, index) =>
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP95-001",
+          name: "Synthetic mapping pagination",
+          locator: `/official/mapping/${index}`,
+          lineageMarker: "mapping-pagination",
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+        }),
+      ),
+    };
+  }
+  if (scenario.startsWith("identity-missing-number")) {
+    const observation = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber: "OP97-001",
+      locator: scenario.endsWith("distinct")
+        ? "/official/other-unnumbered-card"
+        : scenario.endsWith("moved")
+          ? "/official/moved-unnumbered-real-card"
+          : "/official/unnumbered-real-card",
+      lineageMarker:
+        scenario.endsWith("distinct") || scenario.endsWith("changed") ? "different" : "unnumbered-real-card",
+      name: "Synthetic unnumbered Card",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: { illustration_types: [] },
+    });
+    if (scenario.includes("tabular")) {
+      const { card, ...evidence } = observation;
+      return { rows: [{ cells: [null, card.name, card.effective_rules_text, card.game_data.attributes], evidence }] };
+    }
+    return {
+      cards: [{ ...observation, card: { ...observation.card, official_identity: { kind: "unknown", value: null } } }],
+    };
+  }
+  if (scenario.startsWith("canonical-tabular")) {
+    const source = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      locator: "/supplemental/independent-id",
+      lineageMarker: "canonical-cross-source",
+      cardNumber: "OP96-001",
+      name: "Synthetic exact cross-source Card",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: { illustration_types: [] },
+    });
+    if (!scenario.endsWith("ambiguous") && !scenario.endsWith("unresolved"))
+      source.identity_evidence.artwork_fingerprint =
+        'official-artwork:{"official_card_identity":"OP96-001","roles":["front"],"artwork_id":"publisher-appearance-1"}';
+    source.appearance_evidence.images.forEach((image) => {
+      image.artwork_fingerprint = source.identity_evidence.artwork_fingerprint;
+    });
+    if (scenario.endsWith("unresolved")) source.identity_evidence.demonstrably_novel = false;
+    if (scenario.endsWith("unrelated")) source.printing.game_data.attributes.illustration_types = ["original"];
+    const { card, ...evidence } = source;
+    const row = {
+      cells: [
+        scenario.endsWith("missing-number") ? null : card.official_identity.value,
+        card.name,
+        card.effective_rules_text,
+        card.game_data.attributes,
+      ],
+      evidence,
+    };
+    return {
+      rows: scenario.endsWith("many-alternates")
+        ? Array.from({ length: 10 }, (_, index) => {
+            const alternate = structuredClone(row);
+            alternate.evidence.identity_evidence.locator = `/supplemental/alternate-${index}`;
+            const artwork = `official-artwork:{"official_card_identity":"OP96-001","roles":["front"],"artwork_id":"synthetic-shared-art"}`;
+            alternate.evidence.identity_evidence.artwork_fingerprint = artwork;
+            alternate.evidence.identity_evidence.novelty_basis.artwork_fingerprint = artwork;
+            alternate.evidence.appearance_evidence.images.forEach((image) => {
+              image.artwork_fingerprint = artwork;
+            });
+            if (scenario.includes("unknown") && (scenario.includes("known-last") ? index < 9 : index > 0))
+              return {
+                ...alternate,
+                evidence: {
+                  ...alternate.evidence,
+                  printing: {
+                    ...alternate.evidence.printing,
+                    rarity: {
+                      raw: scenario.includes("conflict") && index === 9 ? "DIFFERENT" : null,
+                      normalized: null,
+                    },
+                    printed_rules_text: null,
+                  },
+                },
+              };
+            return alternate;
+          })
+        : [row],
+    };
+  }
+  if (scenario.startsWith("canonical-official")) {
+    const source = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      locator: "/official/unrelated-id",
+      lineageMarker: "canonical-cross-source",
+      cardNumber: "OP96-001",
+      name: "Synthetic exact cross-source Card",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: { illustration_types: [] },
+    });
+    if (!scenario.endsWith("ambiguous"))
+      source.identity_evidence.artwork_fingerprint =
+        'official-artwork:{"official_card_identity":"OP96-001","roles":["front"],"artwork_id":"publisher-appearance-1"}';
+    source.appearance_evidence.images.forEach((image) => {
+      image.artwork_fingerprint = source.identity_evidence.artwork_fingerprint;
+    });
+    return { cards: [source] };
+  }
+  if (scenario === "source-refresh-supplemental") {
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP02-002",
+          name: "Synthetic supplemental Card",
+          locator: "/supplemental/independent-card",
+          lineageMarker: "different",
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+        }),
+      ],
+    };
+  }
+  if (scenario === "source-refresh-empty-errata") return { cards: [] };
+  if (scenario === "game-scoped-warning")
+    return {
+      cards: [
+        {
+          ...printingObservation({
+            game: "one-piece",
+            profile: "one-piece@1",
+            cardNumber: "OP94-997",
+            name: "Game scoped warning",
+            locator: "game-scoped-warning",
+            lineageMarker: "game-scoped-warning",
+            cardAttributes: onePieceLeaderAttributes(),
+            printingAttributes: { illustration_types: [] },
+          }),
+          unknown_game_field: "Synthetic game-specific source warning",
+        },
+      ],
+    };
+  if (
+    scenario === "curated-conflict-fanout-base" ||
+    scenario === "curated-conflict-fanout-changed" ||
+    scenario === "prior-state-text-pages" ||
+    scenario === "prior-state-carry-forward" ||
+    scenario === "withdrawal-work-units"
+  ) {
+    return {
+      cards: Array.from({ length: 32 }, (_, offset) => {
+        const index = offset + (scenario === "prior-state-carry-forward" ? 8 : 0);
+        return {
+          ...printingObservation({
+            game: "one-piece",
+            profile: "one-piece@1",
+            cardNumber: `OP96-${String(index + 1).padStart(3, "0")}`,
+            name: `Synthetic ${scenario.endsWith("changed") ? "changed" : "reviewed"} Card ${index}`,
+            cardAttributes: onePieceLeaderAttributes(),
+            printingAttributes: { illustration_types: [] },
+            locator: `/curated-conflict-fanout/${index}`,
+            lineageMarker: `curated-conflict-fanout-${index}`,
+            ...(scenario === "prior-state-text-pages" ? { printedRulesText: "Prior printed text. ".repeat(1000) } : {}),
+          }),
+          ...(scenario === "withdrawal-work-units"
+            ? {
+                withdrawal: {
+                  entity: "printing",
+                  state: "withdrawn",
+                  effective_at: "2026-07-01T00:00:00.000Z",
+                  evidence: "Official withdrawal notice",
+                },
+              }
+            : {}),
+        };
+      }),
+    };
+  }
+  if (scenario === "curated-draft-source-changed") {
+    const observation = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber: "OP01-001",
+      name: "Changed Official Card name",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: { illustration_types: [] },
+      locator: "/official/base",
+      lineageMarker: "one-piece",
+    });
+    observation.card.effective_rules_text = "Changed Official effective rules";
+    return { cards: [observation] };
+  }
+  if (scenario === "product-group-large-text") {
+    return {
+      cards: Array.from({ length: 2 }, (_, index) => ({
+        ...printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP97-001",
+          name: "Synthetic Product evidence Card",
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: `/product-group-large-text/${index}`,
+          lineageMarker: "product-group-large-text",
+        }),
+        product_release_catalogue: {
+          products: [
+            {
+              reference: { kind: "official_code", value: "GROUP-1" },
+              official_code: "GROUP-1",
+              name: "Synthetic name. ".repeat(40000),
+              releases: [],
+              withdrawal: null,
+            },
+          ],
+          distribution_contexts: [],
+          relationships: [],
+        },
+      })),
+    };
+  }
+  if (scenario === "prior-candidate-stream") {
+    return {
+      cards: Array.from({ length: 64 }, (_, index) =>
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: `OP98-${String(index + 1).padStart(3, "0")}`,
+          name: `Synthetic prior Card ${index}`,
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: `/prior-candidate-stream/${index}`,
+          lineageMarker: `prior-candidate-stream-${index}`,
+          printedRulesText: "Synthetic printed text. ".repeat(1000),
+        }),
+      ),
+    };
+  }
+  if (/^bounded-evidence-volume-[0-8]$/u.test(scenario)) {
+    const index = Number(scenario.at(-1));
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: `OP97-${String(index + 1).padStart(3, "0")}`,
+          name: `Synthetic bounded evidence Card ${index}`,
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: `/${scenario}`,
+          lineageMarker: scenario,
+          printedRulesText: "Synthetic source text. ".repeat(180_000),
+        }),
+      ],
+    };
+  }
+  if (scenario === "curated-composition-character" || scenario === "curated-composition-leader") {
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP96-001",
+          name: "Synthetic curated composition",
+          cardAttributes: {
+            ...onePieceLeaderAttributes(),
+            card_type: scenario === "curated-composition-character" ? "character" : "leader",
+            cost: 1,
+          },
+          printingAttributes: { illustration_types: [] },
+          locator: "/curated-composition",
+          lineageMarker: "curated-composition",
+        }),
+      ],
+    };
+  }
+  if (
+    [
+      "capacity-card-identity-fanout",
+      "capacity-card-facts-fanout",
+      "known-card-facts-fanout",
+      "capacity-nested-card-matches",
+    ].includes(scenario)
+  ) {
+    return {
+      cards: Array.from(
+        {
+          length:
+            scenario === "capacity-nested-card-matches" ? 65 : scenario === "capacity-card-facts-fanout" ? 18 : 17,
+        },
+        (_, index) => {
+          const observation = printingObservation({
+            game: "one-piece",
+            profile: "one-piece@1",
+            cardNumber: `OP95-${String(scenario === "capacity-nested-card-matches" ? Math.floor(index / 8) + 1 : index + 1).padStart(3, "0")}`,
+            name: "Synthetic same facts unknown identity",
+            cardAttributes: onePieceLeaderAttributes(),
+            printingAttributes: { illustration_types: [] },
+            locator: `/unknown-identity-fanout/${index}`,
+            lineageMarker: `unknown-identity-fanout-${index}`,
+            printedRulesText: `Synthetic distinct printed text ${index}`,
+            printedFieldsMarker: String(index),
+          });
+          const fingerprint = `sha256:${String(index).padStart(64, "0")}`;
+          observation.identity_evidence.artwork_fingerprint = fingerprint;
+          observation.identity_evidence.novelty_basis.artwork_fingerprint = fingerprint;
+          observation.appearance_evidence.images[0]!.artwork_fingerprint = fingerprint;
+          return {
+            ...observation,
+            card:
+              scenario === "capacity-card-identity-fanout" ||
+              (scenario === "capacity-card-facts-fanout" && index === 17) ||
+              (scenario === "capacity-nested-card-matches" && index === 64)
+                ? { ...observation.card, official_identity: { kind: "unknown", value: null } }
+                : observation.card,
+          };
+        },
+      ),
+    };
+  }
+  if (scenario === "curated-text-target-base" || scenario === "curated-text-target") {
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP93-001",
+          name: "Synthetic curated text target",
+          cardAttributes: {
+            ...onePieceLeaderAttributes(),
+            traits:
+              scenario === "curated-text-target"
+                ? Array.from({ length: 32 }, (_, index) => `Synthetic trait ${index} ${"text ".repeat(8000)}`)
+                : ["Synthetic trait"],
+          },
+          printingAttributes: { illustration_types: [] },
+          locator: "/curated-text-target",
+          lineageMarker: "curated-text-target",
+        }),
+      ],
+    };
+  }
+  if (scenario === "three-role-image-work-units") {
+    return {
+      cards: Array.from({ length: 8 }, (_, index) => {
+        const observation = printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: `OP95-${String(index + 1).padStart(3, "0")}`,
+          name: `Synthetic three image Card ${index}`,
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+          locator: `/three-role-images/${index}`,
+          lineageMarker: `three-role-images-${index}`,
+        });
+        observation.appearance_evidence.images.push(
+          ...(["back", "other"] as const).map((role) =>
+            fixturePrintingImage(
+              role,
+              `https://official-source.invalid/images/three-role-${index}-${role}.png`,
+              observation.appearance_evidence.images[0]!.artwork_fingerprint,
+              `three-role-${index}-${role}`,
+            ),
+          ),
+        );
+        return observation;
+      }),
+    };
+  }
+  if (scenario === "capacity-printing-image-fanout") {
+    const observation = printingObservation({
+      game: "one-piece",
+      profile: "one-piece@1",
+      cardNumber: "OP96-002",
+      name: "Synthetic high degree Printing images",
+      cardAttributes: onePieceLeaderAttributes(),
+      printingAttributes: { illustration_types: [] },
+      locator: "/capacity-printing-image-fanout",
+      lineageMarker: "capacity-printing-image-fanout",
+    });
+    observation.appearance_evidence.images = [
+      observation.appearance_evidence.images[0]!,
+      ...Array.from({ length: 63 }, (_, index) =>
+        fixturePrintingImage(
+          "front",
+          `https://official-source.invalid/images/fanout-${index}.png`,
+          observation.appearance_evidence.images[0]!.artwork_fingerprint,
+          `fanout-${index}`,
+        ),
+      ),
+    ];
+    return { cards: [observation] };
+  }
   if (scenario === "large-card-content") {
     return {
       cards: [
@@ -477,6 +1224,106 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
       ],
     };
   }
+  if (scenario === "capacity-single-observation") {
+    return {
+      cards: [
+        {
+          ...printingObservation({
+            game: "one-piece",
+            profile: "one-piece@1",
+            cardNumber: "OP94-999",
+            name: "Synthetic indivisible capacity failure",
+            locator: "capacity-record",
+            lineageMarker: "capacity-record",
+            cardAttributes: onePieceLeaderAttributes(),
+            printingAttributes: { illustration_types: [] },
+          }),
+          [`unrecognized_${"x".repeat(600000)}`]: "Synthetic oversized field identity",
+        },
+      ],
+    };
+  }
+  if (scenario === "capacity-high-degree-observation") {
+    return {
+      cards: [
+        printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: "OP94-998",
+          name: "Synthetic high degree record",
+          locator: "capacity-high-degree",
+          lineageMarker: "capacity-high-degree",
+          cardAttributes: {
+            ...onePieceLeaderAttributes(),
+            traits: Array.from({ length: 40000 }, (_, index) => `Synthetic trait ${String(index).padStart(8, "0")}`),
+          },
+          printingAttributes: { illustration_types: [] },
+        }),
+      ],
+    };
+  }
+  if (scenario === "single-card-warning-work-units") {
+    return {
+      cards: [
+        {
+          ...printingObservation({
+            game: "one-piece",
+            profile: "one-piece@1",
+            cardNumber: "OP93-001",
+            name: "Synthetic Card with many source warnings",
+            locator: "many-warnings",
+            lineageMarker: "many-warnings",
+            cardAttributes: onePieceLeaderAttributes(),
+            printingAttributes: { illustration_types: [] },
+          }),
+          ...Object.fromEntries(
+            Array.from({ length: 64 }, (_, index) => [
+              `unrecognized_${index}_${"x".repeat(100)}`,
+              "Synthetic undeclared source field",
+            ]),
+          ),
+        },
+      ],
+    };
+  }
+  if (scenario === "scale-warning-partitions") {
+    return {
+      cards: Array.from({ length: 64 }, (_, index) => ({
+        ...printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: `OP94-${String(index + 1).padStart(3, "0")}`,
+          name: `Synthetic warning Card ${index}`,
+          locator: `warning-${index}`,
+          lineageMarker: `warning-${index}`,
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+        }),
+        [`unrecognized_${index}_${"x".repeat(9000)}`]: "Synthetic undeclared source field",
+      })),
+    };
+  }
+  if (scenario.startsWith("scale-128-images-")) {
+    return {
+      cards: Array.from({ length: 8 }, (_, offset) => {
+        const index = Number(scenario.slice("scale-128-images-".length)) * 8 + offset;
+        const observation = printingObservation({
+          game: "one-piece",
+          profile: "one-piece@1",
+          cardNumber: `OP95-${String(index + 1).padStart(3, "0")}`,
+          name: `Synthetic image capacity Card ${index + 1}`,
+          locator: `image-capacity-${index}`,
+          lineageMarker: `image-capacity-${index}`,
+          cardAttributes: onePieceLeaderAttributes(),
+          printingAttributes: { illustration_types: [] },
+        });
+        const bytes = Buffer.from(deterministicNoise(index + 1, 100 * 1024));
+        observation.appearance_evidence.images[0]!.content_base64 = bytes.toString("base64");
+        observation.appearance_evidence.images[0]!.content_sha256 = createHash("sha256").update(bytes).digest("hex");
+        return observation;
+      }),
+    };
+  }
   if (scenario === "scale-1001-cards") {
     return {
       cards: Array.from({ length: 1_001 }, (_, index) => ({
@@ -664,11 +1511,13 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
   }
   if (
     scenario === "dedicated-printing-erratum-seed" ||
+    scenario === "dedicated-printing-erratum-relocated" ||
     scenario === "multi-printing" ||
     scenario === "multi-printing-shared-locator"
   ) {
     const sharedLocator = scenario === "multi-printing-shared-locator";
-    const dedicated = scenario === "dedicated-printing-erratum-seed";
+    const dedicated =
+      scenario === "dedicated-printing-erratum-seed" || scenario === "dedicated-printing-erratum-relocated";
     const base = printingObservation({
       game: "one-piece",
       profile: "one-piece@1",
@@ -679,7 +1528,7 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
       locator: sharedLocator
         ? "/official/multi/shared"
         : dedicated
-          ? "/official/dedicated-multi/base"
+          ? `/official/dedicated-multi/base${scenario === "dedicated-printing-erratum-relocated" ? "-refreshed" : ""}`
           : "/official/multi/base",
       ...(sharedLocator ? { variantKey: "base" } : {}),
       lineageMarker: dedicated ? "dedicated-multi-base" : "multi-base",
@@ -806,6 +1655,7 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
   }
   if (
     scenario === "profile-fusion-world" ||
+    scenario === "profile-fusion-world-changed" ||
     scenario === "union-fusion-world" ||
     scenario === "profile-nested-unknown" ||
     scenario === "profile-invalid-number"
@@ -816,7 +1666,12 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
           game: "fusion-world",
           profile: "fusion-world@1",
           cardNumber: scenario === "union-fusion-world" ? "FB99-999" : "FB01-001",
-          name: scenario === "union-fusion-world" ? "Union Son Goku" : "Son Goku",
+          name:
+            scenario === "union-fusion-world"
+              ? "Union Son Goku"
+              : scenario === "profile-fusion-world-changed"
+                ? "Son Goku revised"
+                : "Son Goku",
           cardAttributes: {
             card_type: "battle",
             colours: ["red"],
@@ -942,6 +1797,40 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
         }),
       ],
     };
+  }
+  if (scenario === "profile-riftbound") {
+    const observation = printingObservation({
+      game: "riftbound",
+      profile: "riftbound@1",
+      cardNumber: "SYN-001",
+      name: "Synthetic Riftbound Unit",
+      cardAttributes: {
+        card_types: ["unit"],
+        supertypes: [],
+        domains: ["fury"],
+        energy: 1,
+        power: 0,
+        might: 1,
+        might_bonus: null,
+        tags: [],
+        ability_text: null,
+        effect_text: null,
+      },
+      printingAttributes: {
+        public_code: "SYN-001",
+        collector_number: 1,
+        set_code: "SYN",
+        orientation: "portrait",
+        reverse_face: null,
+        finish: null,
+        artists: [],
+      },
+      locator: "/synthetic/riftbound/SYN-001",
+      lineageMarker: "riftbound",
+      memberships: { products: [], distribution_contexts: [], source_buckets: ["synthetic"] },
+    });
+    observation.card.official_identity = { kind: "publisher_name", value: observation.card.name };
+    return { cards: [observation] };
   }
   if (scenario === "profile-gundam") {
     return {
@@ -1721,13 +2610,14 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
               },
             }
           : {}),
-        ...(scenario === "withdrawn"
+        ...(["withdrawn", "reinstated"].includes(scenario)
           ? {
               withdrawal: {
                 entity: "printing",
-                state: "withdrawn",
-                effective_at: "2026-07-01T00:00:00.000Z",
-                evidence: "Official withdrawal notice",
+                state: scenario === "reinstated" ? "reinstated" : "withdrawn",
+                effective_at: scenario === "reinstated" ? "2026-08-01T00:00:00.000Z" : "2026-07-01T00:00:00.000Z",
+                evidence:
+                  scenario === "reinstated" ? "Explicit publisher reinstatement notice" : "Official withdrawal notice",
               },
             }
           : {}),

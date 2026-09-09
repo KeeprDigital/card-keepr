@@ -11,7 +11,7 @@ import {
 } from "../../../src/catalogue/reconciliation";
 import { type CatalogueCandidate, catalogueRevisionIdentity, catalogueStore } from "../../../src/catalogue/shared";
 import ingestionWorker from "../src/index";
-import { runReconciliationWorkflow } from "../src/reconciliation-workflow";
+import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 import * as catalogueExportQueries from "./query-helpers/catalogue-export";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
@@ -166,6 +166,7 @@ test("a Workflow that terminalizes during initial HTTP creation returns 200", as
         testEnv.EVIDENCE_OBJECTS,
         run.id,
         "2026-07-31T01:00:00.000Z",
+        testEnv.PRINTING_IMAGES,
       );
       instanceStatus = {
         status: "complete",
@@ -248,6 +249,7 @@ test("an exact reconciliation replay observes without creating or executing the 
         testEnv.EVIDENCE_OBJECTS,
         run.id,
         "2026-07-31T01:00:00.000Z",
+        testEnv.PRINTING_IMAGES,
       );
       durableOutput = {
         result_json: JSON.stringify({
@@ -382,6 +384,7 @@ test("an exact reconciliation replay recreates a deterministically bound instanc
     testEnv.EVIDENCE_OBJECTS,
     run.id,
     "2026-07-31T01:00:00.000Z",
+    testEnv.PRINTING_IMAGES,
   );
   expect(
     (
@@ -436,7 +439,9 @@ test("reconciliation commit success survives lost step output without repeating 
     .map((record) => JSON.parse(record))
     .find(
       (record) =>
-        record.event === "workflow.step.completed" && record.request?.id === "workflow-reconciliation-correlation",
+        record.event === "workflow.step.completed" &&
+        record.request?.id === "workflow-reconciliation-correlation" &&
+        record.workflow?.step === "reconcile retained Card, Printing, and Erratum evidence",
     );
   expect(workflowRecord).toMatchObject({
     contract: "card-keepr-operational-log@1",
@@ -510,6 +515,7 @@ test("a complete Workflow recovers retained reconciliation after missing or malf
     testEnv.EVIDENCE_OBJECTS,
     run.id,
     "2026-07-31T01:00:00.000Z",
+    testEnv.PRINTING_IMAGES,
   );
   const candidateDigest = requiredString(retained, "candidate_digest");
   for (const output of [undefined, { result_json: "not-json" }, { result_json: JSON.stringify([]) }]) {
@@ -561,7 +567,7 @@ test("a complete Workflow recovers retained reconciliation after missing or malf
   ).toBe(200);
 });
 
-test("exhausted reconciliation retries fail the run and release the global mutation lock", async () => {
+test("exhausted reconciliation retries pause durable work and retain its reservation", async () => {
   const run = await collect("/reconciliation/base", "workflow-exhausted-retries");
   const expectedCurrentRevisionId = requiredString(run.document, "expected_current_revision_id");
   const step = {
@@ -586,42 +592,19 @@ test("exhausted reconciliation retries fail the run and release the global mutat
   );
 
   expect(JSON.parse(output.result_json)).toMatchObject({
-    result: {
-      run_id: run.id,
-      state: "failed",
-      diagnostics: [
-        expect.objectContaining({
-          code: "reconciliation_workflow_failed",
-        }),
-      ],
-    },
+    result: { run_id: run.id, state: "paused", publishable: false },
   });
-  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({
-    state: "failed",
+  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
+  expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
+    state: "paused",
+    generation: 1,
   });
-  await expect(
-    ingestionQueries.readIngestionRunsStateFailureCode(testEnv.CATALOGUE_DB).bind(run.id).first(),
-  ).resolves.toMatchObject({
-    state: "failed",
-    failure_code: "reconciliation_workflow_failed",
+  expect(requiredRecord((await get("/v1/status")).document.safe_state, "safe_state")).toMatchObject({
+    active_ingestion_run_id: run.id,
   });
-  await expect(
-    ingestionQueries.readOperationStateActiveIngestionRunId(testEnv.CATALOGUE_DB).first(),
-  ).resolves.toMatchObject({ active_ingestion_run_id: null });
-  const status = await get("/v1/status");
-  expect(status.response.status).toBe(200);
-  expect(status.document.recent_runs).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        id: run.id,
-        state: "failed",
-        failure_code: "reconciliation_workflow_failed",
-      }),
-    ]),
-  );
 });
 
-test("an exact replay terminalizes a run when Workflow failure-finalization itself exhausts", async () => {
+test("an exact replay pauses retained work when Workflow pause-finalization itself exhausts", async () => {
   const run = await collect("/reconciliation/base", "workflow-finalization-exhausted");
   const expectedCurrentRevisionId = requiredString(run.document, "expected_current_revision_id");
   let instanceStatus: Awaited<ReturnType<WorkflowInstance["status"]>> = {
@@ -683,29 +666,12 @@ test("an exact replay terminalizes a run when Workflow failure-finalization itse
     input,
     "2026-07-31T02:00:00.000Z",
   );
-  expect(recovered.document).toMatchObject({
-    status: "complete",
-    output: {
-      run_id: run.id,
-      state: "failed",
-      publishable: false,
-      diagnostics: [
-        expect.objectContaining({
-          code: "reconciliation_workflow_failed",
-          detail: "injected failure-finalization exhaustion",
-        }),
-      ],
-    },
+  expect(recovered.document).toMatchObject({ status: "paused", output: null });
+  expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
+    state: "paused",
+    generation: 1,
   });
-  await expect(
-    ingestionQueries.readIngestionRunsStateFailureCode(testEnv.CATALOGUE_DB).bind(run.id).first(),
-  ).resolves.toMatchObject({
-    state: "failed",
-    failure_code: "reconciliation_workflow_failed",
-  });
-  await expect(
-    ingestionQueries.readOperationStateActiveIngestionRunId(testEnv.CATALOGUE_DB).first(),
-  ).resolves.toMatchObject({ active_ingestion_run_id: null });
+  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
 
   instanceStatus = { status: "errored" };
   const exactReplay = await startOrObserveReconciliationWorkflow(

@@ -1,3 +1,4 @@
+import { parseRange } from "./byte-range";
 import { MissingObjectError } from "../shared";
 import { parseCatalogueRevisionId, parsePublicationInstant } from "../../http/catalogue";
 import { ifNoneMatchMatches as ifNoneMatch } from "../../http/conditional-request";
@@ -29,6 +30,7 @@ import {
   catalogueExportStatement,
   catalogueStatusStatement,
   currentCardStatement,
+  publishedIdentityCorrectionStatement,
   currentPrintingStatement,
   exportCollectionStatement,
   pendingExportComponentDeletionStatement,
@@ -56,7 +58,7 @@ type ExportManifest = {
 export async function catalogueExportsResponse(
   request: Request,
   database: CatalogueStore,
-  bucket: R2Bucket,
+  _bucket: R2Bucket,
   base: PublicBase,
 ): Promise<Response> {
   const url = new URL(request.url);
@@ -81,24 +83,14 @@ export async function catalogueExportsResponse(
     limit,
   );
   const selected = page.rows;
-  const data = await Promise.all(
-    selected.map(async (exportRow) => {
-      const verified = await loadVerifiedExportManifest(database, bucket, exportRow.catalogue_revision_id);
-      if (verified === null) {
-        throw new Error("Verified Catalogue Export is unavailable");
-      }
-      return {
-        type: "catalogue_export",
-        catalogue_revision_id: exportRow.catalogue_revision_id,
-        export_schema_major: verified.manifest.export_schema_major,
-        published_at: exportRow.published_at,
-        manifest_sha256: exportRow.manifest_digest,
-        links: {
-          self: publicUrl(base, `/v1/catalogue-exports/${encodeURIComponent(exportRow.catalogue_revision_id)}`),
-        },
-      };
-    }),
-  );
+  const data = selected.map((exportRow) => ({
+    type: "catalogue_export",
+    catalogue_revision_id: exportRow.catalogue_revision_id,
+    export_schema_major: 5,
+    published_at: exportRow.published_at,
+    content_sha256: exportRow.content_digest,
+    links: { self: publicUrl(base, `/v1/catalogue-exports/${exportRow.catalogue_revision_id}`) },
+  }));
   const next = page.hasMore
     ? encodeCursor({
         contract: "card-keepr-catalogue-export-cursor@1",
@@ -211,7 +203,7 @@ export async function currentCardResponse(
   base: PublicBase,
 ): Promise<Response | null> {
   const row = await currentCardStatement(database, cardId).first<RevisionDocumentRow>();
-  if (row === null) return null;
+  if (row === null) return identityCorrectionResponse(database, cardId, "card", request, base);
   const url = new URL(request.url);
   const include = detailIncludeProjection(
     url,
@@ -257,7 +249,7 @@ export async function currentPrintingResponse(
   base: PublicBase,
 ): Promise<Response | null> {
   const row = await currentPrintingStatement(database, printingId).first<RevisionDocumentRow>();
-  if (row === null) return null;
+  if (row === null) return identityCorrectionResponse(database, printingId, "printing", request, base);
   const url = new URL(request.url);
   const include = detailIncludeProjection(
     url,
@@ -573,21 +565,30 @@ async function loadVerifiedExportManifest(
   return { exportRow, manifest };
 }
 
-function parseRange(header: string | null, size: number): { offset: number; length: number } | "unsatisfiable" | null {
-  if (header === null) return null;
-  const match = /^bytes=(\d*)-(\d*)$/.exec(header);
-  if (match === null || (match[1] === "" && match[2] === "")) {
-    return "unsatisfiable";
-  }
-  if (match[1] === "") {
-    const suffix = Number.parseInt(match[2]!, 10);
-    if (suffix < 1) return "unsatisfiable";
-    const length = Math.min(suffix, size);
-    return { offset: size - length, length };
-  }
-  const offset = Number.parseInt(match[1]!, 10);
-  const requestedEnd = match[2] === "" ? size - 1 : Number.parseInt(match[2]!, 10);
-  if (offset >= size || requestedEnd < offset) return "unsatisfiable";
-  const end = Math.min(requestedEnd, size - 1);
-  return { offset, length: end - offset + 1 };
+async function identityCorrectionResponse(
+  database: CatalogueStore,
+  id: string,
+  kind: "card" | "printing",
+  request: Request,
+  base: PublicBase,
+) {
+  const row = await publishedIdentityCorrectionStatement(database, id, kind).first<RevisionDocumentRow>();
+  if (!row) return null;
+  const correction = JSON.parse(row.document_json) as { action: "merge" | "split"; replacement_ids: string[] };
+  const route = kind === "card" ? "cards" : "printings";
+  const replacements = correction.replacement_ids.map((id) =>
+    publicUrl(base, `/v1/${route}/${encodeURIComponent(id)}`),
+  );
+  const document = {
+    data: {
+      type: "identity_correction",
+      ...correction,
+      links: correction.action === "merge" ? { survivor: replacements[0] } : { replacements },
+    },
+    meta: { catalogue_revision_id: row.current_revision_id, published_at: row.published_at },
+    links: { self: publicUrl(base, `/v1/${route}/${encodeURIComponent(id)}`) },
+  };
+  const headers = revisionHeaders(row.current_revision_id, await canonicalEtag(document));
+  const conditional = conditionalResponse(request, headers);
+  return conditional ?? Response.json(document, { headers });
 }

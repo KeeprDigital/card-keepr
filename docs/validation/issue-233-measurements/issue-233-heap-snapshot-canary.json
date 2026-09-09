@@ -1,0 +1,42 @@
+{
+  "scope": "Tiny synthetic standalone workerd capability check only. Heap snapshot is intrusive, may collect garbage, and is not a normal peak/timing measurement. Raw snapshot may contain runtime strings/code; no real fixture, secrets, bindings or network source used.",
+  "maximum_snapshot_bytes": 16777216,
+  "errors": [],
+  "free_bytes_before": 16234332160,
+  "fixture": {
+    "retained": 256,
+    "temporary": 8192
+  },
+  "before": {
+    "usedSize": 596352,
+    "totalSize": 3145728,
+    "embedderHeapUsedSize": 257936,
+    "backingStorageSize": 0
+  },
+  "before_control": {
+    "usedSize": 596352,
+    "totalSize": 3145728,
+    "embedderHeapUsedSize": 257936,
+    "backingStorageSize": 0
+  },
+  "snapshot_supported": true,
+  "snapshot_elapsed_ms": 33.99362500000001,
+  "snapshot_bytes": 1362130,
+  "after": {
+    "usedSize": 292732,
+    "totalSize": 1048576,
+    "embedderHeapUsedSize": 304,
+    "backingStorageSize": 0
+  },
+  "snapshot_sha256": "1088e02f9d893ab1220fa438603a51b6096ec710adbb9c9ec6f5d5c6913e829f",
+  "graph": {
+    "nodes": 16247,
+    "edges": 58686,
+    "known_root_property_edges": 1,
+    "known_root_targets": 1,
+    "known_payload_edges": 1,
+    "retainer_graph_supported": true
+  },
+  "heap_change": -303620,
+  "gc_interpretation": "Before/control/after expose observed heap change only. No explicit collectGarbage command was issued; concurrent natural GC and snapshot-induced GC cannot be separated without supported GC events. Snapshot data describes its own intrusive collection, not the pre-snapshot high-water heap."
+}

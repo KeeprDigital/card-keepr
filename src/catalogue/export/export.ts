@@ -24,7 +24,7 @@ import {
   sha256Text,
   utf8,
 } from "../shared";
-import { verifyComponentExportRecord, verifyExportManifest } from "./export-validation";
+import { verifyComponentExportRecord, verifyExportManifest } from "./retained-export-validation";
 
 const componentDefinitions = [
   ["supported-games", "SupportedGameRecord", "id:utf8", 5],
@@ -37,6 +37,7 @@ const componentDefinitions = [
   ["distribution-contexts", "DistributionContextRecord", "id:utf8", 5],
   ["errata", "ErratumRecord", "id:utf8", 5],
   ["relationships", "RelationshipRecord", "id:utf8", 5],
+  ["identity-corrections", "IdentityCorrectionRecord", "id:utf8", 5],
 ] as const;
 
 export type ExportObject = {
@@ -122,6 +123,7 @@ export async function buildCatalogueExport(
   let totalObjectBytes = 0;
 
   for (const [name, schemaDefinition, order, recordSchemaMajor] of componentDefinitions) {
+    if (name === "identity-corrections" && !candidate.identity_corrections?.length) continue;
     const records = orderedExportRecords(recordFactories[name], order);
     const recordSchema = `https://card-keepr.invalid/schemas/catalogue-export-record@${recordSchemaMajor}#/$defs/${schemaDefinition}`;
     const analysis = await analyseComponent(records, recordSchema);
@@ -471,6 +473,8 @@ async function exportRecordFactories(
         game,
         schema: exportedGameProfileSchema(`${game}@1`),
       })),
+    "identity-corrections": () =>
+      (candidate.identity_corrections ?? []).map((c) => ({ type: "identity_correction", ...c })),
     cards: () =>
       candidate.cards.map((card) => ({
         type: "card",
@@ -667,6 +671,13 @@ export async function distributionContextExportId(
 
 function supportedGameExport(game: SupportedGame) {
   const definitions = {
+    riftbound: {
+      id: "game_riftbound",
+      key: "riftbound",
+      name: "Riftbound",
+      supported_locales: ["EN-US"],
+      game_profile: "riftbound@1",
+    },
     "one-piece": {
       id: "game_one_piece",
       key: "one-piece",

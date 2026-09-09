@@ -1,5 +1,5 @@
 import { releaseActiveRunLockStatement } from "../../../src/catalogue/ingestion/run-lifecycle-repository";
-import { catalogueStore, atomicRepositoryStatement, runStartGuardStatement } from "../../../src/catalogue/shared";
+import { catalogueStore } from "../../../src/catalogue/shared";
 import {
   insertAuthoredCuratedRevisionStatement,
   curatedLifecycleMutationStatements,
@@ -119,7 +119,7 @@ beforeEach(async () => {
         resolution: "canonical",
         source_lineage: "one-piece-en",
         source_observation_ids: [`srcobs_${sequence}`],
-        relationship_value: card.official_identity.value,
+        relationship_value: card.official_identity.value!,
         observed: true,
       },
     ],
@@ -452,7 +452,7 @@ test("product-only Source Observations remain valid Curated Revision evidence", 
         evidence_category: "explicit",
         source_lineage: "one-piece-en",
         source_observation_ids_json: canonicalJson([evidenceIds.relationship]),
-        relationship_value: card.official_identity.value,
+        relationship_value: card.official_identity.value!,
         first_revision_id: currentRevision,
         last_observed_revision_id: currentRevision,
         current: 1,
@@ -2412,7 +2412,7 @@ test("a curated absence derives one relationship state and retains Official Sour
     resolution: "canonical" as const,
     source_lineage: "one-piece-en",
     source_observation_ids: [`srcobs_${sequence}`],
-    relationship_value: card.official_identity.value,
+    relationship_value: card.official_identity.value!,
     observed: true,
   };
   const corroboratingOfficial = {
@@ -2586,12 +2586,9 @@ function digimonAttributes(): Record<string, unknown> {
 async function insertParsingRun(runId: string, selectedGames: readonly string[] = ["one-piece"]) {
   const database = catalogueStore(env.CATALOGUE_DB);
   await database.batch([
-    atomicRepositoryStatement(database, {
-      statement: ingestionQueries
-        .insertIngestionRunsForInsertParsingRun(env.CATALOGUE_DB)
-        .bind(runId, canonicalJson(selectedGames), now, currentRevision, `parse-${runId}`),
-      after: [runStartGuardStatement(database)],
-    }),
+    ingestionQueries
+      .insertIngestionRunsForInsertParsingRun(env.CATALOGUE_DB)
+      .bind(runId, canonicalJson(selectedGames), now, currentRevision, `parse-${runId}`),
     ingestionQueries
       .setOperationStateActiveIngestionRunIdForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
         env.CATALOGUE_DB,

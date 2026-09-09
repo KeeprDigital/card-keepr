@@ -1,0 +1,27 @@
+{
+  "scope": "Node byte-equivalence and maximum emission-size proof only. Synthetic observation envelope, exact existing source fixture. Legacy/concatenated bytes deliberately retained for comparison; no heap, workerd, provider CPU or capacity result.",
+  "source_bytes": 8708711,
+  "results": [
+    {
+      "observations": 0,
+      "bytes": 354,
+      "sha256": "7272f66e851f65baab56ce9226d81baa8242aa61c027571a75aee179c23ffe01",
+      "maximum_piece_bytes": 34,
+      "chunks": 25
+    },
+    {
+      "observations": 1,
+      "bytes": 471,
+      "sha256": "bb8a3587c968c106a72e9a1e7bac9fc290d88271da22202ae9416edb0db71b5b",
+      "maximum_piece_bytes": 117,
+      "chunks": 26
+    },
+    {
+      "observations": 1001,
+      "bytes": 8756889,
+      "sha256": "425ec22b711a769e480e62b5de6ee1044737cf722fe721241d20188805695cef",
+      "maximum_piece_bytes": 8749,
+      "chunks": 2026
+    }
+  ]
+}

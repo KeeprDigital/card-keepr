@@ -19,25 +19,16 @@ export function exportCollectionStatement(
          FROM catalogue_revisions AS revision
          JOIN pinned_revision ON revision.id = pinned_revision.id
        )
-       SELECT export.catalogue_revision_id, revision.published_at,
+       SELECT revision.id AS catalogue_revision_id, revision.published_at,
               export.manifest_key, export.manifest_digest,
-              export.maintenance_state
-       FROM catalogue_exports AS export
-       JOIN catalogue_revisions AS revision
-         ON revision.id = export.catalogue_revision_id
-       JOIN pinned_revision AS pinned
-         ON pinned.id = export.catalogue_revision_id
-       WHERE export.verified = 1
-         AND export.maintenance_state = 'available'
-         AND (
-           ? IS NULL OR revision.published_at < ? OR (
-             revision.published_at = ? AND
-             export.catalogue_revision_id < ?
-           )
-         )
-       ORDER BY revision.published_at DESC,
-                export.catalogue_revision_id DESC
-       LIMIT ?`)
+              export.maintenance_state, revision.publication_operation_id,revision.content_digest
+       FROM catalogue_revisions AS revision
+       JOIN pinned_revision AS pinned ON pinned.id=revision.id
+       LEFT JOIN catalogue_exports AS export ON revision.id=export.catalogue_revision_id
+       WHERE revision.publication_operation_id IS NOT NULL AND export.maintenance_state='available' AND EXISTS(SELECT 1 FROM publication_export_preparations prepared WHERE prepared.publication_operation_id=revision.publication_operation_id AND prepared.state='verified')
+         AND (? IS NULL OR revision.published_at < ? OR (
+             revision.published_at = ? AND revision.id < ?))
+       ORDER BY revision.published_at DESC, revision.id DESC LIMIT ?`)
     .bind(
       input.revisionId,
       input.afterPublishedAt,
@@ -268,6 +259,8 @@ export type PrintingImageRow = {
 };
 
 export type ExportRow = {
+  publication_operation_id?: string | null;
+  content_digest?: string;
   catalogue_revision_id: string;
   published_at: string;
   manifest_key: string;
@@ -294,3 +287,12 @@ export type RuleRow = {
   // before migration 0004 whose snapshot had already gone.
   source_retrieved_at: string | null;
 };
+
+export function publishedIdentityCorrectionStatement(database: CatalogueStore, id: string, kind: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT c.document_json, s.current_revision_id, r.published_at
+    FROM catalogue_state s JOIN catalogue_revisions r ON r.id = s.current_revision_id
+    JOIN revision_identity_corrections c ON c.catalogue_revision_id = s.current_revision_id
+    WHERE s.singleton = 1 AND c.entity_id = ? AND c.entity_kind = ?`)
+    .bind(id, kind);
+}

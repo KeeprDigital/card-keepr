@@ -108,6 +108,14 @@ export async function storeAndVerifyPrintingImages(
     throw new Error("The Printing Image object binding is unavailable.");
   }
   for (const image of images) {
+    if (image.object_key !== `printing-images/${image.content_sha256}`)
+      throw new Error("Invalid immutable Printing Image reference.");
+    if (image.content_base64 === undefined) {
+      const existing = await bucket.head(image.object_key);
+      if (existing === null) throw new Error("The retained Printing Image is unavailable.");
+      await assertStoredPrintingImage(bucket, existing, image);
+      continue;
+    }
     const bytes = decodeBase64Bytes(image.content_base64);
     if (
       bytes.byteLength !== image.content_byte_length ||

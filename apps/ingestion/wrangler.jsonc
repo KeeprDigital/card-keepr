@@ -4,6 +4,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-07-29",
   "compatibility_flags": ["nodejs_compat"],
+  "limits": { "cpu_ms": 10000, "subrequests": 5000 },
   "routes": [
     { "pattern": "card.keepr.digital/ingest", "zone_name": "keepr.digital" },
     { "pattern": "card.keepr.digital/ingest/*", "zone_name": "keepr.digital" }

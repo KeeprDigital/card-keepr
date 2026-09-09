@@ -32,6 +32,9 @@
     },
     {
       "$ref": "#/$defs/RelationshipRecord"
+    },
+    {
+      "$ref": "#/$defs/IdentityCorrectionRecord"
     }
   ],
   "$defs": {
@@ -50,7 +53,8 @@
         "one-piece",
         "fusion-world",
         "digimon",
-        "gundam"
+        "gundam",
+        "riftbound"
       ]
     },
     "Locale": {
@@ -186,10 +190,43 @@
           ],
           "properties": {
             "kind": {
+              "const": "publisher_name"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
               "const": "functional_designation"
             },
             "value": {
               "const": "DON!!"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "unknown"
+            },
+            "value": {
+              "type": "null"
             }
           }
         }
@@ -205,7 +242,7 @@
       "properties": {
         "profile": {
           "type": "string",
-          "pattern": "^(one-piece|fusion-world|digimon|gundam)@[1-9][0-9]*$"
+          "pattern": "^(one-piece|fusion-world|digimon|gundam|riftbound)@[1-9][0-9]*$"
         },
         "attributes": {
           "type": "object",
@@ -911,6 +948,49 @@
           ]
         }
       ]
+    },
+    "IdentityCorrectionRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "game",
+        "entity_kind",
+        "action",
+        "replacement_ids"
+      ],
+      "properties": {
+        "type": {
+          "const": "identity_correction"
+        },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "game": {
+          "$ref": "#/$defs/SupportedGame"
+        },
+        "entity_kind": {
+          "enum": [
+            "card",
+            "printing"
+          ]
+        },
+        "action": {
+          "enum": [
+            "merge",
+            "split"
+          ]
+        },
+        "replacement_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/OpaqueId"
+          }
+        }
+      }
     }
   }
 }

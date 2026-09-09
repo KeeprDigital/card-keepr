@@ -1,5 +1,6 @@
 import { environmentNames } from "../../http/environment-target.mjs";
 import { validatedEnvironmentTarget } from "../../http/production-target.mjs";
+import { advancePublicationExports } from "./publication-export-preparation";
 import { resolveAdministrationTarget } from "./administration-target";
 import {
   administrationResultStatus,
@@ -43,6 +44,22 @@ export type PublicationBackupWaiter = (
 type Context = RouteContext<Environment> & { observedAt: string; publicationBackupWaiter?: PublicationBackupWaiter };
 
 export const ingestionRoutes = [
+  route<Context>(
+    "POST",
+    "/v1/publications/:publication/export-preparation/advance",
+    async ({ env, request }, params) => {
+      const body = await readAdministrationBody(request);
+      assertOnlyFields(body, ["generation", "idempotency_key"]);
+      return Response.json(
+        await advancePublicationExports(
+          env,
+          params.publication!,
+          Number(body.generation),
+          requiredString(body, "idempotency_key"),
+        ),
+      );
+    },
+  ),
   route<Context>("POST", "/v1/production-releases", async ({ request, env, observedAt }) => {
     if ((env.KEEPR_ENVIRONMENT ?? "production") !== "production")
       throw new AdministrationProblem(

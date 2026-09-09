@@ -1,4 +1,5 @@
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
+import { installWorkflowIsolation } from "./workflow-isolation";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import { env, exports } from "cloudflare:workers";
@@ -14,11 +15,12 @@ declare global {
 }
 
 export function installRuntimeSuite(): void {
+  installWorkflowIsolation();
   beforeEach(async () => {
     await applyD1Migrations(env.CATALOGUE_DB, env.TEST_MIGRATIONS);
-    // Workflow instances outlive a Vitest request isolate. Reset only the
-    // singleton lock so each test begins with an independent administration
-    // scenario; production never performs this test-only setup.
+    // Workflow disposal/reset also clears game reservations left by a prior
+    // test's retained candidate. Keep the legacy singleton fixture reset for
+    // callers that seed administrative state in their own setup.
     await ingestionQueries.setOperationStateActiveIngestionRunIdForInstallApiSuite(env.CATALOGUE_DB).run();
   });
 }

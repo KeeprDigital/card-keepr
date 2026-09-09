@@ -1,3 +1,4 @@
+import { reconciliationSourceDocument } from "./reconciliation-documents.ts";
 import { onePieceCompleteOfficialSourceResponse } from "../../../acceptance/fixtures/one-piece-complete-official-source.mjs";
 import { transportOutcomeForPath, transportOutcomeForUserAgent } from "./failure-injection.ts";
 import {
@@ -26,6 +27,20 @@ const acceptanceRedirectLocation = "https://synthetic-source.invalid/success";
 /** @type {import("./scenario.ts").PublisherScenario} */
 export function acceptanceOfficialSourceScenario(context) {
   const { request, url } = context;
+  if (url.hostname === "shared-profile-source.invalid") {
+    const document = reconciliationSourceDocument("shared-profile", "discovery", url.href);
+    for (const record of document.cards) record.card.game_data.attributes.future_mechanic = "Retain for schema review";
+    return Response.json(
+      url.pathname === "/tabular"
+        ? {
+            rows: document.cards.map(({ card, ...evidence }) => ({
+              cells: [card.official_identity.value, card.name, card.effective_rules_text, card.game_data.attributes],
+              evidence,
+            })),
+          }
+        : document,
+    );
+  }
   const pathname = url.pathname.replace(/^\/asia-en/, "").replace(/^\/en/, "");
   const transportOutcome = transportOutcomeForUserAgent(context, {
     redirectLocation: acceptanceRedirectLocation,

@@ -1,3 +1,4 @@
+import { deleteEventFixtureReservation } from "./query-helpers/run-event-projection";
 import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { beforeEach, expect, test } from "vitest";
 import { catalogueStore, foldRunEvents } from "../../../src/catalogue/shared";
@@ -98,7 +99,10 @@ test("collection events preserve resume races, stale workflow fencing, terminati
 
 test("a rejected collection transition rolls back its event and pause evidence", async () => {
   const runId = await createRun("source_event_rejected_transition");
-  await resetMaintenanceOperation(testEnv.CATALOGUE_DB).run();
+  await testEnv.CATALOGUE_DB.batch([
+    resetMaintenanceOperation(testEnv.CATALOGUE_DB),
+    deleteEventFixtureReservation(testEnv.CATALOGUE_DB, runId),
+  ]);
   await expect(database.batch(retryExhaustionPauseStatements(database, runId, retryFacts))).rejects.toThrow(
     "run_not_active",
   );

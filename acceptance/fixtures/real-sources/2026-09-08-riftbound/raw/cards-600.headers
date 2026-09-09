@@ -1,0 +1,22 @@
+Date: Mon, 07 Sep 2026 17:19:36 GMT
+Content-Type: application/json
+Content-Length: 528034
+Connection: close
+set-cookie: 
+ __cf_bm=62x8Z1TIZ.Xcoa6niNUc2Q__Ave0lzOLAbkCQjtKwpU-1788801575.403589-1.0.1.1-cLO7MS0mSklg2MF_119JHaLgPcfNP2fTYWi7TfyiPP3ZCdGpGExOLM.h6FfpNOoF7eE2scXbdR5NaymtiBMgpPZqBfDb9j6VPo8QMSxLRabFgL5qhL9gaZ6jotJU8l3p;
+ HttpOnly; SameSite=None; Secure; Path=/; Domain=publishing.riotgames.com;
+ Expires=Mon, 07 Sep 2026 17:49:36 GMT
+CF-Ray: a37761164bc92275-MEL
+CF-Cache-Status: BYPASS
+Accept-Ranges: bytes
+Cache-Control: no-cache, private
+Server: cloudflare
+Strict-Transport-Security: max-age=31536000 ; includeSubDomains
+Vary: Origin, Access-Control-Request-Method, Access-Control-Request-Headers
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+X-Riot-Mapper-Version: v0.3.4
+X-XSS-Protection: 0
+cf-ipcity: Melbourne
+cf-region: Victoria
+

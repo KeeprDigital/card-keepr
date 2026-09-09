@@ -11,6 +11,12 @@ import {
 
 export async function removeCoreRunGuards(database: D1Database): Promise<void> {
   await database.batch([
+    // This seam deliberately exercises the repository guard without schema backstops.
+    database.prepare("DROP TRIGGER IF EXISTS recovery_fence_ingestion_runs_insert"),
+    database.prepare("DROP TRIGGER IF EXISTS recovery_fence_ingestion_run_current_insert"),
+    database.prepare("DROP TRIGGER IF EXISTS recovery_fence_ingestion_run_events_insert"),
+    database.prepare("DROP TRIGGER IF EXISTS recovery_fence_ingestion_run_event_payload_chunks_insert"),
+    database.prepare("DROP TRIGGER IF EXISTS recovery_fence_ingestion_run_selected_games_insert"),
     database.prepare("DROP TRIGGER IF EXISTS guard_active_ingestion_identity"),
     database.prepare("DROP TRIGGER IF EXISTS guard_legal_ingestion_transition"),
     database.prepare("DROP TRIGGER IF EXISTS guard_candidate_finalization"),
@@ -36,7 +42,10 @@ export async function seedCoreGuardRun(database: D1Database, id: string, state: 
     }),
   ]);
   if (active)
-    await database.prepare("UPDATE operation_state SET active_ingestion_run_id = ? WHERE singleton = 1").bind(id).run();
+    await catalogueStore(database).batch([
+      database.prepare("INSERT INTO ingestion_collection_reservations (ingestion_run_id) VALUES (?)").bind(id),
+      database.prepare("UPDATE operation_state SET active_ingestion_run_id = ? WHERE singleton = 1").bind(id),
+    ]);
 }
 
 export function coreGuardRun(database: CatalogueStore, id: string): D1PreparedStatement {

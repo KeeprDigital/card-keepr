@@ -7,6 +7,7 @@ import { createConnection, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
+import { withNativeRequestPacing } from "./native-request-pacing.mjs";
 import { isWranglerSmokeFile } from "./smoke-tier.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -179,6 +180,7 @@ export async function startWorker({
   config,
   envFile,
   inspectorPort,
+  outboundService,
   migrate = false,
   testMigrations = [],
   pacingMode = "immediate",
@@ -192,12 +194,14 @@ export async function startWorker({
     return (await import("./inprocess-runtime.mjs")).startInprocessWorker({
       config,
       envFile,
+      outboundService,
       pacingMode,
       port: port ?? (await allocatePort()),
       registryPath,
       statePath,
       vars,
     });
+  if (outboundService) throw new Error("Local Cloudflare fault transport requires the in-process runtime.");
   // The probed port is released before wrangler binds it, so another program
   // may still take it first; a boot that dies on that collision retries on
   // fresh ports, and every attempt including the last is checked so a dead
@@ -348,11 +352,13 @@ export async function stopWorker(worker) {
 // matching the --secrets-stdin-fd 3 contract the CLI documents. The
 // invocation is killed and reported after timeoutMs (default two minutes).
 export function runCli(arguments_, environment, { secrets, stdin, timeoutMs } = {}) {
-  return runProcess(
-    process.execPath,
-    [resolve(root, "cli/keepr.mjs"), ...arguments_],
-    { ...processEnvironment("/tmp"), ...environment },
-    { secrets, stdin, timeoutMs },
+  return withNativeRequestPacing(environment, () =>
+    runProcess(
+      process.execPath,
+      [resolve(root, "cli/keepr.mjs"), ...arguments_],
+      { ...processEnvironment("/tmp"), ...environment },
+      { secrets, stdin, timeoutMs },
+    ),
   );
 }
 
@@ -392,13 +398,15 @@ export async function administrationDocument(pathname, environment, { pollCount 
   const base = environment.KEEPR_INGESTION_URL ?? "http://127.0.0.1:8788";
   let response;
   try {
-    response = await fetch(new URL(pathname, base), {
-      headers: {
-        authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}`,
-        ...(environment.KEEPR_TEST_NOW === undefined ? {} : { "x-keepr-test-now": environment.KEEPR_TEST_NOW }),
-      },
-      signal: AbortSignal.timeout(10_000),
-    });
+    response = await withNativeRequestPacing(environment, () =>
+      fetch(new URL(pathname, base), {
+        headers: {
+          authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}`,
+          ...(environment.KEEPR_TEST_NOW === undefined ? {} : { "x-keepr-test-now": environment.KEEPR_TEST_NOW }),
+        },
+        signal: AbortSignal.timeout(10_000),
+      }),
+    );
   } catch {
     return null;
   }

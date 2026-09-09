@@ -10,7 +10,7 @@ import {
   sourceFieldWarning,
   type ProfileWarning,
 } from "../shared";
-import { parsedOfficialArtworkIdentity } from "../adapters";
+import { parsedOfficialArtworkIdentity, riftboundOriginsTargetName } from "../adapters";
 import { parseRulesTextErrata, type ParsedRulesTextErratum } from "./errata-rules-text";
 
 export type PrintingCompatibility = Readonly<{
@@ -65,7 +65,7 @@ export type ParsedCardPrintingObservation = Readonly<{
 export type ParsedOfficialErratumObservation = Readonly<{
   kind: "official_erratum";
   sourceObservationId: string;
-  game: "one-piece" | "fusion-world" | "digimon" | "gundam";
+  game: SupportedGame;
   target:
     | Readonly<{
         type: "card";
@@ -82,14 +82,14 @@ export type ParsedOfficialErratumObservation = Readonly<{
   correctedRulesText: string | null;
   officialWording: string;
   appliesToParallelPrintings: boolean;
-  sourceFragment: string;
+  sourceLocator: string;
 }>;
 
 export type ParsedReconciliationObservation = ParsedCardPrintingObservation | ParsedOfficialErratumObservation;
 
 export type Withdrawal = Readonly<{
   entity: "card" | "printing" | "card_and_printing";
-  state: "withdrawn";
+  state: "withdrawn" | "reinstated";
   effective_at: string;
   evidence: string;
 }>;
@@ -388,7 +388,8 @@ function parseOfficialErratumObservation(
     record.game !== "one-piece" &&
     record.game !== "fusion-world" &&
     record.game !== "digimon" &&
-    record.game !== "gundam"
+    record.game !== "gundam" &&
+    record.game !== "riftbound"
   ) {
     throw new Error("Official Erratum Supported Game is invalid.");
   }
@@ -406,23 +407,48 @@ function parseOfficialErratumObservation(
   const targetLocator =
     target.type === "printing" ? requiredString(target.locator, "Official Erratum target locator") : null;
   const source = requiredRecord(record.source, "Official Erratum source");
-  assertOnlyFields(source, ["fragment", "display_name", "image_url"], "Official Erratum source");
-  requiredString(source.display_name, "Official Erratum source display_name");
-  const imageUrl = requiredString(source.image_url, "Official Erratum source image_url");
-  const imageOrigin =
-    game === "one-piece"
-      ? "https://en.onepiece-cardgame.com/images/"
-      : game === "fusion-world"
-        ? "https://www.dbs-cardgame.com/fw/images/"
-        : game === "digimon"
-          ? "https://world.digimoncard.com/"
-          : "https://www.gundam-gcg.com/gcg/bccard/";
-  if (!imageUrl.startsWith(imageOrigin)) {
-    throw new Error("Official Erratum image provenance is invalid.");
-  }
-  const fragment = requiredString(source.fragment, "Official Erratum source fragment");
-  if (!/^#[A-Za-z][A-Za-z0-9_-]+$/.test(fragment)) {
-    throw new Error("Official Erratum source fragment is invalid.");
+  let sourceLocator: string;
+  if (game === "riftbound") {
+    assertOnlyFields(source, ["kind", "url", "heading"], "Riftbound Official Erratum source");
+    const url = new URL(requiredString(source.url, "Official Erratum article URL"));
+    const heading = requiredString(source.heading, "Official Erratum article heading");
+    if (
+      source.kind !== "article_heading" ||
+      url.origin !== "https://playriftbound.com" ||
+      url.pathname !== "/en-us/news/rules-and-releases/riftbound-origins-card-errata/" ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      identity.kind !== "publisher_name" ||
+      identity.value !==
+        riftboundOriginsTargetName(
+          heading,
+          requiredString(record.observed_printed_rules_text, "Official Erratum old text"),
+        )
+    )
+      throw new Error("Riftbound Official Erratum article provenance is invalid.");
+    sourceLocator = `${url.href} [heading: ${heading}]`;
+  } else {
+    assertOnlyFields(source, ["fragment", "display_name", "image_url"], "Official Erratum source");
+    requiredString(source.display_name, "Official Erratum source display_name");
+    const imageUrl = requiredString(source.image_url, "Official Erratum source image_url");
+    const imageOrigin =
+      game === "one-piece"
+        ? "https://en.onepiece-cardgame.com/images/"
+        : game === "fusion-world"
+          ? "https://www.dbs-cardgame.com/fw/images/"
+          : game === "digimon"
+            ? "https://world.digimoncard.com/"
+            : "https://www.gundam-gcg.com/gcg/bccard/";
+    if (!imageUrl.startsWith(imageOrigin)) {
+      throw new Error("Official Erratum image provenance is invalid.");
+    }
+    const fragment = requiredString(source.fragment, "Official Erratum source fragment");
+    if (!/^#[A-Za-z][A-Za-z0-9_-]+$/.test(fragment)) {
+      throw new Error("Official Erratum source fragment is invalid.");
+    }
+    sourceLocator = fragment;
   }
   const completeness = requiredRecord(record.completeness, "Official Erratum completeness");
   assertOnlyFields(
@@ -475,7 +501,7 @@ function parseOfficialErratumObservation(
         : requiredString(record.corrected_rules_text, "Official Erratum corrected_rules_text"),
     officialWording: requiredString(record.official_wording, "Official Erratum official_wording"),
     appliesToParallelPrintings: record.applies_to_parallel_printings,
-    sourceFragment: fragment,
+    sourceLocator,
   };
 }
 
@@ -503,9 +529,17 @@ function exactDate(value: unknown, name: string): string {
 
 function parseOfficialIdentity(value: unknown, game: SupportedGame): CatalogueCard["official_identity"] {
   const identity = requiredRecord(value, "card.official_identity");
+  if (identity.kind === "unknown" && identity.value === null) return { kind: "unknown", value: null };
   if (identity.kind === "functional_designation" && identity.value === "DON!!" && game === "one-piece") {
     return { kind: "functional_designation", value: "DON!!" };
   }
+  if (identity.kind === "publisher_name" && game === "riftbound") {
+    const value = requiredString(identity.value, "Riftbound full publisher name");
+    if (value !== value.trim()) throw new Error("Riftbound full publisher name must be exact.");
+    return { kind: "publisher_name", value };
+  }
+  if (game === "riftbound")
+    throw new Error("Riftbound Card identity requires its full publisher name, not a Printing code.");
   if (
     identity.kind !== "card_number" ||
     typeof identity.value !== "string" ||
@@ -516,7 +550,7 @@ function parseOfficialIdentity(value: unknown, game: SupportedGame): CatalogueCa
     throw new Error("Retained Card official card number is invalid.");
   }
   const canonical = identity.value.toUpperCase();
-  const acceptedNumberPatterns: Record<SupportedGame, RegExp> = {
+  const acceptedNumberPatterns: Record<Exclude<SupportedGame, "riftbound">, RegExp> = {
     "one-piece": /^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/,
     "fusion-world": /^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/,
     digimon: /^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/,
@@ -653,7 +687,7 @@ function parseWithdrawal(value: unknown, hasPrinting: boolean): Withdrawal | nul
   if (!hasPrinting && record.entity !== "card") {
     throw new Error("A Card-only observation cannot withdraw a Printing.");
   }
-  if (record.state !== "withdrawn") {
+  if (record.state !== "withdrawn" && record.state !== "reinstated") {
     throw new Error("withdrawal.state is invalid.");
   }
   const effectiveAt = requiredString(record.effective_at, "withdrawal.effective_at");
@@ -665,7 +699,7 @@ function parseWithdrawal(value: unknown, hasPrinting: boolean): Withdrawal | nul
   }
   return {
     entity: record.entity,
-    state: "withdrawn",
+    state: record.state,
     effective_at: effectiveAt,
     evidence: requiredString(record.evidence, "withdrawal.evidence"),
   };

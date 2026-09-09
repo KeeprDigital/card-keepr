@@ -23,7 +23,11 @@ export function guardRecoveryStartStatement(
   input: Readonly<{ expectedCurrentRevisionId: string; observedAt: string; linkedOperationId: string | null }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT CASE WHEN EXISTS (
+    .prepare(`SELECT CASE
+         WHEN EXISTS(SELECT 1 FROM evidence_object_writers WHERE completed_at IS NULL)
+           OR EXISTS(SELECT 1 FROM staging_object_writes WHERE completed_at IS NULL)
+         THEN json_extract('{}','recovery_writer_unsettled')
+         WHEN EXISTS (
            SELECT 1 FROM catalogue_state AS catalogue
            JOIN operation_state AS operation ON operation.singleton = 1
            WHERE catalogue.singleton = 1
@@ -33,7 +37,8 @@ export function guardRecoveryStartStatement(
                OR operation.active_production_release_expires_at <= ?)
              AND (
                (? IS NULL AND operation.recovery_health <> 'blocked'
-                 AND operation.active_recovery_id IS NULL)
+                 AND operation.active_recovery_id IS NULL
+                 AND NOT EXISTS(SELECT 1 FROM catalogue_backup_attempts WHERE state IN ('pending','exporting','restoring_verification','verifying')))
                OR (? IS NOT NULL AND operation.recovery_health = 'blocked'
                  AND operation.active_recovery_id = ?)
              )
@@ -577,4 +582,62 @@ export function recoveryOperationByIdempotencyStatement(
   return repositoryStatements(database)
     .prepare("SELECT * FROM catalogue_recovery_operations WHERE idempotency_key = ?")
     .bind(input.idempotencyKey);
+}
+
+/** Classify only work present in this snapshot. Newer lost operations are not invented. */
+export function classifyRestoredWorkStatements(database: CatalogueStore, recoveryId: string): D1PreparedStatement[] {
+  const sql = repositoryStatements(database);
+  return [
+    sql
+      .prepare(`INSERT OR IGNORE INTO catalogue_recovery_collection_classifications
+      SELECT ?,r.id,c.state,CASE WHEN EXISTS(SELECT 1 FROM ingestion_collection_completions x WHERE x.ingestion_run_id=r.id)
+      OR c.state IN ('published','failed','rejected','terminated','unchanged') THEN 'retained_source' ELSE 'abandoned_after_restore' END
+      FROM ingestion_runs r JOIN ingestion_run_current c ON c.ingestion_run_id=r.id`)
+      .bind(recoveryId),
+    sql
+      .prepare(`DELETE FROM ingestion_collection_reservations WHERE ingestion_run_id IN (
+      SELECT ingestion_run_id FROM catalogue_recovery_collection_classifications WHERE recovery_id=? AND classification='abandoned_after_restore')`)
+      .bind(recoveryId),
+    sql
+      .prepare(`INSERT OR IGNORE INTO catalogue_recovery_work_classifications
+      SELECT ?,o.id,o.state,o.generation,CASE
+      WHEN EXISTS(SELECT 1 FROM game_candidates c WHERE c.preparation_id=o.id AND c.state='published') THEN 'published_retained'
+      WHEN o.state IN ('failed','abandoned') THEN 'terminal_retained' ELSE 'abandoned_after_restore' END
+      FROM reconciliation_operations o WHERE o.supported_game IS NOT NULL`)
+      .bind(recoveryId),
+    sql
+      .prepare(`UPDATE game_publication_operations SET state='failed',failure_code='catalogue_recovered',generation=generation+1
+      WHERE state NOT IN ('published','failed') AND candidate_id IN (
+        SELECT c.id FROM game_candidates c JOIN catalogue_recovery_work_classifications w ON w.preparation_id=c.preparation_id
+        WHERE w.recovery_id=? AND w.classification='abandoned_after_restore')`)
+      .bind(recoveryId),
+    sql
+      .prepare(`UPDATE game_candidates SET state='abandoned',generation=generation+1
+      WHERE state NOT IN ('published','failed','abandoned','rejected','expired') AND preparation_id IN (
+        SELECT preparation_id FROM catalogue_recovery_work_classifications WHERE recovery_id=? AND classification='abandoned_after_restore')`)
+      .bind(recoveryId),
+    sql
+      .prepare(`UPDATE reconciliation_operations SET state='abandoned',generation=generation+1,failure_code='catalogue_recovered',
+      terminal_at=COALESCE(terminal_at,strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      WHERE id IN (SELECT preparation_id FROM catalogue_recovery_work_classifications WHERE recovery_id=?
+        AND classification='abandoned_after_restore') AND state NOT IN ('failed','abandoned')`)
+      .bind(recoveryId),
+    sql
+      .prepare(`DELETE FROM game_candidate_slots WHERE preparation_id IN (
+      SELECT preparation_id FROM catalogue_recovery_work_classifications WHERE recovery_id=? AND classification='abandoned_after_restore')`)
+      .bind(recoveryId),
+  ];
+}
+export function restoredWorkClassificationsStatement(database: CatalogueStore, recoveryId: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT classification,count(*) AS operations
+    FROM catalogue_recovery_work_classifications WHERE recovery_id=? GROUP BY classification`)
+    .bind(recoveryId);
+}
+
+export function restoredCollectionClassificationsStatement(database: CatalogueStore, recoveryId: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT classification,count(*) AS collections
+    FROM catalogue_recovery_collection_classifications WHERE recovery_id=? GROUP BY classification`)
+    .bind(recoveryId);
 }

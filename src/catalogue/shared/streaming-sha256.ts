@@ -9,6 +9,8 @@ const roundConstants = new Uint32Array([
   0xc67178f2,
 ]);
 
+export type StreamingSha256State = { words: number[]; pending: number[]; bytes: string };
+
 export class StreamingSha256 {
   readonly #state = new Uint32Array([
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
@@ -18,6 +20,32 @@ export class StreamingSha256 {
   #buffered = 0;
   #bytes = 0n;
   #finished = false;
+
+  constructor(state?: StreamingSha256State) {
+    if (!state) return;
+    if (
+      state.words.length !== 8 ||
+      state.words.some((word) => !Number.isInteger(word) || word < 0 || word > 0xffffffff) ||
+      state.pending.length >= 64 ||
+      state.pending.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255) ||
+      !/^(0|[1-9][0-9]*)$/.test(state.bytes) ||
+      BigInt(state.bytes) % 64n !== BigInt(state.pending.length)
+    )
+      throw new Error("Invalid SHA-256 continuation state.");
+    this.#state.set(state.words);
+    this.#buffer.set(state.pending);
+    this.#buffered = state.pending.length;
+    this.#bytes = BigInt(state.bytes);
+  }
+
+  get checkpoint(): StreamingSha256State {
+    if (this.#finished) throw new Error("A completed SHA-256 stream cannot be resumed.");
+    return {
+      words: [...this.#state],
+      pending: [...this.#buffer.subarray(0, this.#buffered)],
+      bytes: String(this.#bytes),
+    };
+  }
 
   update(bytes: Uint8Array): void {
     if (this.#finished) throw new Error("SHA-256 stream is already complete.");

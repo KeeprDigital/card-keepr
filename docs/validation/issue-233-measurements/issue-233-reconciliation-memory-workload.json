@@ -1,0 +1,6498 @@
+{
+  "scope": "Synthetic 1001 Products; real retained collection and reconciliation, direct test Workflow driver, no publication/backup. Driver phase receipt markers are labelled probe-driver.",
+  "elapsed_ms": 12839,
+  "candidate": {
+    "contract": "card-keepr-game-candidate@1",
+    "id": "candidate_a0710db926e7bcbaae761e567a27b486fb3d2b4bdf3749d008aa9bb5af45fc0e",
+    "preparation_id": "candidate_a0710db926e7bcbaae761e567a27b486fb3d2b4bdf3749d008aa9bb5af45fc0e",
+    "ingestion_run_id": "run_1018299e025b631ad97144dcbb5a95f655e38ded5d83ae70872f2a510c53e0e1",
+    "supported_game": "one-piece",
+    "expected_game_revision_id": "catrev_spine_000",
+    "created_at": "2026-09-08T03:27:04.246Z",
+    "deadline": "2026-09-15T03:27:04.246Z",
+    "state": "sealed",
+    "generation": 0,
+    "manifest_digest": "dee1d7f8e7262e55daf0ff857c3f7659a53582560b9c35b3bf817ca0fd5c7f63",
+    "preparation_manifest_digest": "052cb4475f0b4e68f74e79678dac14ef5a8f0c6a92e4ffb6f9ab86290f288333",
+    "partition_count": 174,
+    "failure_code": null,
+    "outcome": null
+  },
+  "phases": [
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 1,
+      "duration_ms": 1
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 2,
+      "duration_ms": 1
+    },
+    {
+      "phase": "source_selection",
+      "started_ms": 3,
+      "duration_ms": 7
+    },
+    {
+      "phase": "source_selection",
+      "started_ms": 10,
+      "duration_ms": 6
+    },
+    {
+      "phase": "source_selection",
+      "started_ms": 17,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_selection",
+      "started_ms": 21,
+      "duration_ms": 5
+    },
+    {
+      "phase": "source_selection",
+      "started_ms": 26,
+      "duration_ms": 3
+    },
+    {
+      "phase": "source_selection",
+      "started_ms": 29,
+      "duration_ms": 3
+    },
+    {
+      "phase": "source_selection",
+      "started_ms": 32,
+      "duration_ms": 3
+    },
+    {
+      "phase": "source_selection",
+      "started_ms": 35,
+      "duration_ms": 3
+    },
+    {
+      "phase": "source_selection",
+      "started_ms": 38,
+      "duration_ms": 6
+    },
+    {
+      "phase": "source_selection",
+      "started_ms": 44,
+      "duration_ms": 3
+    },
+    {
+      "phase": "source_selection",
+      "started_ms": 47,
+      "duration_ms": 3
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 50,
+      "duration_ms": 19
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 69,
+      "duration_ms": 12
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 81,
+      "duration_ms": 12
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 93,
+      "duration_ms": 18
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 111,
+      "duration_ms": 13
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 124,
+      "duration_ms": 11
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 135,
+      "duration_ms": 12
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 147,
+      "duration_ms": 11
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 158,
+      "duration_ms": 10
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 168,
+      "duration_ms": 13
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 181,
+      "duration_ms": 10
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 191,
+      "duration_ms": 9
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 200,
+      "duration_ms": 11
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 211,
+      "duration_ms": 15
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 226,
+      "duration_ms": 10
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 236,
+      "duration_ms": 12
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 248,
+      "duration_ms": 12
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 260,
+      "duration_ms": 9
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 269,
+      "duration_ms": 12
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 281,
+      "duration_ms": 11
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 292,
+      "duration_ms": 13
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 305,
+      "duration_ms": 14
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 319,
+      "duration_ms": 13
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 332,
+      "duration_ms": 18
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 350,
+      "duration_ms": 12
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 362,
+      "duration_ms": 12
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 374,
+      "duration_ms": 10
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 384,
+      "duration_ms": 14
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 398,
+      "duration_ms": 11
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 409,
+      "duration_ms": 1
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 410,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 410,
+      "duration_ms": 0
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 411,
+      "duration_ms": 0
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 411,
+      "duration_ms": 10
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 421,
+      "duration_ms": 10
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 431,
+      "duration_ms": 10
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 441,
+      "duration_ms": 12
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 453,
+      "duration_ms": 8
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 461,
+      "duration_ms": 19
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 480,
+      "duration_ms": 16
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 496,
+      "duration_ms": 15
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 511,
+      "duration_ms": 21
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 532,
+      "duration_ms": 17
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 549,
+      "duration_ms": 16
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 565,
+      "duration_ms": 16
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 581,
+      "duration_ms": 18
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 599,
+      "duration_ms": 16
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 615,
+      "duration_ms": 16
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 631,
+      "duration_ms": 22
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 653,
+      "duration_ms": 18
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 671,
+      "duration_ms": 18
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 689,
+      "duration_ms": 17
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 706,
+      "duration_ms": 16
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 722,
+      "duration_ms": 19
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 741,
+      "duration_ms": 24
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 765,
+      "duration_ms": 17
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 782,
+      "duration_ms": 17
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 799,
+      "duration_ms": 18
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 817,
+      "duration_ms": 19
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 837,
+      "duration_ms": 15
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 853,
+      "duration_ms": 16
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 869,
+      "duration_ms": 15
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 884,
+      "duration_ms": 18
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 902,
+      "duration_ms": 16
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 918,
+      "duration_ms": 16
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 934,
+      "duration_ms": 16
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 950,
+      "duration_ms": 20
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 970,
+      "duration_ms": 17
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 987,
+      "duration_ms": 15
+    },
+    {
+      "phase": "source_documents",
+      "started_ms": 1002,
+      "duration_ms": 11
+    },
+    {
+      "phase": "graph_validation",
+      "started_ms": 1013,
+      "duration_ms": 3
+    },
+    {
+      "phase": "graph_validation",
+      "started_ms": 1016,
+      "duration_ms": 3
+    },
+    {
+      "phase": "graph_validation",
+      "started_ms": 1019,
+      "duration_ms": 3
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 1022,
+      "duration_ms": 1
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 1023,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 1023,
+      "duration_ms": 0
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 1023,
+      "duration_ms": 1
+    },
+    {
+      "phase": "graph_validation",
+      "started_ms": 1024,
+      "duration_ms": 2
+    },
+    {
+      "phase": "graph_validation",
+      "started_ms": 1026,
+      "duration_ms": 12
+    },
+    {
+      "phase": "graph_validation",
+      "started_ms": 1038,
+      "duration_ms": 3
+    },
+    {
+      "phase": "source_graph",
+      "started_ms": 1041,
+      "duration_ms": 2
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1043,
+      "duration_ms": 22
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1065,
+      "duration_ms": 17
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1082,
+      "duration_ms": 18
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1100,
+      "duration_ms": 16
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1116,
+      "duration_ms": 18
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1134,
+      "duration_ms": 21
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1155,
+      "duration_ms": 16
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1171,
+      "duration_ms": 18
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1189,
+      "duration_ms": 28
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1217,
+      "duration_ms": 18
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1235,
+      "duration_ms": 18
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1253,
+      "duration_ms": 16
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1269,
+      "duration_ms": 18
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1287,
+      "duration_ms": 18
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1305,
+      "duration_ms": 18
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1323,
+      "duration_ms": 16
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1339,
+      "duration_ms": 19
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1358,
+      "duration_ms": 16
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1374,
+      "duration_ms": 16
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1390,
+      "duration_ms": 20
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1410,
+      "duration_ms": 15
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1425,
+      "duration_ms": 17
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1442,
+      "duration_ms": 15
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1457,
+      "duration_ms": 18
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1475,
+      "duration_ms": 19
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1494,
+      "duration_ms": 19
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1513,
+      "duration_ms": 22
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1535,
+      "duration_ms": 19
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1554,
+      "duration_ms": 17
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1571,
+      "duration_ms": 17
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1588,
+      "duration_ms": 18
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1606,
+      "duration_ms": 16
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1623,
+      "duration_ms": 19
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1642,
+      "duration_ms": 16
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1658,
+      "duration_ms": 19
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1677,
+      "duration_ms": 16
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 1693,
+      "duration_ms": 1
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 1694,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 1694,
+      "duration_ms": 0
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 1694,
+      "duration_ms": 1
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1695,
+      "duration_ms": 15
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1710,
+      "duration_ms": 15
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1725,
+      "duration_ms": 19
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1744,
+      "duration_ms": 18
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1762,
+      "duration_ms": 15
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1777,
+      "duration_ms": 15
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1792,
+      "duration_ms": 19
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1811,
+      "duration_ms": 22
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1833,
+      "duration_ms": 18
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1851,
+      "duration_ms": 16
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1867,
+      "duration_ms": 15
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1882,
+      "duration_ms": 14
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1896,
+      "duration_ms": 17
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1914,
+      "duration_ms": 19
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1933,
+      "duration_ms": 31
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1964,
+      "duration_ms": 17
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1981,
+      "duration_ms": 18
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 1999,
+      "duration_ms": 20
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 2019,
+      "duration_ms": 18
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 2037,
+      "duration_ms": 18
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 2055,
+      "duration_ms": 19
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 2074,
+      "duration_ms": 19
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 2093,
+      "duration_ms": 16
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 2109,
+      "duration_ms": 23
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 2132,
+      "duration_ms": 19
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 2151,
+      "duration_ms": 22
+    },
+    {
+      "phase": "normalization",
+      "started_ms": 2173,
+      "duration_ms": 11
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2184,
+      "duration_ms": 5
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2189,
+      "duration_ms": 4
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2193,
+      "duration_ms": 3
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2196,
+      "duration_ms": 3
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2199,
+      "duration_ms": 3
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2202,
+      "duration_ms": 7
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2209,
+      "duration_ms": 10
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2220,
+      "duration_ms": 9
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2229,
+      "duration_ms": 13
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2242,
+      "duration_ms": 9
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2251,
+      "duration_ms": 7
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2258,
+      "duration_ms": 16
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2274,
+      "duration_ms": 8
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 2282,
+      "duration_ms": 1
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 2283,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 2283,
+      "duration_ms": 0
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 2283,
+      "duration_ms": 1
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2284,
+      "duration_ms": 7
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2291,
+      "duration_ms": 8
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2299,
+      "duration_ms": 9
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2308,
+      "duration_ms": 7
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2315,
+      "duration_ms": 25
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2340,
+      "duration_ms": 8
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2349,
+      "duration_ms": 7
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2356,
+      "duration_ms": 7
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2363,
+      "duration_ms": 7
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2370,
+      "duration_ms": 10
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2380,
+      "duration_ms": 3
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2383,
+      "duration_ms": 3
+    },
+    {
+      "phase": "input_preparation",
+      "started_ms": 2386,
+      "duration_ms": 3
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2389,
+      "duration_ms": 2
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2391,
+      "duration_ms": 2
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2393,
+      "duration_ms": 1
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2394,
+      "duration_ms": 4
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2398,
+      "duration_ms": 5
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2403,
+      "duration_ms": 3
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2406,
+      "duration_ms": 3
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2409,
+      "duration_ms": 4
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2413,
+      "duration_ms": 3
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2416,
+      "duration_ms": 4
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2420,
+      "duration_ms": 4
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2424,
+      "duration_ms": 4
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2428,
+      "duration_ms": 3
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2431,
+      "duration_ms": 4
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2435,
+      "duration_ms": 3
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2438,
+      "duration_ms": 4
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2442,
+      "duration_ms": 3
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2445,
+      "duration_ms": 4
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2449,
+      "duration_ms": 4
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2453,
+      "duration_ms": 5
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2458,
+      "duration_ms": 4
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2462,
+      "duration_ms": 4
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2466,
+      "duration_ms": 4
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2470,
+      "duration_ms": 3
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2473,
+      "duration_ms": 4
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2477,
+      "duration_ms": 3
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2480,
+      "duration_ms": 4
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 2484,
+      "duration_ms": 0
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 2484,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 2484,
+      "duration_ms": 1
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 2485,
+      "duration_ms": 0
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2485,
+      "duration_ms": 4
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2489,
+      "duration_ms": 3
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2492,
+      "duration_ms": 5
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2497,
+      "duration_ms": 3
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2500,
+      "duration_ms": 4
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2504,
+      "duration_ms": 3
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2507,
+      "duration_ms": 4
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2511,
+      "duration_ms": 3
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2514,
+      "duration_ms": 4
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2518,
+      "duration_ms": 5
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2523,
+      "duration_ms": 3
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2526,
+      "duration_ms": 4
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2530,
+      "duration_ms": 17
+    },
+    {
+      "phase": "input_verification",
+      "started_ms": 2547,
+      "duration_ms": 2
+    },
+    {
+      "phase": "prior_state",
+      "started_ms": 2549,
+      "duration_ms": 3
+    },
+    {
+      "phase": "initial_warnings",
+      "started_ms": 2552,
+      "duration_ms": 3
+    },
+    {
+      "phase": "admission_selection",
+      "started_ms": 2555,
+      "duration_ms": 5
+    },
+    {
+      "phase": "entity_admissions",
+      "started_ms": 2560,
+      "duration_ms": 3
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2563,
+      "duration_ms": 4
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2567,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2582,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2597,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2613,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2628,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2645,
+      "duration_ms": 20
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2665,
+      "duration_ms": 18
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2683,
+      "duration_ms": 23
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2706,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2722,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2737,
+      "duration_ms": 18
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2755,
+      "duration_ms": 37
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2792,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2807,
+      "duration_ms": 18
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2825,
+      "duration_ms": 20
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2846,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2861,
+      "duration_ms": 21
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2882,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2898,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2913,
+      "duration_ms": 17
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2930,
+      "duration_ms": 19
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 2949,
+      "duration_ms": 1
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 2950,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 2950,
+      "duration_ms": 0
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 2950,
+      "duration_ms": 1
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2951,
+      "duration_ms": 22
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2973,
+      "duration_ms": 20
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 2993,
+      "duration_ms": 18
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3011,
+      "duration_ms": 17
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3028,
+      "duration_ms": 22
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3050,
+      "duration_ms": 18
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3068,
+      "duration_ms": 18
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3086,
+      "duration_ms": 20
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3106,
+      "duration_ms": 17
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3123,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3138,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3154,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3169,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3184,
+      "duration_ms": 24
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3208,
+      "duration_ms": 18
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3226,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3242,
+      "duration_ms": 17
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3259,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3274,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3289,
+      "duration_ms": 18
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3307,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3323,
+      "duration_ms": 19
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3342,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3357,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3372,
+      "duration_ms": 19
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3391,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3406,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3422,
+      "duration_ms": 19
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3441,
+      "duration_ms": 17
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3458,
+      "duration_ms": 18
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3476,
+      "duration_ms": 18
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3494,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3510,
+      "duration_ms": 17
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3527,
+      "duration_ms": 25
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3552,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3568,
+      "duration_ms": 18
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3586,
+      "duration_ms": 18
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3604,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3619,
+      "duration_ms": 18
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3637,
+      "duration_ms": 15
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 3652,
+      "duration_ms": 0
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 3652,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 3653,
+      "duration_ms": 0
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 3653,
+      "duration_ms": 0
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3653,
+      "duration_ms": 18
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3671,
+      "duration_ms": 18
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3690,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3705,
+      "duration_ms": 20
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3725,
+      "duration_ms": 17
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3742,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3758,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3774,
+      "duration_ms": 20
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3794,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3810,
+      "duration_ms": 18
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3828,
+      "duration_ms": 19
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3847,
+      "duration_ms": 24
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3871,
+      "duration_ms": 22
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3893,
+      "duration_ms": 17
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3910,
+      "duration_ms": 39
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3949,
+      "duration_ms": 20
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3969,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 3985,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4001,
+      "duration_ms": 21
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4022,
+      "duration_ms": 14
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4036,
+      "duration_ms": 14
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4050,
+      "duration_ms": 21
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4071,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4087,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4103,
+      "duration_ms": 18
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4121,
+      "duration_ms": 27
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4148,
+      "duration_ms": 19
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4167,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4183,
+      "duration_ms": 18
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4201,
+      "duration_ms": 19
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4220,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4236,
+      "duration_ms": 21
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4257,
+      "duration_ms": 24
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4281,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4297,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4312,
+      "duration_ms": 25
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4337,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4353,
+      "duration_ms": 19
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4372,
+      "duration_ms": 17
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4389,
+      "duration_ms": 16
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 4405,
+      "duration_ms": 0
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 4405,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 4405,
+      "duration_ms": 1
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 4406,
+      "duration_ms": 0
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4406,
+      "duration_ms": 24
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4430,
+      "duration_ms": 17
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4447,
+      "duration_ms": 17
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4464,
+      "duration_ms": 21
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4485,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4501,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4517,
+      "duration_ms": 21
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4538,
+      "duration_ms": 19
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4557,
+      "duration_ms": 17
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4574,
+      "duration_ms": 21
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4595,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4611,
+      "duration_ms": 19
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4630,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4646,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4661,
+      "duration_ms": 28
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4689,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4705,
+      "duration_ms": 14
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4719,
+      "duration_ms": 20
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4739,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4754,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4769,
+      "duration_ms": 18
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4787,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4802,
+      "duration_ms": 18
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4820,
+      "duration_ms": 18
+    },
+    {
+      "phase": "official_reduction",
+      "started_ms": 4838,
+      "duration_ms": 4
+    },
+    {
+      "phase": "official_errata",
+      "started_ms": 4842,
+      "duration_ms": 2
+    },
+    {
+      "phase": "withdrawal_diagnostics",
+      "started_ms": 4844,
+      "duration_ms": 2
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 4846,
+      "duration_ms": 2
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 4848,
+      "duration_ms": 2
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 4850,
+      "duration_ms": 2
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 4852,
+      "duration_ms": 2
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 4854,
+      "duration_ms": 18
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 4872,
+      "duration_ms": 22
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 4894,
+      "duration_ms": 22
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 4916,
+      "duration_ms": 20
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 4936,
+      "duration_ms": 25
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 4961,
+      "duration_ms": 19
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 4980,
+      "duration_ms": 30
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5010,
+      "duration_ms": 24
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5034,
+      "duration_ms": 18
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 5052,
+      "duration_ms": 0
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 5052,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 5052,
+      "duration_ms": 1
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 5053,
+      "duration_ms": 0
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5053,
+      "duration_ms": 20
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5073,
+      "duration_ms": 23
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5096,
+      "duration_ms": 23
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5119,
+      "duration_ms": 21
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5140,
+      "duration_ms": 21
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5161,
+      "duration_ms": 20
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5181,
+      "duration_ms": 26
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5207,
+      "duration_ms": 22
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5229,
+      "duration_ms": 49
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5278,
+      "duration_ms": 22
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5300,
+      "duration_ms": 19
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5319,
+      "duration_ms": 21
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5340,
+      "duration_ms": 20
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5360,
+      "duration_ms": 21
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5381,
+      "duration_ms": 20
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5401,
+      "duration_ms": 20
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5421,
+      "duration_ms": 18
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5439,
+      "duration_ms": 24
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5463,
+      "duration_ms": 19
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5482,
+      "duration_ms": 19
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5501,
+      "duration_ms": 27
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5528,
+      "duration_ms": 23
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5551,
+      "duration_ms": 19
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5570,
+      "duration_ms": 24
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5594,
+      "duration_ms": 47
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5641,
+      "duration_ms": 25
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5666,
+      "duration_ms": 19
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5685,
+      "duration_ms": 18
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5703,
+      "duration_ms": 22
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5725,
+      "duration_ms": 21
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5746,
+      "duration_ms": 21
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5767,
+      "duration_ms": 26
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5794,
+      "duration_ms": 26
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5820,
+      "duration_ms": 46
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5866,
+      "duration_ms": 29
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5895,
+      "duration_ms": 31
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5926,
+      "duration_ms": 32
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5958,
+      "duration_ms": 29
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 5987,
+      "duration_ms": 23
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6010,
+      "duration_ms": 27
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 6037,
+      "duration_ms": 0
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 6037,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 6037,
+      "duration_ms": 1
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 6038,
+      "duration_ms": 0
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6038,
+      "duration_ms": 23
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6061,
+      "duration_ms": 28
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6089,
+      "duration_ms": 32
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6121,
+      "duration_ms": 20
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6141,
+      "duration_ms": 21
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6162,
+      "duration_ms": 34
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6196,
+      "duration_ms": 23
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6219,
+      "duration_ms": 21
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6240,
+      "duration_ms": 20
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6260,
+      "duration_ms": 20
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6280,
+      "duration_ms": 26
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6306,
+      "duration_ms": 22
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6328,
+      "duration_ms": 18
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6346,
+      "duration_ms": 15
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6361,
+      "duration_ms": 2
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6363,
+      "duration_ms": 19
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6382,
+      "duration_ms": 15
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6397,
+      "duration_ms": 20
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6417,
+      "duration_ms": 13
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6430,
+      "duration_ms": 17
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6447,
+      "duration_ms": 13
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6460,
+      "duration_ms": 14
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6474,
+      "duration_ms": 15
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6489,
+      "duration_ms": 14
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6503,
+      "duration_ms": 16
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6519,
+      "duration_ms": 15
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6534,
+      "duration_ms": 17
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6551,
+      "duration_ms": 21
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6572,
+      "duration_ms": 14
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6586,
+      "duration_ms": 14
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6600,
+      "duration_ms": 19
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6619,
+      "duration_ms": 14
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6633,
+      "duration_ms": 16
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6649,
+      "duration_ms": 14
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6663,
+      "duration_ms": 16
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6679,
+      "duration_ms": 16
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6696,
+      "duration_ms": 17
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6713,
+      "duration_ms": 18
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6731,
+      "duration_ms": 14
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6745,
+      "duration_ms": 15
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 6760,
+      "duration_ms": 0
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 6760,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 6760,
+      "duration_ms": 1
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 6761,
+      "duration_ms": 0
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6761,
+      "duration_ms": 17
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6778,
+      "duration_ms": 17
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6795,
+      "duration_ms": 14
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6809,
+      "duration_ms": 16
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6825,
+      "duration_ms": 16
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6841,
+      "duration_ms": 16
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6857,
+      "duration_ms": 6
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6863,
+      "duration_ms": 6
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6869,
+      "duration_ms": 14
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6883,
+      "duration_ms": 14
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6897,
+      "duration_ms": 11
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6908,
+      "duration_ms": 12
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6920,
+      "duration_ms": 16
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6936,
+      "duration_ms": 13
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6949,
+      "duration_ms": 22
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6971,
+      "duration_ms": 13
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6984,
+      "duration_ms": 12
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 6996,
+      "duration_ms": 12
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7008,
+      "duration_ms": 13
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7021,
+      "duration_ms": 13
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7034,
+      "duration_ms": 14
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7048,
+      "duration_ms": 21
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7069,
+      "duration_ms": 47
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7116,
+      "duration_ms": 12
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7128,
+      "duration_ms": 14
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7142,
+      "duration_ms": 11
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7153,
+      "duration_ms": 12
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7165,
+      "duration_ms": 13
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7178,
+      "duration_ms": 14
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7192,
+      "duration_ms": 12
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7204,
+      "duration_ms": 35
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7239,
+      "duration_ms": 13
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7252,
+      "duration_ms": 12
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7264,
+      "duration_ms": 13
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7277,
+      "duration_ms": 13
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7290,
+      "duration_ms": 15
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7305,
+      "duration_ms": 13
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7318,
+      "duration_ms": 11
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7329,
+      "duration_ms": 16
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7345,
+      "duration_ms": 5
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 7350,
+      "duration_ms": 0
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 7350,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 7350,
+      "duration_ms": 1
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 7351,
+      "duration_ms": 0
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7351,
+      "duration_ms": 2
+    },
+    {
+      "phase": "product_reduction:one-piece",
+      "started_ms": 7353,
+      "duration_ms": 2
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7356,
+      "duration_ms": 2
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7358,
+      "duration_ms": 11
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7369,
+      "duration_ms": 9
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7378,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7388,
+      "duration_ms": 9
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7397,
+      "duration_ms": 11
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7408,
+      "duration_ms": 9
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7417,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7427,
+      "duration_ms": 9
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7436,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7446,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7456,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7466,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7476,
+      "duration_ms": 9
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7485,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7495,
+      "duration_ms": 19
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7514,
+      "duration_ms": 11
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7525,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7535,
+      "duration_ms": 11
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7546,
+      "duration_ms": 11
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7557,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7567,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7577,
+      "duration_ms": 12
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7589,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7599,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7609,
+      "duration_ms": 17
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7626,
+      "duration_ms": 11
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7637,
+      "duration_ms": 12
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7649,
+      "duration_ms": 16
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7665,
+      "duration_ms": 11
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7676,
+      "duration_ms": 15
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7691,
+      "duration_ms": 12
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7703,
+      "duration_ms": 12
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7715,
+      "duration_ms": 12
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7727,
+      "duration_ms": 11
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7738,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7748,
+      "duration_ms": 11
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7759,
+      "duration_ms": 11
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 7770,
+      "duration_ms": 0
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 7770,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 7770,
+      "duration_ms": 1
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 7771,
+      "duration_ms": 0
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7771,
+      "duration_ms": 20
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7791,
+      "duration_ms": 13
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7804,
+      "duration_ms": 12
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7816,
+      "duration_ms": 11
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7827,
+      "duration_ms": 11
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7838,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7848,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7858,
+      "duration_ms": 11
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7869,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7879,
+      "duration_ms": 14
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7893,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7903,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7913,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7923,
+      "duration_ms": 11
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7934,
+      "duration_ms": 9
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7943,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7953,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7963,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7973,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7983,
+      "duration_ms": 11
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 7994,
+      "duration_ms": 10
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 8004,
+      "duration_ms": 9
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 8013,
+      "duration_ms": 9
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 8022,
+      "duration_ms": 19
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 8041,
+      "duration_ms": 22
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 8063,
+      "duration_ms": 7
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 8070,
+      "duration_ms": 3
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 8073,
+      "duration_ms": 2
+    },
+    {
+      "phase": "official_assembly",
+      "started_ms": 8075,
+      "duration_ms": 2
+    },
+    {
+      "phase": "disappearance_warnings",
+      "started_ms": 8077,
+      "duration_ms": 2
+    },
+    {
+      "phase": "disappearance_warnings",
+      "started_ms": 8079,
+      "duration_ms": 6
+    },
+    {
+      "phase": "disappearance_warnings",
+      "started_ms": 8085,
+      "duration_ms": 2
+    },
+    {
+      "phase": "disappearance_warnings",
+      "started_ms": 8087,
+      "duration_ms": 2
+    },
+    {
+      "phase": "disappearance_warnings",
+      "started_ms": 8089,
+      "duration_ms": 2
+    },
+    {
+      "phase": "disappearance_warnings",
+      "started_ms": 8091,
+      "duration_ms": 3
+    },
+    {
+      "phase": "disappearance_warnings",
+      "started_ms": 8094,
+      "duration_ms": 2
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8096,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8099,
+      "duration_ms": 2
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8101,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8105,
+      "duration_ms": 3
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 8108,
+      "duration_ms": 0
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 8108,
+      "duration_ms": 1
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 8109,
+      "duration_ms": 0
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 8109,
+      "duration_ms": 0
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8109,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8113,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8116,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8119,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8122,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8125,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8128,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8131,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8134,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8137,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8140,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8145,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8150,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8153,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8157,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8160,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8164,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8168,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8171,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8175,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8179,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8182,
+      "duration_ms": 2
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8184,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8187,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8190,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8193,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8197,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8200,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8205,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8208,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8214,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8218,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8222,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8227,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8231,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8236,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8241,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8245,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8249,
+      "duration_ms": 6
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8255,
+      "duration_ms": 4
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 8259,
+      "duration_ms": 0
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 8259,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 8259,
+      "duration_ms": 1
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 8260,
+      "duration_ms": 0
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8260,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8265,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8269,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8274,
+      "duration_ms": 10
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8284,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8289,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8294,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8299,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8303,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8308,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8313,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8317,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8321,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8326,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8330,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8335,
+      "duration_ms": 6
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8341,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8345,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8350,
+      "duration_ms": 7
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8357,
+      "duration_ms": 6
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8363,
+      "duration_ms": 6
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8369,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8374,
+      "duration_ms": 6
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8380,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8385,
+      "duration_ms": 6
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8391,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8395,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8399,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8403,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8406,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8410,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8413,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8417,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8420,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8424,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8427,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8430,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8434,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8439,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8443,
+      "duration_ms": 4
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 8447,
+      "duration_ms": 0
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 8447,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 8447,
+      "duration_ms": 1
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 8448,
+      "duration_ms": 0
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8448,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8451,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8455,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8459,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8462,
+      "duration_ms": 3
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8465,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8469,
+      "duration_ms": 17
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8486,
+      "duration_ms": 7
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8493,
+      "duration_ms": 4
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8497,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8502,
+      "duration_ms": 5
+    },
+    {
+      "phase": "curated_revisions",
+      "started_ms": 8507,
+      "duration_ms": 5
+    },
+    {
+      "phase": "record_sorting:warning_records_sorted",
+      "started_ms": 8512,
+      "duration_ms": 4
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8516,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8519,
+      "duration_ms": 5
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8524,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8527,
+      "duration_ms": 4
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8531,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8534,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8537,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8540,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8543,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8546,
+      "duration_ms": 4
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8550,
+      "duration_ms": 2
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8552,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8555,
+      "duration_ms": 5
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8560,
+      "duration_ms": 2
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8562,
+      "duration_ms": 6
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8568,
+      "duration_ms": 2
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8570,
+      "duration_ms": 4
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8574,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8577,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8580,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8583,
+      "duration_ms": 2
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8585,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8588,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8591,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8594,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8597,
+      "duration_ms": 2
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8599,
+      "duration_ms": 3
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 8602,
+      "duration_ms": 0
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 8602,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 8602,
+      "duration_ms": 1
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 8603,
+      "duration_ms": 0
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8603,
+      "duration_ms": 4
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8607,
+      "duration_ms": 2
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8610,
+      "duration_ms": 2
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8613,
+      "duration_ms": 2
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8615,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8618,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8621,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8624,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8627,
+      "duration_ms": 2
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8629,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8632,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8635,
+      "duration_ms": 2
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8637,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8640,
+      "duration_ms": 2
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8642,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8645,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8648,
+      "duration_ms": 31
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8679,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8682,
+      "duration_ms": 2
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8684,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8687,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8690,
+      "duration_ms": 2
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8692,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8695,
+      "duration_ms": 2
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8697,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8700,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8703,
+      "duration_ms": 2
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8705,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8708,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8711,
+      "duration_ms": 2
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8713,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8716,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8719,
+      "duration_ms": 2
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8721,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8724,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8727,
+      "duration_ms": 3
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8730,
+      "duration_ms": 5
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8736,
+      "duration_ms": 2
+    },
+    {
+      "phase": "semantic_preparation",
+      "started_ms": 8738,
+      "duration_ms": 4
+    },
+    {
+      "phase": "record_sorting:semantic_memberships",
+      "started_ms": 8742,
+      "duration_ms": 2
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 8744,
+      "duration_ms": 1
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 8745,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 8745,
+      "duration_ms": 0
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 8745,
+      "duration_ms": 0
+    },
+    {
+      "phase": "record_sorting:semantic_withdrawals",
+      "started_ms": 8745,
+      "duration_ms": 4
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 8749,
+      "duration_ms": 40
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 8789,
+      "duration_ms": 16
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 8805,
+      "duration_ms": 16
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 8821,
+      "duration_ms": 14
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 8836,
+      "duration_ms": 24
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 8860,
+      "duration_ms": 14
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 8874,
+      "duration_ms": 13
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 8887,
+      "duration_ms": 23
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 8910,
+      "duration_ms": 17
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 8927,
+      "duration_ms": 20
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 8947,
+      "duration_ms": 20
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 8967,
+      "duration_ms": 18
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 8985,
+      "duration_ms": 19
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 9004,
+      "duration_ms": 17
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 9021,
+      "duration_ms": 18
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 9039,
+      "duration_ms": 18
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 9057,
+      "duration_ms": 21
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 9078,
+      "duration_ms": 24
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 9102,
+      "duration_ms": 24
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 9126,
+      "duration_ms": 23
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 9149,
+      "duration_ms": 29
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 9178,
+      "duration_ms": 26
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 9204,
+      "duration_ms": 27
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 9231,
+      "duration_ms": 23
+    },
+    {
+      "phase": "canonical_digest:catalogue",
+      "started_ms": 9254,
+      "duration_ms": 6
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9260,
+      "duration_ms": 18
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9278,
+      "duration_ms": 14
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9292,
+      "duration_ms": 14
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9306,
+      "duration_ms": 22
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9328,
+      "duration_ms": 14
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9342,
+      "duration_ms": 14
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9356,
+      "duration_ms": 21
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9377,
+      "duration_ms": 14
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9391,
+      "duration_ms": 22
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9413,
+      "duration_ms": 18
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9431,
+      "duration_ms": 20
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9451,
+      "duration_ms": 19
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9470,
+      "duration_ms": 23
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9494,
+      "duration_ms": 20
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 9514,
+      "duration_ms": 1
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 9515,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 9515,
+      "duration_ms": 0
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 9515,
+      "duration_ms": 1
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9516,
+      "duration_ms": 17
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9533,
+      "duration_ms": 21
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9554,
+      "duration_ms": 30
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9584,
+      "duration_ms": 26
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9610,
+      "duration_ms": 23
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9633,
+      "duration_ms": 27
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9660,
+      "duration_ms": 25
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9685,
+      "duration_ms": 26
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9711,
+      "duration_ms": 22
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9733,
+      "duration_ms": 26
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9759,
+      "duration_ms": 26
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9785,
+      "duration_ms": 25
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9811,
+      "duration_ms": 21
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9832,
+      "duration_ms": 25
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9857,
+      "duration_ms": 25
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9882,
+      "duration_ms": 25
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9907,
+      "duration_ms": 22
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9929,
+      "duration_ms": 25
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9954,
+      "duration_ms": 25
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 9979,
+      "duration_ms": 25
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10004,
+      "duration_ms": 15
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10019,
+      "duration_ms": 24
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10043,
+      "duration_ms": 39
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10082,
+      "duration_ms": 14
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10096,
+      "duration_ms": 16
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10112,
+      "duration_ms": 21
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10133,
+      "duration_ms": 17
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10150,
+      "duration_ms": 14
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10164,
+      "duration_ms": 4
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10168,
+      "duration_ms": 3
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10171,
+      "duration_ms": 3
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10174,
+      "duration_ms": 2
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10176,
+      "duration_ms": 9
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10185,
+      "duration_ms": 3
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10188,
+      "duration_ms": 7
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10195,
+      "duration_ms": 5
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10200,
+      "duration_ms": 7
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10207,
+      "duration_ms": 7
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10214,
+      "duration_ms": 7
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10221,
+      "duration_ms": 7
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 10228,
+      "duration_ms": 1
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 10229,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 10229,
+      "duration_ms": 0
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 10229,
+      "duration_ms": 1
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10230,
+      "duration_ms": 7
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10237,
+      "duration_ms": 13
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10250,
+      "duration_ms": 7
+    },
+    {
+      "phase": "canonical_digest:candidate",
+      "started_ms": 10257,
+      "duration_ms": 9
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10266,
+      "duration_ms": 5
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10271,
+      "duration_ms": 3
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10275,
+      "duration_ms": 3
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10278,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10282,
+      "duration_ms": 3
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10285,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10289,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10293,
+      "duration_ms": 3
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10296,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10300,
+      "duration_ms": 3
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10303,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10307,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10311,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10315,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10319,
+      "duration_ms": 3
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10322,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10326,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10330,
+      "duration_ms": 5
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10335,
+      "duration_ms": 5
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10340,
+      "duration_ms": 6
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10346,
+      "duration_ms": 10
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10356,
+      "duration_ms": 12
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10368,
+      "duration_ms": 8
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10376,
+      "duration_ms": 5
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10381,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10385,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10389,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10393,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10397,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10401,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10405,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10409,
+      "duration_ms": 5
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10414,
+      "duration_ms": 6
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10420,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10424,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10428,
+      "duration_ms": 4
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 10432,
+      "duration_ms": 1
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 10433,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 10433,
+      "duration_ms": 0
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 10433,
+      "duration_ms": 0
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10434,
+      "duration_ms": 5
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10439,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10443,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10447,
+      "duration_ms": 5
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10452,
+      "duration_ms": 7
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10459,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10463,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10467,
+      "duration_ms": 7
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10474,
+      "duration_ms": 15
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10489,
+      "duration_ms": 5
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10494,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10498,
+      "duration_ms": 5
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10503,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10507,
+      "duration_ms": 5
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10512,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10516,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10520,
+      "duration_ms": 5
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10525,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10529,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10533,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10537,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10541,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10545,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10549,
+      "duration_ms": 3
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10552,
+      "duration_ms": 4
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10556,
+      "duration_ms": 3
+    },
+    {
+      "phase": "source_mappings",
+      "started_ms": 10559,
+      "duration_ms": 3
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10562,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10566,
+      "duration_ms": 2
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10568,
+      "duration_ms": 11
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10579,
+      "duration_ms": 5
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10584,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10588,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10592,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10596,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10600,
+      "duration_ms": 3
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10603,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10607,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10611,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10615,
+      "duration_ms": 3
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 10618,
+      "duration_ms": 1
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 10619,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 10619,
+      "duration_ms": 0
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 10619,
+      "duration_ms": 0
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10619,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10623,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10627,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10631,
+      "duration_ms": 3
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10634,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10638,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10642,
+      "duration_ms": 3
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10645,
+      "duration_ms": 6
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10651,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10655,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10659,
+      "duration_ms": 3
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10662,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10666,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10670,
+      "duration_ms": 3
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10673,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10677,
+      "duration_ms": 3
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10680,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10684,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10688,
+      "duration_ms": 3
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10691,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10695,
+      "duration_ms": 3
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10698,
+      "duration_ms": 2
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10700,
+      "duration_ms": 2
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10702,
+      "duration_ms": 2
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10704,
+      "duration_ms": 8
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10712,
+      "duration_ms": 8
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10720,
+      "duration_ms": 7
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10727,
+      "duration_ms": 7
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10734,
+      "duration_ms": 7
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10741,
+      "duration_ms": 9
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10750,
+      "duration_ms": 6
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10756,
+      "duration_ms": 7
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10763,
+      "duration_ms": 7
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10770,
+      "duration_ms": 8
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10778,
+      "duration_ms": 13
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10791,
+      "duration_ms": 13
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10804,
+      "duration_ms": 12
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10816,
+      "duration_ms": 8
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10824,
+      "duration_ms": 9
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10833,
+      "duration_ms": 8
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 10841,
+      "duration_ms": 1
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 10842,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 10842,
+      "duration_ms": 6
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 10848,
+      "duration_ms": 0
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10848,
+      "duration_ms": 8
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10856,
+      "duration_ms": 9
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10865,
+      "duration_ms": 8
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10873,
+      "duration_ms": 7
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10880,
+      "duration_ms": 12
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10892,
+      "duration_ms": 8
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10900,
+      "duration_ms": 8
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10908,
+      "duration_ms": 7
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10915,
+      "duration_ms": 7
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10922,
+      "duration_ms": 8
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10930,
+      "duration_ms": 7
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10937,
+      "duration_ms": 7
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10944,
+      "duration_ms": 7
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10951,
+      "duration_ms": 7
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10958,
+      "duration_ms": 10
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10968,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10972,
+      "duration_ms": 2
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10974,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10978,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10982,
+      "duration_ms": 5
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10987,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10991,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 10995,
+      "duration_ms": 5
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11000,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11004,
+      "duration_ms": 5
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11009,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11013,
+      "duration_ms": 5
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11018,
+      "duration_ms": 7
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11025,
+      "duration_ms": 5
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11030,
+      "duration_ms": 6
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11036,
+      "duration_ms": 5
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11041,
+      "duration_ms": 10
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11051,
+      "duration_ms": 6
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11057,
+      "duration_ms": 10
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11067,
+      "duration_ms": 14
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11081,
+      "duration_ms": 6
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11087,
+      "duration_ms": 5
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11092,
+      "duration_ms": 6
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11098,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11102,
+      "duration_ms": 7
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 11109,
+      "duration_ms": 1
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 11110,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 11110,
+      "duration_ms": 0
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 11110,
+      "duration_ms": 1
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11111,
+      "duration_ms": 6
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11117,
+      "duration_ms": 5
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11122,
+      "duration_ms": 5
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11127,
+      "duration_ms": 43
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11170,
+      "duration_ms": 5
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11175,
+      "duration_ms": 5
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11180,
+      "duration_ms": 4
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11184,
+      "duration_ms": 5
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11189,
+      "duration_ms": 31
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11220,
+      "duration_ms": 3
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11223,
+      "duration_ms": 2
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11225,
+      "duration_ms": 3
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11228,
+      "duration_ms": 2
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11230,
+      "duration_ms": 3
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11233,
+      "duration_ms": 2
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11235,
+      "duration_ms": 2
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11237,
+      "duration_ms": 2
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11239,
+      "duration_ms": 5
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11244,
+      "duration_ms": 2
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11246,
+      "duration_ms": 2
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11248,
+      "duration_ms": 2
+    },
+    {
+      "phase": "candidate_partitions",
+      "started_ms": 11250,
+      "duration_ms": 2
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11252,
+      "duration_ms": 10
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11262,
+      "duration_ms": 9
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11271,
+      "duration_ms": 9
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11280,
+      "duration_ms": 9
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11289,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11297,
+      "duration_ms": 9
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11306,
+      "duration_ms": 9
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11315,
+      "duration_ms": 9
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11324,
+      "duration_ms": 10
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11334,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11342,
+      "duration_ms": 9
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11351,
+      "duration_ms": 9
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11360,
+      "duration_ms": 10
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11370,
+      "duration_ms": 9
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11379,
+      "duration_ms": 12
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11391,
+      "duration_ms": 9
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11400,
+      "duration_ms": 9
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11409,
+      "duration_ms": 9
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 11418,
+      "duration_ms": 0
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 11418,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 11418,
+      "duration_ms": 0
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 11418,
+      "duration_ms": 1
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11419,
+      "duration_ms": 13
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11432,
+      "duration_ms": 12
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11444,
+      "duration_ms": 9
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11453,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11461,
+      "duration_ms": 9
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11470,
+      "duration_ms": 9
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11479,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11487,
+      "duration_ms": 9
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11496,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11504,
+      "duration_ms": 9
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11513,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11521,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11529,
+      "duration_ms": 9
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11538,
+      "duration_ms": 5
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11543,
+      "duration_ms": 3
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11546,
+      "duration_ms": 5
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11551,
+      "duration_ms": 15
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11566,
+      "duration_ms": 15
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11581,
+      "duration_ms": 18
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11599,
+      "duration_ms": 15
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11614,
+      "duration_ms": 21
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11635,
+      "duration_ms": 21
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11656,
+      "duration_ms": 16
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11672,
+      "duration_ms": 14
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11686,
+      "duration_ms": 18
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11704,
+      "duration_ms": 13
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11717,
+      "duration_ms": 20
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11737,
+      "duration_ms": 26
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11763,
+      "duration_ms": 13
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11776,
+      "duration_ms": 15
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11791,
+      "duration_ms": 12
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11803,
+      "duration_ms": 13
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11816,
+      "duration_ms": 18
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11834,
+      "duration_ms": 13
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11847,
+      "duration_ms": 13
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11860,
+      "duration_ms": 13
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11873,
+      "duration_ms": 11
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11884,
+      "duration_ms": 11
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11895,
+      "duration_ms": 15
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11910,
+      "duration_ms": 15
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 11925,
+      "duration_ms": 0
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 11925,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 11925,
+      "duration_ms": 0
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 11925,
+      "duration_ms": 1
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11926,
+      "duration_ms": 12
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11938,
+      "duration_ms": 11
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11949,
+      "duration_ms": 13
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11962,
+      "duration_ms": 10
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11972,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11979,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11987,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11993,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 11999,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12005,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12012,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12018,
+      "duration_ms": 5
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12023,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12029,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12035,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12041,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12049,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12055,
+      "duration_ms": 5
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12060,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12066,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12074,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12082,
+      "duration_ms": 10
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12093,
+      "duration_ms": 12
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12105,
+      "duration_ms": 9
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12114,
+      "duration_ms": 15
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12130,
+      "duration_ms": 18
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12148,
+      "duration_ms": 10
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12158,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12166,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12173,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12180,
+      "duration_ms": 9
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12189,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12196,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12204,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12212,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12219,
+      "duration_ms": 11
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12230,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12238,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12245,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12253,
+      "duration_ms": 7
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 12260,
+      "duration_ms": 0
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 12260,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 12260,
+      "duration_ms": 0
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 12260,
+      "duration_ms": 1
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12261,
+      "duration_ms": 12
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12273,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12280,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12288,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12296,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12302,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12310,
+      "duration_ms": 11
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12321,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12328,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12336,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12343,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12350,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12357,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12364,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12372,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12379,
+      "duration_ms": 10
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12389,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12396,
+      "duration_ms": 12
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12408,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12416,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12423,
+      "duration_ms": 9
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12432,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12440,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12446,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12452,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12458,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12465,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12471,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12478,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12484,
+      "duration_ms": 10
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12494,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12500,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12506,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12512,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12519,
+      "duration_ms": 9
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12528,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12534,
+      "duration_ms": 3
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12537,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12544,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12551,
+      "duration_ms": 4
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 12555,
+      "duration_ms": 0
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 12555,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 12555,
+      "duration_ms": 1
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 12556,
+      "duration_ms": 0
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12556,
+      "duration_ms": 5
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12561,
+      "duration_ms": 5
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12566,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12570,
+      "duration_ms": 5
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12575,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12579,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12583,
+      "duration_ms": 3
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12586,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12591,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12595,
+      "duration_ms": 3
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12598,
+      "duration_ms": 5
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12603,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12607,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12611,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12618,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12625,
+      "duration_ms": 28
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12653,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12660,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12664,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12668,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12672,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12679,
+      "duration_ms": 3
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12682,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12688,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12695,
+      "duration_ms": 5
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12700,
+      "duration_ms": 3
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12703,
+      "duration_ms": 8
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12711,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12715,
+      "duration_ms": 5
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12720,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12724,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12728,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12732,
+      "duration_ms": 5
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12737,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12741,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12745,
+      "duration_ms": 7
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12752,
+      "duration_ms": 5
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12757,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12761,
+      "duration_ms": 5
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12766,
+      "duration_ms": 4
+    },
+    {
+      "phase": "retain reconciliation successor",
+      "started_ms": 12770,
+      "duration_ms": 1
+    },
+    {
+      "phase": "dispatch reconciliation successor",
+      "started_ms": 12771,
+      "duration_ms": 0
+    },
+    {
+      "phase": "initialize reconciliation operation",
+      "started_ms": 12771,
+      "duration_ms": 0
+    },
+    {
+      "phase": "read reconciliation dispatch",
+      "started_ms": 12771,
+      "duration_ms": 1
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12772,
+      "duration_ms": 6
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12778,
+      "duration_ms": 5
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12783,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12787,
+      "duration_ms": 5
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12792,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12796,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12800,
+      "duration_ms": 3
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12803,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12807,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12811,
+      "duration_ms": 5
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12816,
+      "duration_ms": 5
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12822,
+      "duration_ms": 4
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12826,
+      "duration_ms": 3
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12829,
+      "duration_ms": 3
+    },
+    {
+      "phase": "game_preparation",
+      "started_ms": 12832,
+      "duration_ms": 2
+    },
+    {
+      "phase": "reconcile retained Card, Printing, and Erratum evidence-unit-1175",
+      "started_ms": 12834,
+      "duration_ms": 4
+    },
+    {
+      "phase": "notify reconciliation root",
+      "started_ms": 12838,
+      "duration_ms": 1
+    }
+  ]
+}

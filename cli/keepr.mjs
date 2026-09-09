@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { runIdentityCorrectionCommand } from "./identity-corrections.mjs";
+import { runEntityProposalCommand } from "./entity-proposals.mjs";
 
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
@@ -13,6 +15,151 @@ import { requestDocument } from "./lib/json-client.mjs";
 import { runProductionReleaseCommand } from "./production-release.mjs";
 
 const commandRoutes = {
+  stagingCleanupStart: {
+    path: "/v1/reconciliation-operations/{preparation-id}/evidence-cleanup",
+    fields: { idempotency_key: "idempotency-key", retention_days: "retention-days" },
+    optional: ["retention-days"],
+    integers: ["retention_days"],
+  },
+  evidenceCleanupStart: {
+    path: "/v1/ingestion-runs/{run-id}/evidence-cleanup",
+    fields: { idempotency_key: "idempotency-key", retention_days: "retention-days" },
+    optional: ["retention-days"],
+    integers: ["retention_days"],
+  },
+  evidenceCleanupStatus: { path: "/v1/evidence-cleanups/{cleanup-id}" },
+  evidenceCleanupObjects: { path: "/v1/evidence-cleanups/{cleanup-id}/objects?after={after}", optional: ["after"] },
+  evidenceCleanupRetry: {
+    path: "/v1/evidence-cleanups/{cleanup-id}/retry",
+    fields: { expected_generation: "expected-generation" },
+    integers: ["expected_generation"],
+  },
+  publicationOperationResume: {
+    path: "/v1/publications/{operation-id}/resume",
+    fields: { generation: "generation", idempotency_key: "idempotency-key" },
+  },
+  publicationStatus: { path: "/v1/publications/{operation-id}" },
+  publicationStart: {
+    path: "/v1/publications/start",
+    fields: {
+      candidate_id: "candidate-id",
+      manifest_digest: "manifest-digest",
+      expected_game_revision_id: "expected-game-revision-id",
+      generation: "generation",
+      idempotency_key: "idempotency-key",
+    },
+  },
+
+  identityInspect: { path: "/v1/reconciliation/identities/{identity-id}?after={after}", optional: ["after"] },
+  identityReviews: { path: "/v1/reconciliation/identity-reviews?run_id={run-id}&after={after}", optional: ["after"] },
+  identityResolve: {
+    path: "/v1/reconciliation/identity-reviews/{review-id}/resolve",
+    yes: true,
+    fields: { printing_id: "printing-id", rationale: "rationale", idempotency_key: "idempotency-key" },
+  },
+  sourceLifecycle: { path: "/v1/source-lineages/{lineage}/lifecycle" },
+  decideSourceLifecycle: {
+    path: "/v1/source-lineages/{lineage}/lifecycle",
+    fields: {
+      state: "state",
+      expected_generation: "expected-generation",
+      rationale: "rationale",
+      idempotency_key: "idempotency-key",
+    },
+  },
+  sourceRegistry: { path: "/v1/source-registry" },
+  sourceAuthorities: { path: "/v1/source-authorities" },
+  selectSourceAuthority: {
+    path: "/v1/source-authorities",
+    fields: {
+      game: "game",
+      locale: "locale",
+      release_region: "release-region",
+      area: "area",
+      source_lineage: "source-lineage",
+      expected_generation: "expected-generation",
+      rationale: "rationale",
+      idempotency_key: "idempotency-key",
+    },
+  },
+  reconciliationStatus: { path: "/v1/ingestion-runs/{run-id}/reconciliation" },
+  reconciliationText: { path: "/v1/ingestion-runs/{run-id}/reconciliation/text/{digest}/{ordinal}" },
+  publicationPreparation: { path: "/v1/game-candidates/{candidate-id}/publication-preparation" },
+  publicationArtifacts: {
+    path: "/v1/game-candidates/{candidate-id}/publication-preparation/artifacts?after={after}",
+    optional: ["after"],
+  },
+  publicationResume: {
+    path: "/v1/game-candidates/{candidate-id}/publication-preparation/resume",
+    fields: {
+      manifest_digest: "manifest-digest",
+      generation: "generation",
+      sequence: "sequence",
+      idempotency_key: "idempotency-key",
+    },
+  },
+  publicationPrepare: {
+    path: "/v1/game-candidates/{candidate-id}/publication-preparation/start",
+    fields: {
+      manifest_digest: "manifest-digest",
+      generation: "generation",
+      sequence: "sequence",
+      idempotency_key: "idempotency-key",
+    },
+  },
+  gameCandidateEvidence: {
+    path: "/v1/game-candidates/{candidate-id}/inspection/evidence/{kind}?after={after}&manifest={manifest}",
+    optional: ["after", "manifest"],
+  },
+  gameCandidateInspection: {
+    path: "/v1/game-candidates/{candidate-id}/inspection?manifest={manifest}",
+    optional: ["manifest"],
+  },
+  gameCandidateAbandon: {
+    path: "/v1/game-candidates/{candidate-id}/abandon",
+    fields: { generation: "generation", idempotency_key: "idempotency-key" },
+    yes: true,
+  },
+  gameCandidatePrepare: {
+    path: "/v1/game-candidates",
+    fields: {
+      ingestion_run_id: "run-id",
+      supported_game: "game",
+      expected_game_revision_id: "expected-game-revision-id",
+      idempotency_key: "idempotency-key",
+    },
+    yes: true,
+  },
+  gameCandidate: { path: "/v1/game-candidates/{candidate-id}" },
+  collectionGameCandidates: { path: "/v1/ingestion-runs/{run-id}/game-candidates?after={after}", optional: ["after"] },
+  gameCandidatePartitions: {
+    path: "/v1/game-candidates/{candidate-id}/partitions?after={after}&manifest={manifest}",
+    optional: ["after", "manifest"],
+  },
+  gameCandidatePartition: {
+    path: "/v1/game-candidates/{candidate-id}/partitions/{ordinal}?manifest={manifest}",
+    optional: ["manifest"],
+  },
+  reconciliationPartitions: {
+    path: "/v1/ingestion-runs/{run-id}/reconciliation/partitions?after={after}",
+    optional: ["after"],
+  },
+  reconciliationInputs: {
+    path: "/v1/ingestion-runs/{run-id}/reconciliation/inputs?after={after}",
+    optional: ["after"],
+  },
+  reconciliationInput: { path: "/v1/ingestion-runs/{run-id}/reconciliation/inputs/{ordinal}" },
+  reconciliationPartition: { path: "/v1/ingestion-runs/{run-id}/reconciliation/partitions/{ordinal}" },
+  ...Object.fromEntries(
+    ["pause", "resume", "abandon"].map((action) => [
+      `reconciliation-${action}`,
+      {
+        path: `/v1/ingestion-runs/{run-id}/reconciliation/${action}`,
+        fields: { generation: "generation", idempotency_key: "idempotency-key" },
+        production: `Reconciliation ${action}`,
+      },
+    ]),
+  ),
   reconcileRun: {
     path: "/v1/ingestion-runs/{run-id}/reconciliation",
     fields: {
@@ -219,6 +366,12 @@ async function routeCommand(name, arguments_, environment, json) {
           ...(definition.bodyEnvironment ? { environment: environment.KEEPR_TARGET ?? "production" } : {}),
           ...mapped(definition.fields),
         };
+  for (const field of definition.integers ?? []) {
+    if (body?.[field] === undefined) continue;
+    if (!/^(0|[1-9]\d*)$/.test(body[field]) || !Number.isSafeInteger(Number(body[field])))
+      return writeFailure(json, { code: "invalid_parameter", detail: `${field} must be a canonical integer.` }, 2);
+    body[field] = Number(body[field]);
+  }
   if (definition.production) {
     const resolved = await resolveTarget(environment, json, mapped(definition.query));
     if (typeof resolved === "number") return resolved;
@@ -228,7 +381,21 @@ async function routeCommand(name, arguments_, environment, json) {
     const confirmed = confirmProductionTarget(json, confirmation, value("confirm"));
     if (confirmed !== 0) return confirmed;
   }
-  const pathname = definition.path.replace(/\{([^}]+)\}/g, (_, field) => encodeURIComponent(value(field)));
+  const [pathTemplate, queryTemplate] = definition.path.split("?");
+  const query = new URLSearchParams(queryTemplate);
+  for (const [key, template] of [...query]) {
+    const placeholders = [...template.matchAll(/\{([^}]+)\}/g)].map((match) => match[1]);
+    if (placeholders.some((field) => value(field) === undefined && definition.optional?.includes(field)))
+      query.delete(key);
+    else
+      query.set(
+        key,
+        template.replace(/\{([^}]+)\}/g, (_, field) => value(field) ?? ""),
+      );
+  }
+  const pathname =
+    pathTemplate.replace(/\{([^}]+)\}/g, (_, field) => encodeURIComponent(value(field) ?? "")) +
+    (query.size > 0 ? `?${query}` : "");
   return administrationRequest(
     environment,
     json,
@@ -239,13 +406,48 @@ async function routeCommand(name, arguments_, environment, json) {
 }
 
 const commands = {
+  "identity inspect": (args, env, json) => routeCommand("identityInspect", args, env, json),
+  "identity reviews": (args, env, json) => routeCommand("identityReviews", args, env, json),
+  "identity resolve": (args, env, json) => routeCommand("identityResolve", args, env, json),
   "release production": runProductionReleaseCommand,
   "run show": (args, env, json) => routeCommand("showRun", args, env, json),
   "candidate inspect": (args, env, json) => routeCommand("inspectCandidate", args, env, json),
   "run approve": (args, env, json) => routeCommand("approveRun", args, env, json),
   "run reject": (args, env, json) => routeCommand("rejectRun", args, env, json),
   "run retry": (args, env, json) => routeCommand("retryRun", args, env, json),
+  "staging-cleanup start": (args, env, json) => routeCommand("stagingCleanupStart", args, env, json),
+  "evidence-cleanup start": (args, env, json) => routeCommand("evidenceCleanupStart", args, env, json),
+  "evidence-cleanup status": (args, env, json) => routeCommand("evidenceCleanupStatus", args, env, json),
+  "evidence-cleanup objects": (args, env, json) => routeCommand("evidenceCleanupObjects", args, env, json),
+  "evidence-cleanup retry": (args, env, json) => routeCommand("evidenceCleanupRetry", args, env, json),
   "run cleanup": (args, env, json) => routeCommand("cleanupRun", args, env, json),
+  "reconciliation status": (args, env, json) => routeCommand("reconciliationStatus", args, env, json),
+  "reconciliation text": (args, env, json) => routeCommand("reconciliationText", args, env, json),
+  "publication approve": (args, env, json) => routeCommand("publicationStart", args, env, json),
+  "publication resume": (args, env, json) => routeCommand("publicationOperationResume", args, env, json),
+  "publication status": (args, env, json) => routeCommand("publicationStatus", args, env, json),
+  "publication-preparation status": (args, env, json) => routeCommand("publicationPreparation", args, env, json),
+  "publication-preparation artifacts": (args, env, json) => routeCommand("publicationArtifacts", args, env, json),
+  "publication-preparation resume": (args, env, json) => routeCommand("publicationResume", args, env, json),
+  "publication-preparation start": (args, env, json) => routeCommand("publicationPrepare", args, env, json),
+  "game-candidate abandon": (args, env, json) => routeCommand("gameCandidateAbandon", args, env, json),
+  "game-candidate prepare": (args, env, json) => routeCommand("gameCandidatePrepare", args, env, json),
+  "game-candidate show": (args, env, json) => routeCommand("gameCandidate", args, env, json),
+  "game-candidate list": (args, env, json) => routeCommand("collectionGameCandidates", args, env, json),
+  "game-candidate evidence": (args, env, json) => routeCommand("gameCandidateEvidence", args, env, json),
+  "game-candidate inspect": (args, env, json) => routeCommand("gameCandidateInspection", args, env, json),
+  "game-candidate partitions": (args, env, json) => routeCommand("gameCandidatePartitions", args, env, json),
+  "game-candidate partition": (args, env, json) => routeCommand("gameCandidatePartition", args, env, json),
+  "reconciliation inputs": (args, env, json) => routeCommand("reconciliationInputs", args, env, json),
+  "reconciliation input": (args, env, json) => routeCommand("reconciliationInput", args, env, json),
+  "reconciliation partitions": (args, env, json) => routeCommand("reconciliationPartitions", args, env, json),
+  "reconciliation partition": (args, env, json) => routeCommand("reconciliationPartition", args, env, json),
+  ...Object.fromEntries(
+    ["pause", "resume", "abandon"].map((action) => [
+      `reconciliation ${action}`,
+      (args, env, json) => routeCommand(`reconciliation-${action}`, args, env, json),
+    ]),
+  ),
   "run reconcile": (args, env, json) => routeCommand("reconcileRun", args, env, json),
   "backup create": (args, env, json) => routeCommand("createBackup", args, env, json),
   "backup status": backupStatus,
@@ -255,6 +457,11 @@ const commands = {
   "recovery verify": (args, env, json) => routeCommand("verifyRecovery", args, env, json),
   "recovery accept": (args, env, json) => routeCommand("acceptRecovery", args, env, json),
   "source collect": collectSource,
+  "source registry": (args, env, json) => routeCommand("sourceRegistry", args, env, json),
+  "source lifecycle": (args, env, json) => routeCommand("sourceLifecycle", args, env, json),
+  "source set-lifecycle": (args, env, json) => routeCommand("decideSourceLifecycle", args, env, json),
+  "source authorities": (args, env, json) => routeCommand("sourceAuthorities", args, env, json),
+  "source designate": (args, env, json) => routeCommand("selectSourceAuthority", args, env, json),
   "source show": (args, env, json) => routeCommand("showSourceEvidence", args, env, json),
   "source pause": (args, env, json) => routeCommand("pauseEvidenceCollection", args, env, json),
   "source resume": (args, env, json) => routeCommand("resumeEvidenceCollection", args, env, json),
@@ -304,6 +511,10 @@ export async function main(arguments_, environment) {
   if (arguments_[0] === "cards") {
     return runCatalogueCommand(arguments_.slice(1), environment, json);
   }
+
+  if (arguments_[0] === "identity-correction")
+    return runIdentityCorrectionCommand(arguments_.slice(1), environment, json);
+  if (arguments_[0] === "entity-proposal") return runEntityProposalCommand(arguments_.slice(1), environment, json);
 
   if (arguments_[0] === "curated-revision") {
     return runCuratedRevisionCommand(arguments_.slice(1), environment, json);
@@ -665,6 +876,8 @@ async function collectSource(arguments_, environment, json) {
     "--request-id",
     "--url",
     "--plan-file",
+    "--participation",
+    "--subset",
     "--idempotency-key",
   ]);
   const planFile = options.values["--plan-file"];
@@ -673,7 +886,7 @@ async function collectSource(arguments_, environment, json) {
     options.error === null &&
     planFile !== undefined &&
     idempotencyKey !== undefined &&
-    ["--game", "--lineage", "--adapter", "--request-id", "--url"].every(
+    ["--game", "--lineage", "--adapter", "--request-id", "--url", "--participation", "--subset"].every(
       (option) => options.values[option] === undefined,
     )
   ) {
@@ -714,6 +927,8 @@ async function collectSource(arguments_, environment, json) {
     return usageFailure(json);
   }
   return administrationRequest(environment, json, "/v1/ingestion-runs/evidence", "POST", {
+    ...(options.values["--participation"] === undefined ? {} : { participation: options.values["--participation"] }),
+    ...(options.values["--subset"] === undefined ? {} : { subset: options.values["--subset"] }),
     supported_game: game,
     source_lineage: lineage,
     adapter_version: adapter,
@@ -864,7 +1079,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | run approve | run reject | run retry | run cleanup | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
+        "Usage: keepr identity-correction validate | identity-correction create | identity-correction inspect | identity-correction list | entity-proposal list | entity-proposal inspect | entity-proposal create | entity-proposal admit | entity-proposal link | entity-proposal reject | entity-proposal reconsider | identity inspect | identity reviews | identity resolve | health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | game-candidate prepare | game-candidate abandon | game-candidate list | game-candidate show | game-candidate inspect | game-candidate evidence | game-candidate partitions | game-candidate partition | reconciliation status | reconciliation text | reconciliation inputs | reconciliation input | reconciliation partitions | reconciliation partition | reconciliation pause | reconciliation resume | reconciliation abandon | run approve | run reject | run retry | run cleanup | staging-cleanup start | evidence-cleanup start | evidence-cleanup status | evidence-cleanup objects | evidence-cleanup retry | source registry | source authorities | source designate | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
     },
     2,
   );

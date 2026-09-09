@@ -17,7 +17,7 @@ on:
         required: false
         default: production_release
         type: choice
-        options: [production_release]
+        options: [production_release, cancel_fresh_baseline_handoff, correct_fresh_baseline_handoff]
       release_id:
         required: false
         type: string
@@ -74,6 +74,12 @@ on:
       dispatch_digest:
         required: false
         type: string
+      correction_json:
+        required: false
+        type: string
+      correction_digest:
+        required: false
+        type: string
       prepared_plan_json:
         required: false
         type: string
@@ -87,7 +93,7 @@ concurrency:
 
 jobs:
   guarded-release:
-    if: inputs.operation == 'production_release'
+    if: inputs.operation == 'production_release' || inputs.operation == 'cancel_fresh_baseline_handoff' || inputs.operation == 'correct_fresh_baseline_handoff'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: production
@@ -99,6 +105,10 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOYMENT_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ inputs.expected_account_id }}
+      HANDOFF_CORRECTION_JSON: ${{ inputs.correction_json }}
+      HANDOFF_CORRECTION_DIGEST: ${{ inputs.correction_digest }}
+      HANDOFF_OPERATION: ${{ inputs.operation }}
+      HANDOFF_EXECUTION_ID: ${{ github.run_id }}:${{ github.run_attempt }}
       RELEASE_ID: ${{ inputs.release_id }}
       EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
       EXPECTED_ACTOR: ${{ inputs.expected_actor }}
@@ -158,21 +168,27 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Validate the exact prepared dispatch before mutation
-        run: node scripts/production-release.mjs validate-dispatch /tmp/production-release
+        run: |
+          set -euo pipefail
+          node scripts/production-release.mjs validate-dispatch /tmp/production-release
+          node --input-type=module -e 'const plan=JSON.parse(process.env.PREPARED_PLAN_JSON); console.log(`FRESH_BASELINE_HANDOFF=${plan.fresh_baseline_handoff !== undefined}`);' >> "${GITHUB_ENV}"
       - name: Verify Cloudflare credential and immutable target
         run: node scripts/production-release-provider.mjs verify-target >/dev/null
       - name: Recheck live Production Release gates without mutation
+        if: env.FRESH_BASELINE_HANDOFF != 'true'
         run: |
           set -euo pipefail
           result="$(node scripts/production-release-d1.mjs execute --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/live-preflight.sql)"
           test "$(jq -r '.[-1].results[0].ready' <<<"${result}")" = 1
       - name: Claim the prepared pre-migration fence
+        if: env.FRESH_BASELINE_HANDOFF != 'true'
         run: |
           set -euo pipefail
           result="$(node scripts/production-release-d1.mjs execute --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/claim.sql)"
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].claimed' <<<"${result}")" = 1
       - name: Apply compatible forward migrations
+        if: env.FRESH_BASELINE_HANDOFF != 'true'
         run: |
           set -euo pipefail
           release_migration_exit() {
@@ -193,7 +209,7 @@ jobs:
           npx wrangler d1 migrations apply CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc
           trap - EXIT
       - name: Transfer the pre-migration fence to the durable Production Release
-        if: inputs.bootstrap != 'true'
+        if: env.FRESH_BASELINE_HANDOFF != 'true' && (inputs.bootstrap != 'true')
         run: |
           set -euo pipefail
           result="$(node scripts/production-release-d1.mjs execute --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/materialize.sql)"
@@ -202,12 +218,13 @@ jobs:
         # No production_releases row can exist without a verified backup, so a
         # Bootstrap Mode Production Release holds the lease only and keeps its
         # phase evidence in the administration idempotency ledger.
-        if: inputs.bootstrap == 'true'
+        if: env.FRESH_BASELINE_HANDOFF != 'true' && (inputs.bootstrap == 'true')
         run: |
           set -euo pipefail
           result="$(node scripts/production-release-d1.mjs execute --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/materialize.sql)"
           test "$(jq -r '.[-1].results[0].transferred' <<<"${result}")" = 1
       - name: Bind an exact verified replacement D1 when requested
+        if: env.FRESH_BASELINE_HANDOFF != 'true'
         run: |
           set -euo pipefail
           api_config=apps/api/wrangler.release.json
@@ -228,6 +245,7 @@ jobs:
           fi
           printf 'API_RELEASE_CONFIG=%s\nINGESTION_RELEASE_CONFIG=%s\nRELEASE_STATE_CONFIG=%s\n' "${api_config}" "${ingestion_config}" "${release_state_config}" >> "${GITHUB_ENV}"
       - name: Upload immutable Worker versions
+        if: env.FRESH_BASELINE_HANDOFF != 'true'
         run: |
           set -euo pipefail
           npx wrangler versions upload --strict --config "${API_RELEASE_CONFIG}" --tag "release-${RELEASE_ID}-api" --message "${RELEASE_ID} ${EXPECTED_HEAD_SHA}"
@@ -236,16 +254,19 @@ jobs:
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].transitioned' <<<"${result}")" = 1
       - name: Verify the uploaded versions bind the release configuration
+        if: env.FRESH_BASELINE_HANDOFF != 'true'
         run: |
           set -euo pipefail
           RELEASE_WORKER=card-keepr-api RELEASE_VERSION_TAG="release-${RELEASE_ID}-api" RELEASE_WORKER_CONFIG="${API_RELEASE_CONFIG}" node scripts/production-release-provider.mjs verify-version >/dev/null
           RELEASE_WORKER=card-keepr-ingestion RELEASE_VERSION_TAG="release-${RELEASE_ID}-ingestion" RELEASE_WORKER_CONFIG="${INGESTION_RELEASE_CONFIG}" node scripts/production-release-provider.mjs verify-version >/dev/null
       - name: Activate the compatible version pair
+        if: env.FRESH_BASELINE_HANDOFF != 'true'
         run: |
           set -euo pipefail
           npx wrangler versions deploy --yes --config "${API_RELEASE_CONFIG}" --version-tag "release-${RELEASE_ID}-api@100%"
           npx wrangler versions deploy --yes --config "${INGESTION_RELEASE_CONFIG}" --version-tag "release-${RELEASE_ID}-ingestion@100%"
       - name: Deploy the route triggers
+        if: env.FRESH_BASELINE_HANDOFF != 'true'
         # Versions carry code, vars, and bindings; zone routes are script-level
         # triggers that versions upload/deploy never apply (issue #123).
         run: |
@@ -253,6 +274,7 @@ jobs:
           npx wrangler triggers deploy --config "${API_RELEASE_CONFIG}"
           npx wrangler triggers deploy --config "${INGESTION_RELEASE_CONFIG}"
       - name: Observe the binding while recovery remains blocked
+        if: env.FRESH_BASELINE_HANDOFF != 'true'
         run: |
           set -euo pipefail
           binding="$(node scripts/production-release-provider.mjs observe-bindings)"
@@ -261,7 +283,7 @@ jobs:
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].transitioned' <<<"${result}")" = 1
       - name: Run black-box production smoke checks
-        if: inputs.bootstrap != 'true'
+        if: env.FRESH_BASELINE_HANDOFF != 'true' && (inputs.bootstrap != 'true')
         run: |
           set -euo pipefail
           smoke_input="$(jq -cn --arg url "${API_BASE_URL}" --arg key "${API_TRAFFIC_TOKEN}" --arg revision "${EXPECTED_CURRENT_REVISION}" --argjson targets "${SMOKE_TARGETS_JSON}" '{apiUrl:$url,apiKey:$key,currentRevisionId:$revision,revisions:$targets.revisions,printingImageId:$targets.printing_image_id,staleCursor:$targets.stale_cursor,staleRevisionId:$targets.stale_revision_id}')"
@@ -276,7 +298,7 @@ jobs:
         # An empty catalogue has no Card, Printing, export, or retained
         # revision to read: only health and auth on both mounts and the spine
         # revision from /v1/catalogue are checked. Nothing is rolled back.
-        if: inputs.bootstrap == 'true'
+        if: env.FRESH_BASELINE_HANDOFF != 'true' && (inputs.bootstrap == 'true')
         run: |
           set -euo pipefail
           ingestion_url="$(node --input-type=module -e 'import { readFile } from "node:fs/promises"; process.stdout.write(String(JSON.parse(await readFile(process.argv[1], "utf8")).vars.PUBLIC_BASE_URL));' "${INGESTION_RELEASE_CONFIG}")"
@@ -289,9 +311,16 @@ jobs:
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].fence_released' <<<"${result}")" = 1
       - name: Record compatible roll-forward requirement on failure
-        if: failure()
+        if: env.FRESH_BASELINE_HANDOFF != 'true' && (failure())
         run: |
           set +e
           bash scripts/production-release-failure.sh /tmp/production-release
           handler_status=$?
           exit "${handler_status}"
+      - name: Execute the guarded fresh-baseline handoff
+        if: env.FRESH_BASELINE_HANDOFF == 'true'
+        run: node scripts/fresh-baseline-release.mjs /tmp/production-release
+      - name: Preserve unfinished fresh-baseline authority on failure
+        if: failure() && env.FRESH_BASELINE_HANDOFF == 'true'
+        run: |
+          printf 'Fresh-baseline handoff failed or was interrupted. Both durable fences remain; resume the exact confirmed release. No cleanup or lease expiry authorizes mutation.\n'

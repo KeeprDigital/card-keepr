@@ -1,0 +1,137 @@
+# Reconciliation ownership audit (#225)
+
+This audit covers the collection/preparation separation through schema 20. It
+inventories foreign keys to `ingestion_runs`, `source_snapshots`, and
+`source_observation_sets`, then traces their repository writers from the native
+preparation entry point. It also checks retained JSON and Workflow parameters
+whose provenance is not enforced by a foreign key. Historical tables replaced
+by later migrations are identified separately from live writers.
+
+`reconciliation_operations.id` owns preparation work. Its immutable
+`ingestion_run_id` identifies the real source collection. Native operations use
+different IDs; the legacy compatibility operation uses the collection ID for
+both. Source Snapshot and Source Observation Set IDs always identify retained
+source evidence, never preparation artifacts.
+
+## Collection and source foreign keys
+
+| Tables / fields | Write callers | Native preparation treatment |
+| --- | --- | --- |
+| `ingestion_runs.linked_run_id`; `ingestion_run_events`, `ingestion_run_current`, `ingestion_run_selected_games` | Shared ingestion event recipes, source-evidence lifecycle, legacy run finalization/publication | Native preparation does not append collection transitions. Its creation and terminal paths write its operation/candidate instead. |
+| `ingestion_evidence_plans`, `source_requests`, `source_snapshots.ingestion_run_id` | Source-plan, capture, and evidence-run repositories | Read through the operation's real collection ID. Native preparation does not add collection requests or captures. |
+| `source_capture_operations.reused_source_snapshot_id`, `source_snapshots.reused_source_snapshot_id`, `source_parse_operations.source_snapshot_id`, `source_observation_sets.source_snapshot_id`, `official_source_collection_plans` | Source capture, parse, and collection-plan repositories | Source IDs remain source IDs. Native verification reads the frozen observations and immutable capture/image references. |
+| Collection capacity/retry/workflow pause and extension tables, `ingestion_workflow_attempts`, `ingestion_run_terminations`, `ingestion_collection_reservations` | Source-evidence control and shared reservation recipes | Collection-owned; native pause/resume/failure does not write these. Native creation records `ingestion_collection_completions` for completed evidence and releases that collection's reservation atomically with pin capture. Other live collections retain their reservations. |
+| `reconciliation_operations.ingestion_run_id`, `game_candidates.ingestion_run_id`, `game_candidate_slots.ingestion_run_id` | `createGamePreparationStatement`; legacy operation/candidate recipes | Deliberate dual identity: artifacts and slot ownership bind the preparation, while these fields retain the real collection. Native creation inserts them atomically. |
+| `canonical_source_mappings` | `insertSourceMappingsStatement` | Legacy insertion requires `supported_game IS NULL`. Native mappings go to `reconciliation_source_mappings`, keyed by preparation/entity/observation. A published collection cannot grant publication authority to new native mappings. |
+| `reconciliation_source_mappings` source collection/snapshot/observation-set FKs | Native branch of `insertSourceMappingsStatement` | Collection ID is selected from the operation. Snapshot and observation-set IDs come from frozen source observations. Owner inspection accepts `preparation_id`; staged mappings remain outside the published index. |
+| `entity_proposal_source_evidence` | `assessSourceAdmission` → `retainProposalEvidenceStatement` | Fixed: the writer resolves preparation ID to the real collection before retaining shared proposal evidence. The generation-fenced preparation remains the writer authorization. |
+| `canonical_identity_reviews`, `canonical_identity_review_runs` | Canonical matching → `insertIdentityReviewStatement` | Fixed: both collection FKs resolve through the operation. Native membership is additionally retained in immutable `reconciliation_identity_reviews`, keyed by preparation/review. Owner inspection can select that preparation. |
+| `ingestion_run_curated_revisions`, `ingestion_run_curated_revision_sets` | Collection/run creation's curated pin recipes | Legacy pins retain collection ownership. Native preparation pins immutable revision/event cutoffs in `reconciliation_curated_pins` at its own creation, then reads one selected-game revision per seek. Curated conflict work is preparation-owned. |
+| `entity_admission_run_pins`, `identity_correction_run_pins` | Historical schema 18/19 writers | Read-only historical compatibility inputs. New pins use preparation-owned tables. Historical selection/cutoff reuse is limited to legacy operations. |
+| `reconciliation_contexts`, `reconciliation_candidates`, `reconciliation_evidence_partitions`, `reconciliation_payload_chunks`, `reconciliation_workflow_requests`, `reconciliation_terminal_results` | Legacy candidate staging, run Workflow request/result recipes | Native success and semantic failure bypass legacy candidate staging; native integrity/capacity/expiry and invalid curated composition failures bypass legacy run terminal records. Native requests/outcomes have their own preparation ownership. |
+| `catalogue_revisions`, `ingestion_no_change_results`, `ingestion_publication_cleanup`, source freshness tables, `reconciled_withdrawal_assertions`, `catalogue_backup_attempts.publication_ingestion_run_id` | Publication commit, freshness, cleanup, backup/recovery repositories | Not native preparation writers. Native publication integration must consume the retained candidate under its own publication authority. |
+| Historical `ingestion_run_transitions`, eligibility tables, replaced freshness/context layouts | Historical migrations / replacement projections | No new native writer. The audit does not reintroduce removed eligibility behavior. |
+
+## Preparation-owned records
+
+The operation ID owns admission/correction pins, input/record partitions,
+observation origins, source byte/document/text chunks, game entity scopes,
+reducer/sort state, curated conflicts, checkpoints, normalized source
+observations, evidence selection, work receipts, action receipts, native
+Workflow requests, mapping/review staging, and terminal outcomes. Child game
+partitions bind their candidate ID. These records do not use collection state
+as preparation ownership or publication authority.
+
+The native terminal transaction updates only the operation, its candidate
+metadata/state, and its own slot. Ordinary native writes require the retained
+generation, preparing state, original deadline, expected game head, and owned
+slot. Terminal failure relaxes the deadline/head checks to record the failure,
+while preserving generation/state and recovery fencing.
+
+## Non-FK provenance and decision reads
+
+- Workflow parameters/results, native outcomes, and owner candidate inspection
+  distinguish `preparation_id` from the actual collection `run_id` or
+  `ingestion_run_id`.
+- `SourceMapping.runId` is the actual collection. Large mapping evidence retains
+  source observation, observation-set, snapshot, and digest references.
+- Curated conflict identity/details retain the actual collection plus native
+  preparation ID. Conflict visibility follows the failed native operation;
+  legacy conflict visibility continues to follow the legacy run.
+- Canonical allocation keys and automatic admission idempotency keys are
+  decision identities, not collection foreign keys. Allocation alone does not
+  make an entity published. Automatic admission keys include their preparation.
+- Existing unresolved proposals retain a generation-zero selection row. The
+  pinned decision query's left join preserves that row, so a later owner link
+  does not replace the preparation's unresolved decision. The owner-interface
+  regression verifies this alongside the retained later owner decision.
+- Proposals first created after the snapshot cannot supply a later owner
+  decision through the fallback query. Native automatic decisions have immutable
+  preparation-owned receipts in `reconciliation_automatic_admissions`. The
+  shared proposal history advances only if its expected generation is still
+  current, preserving a later owner rejection. A single automatic decision is
+  limited to 256 KiB so its receipt plus shared decision copies remain below
+  the staging recipe's 1 MiB target; callback-wide enforcement remains pending.
+- Policy generations are checked against the operation's authority cutoff in
+  the creation transaction. An intervening authority mutation rolls creation
+  back; exact concurrent creation reuses the winner's identity and deadline.
+
+## Remaining integration boundary
+
+This closes the identified source/preparation foreign-key bridges; it is not
+final #225 acceptance. Production collection/owner dispatch, runtime resource
+limits, stress performance, and final verification remain on the finite
+acceptance checklist. The handoff regressions cover an owner link/rejection for
+a proposal first created after the snapshot, as well as the existing-proposal
+late-link case.
+
+Native curated selection now pins its own immutable history cutoffs atomically
+with preparation creation. The regression verifies that a correction authored
+after collection is included, and a later retirement cannot change that pin.
+Indexed seeks read each revision and its last lifecycle/reaffirmation events at
+those cutoffs; inactive revisions also advance the bounded work cursor.
+Native creation atomically rejects effective pending reconfirmations, including
+prepared conflicts whose physical events have not yet been materialized. The
+source-conflict regression now verifies owner reaffirmation and a fresh sealed
+preparation from the same retained evidence, with the original failed outcome
+unchanged.
+
+Native mapping publication is downstream work (#226/#227). It must consume
+preparation-owned evidence and gate published visibility on candidate
+publication, never on the source collection's publication state.
+
+## Synchronous storage-error boundary audit
+
+Reconciliation storage helpers accept only `() => Promise<T>`. Repository
+statement construction, binding, and execution belong inside that callback;
+passing an already-started promise loses synchronous `prepare`/`bind` failures.
+The text reader's page-statement map is also constructed inside its callback.
+
+The audit covered all callers of the normalization, reducer, text, document,
+input, image, and curated-conflict storage wrappers. Normalization and reducer
+callers now defer their complete storage invocation. Document and text wrappers
+no longer accept promises. Input, image, and curated-conflict wrappers already
+required callbacks and retain statement construction inside them. Existing
+explicit try/catch boundaries in Card matching, plan lookup, prior Erratum
+provenance, disappearance, withdrawals, and correction-pin reads also construct
+and execute their statements inside the catch boundary.
+
+Digest, ordinal, byte-length, immutable-receipt, origin, and capacity validation
+remain outside these storage wrappers. Reducer grouping/digest computation is
+performed before entering its storage callback. Consequently those semantic
+failures retain their own classification rather than becoming transient storage
+errors. Real Workflow probes inject synchronous statement-construction outages
+in normalization, reducer writes, and text-page reads and verify retry, eventual
+sealing, exact retained text references, and per-attempt D1/R2 call budgets.
+
+
+Workflow attempt reservations are retained in `reconciliation_workflow_budgets`,
+keyed by preparation, generation and shard ordinal. Every guarded reservation
+adds 100 calls before work; a monotonic trigger and a 4,500-call ceiling prevent
+restart or lost-output replay from renewing the shard's work allowance. These
+control receipts do not advance candidate progress or release its game slot.
+
+Canonical payload byte receipts live in `reconciliation_canonical_bytes`, keyed
+by preparation and ordinal. Immutable content and SHA-256 bind each chunk; the
+completed candidate hash checkpoint pins the count. These are preparation
+artifacts, with no source-evidence identity or publication authority.

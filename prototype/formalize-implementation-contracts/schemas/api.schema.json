@@ -23,7 +23,8 @@
         "one-piece",
         "fusion-world",
         "digimon",
-        "gundam"
+        "gundam",
+        "riftbound"
       ]
     },
     "Region": {
@@ -124,10 +125,43 @@
           ],
           "properties": {
             "kind": {
+              "const": "publisher_name"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
               "const": "functional_designation"
             },
             "value": {
               "const": "DON!!"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ],
+          "properties": {
+            "kind": {
+              "const": "unknown"
+            },
+            "value": {
+              "type": "null"
             }
           }
         }
@@ -143,7 +177,7 @@
       "properties": {
         "profile": {
           "type": "string",
-          "pattern": "^(one-piece|fusion-world|digimon|gundam)@[1-9][0-9]*$"
+          "pattern": "^(one-piece|fusion-world|digimon|gundam|riftbound)@[1-9][0-9]*$"
         },
         "attributes": {
           "type": "object",
@@ -758,7 +792,8 @@
             "one-piece",
             "fusion-world",
             "digimon",
-            "gundam"
+            "gundam",
+            "riftbound"
           ]
         },
         "card_number": {
@@ -970,7 +1005,7 @@
         "catalogue_revision_id",
         "export_schema_major",
         "published_at",
-        "manifest_sha256",
+        "content_sha256",
         "links"
       ],
       "properties": {
@@ -987,7 +1022,7 @@
         "published_at": {
           "$ref": "#/$defs/Timestamp"
         },
-        "manifest_sha256": {
+        "content_sha256": {
           "$ref": "#/$defs/Sha256"
         },
         "links": {

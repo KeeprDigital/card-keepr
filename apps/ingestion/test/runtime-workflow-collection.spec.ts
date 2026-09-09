@@ -1,3 +1,4 @@
+import { readSourceObservation } from "../../../src/catalogue/reconciliation/reconciliation-source-observation";
 import { waitForCollectionCompletion } from "./runtime-helpers";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
@@ -128,13 +129,13 @@ test("a successful Official Source response is snapshotted before parsing", asyn
   const observationDocument = await observationContent.json<{
     source_snapshot_id: string;
     adapter_version: string;
-    observations: unknown[];
+    record_storage: unknown;
   }>();
   expect(observationDocument).toMatchObject({
     source_snapshot_id: snapshot.id,
     adapter_version: "fixture-one-piece-json@3",
   });
-  expect(observationDocument.observations).toHaveLength(1);
+  expect(observationDocument.record_storage).toMatchObject({ contract: "card-keepr-source-records@1", count: 1 });
 
   const shown = await administrationRequest(`/v1/ingestion-runs/${planned.id}/evidence`, "GET");
   expect(shown.status).toBe(200);
@@ -177,9 +178,38 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
   }
   expect(completed).toMatchObject({
     id: run.id,
-    state: "awaiting_approval",
+    state: "parsing",
     failure_code: null,
   });
+  const parent = await env.EVIDENCE_INGESTION_WORKFLOW.get(accepted.workflow.id);
+  const output = (await parent.status()).output as { game_preparations: { id: string; supported_game: string }[] };
+  expect(output).toMatchObject({
+    game_preparations: [{ id: expect.any(String), supported_game: "fusion-world" }],
+  });
+  const candidateId = output.game_preparations[0]!.id;
+  let prepared: Record<string, unknown> = {};
+  const preparationDeadline = Date.now() + 15000;
+  do {
+    const response = await administrationRequest(`/v1/game-candidates/${candidateId}`, "GET");
+    expect(response.status).toBe(200);
+    prepared = await response.json<Record<string, unknown>>();
+    if (prepared.state !== "preparing") break;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  } while (Date.now() < preparationDeadline);
+  expect(prepared, JSON.stringify(prepared)).toMatchObject({
+    ingestion_run_id: run.id,
+    supported_game: "fusion-world",
+    state: "sealed",
+  });
+  const listed = await administrationRequest(`/v1/ingestion-runs/${run.id}/game-candidates`, "GET");
+  expect(listed.status).toBe(200);
+  await expect(listed.json()).resolves.toMatchObject({
+    ingestion_run_id: run.id,
+    candidates: [{ id: candidateId, preparation_id: candidateId, supported_game: "fusion-world", state: "sealed" }],
+    next_cursor: null,
+  });
+  const after = await administrationRequest(`/v1/ingestion-runs/${run.id}/game-candidates?after=${candidateId}`, "GET");
+  await expect(after.json()).resolves.toMatchObject({ candidates: [], next_cursor: null });
   expect(completed.snapshots.length).toBeGreaterThan(0);
   expect(completed.observation_sets.length).toBeGreaterThan(0);
   expect(completed.official_source_collection_plans).toMatchObject([
@@ -210,6 +240,11 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
   await expect(retainedObservation.json()).resolves.toMatchObject({
     source_snapshot_id: discoveryObservation!.source_snapshot_id,
     adapter_version: "fusion-world-en@9",
+    record_storage: { contract: "card-keepr-source-records@1", count: 1 },
+  });
+  expect({
+    observations: [await readSourceObservation(catalogueStore(env.CATALOGUE_DB), discoveryObservation!.id, 0)],
+  }).toMatchObject({
     observations: [
       {
         value: {
@@ -323,6 +358,19 @@ test("the parent Workflow keeps a greater-than-1-MiB card-content candidate in D
     .bind(run.id)
     .first<{ candidate_bytes: number }>();
   expect(persisted?.candidate_bytes).toBeGreaterThan(1_048_576);
+  const printingId = (candidate.diff as { printings: { added: string[] } }).printings.added[0]!;
+  const mappingResponse = await administrationRequest(`/v1/reconciliation/identities/${printingId}`, "GET");
+  expect(mappingResponse.status).toBe(200);
+  const mapping = await mappingResponse.json<{ mappings: { evidence: Record<string, unknown> }[] }>();
+  expect(mapping.mappings[0]!.evidence).toMatchObject({
+    retained_evidence: {
+      source_observation_id: expect.any(String),
+      source_observation_set_id: expect.any(String),
+      source_snapshot_id: expect.any(String),
+      content_digest: expect.stringMatching(/^[a-f0-9]{64}$/u),
+    },
+  });
+  expect(new TextEncoder().encode(JSON.stringify(mapping)).byteLength).toBeLessThan(524_288);
 
   await assertBoundedOutput(true);
 

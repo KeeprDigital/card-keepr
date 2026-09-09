@@ -1,3 +1,4 @@
+import { waitForNativeCandidates, nativeCandidateRecords } from "./native-candidate-helpers";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import * as reconciliationQueries from "./query-helpers/reconciliation";
 import { env } from "cloudflare:workers";
@@ -87,7 +88,8 @@ test("synthetic production transport captures Gundam pages and reconciles one co
   const resumed = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(resumed.status).toBe(202);
   await resumed.body?.cancel();
-  const completed = await waitForEvidenceRun(run.id, "awaiting_approval", 45_000);
+  const [native] = await waitForNativeCandidates(run.id, 1, 45_000);
+  const completed = await waitForEvidenceRun(run.id, "parsing", 45_000);
   if (completed.state === "failed") {
     const failures = await sourceEvidenceQueries.readSourceRequestsRequestIdUrl(env.CATALOGUE_DB).bind(run.id).all();
     const terminal = await reconciliationQueries
@@ -103,7 +105,7 @@ test("synthetic production transport captures Gundam pages and reconciles one co
     );
   }
   expect(completed).toMatchObject({
-    state: "awaiting_approval",
+    state: "parsing",
     failure_code: null,
   });
   const listingRequests = await sourceEvidenceQueries
@@ -143,16 +145,9 @@ test("synthetic production transport captures Gundam pages and reconciles one co
       structurally_complete: false,
     },
   });
-  const candidate = await administrationRequest(`/v1/ingestion-runs/${run.id}/candidate`, "GET");
-  expect(candidate.status).toBe(200);
-  await expect(candidate.json()).resolves.toMatchObject({
-    diff: {
-      summary: {
-        cards_added: 4,
-        printings_added: 4,
-      },
-    },
-  });
+  const records = await nativeCandidateRecords(String(native!.id));
+  expect(records.cards).toHaveLength(4);
+  expect(records.printings).toHaveLength(4);
 }, 60_000);
 
 test("synthetic paginated Gundam transport requires its scenario marker", async () => {
@@ -205,3 +200,43 @@ test("synthetic paginated Gundam transport requires its scenario marker", async 
   expect(markedDetail).toContain("Paginated GD02-001");
   expect(markedImage.headers.get("content-type")).toBe("image/png");
 });
+
+test("synthetic Gundam graph resumes within a listing page's locator group", async () => {
+  const sourceLineage = "gundam-en-asia";
+  const response = await administrationRequest("/v1/ingestion-runs/evidence", "POST", {
+    supported_game: "gundam",
+    source_lineage: sourceLineage,
+    adapter_version: "gundam-en-asia@7",
+    idempotency_key: "gundam-bounded-page",
+    requests: officialSourceDiscoveryRequests(sourceLineage).map((request) => ({
+      ...request,
+      headers: { ...request.headers, "user-agent": "card-keepr-gundam-pagination-bounded" },
+    })),
+  });
+  expect(response.status).toBe(201);
+  const run = await response.json<CollectionDocument>();
+  const resumed = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
+  expect(resumed.status).toBe(202);
+  await resumed.body?.cancel();
+  const [native] = await waitForNativeCandidates(run.id, 1, 90_000);
+  expect(await waitForEvidenceRun(run.id, "parsing", 90_000)).toMatchObject({
+    state: "parsing",
+    failure_code: null,
+  });
+  const records = await nativeCandidateRecords(String(native!.id));
+  expect(records.cards).toHaveLength(12);
+  expect(records.printings).toHaveLength(12);
+  const checkpoints = await env.CATALOGUE_DB.prepare(`SELECT content FROM reconciliation_checkpoints
+    WHERE preparation_id = ? AND phase = 'graph_validation' ORDER BY ordinal`)
+    .bind(native!.id)
+    .all<{ content: string }>();
+  expect(checkpoints.results.map(({ content }) => JSON.parse(content))).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ pageProgress: { nextLocator: 8, added: 8 } }),
+      expect.objectContaining({
+        stage: "complete",
+        positions: expect.objectContaining({ gundam: expect.objectContaining({ validated: true, locators: 12 }) }),
+      }),
+    ]),
+  );
+}, 120_000);

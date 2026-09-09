@@ -1,0 +1,45 @@
+
+ RUN  v4.1.10 /Users/marcus/.codex/worktrees/55a9/card-keepr
+
+NOSENTRY R2MultipartUpload::getUploadId called
+NOSENTRY R2MultipartUpload::getUploadId called
+exception = workerd/api/streams/internal.c++:2563: disconnected: pump canceled
+stack: 10189421c 100f42e3c
+exception = workerd/api/streams/internal.c++:2563: disconnected: pump canceled
+stack: 102de421c 102492e3c
+stdout | apps/ingestion/test/game-reconciliation-operations.spec.ts > rejected high degree intake cannot start a game preparation
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"c38f2cb8-7565-41c6-b4be-e36c476fee7b","method":"GET","route":"/v1/ingestion-runs/:ref"},"status":200,"duration_ms":8,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":26,"batch_calls":0,"batch_statements":0}}
+
+stdout | apps/ingestion/test/game-reconciliation-operations.spec.ts > rejected high degree intake cannot start a game preparation
+{"contract":"card-keepr-operational-log@1","event":"request.completed","runtime":"ingestion","request":{"id":"67871ac1-98a6-4863-8154-bacb895ec031","method":"POST","route":"/v1/game-candidates"},"status":201,"duration_ms":10,"workflow":{"step":null},"retry":{"count":0,"classification":"not_applicable"},"cache":{"status":"unknown"},"d1":{"prepared_statements":24,"batch_calls":1,"batch_statements":14}}
+
+ ❯ apps/ingestion/test/game-reconciliation-operations.spec.ts (16 tests | 1 failed | 15 skipped) 469ms
+   × rejected high degree intake cannot start a game preparation 468ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/ingestion/test/game-reconciliation-operations.spec.ts > rejected high degree intake cannot start a game preparation
+AssertionError: expected 201 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 201
+
+ ❯ apps/ingestion/test/game-reconciliation-operations.spec.ts:135:35
+    133|     ingestion_run_id: run.id, supported_game: "one-piece", expected_ga…
+    134|   });
+    135|   expect(created.response.status).toBe(409);
+       |                                   ^
+    136|   expect((await get(`/v1/ingestion-runs/${run.id}/game-candidates`)).d…
+    137| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 2 passed | 72 skipped (75)
+   Start at  21:50:05
+   Duration  4.02s (transform 1.32s, setup 0ms, import 2.99s, tests 2.56s, environment 0ms)
+

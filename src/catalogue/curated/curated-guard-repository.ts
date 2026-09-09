@@ -1,5 +1,14 @@
 import { type CatalogueStore, repositoryStatements } from "../shared";
 
+/** Prepared conflicts are visible before their physical event is materialized. */
+export function curatedPreparationStartGuardStatement(database: CatalogueStore, game: string): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare(`SELECT CASE WHEN EXISTS (SELECT 1 FROM curated_revision_read
+      WHERE game = ? AND status = 'reconfirmation_required')
+      THEN json_extract('{}', 'curated_revision_reconfirmation_required') ELSE 1 END`)
+    .bind(game);
+}
+
 /** Owner writes recheck mutable authority inside the caller's transaction. */
 export function curatedOwnerMutationGuardStatement(
   database: CatalogueStore,
@@ -27,7 +36,7 @@ export function curatedTargetAvailabilityGuardStatement(
 ): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`SELECT CASE WHEN EXISTS (
-    SELECT 1 FROM curated_revisions AS existing
+    SELECT 1 FROM curated_revision_read AS existing
     WHERE existing.status IN ('active', 'reconfirmation_required') AND existing.target_key = ?
       AND (existing.effective_to IS NULL OR ? IS NULL OR ? < existing.effective_to)
       AND (? IS NULL OR existing.effective_from IS NULL OR existing.effective_from < ?)
@@ -42,7 +51,7 @@ export function curatedRunPinSetGuardStatement(
   return repositoryStatements(database)
     .prepare(`SELECT CASE WHEN ? <> COALESCE((
     SELECT json_group_array(id) FROM (
-      SELECT revision.id FROM curated_revisions AS revision JOIN ingestion_runs AS run ON run.id = ?
+      SELECT revision.id FROM curated_revision_read AS revision JOIN ingestion_runs AS run ON run.id = ?
       WHERE revision.status = 'active'
         AND revision.game IN (SELECT game FROM ingestion_run_selected_games WHERE ingestion_run_id = run.id)
         AND (revision.effective_from IS NULL OR revision.effective_from <= substr(run.started_at, 1, 10))
@@ -57,7 +66,7 @@ export function curatedRunPinSetGuardStatement(
 export function curatedRunStartGuardStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`SELECT CASE WHEN changes() > 0 AND EXISTS (
-    SELECT 1 FROM curated_revisions AS revision WHERE revision.status = 'reconfirmation_required'
+    SELECT 1 FROM curated_revision_read AS revision WHERE revision.status = 'reconfirmation_required'
       AND revision.game IN (SELECT game FROM ingestion_run_selected_games WHERE ingestion_run_id = ?)
   ) THEN json_extract('{}', 'curated_revision_reconfirmation_required') ELSE 1 END`)
     .bind(runId);

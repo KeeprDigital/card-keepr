@@ -2371,3 +2371,56 @@ test("source show renders aggregated collection progress in human-readable form"
   assert.match(out, /Available actions: pause/);
   assert.doesNotMatch(out, /cli-test-key/);
 });
+
+test("source lifecycle CLI sends the explicit compare-and-set retirement decision", async (t) => {
+  const requests = [];
+  const server = createServer((request, response) => {
+    let body = "";
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => {
+      requests.push({ method: request.method, path: request.url, body: body === "" ? null : JSON.parse(body) });
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ source_lineage: "limitless-one-piece-en", state: "retired", generation: 1 }));
+    });
+  });
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+  t.after(() => new Promise((resolveClose) => server.close(resolveClose)));
+  const environment = {
+    KEEPR_INGESTION_URL: `http://127.0.0.1:${server.address().port}`,
+    KEEPR_ADMINISTRATION_KEY: "cli-test-key",
+  };
+  const result = await runCli(
+    [
+      "source",
+      "set-lifecycle",
+      "--lineage",
+      "limitless-one-piece-en",
+      "--state",
+      "retired",
+      "--expected-generation",
+      "0",
+      "--rationale",
+      "Source stopped publishing",
+      "--idempotency-key",
+      "retire-source-cli",
+      "--json",
+    ],
+    environment,
+  );
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(requests.at(-1), {
+    method: "POST",
+    path: "/v1/source-lineages/limitless-one-piece-en/lifecycle",
+    body: {
+      state: "retired",
+      expected_generation: "0",
+      rationale: "Source stopped publishing",
+      idempotency_key: "retire-source-cli",
+    },
+  });
+  const shown = await runCli(["source", "lifecycle", "--lineage", "limitless-one-piece-en", "--json"], environment);
+  assert.equal(shown.code, 0, shown.stderr);
+  assert.equal(JSON.parse(shown.stdout).state, "retired");
+});

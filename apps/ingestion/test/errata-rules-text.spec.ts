@@ -1,3 +1,4 @@
+import { readSourceObservation } from "../../../src/catalogue/reconciliation/reconciliation-source-observation";
 import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { beforeEach, describe, expect, test } from "vitest";
@@ -502,7 +503,11 @@ describe("Errata rules-text lifecycle", () => {
       .bind(run.id)
       .first<{ content_object_key: string }>();
     const retainedObservation = await testEnv.EVIDENCE_OBJECTS.get(observationSet?.content_object_key ?? "");
-    expect(await retainedObservation?.text()).toContain('"effective_rules_text":"[On Play] Draw 1 card."');
+    const manifest = await retainedObservation!.json<{ id: string; record_storage: { count: number } }>();
+    const retainedRecords: unknown[] = [];
+    for (let ordinal = 0; ordinal < manifest.record_storage.count; ordinal++)
+      retainedRecords.push(await readSourceObservation(catalogueStore(testEnv.CATALOGUE_DB), manifest.id, ordinal));
+    expect(JSON.stringify(retainedRecords)).toContain('"effective_rules_text":"[On Play] Draw 1 card."');
   });
 
   test("a dedicated nullable-date Printing Erratum resolves one already-published Printing without rewriting physical text", async () => {
@@ -651,7 +656,11 @@ describe("Errata rules-text lifecycle", () => {
     );
     const observed = await reconcile(observedRun.id);
     expect(observed.response.status).toBe(200);
-    const observedErratum = requiredFirst(observed.document, "errata");
+    const targetPrinting = requiredFirst(observed.document, "printings");
+    const observedErratum = (observed.document.errata as Record<string, unknown>[]).find(
+      (erratum) => erratum.target_type === "printing" && erratum.target_id === targetPrinting.id,
+    )!;
+    expect(observedErratum).toBeDefined();
     const observedPublished = await approve(observed.document);
     expect(observedPublished.response.status).toBe(200);
     const observedRevisionId = requiredString(observedPublished.document, "resulting_revision_id");
@@ -1057,6 +1066,7 @@ async function reconcile(runId: string, extraHeaders: Record<string, string> = {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     const observed = await post(`/v1/ingestion-runs/${runId}/reconciliation`, body, extraHeaders);
+    if (observed.response.status !== 200 && observed.response.status !== 202) return observed;
     if (
       observed.document.status === "complete" &&
       observed.document.output !== null &&

@@ -8,6 +8,7 @@ import {
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import {
   approve,
+  get,
   installReconciliationSuite,
   postFixtureEvidence,
   reconcile,
@@ -33,6 +34,13 @@ for (const scenario of [
     key: "reconcile-missing-image-not-found",
     url: "https://official-source.invalid/missing-image.png",
     failure_code: "source_image_not_found",
+  },
+  {
+    name: "was one of 32 missing images",
+    key: "reconcile-32-missing-images",
+    url: "https://official-source.invalid/missing-image.png",
+    failure_code: "source_image_not_found",
+    imageCount: 32,
   },
   {
     name: "was redirected",
@@ -61,9 +69,17 @@ for (const scenario of [
     const storedRun = await requiredEvidenceRun(catalogueStore(testEnv.CATALOGUE_DB), id);
     const root = (await pendingEvidenceRequests(catalogueStore(testEnv.CATALOGUE_DB), id))[0];
     if (root === undefined) throw new Error("pending root request missing");
-    const [image] = await appendDiscoveredEvidenceRequests(catalogueStore(testEnv.CATALOGUE_DB), storedRun, root, [
-      { role: "image", url: scenario.url, headers: { accept: "*/*" } },
-    ]);
+    const imageCount = scenario.imageCount ?? 1;
+    const [image] = await appendDiscoveredEvidenceRequests(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      storedRun,
+      root,
+      Array.from({ length: imageCount }, (_, index) => ({
+        role: "image" as const,
+        url: index === 0 ? scenario.url : `${scenario.url}?image=${index}`,
+        headers: { accept: "*/*" },
+      })),
+    );
     if (image === undefined) throw new Error("image request missing");
     await collectFixtureEvidence(testEnv.CATALOGUE_DB, testEnv.EVIDENCE_OBJECTS, testEnv.OFFICIAL_SOURCE_TRANSPORT, id);
     await waitForRunState(id, "parsing");
@@ -83,6 +99,19 @@ for (const scenario of [
       failure_code: scenario.failure_code,
       detail: expect.any(String),
     });
+    if (imageCount === 32) {
+      expect(
+        (reconciled.document.warnings as { code: string }[]).filter(
+          ({ code }) => code === "printing_image_unavailable",
+        ),
+      ).toHaveLength(32);
+      const status = (await get(`/v1/ingestion-runs/${id}/reconciliation`)).document;
+      const checkpoint = (status.checkpoints as { phase: string; ordinal: number; cursor: unknown }[]).find(
+        ({ phase }) => phase === "initial_warnings",
+      );
+      expect(checkpoint).toMatchObject({ cursor: { complete: true, processedWarnings: 32 } });
+      expect(checkpoint!.ordinal).toBeGreaterThanOrEqual(3);
+    }
     const published = await approve(reconciled.document);
     expect(published.response.status).toBe(200);
   });

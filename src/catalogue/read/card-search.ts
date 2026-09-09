@@ -1,5 +1,10 @@
+import {
+  normalizeCardSearchText as normalizeSearchText,
+  maximumSearchChunkCodePoints as maximumChunkCodePoints,
+  searchChunkStride as chunkStride,
+} from "../shared";
 type SearchableCard = Readonly<{
-  official_identity: Readonly<{ value: string }>;
+  official_identity: Readonly<{ value: string | null }>;
   name: string;
   effective_rules_text?: string | null;
 }>;
@@ -13,15 +18,9 @@ export type CardSearchChunk = Readonly<{
 // FTS handles normalized queries of three or more scalars; shorter
 // literal queries use the same field-separated chunks directly.
 const minimumFtsQueryCodePoints = 3;
-// Unicode NFKC expands one scalar to at most 18 scalars in the runtime's
-// Unicode data. A 500-scalar query therefore remains below this overlap.
-const maximumNormalizedQueryCodePoints = 9 * 1024;
-const maximumChunkCodePoints = 12 * 1024;
-const chunkStride = maximumChunkCodePoints - maximumNormalizedQueryCodePoints + 1;
-
 export function cardSearchText(card: SearchableCard): string {
   return JSON.stringify([
-    normalizeSearchText(card.official_identity.value),
+    normalizeSearchText(card.official_identity.value ?? ""),
     normalizeSearchText(card.name),
     normalizeSearchText(card.effective_rules_text ?? ""),
   ]);
@@ -78,8 +77,4 @@ function searchFields(document: string): readonly string[] {
     throw new Error("The Card search document is invalid.");
   }
   return parsed;
-}
-
-function normalizeSearchText(value: string): string {
-  return value.normalize("NFKC").toLocaleLowerCase("und").normalize("NFKC");
 }

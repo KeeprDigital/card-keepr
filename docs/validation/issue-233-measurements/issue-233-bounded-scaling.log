@@ -1,0 +1,30 @@
+
+ RUN  v4.1.10 /Users/marcus/.codex/worktrees/55a9/card-keepr
+
+ ❯ apps/ingestion/test/source-record-intake.spec.ts (6 tests | 1 failed) 1888ms
+   × evidence cleanup drains record payloads in bounded units and retains sealed audit receipts 304ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/ingestion/test/source-record-intake.spec.ts > evidence cleanup drains record payloads in bounded units and retains sealed audit receipts
+AssertionError: expected [Function] to throw error including 'not sealed' but got 'Reconciliation document storage is te…'
+
+Expected: "not sealed"
+Received: "Reconciliation document storage is temporarily unavailable."
+
+ ❯ apps/ingestion/test/source-record-intake.spec.ts:151:64
+    149|     sealed: 1,
+    150|   });
+    151|   await expect(readSourceObservation(db, "cleanup", set.id, 0)).reject…
+       |                                                                ^
+    152|   expect(await env.EVIDENCE_OBJECTS.head(set.content_object_key)).toBe…
+    153| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 5 passed (6)
+   Start at  18:14:50
+   Duration  4.07s (transform 806ms, setup 0ms, import 1.57s, tests 1.89s, environment 0ms)
+

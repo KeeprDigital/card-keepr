@@ -242,7 +242,7 @@ function canonicalProductSelf(
 }
 
 function assertFilter(game: string | null, region: string | null): void {
-  if (game !== null && !["one-piece", "fusion-world", "digimon", "gundam"].includes(game)) {
+  if (game !== null && !["one-piece", "fusion-world", "digimon", "gundam", "riftbound"].includes(game)) {
     throw new ReadProblem(400, "invalid_parameter", "Product game is invalid.", {
       name: "game",
       reason: "Product game is invalid.",

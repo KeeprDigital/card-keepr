@@ -55,6 +55,7 @@ export {
   assertIdentifier,
   type EvidenceHostWorkflowParams,
   type EvidenceParentWorkflowParams,
+  isOptionalSourceOutage,
   type EvidencePlan,
   type EvidencePlanRequest,
   type OfficialSourceCollectionPlan,
@@ -99,3 +100,24 @@ export {
 export { recordIngestionWorkflowProgress } from "./workflow-progress";
 
 export { retainedSourceEvidenceGuardStatement } from "./source-plan-repository";
+
+export { assertSelectedAuthoritiesCollected, sourceAuthorities } from "./source-authority";
+
+export {
+  beginEvidenceCleanup,
+  inspectEvidenceCleanup,
+  advanceEvidenceCleanup,
+  inspectEvidenceCleanupResults,
+  resumeEvidenceCleanup,
+  pauseEvidenceCleanup,
+} from "./evidence-cleanup";
+
+export { beginStagingCleanup, advanceStagingCleanup } from "./staging-cleanup";
+export { retainEvidenceObjectReferenceStatement } from "./evidence-cleanup-repository";
+
+export { sealedSourceRecordProgress, sourceRecordInitialDigest, sourceRecordNextDigest } from "./source-record-intake";
+export { sourceRecordAt, sourceRecordPage, type SourceRecordRow } from "./source-record-repository";
+
+export { restoreSourceRecordText, type SourceRecordEnvelope } from "./source-record-text";
+
+export { readSourceRecordManifest } from "./source-record-manifest";

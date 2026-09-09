@@ -1,3 +1,4 @@
+import { nextLiveIngestionReservationSql } from "../shared";
 import { curatedRunStartGuardStatement } from "../curated";
 import {
   type CatalogueStore,
@@ -47,7 +48,7 @@ export function publicationCleanupStatement(database: CatalogueStore, runId: str
 export function releaseActiveRunLockStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`UPDATE operation_state
-      SET active_ingestion_run_id = NULL
+      SET active_ingestion_run_id = ${nextLiveIngestionReservationSql}
       WHERE singleton = 1 AND active_ingestion_run_id = ?`)
     .bind(runId);
 }

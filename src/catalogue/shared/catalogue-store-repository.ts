@@ -8,6 +8,7 @@ export interface CatalogueStore {
 
 const stores = new WeakMap<D1Database, CatalogueStore>();
 const bindings = new WeakMap<CatalogueStore, D1Database>();
+const storeGuards = new WeakMap<CatalogueStore, () => D1PreparedStatement>();
 const atomicStatements = new WeakMap<D1PreparedStatement, AtomicRepositoryStatement>();
 
 type AtomicRepositoryStatement = Readonly<{
@@ -27,6 +28,19 @@ export function catalogueStore(database: D1Database): CatalogueStore {
   };
   stores.set(database, store);
   bindings.set(store, database);
+  return store;
+}
+
+/** Bind every statement and atomic batch to one durable writer generation. */
+export function guardedCatalogueStore(base: CatalogueStore, guard: () => D1PreparedStatement): CatalogueStore {
+  const database = bindings.get(base);
+  if (!database) throw new TypeError("A guarded catalogue requires a bound store.");
+  const store: CatalogueStore = {
+    [catalogueStoreBrand]: true,
+    batch: <T = unknown>(statements: D1PreparedStatement[]) => atomicBatch<T>(store, database, statements),
+  };
+  bindings.set(store, database);
+  storeGuards.set(store, guard);
   return store;
 }
 
@@ -94,6 +108,8 @@ async function atomicBatch<T>(
     for (const after of group.after) append(after);
     return position;
   };
+  const guard = storeGuards.get(store);
+  if (guard) append(guard());
   const positions = statements.map(append);
   if (expanded.length > 900) {
     throw new Error("A catalogue atomic batch exceeds its 900-statement D1 budget after guard expansion.");
@@ -110,7 +126,22 @@ async function atomicBatch<T>(
 export function repositoryStatements(store: CatalogueStore): Pick<D1Database, "prepare"> {
   const database = bindings.get(store);
   if (database === undefined) throw new TypeError("A CatalogueStore must be created from a database binding.");
-  return database;
+  if (!storeGuards.has(store)) return database;
+  const wrap = (prepared: D1PreparedStatement): D1PreparedStatement => {
+    const atomic = atomicRepositoryStatement(store, { statement: prepared });
+    const wrapped: D1PreparedStatement = {
+      bind: (...values: unknown[]) => wrap(prepared.bind(...values)),
+      first: atomic.first.bind(atomic),
+      run: atomic.run.bind(atomic),
+      all: atomic.all.bind(atomic),
+      raw: atomic.raw.bind(atomic),
+    };
+    atomicStatements.set(wrapped, atomicStatements.get(atomic)!);
+    return wrapped;
+  };
+  return {
+    prepare: (sql: string) => (/^\s*SELECT\b/i.test(sql) ? database.prepare(sql) : wrap(database.prepare(sql))),
+  };
 }
 
 /** Preserve inherited and lazily supplied bindings while adapting the catalogue capability. */

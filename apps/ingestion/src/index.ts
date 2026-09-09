@@ -3,7 +3,11 @@ import { administrationPresentation } from "../../../src/http/administration-pre
 import { backupRecoveryRoutes, enforceRecoveryRestoreGuard } from "../../../src/catalogue/backup-recovery";
 import { curatedRoutes } from "../../../src/catalogue/curated";
 import { exportRoutes } from "../../../src/catalogue/export";
-import { ingestionRoutes, type PublicationBackupWaiter } from "../../../src/catalogue/ingestion";
+import {
+  enforceFreshBaselineMutationGuard,
+  ingestionRoutes,
+  type PublicationBackupWaiter,
+} from "../../../src/catalogue/ingestion";
 import { reconciliationRoutes } from "../../../src/catalogue/reconciliation";
 import {
   type CatalogueStore,
@@ -98,6 +102,7 @@ async function handleIngestionRequest(
     const observedAt = administrationObservedAt(request, env);
     await enforceRecoveryRestoreGuard(catalogueStore(env.CATALOGUE_DB));
 
+    await enforceFreshBaselineMutationGuard(catalogueStore(env.CATALOGUE_DB), request.method, url.pathname);
     const response = await dispatch(request.method, url.pathname, {
       request,
       env: catalogueEnvironment(env),

@@ -355,7 +355,7 @@ export function dropSourceObservationSetsAreImmutableOnUpdate(database: D1Databa
 
 export function setSourceObservationSetsContentByteLength(database: D1Database): D1PreparedStatement {
   return database.prepare(`UPDATE source_observation_sets
-     SET content_byte_length = 12582912
+     SET content_byte_length = ?
      WHERE source_snapshot_id IN (
        SELECT id FROM source_snapshots WHERE ingestion_run_id = ?
      )`);

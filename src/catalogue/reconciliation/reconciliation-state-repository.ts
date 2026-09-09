@@ -1,3 +1,4 @@
+import { nextLiveIngestionReservationSql } from "../shared";
 import {
   atomicRepositoryStatement,
   type CatalogueStore,
@@ -133,7 +134,7 @@ export function blockedCandidateStatement(
 export function releaseReconciliationRunStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`UPDATE operation_state
-         SET active_ingestion_run_id = NULL
+         SET active_ingestion_run_id = ${nextLiveIngestionReservationSql}
          WHERE singleton = 1 AND active_ingestion_run_id = ?`)
     .bind(runId);
 }
@@ -188,7 +189,7 @@ export function releaseFailedReconciliationWorkflowStatement(
 ): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`UPDATE operation_state
-         SET active_ingestion_run_id = NULL
+         SET active_ingestion_run_id = ${nextLiveIngestionReservationSql}
          WHERE singleton = 1
            AND active_ingestion_run_id = ?
            AND EXISTS (

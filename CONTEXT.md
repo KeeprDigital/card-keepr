@@ -148,6 +148,10 @@ _Avoid_: Candidate printing, draft revision, staged catalogue, Curated Revision 
 The immutable binding between a reconciliation outcome and the retained evidence it was derived from: the selected Source Snapshots, Source Observation Sets, Source Lineages and their Ingestion Runs. It keeps a Catalogue Candidate, or a blocked reconciliation, inspectable after the fact and every reconciliation warning attributable to its evidence.
 _Avoid_: Reconciliation Clock, Source Observation Set, Catalogue Candidate, Evidence Plan
 
+**Reconciliation Operation**:
+The process that prepares one Supported Game's Catalogue Candidate from fixed retained evidence and decisions, independently of the collection that supplied them and of other games' preparation. Pausing or resuming preserves its original seven-day deadline; abandonment ends the process and permits a fresh candidate for that game.
+_Avoid_: Ingestion Run, Reconciliation Context, Workflow Attempt
+
 **Game Catalogue Revision**:
 An atomically published version of one Supported Game's Catalogue Data, produced from its exact approved Catalogue Candidate. Other Supported Games can advance independently without changing this version.
 _Avoid_: Game Profile, Catalogue Candidate
@@ -194,7 +198,7 @@ An official release grouping associated with Cards or Printings, such as a boost
 _Avoid_: Marketplace listing, owned sealed product
 
 **Release**:
-A region-scoped availability event for a Product, expressed with the precision Bandai publishes.
+A region-scoped availability event for a Product, expressed with the precision its Publisher provides.
 _Avoid_: Product, Distribution Context
 
 **Production Release**:

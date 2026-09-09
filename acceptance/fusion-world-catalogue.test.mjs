@@ -1,18 +1,17 @@
+import {
+  inspectNativeCollection,
+  publishNativeCollection,
+  waitForNativeCollection,
+  nativeCheckpointTransport,
+  nativeExportRecords,
+} from "./helpers/native-catalogue-runtime.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { gunzipSync } from "node:zlib";
-import {
-  applyMigrations,
-  runCli,
-  startWorker,
-  stopWorker,
-  waitForHealth,
-  waitForRunState,
-} from "./helpers/acceptance-runtime.mjs";
+import { applyMigrations, runCli, startWorker, stopWorker, waitForHealth } from "./helpers/acceptance-runtime.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const runStateDeadline = { deadlineMs: 25_000 };
@@ -25,7 +24,7 @@ const failClosedCases = [
   "energy-marker-rarity",
 ];
 
-test("the owner publishes a complete Fusion World source for authenticated consumers", async (t) => {
+test("native publication: the owner publishes a complete Fusion World source for authenticated consumers", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "card-keepr-fusion-world-"));
   const statePath = join(directory, "shared-state");
   const administrationKey = randomUUID();
@@ -66,7 +65,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
   await applyMigrations(statePath);
   const config = JSON.parse(await readFile(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
   delete config.$schema;
-  config.main = resolve(root, "acceptance/fixtures/catalogue-publication-ingestion-harness.ts");
+  config.main = resolve(root, "apps/ingestion/src/index.ts");
   config.d1_databases[0].migrations_dir = resolve(root, "migrations");
   config.ratelimits[0].simple.limit = 300;
   config.services = [
@@ -81,7 +80,10 @@ test("the owner publishes a complete Fusion World source for authenticated consu
     config: "acceptance/fixtures/fusion-world-official-source.wrangler.jsonc",
     statePath: join(directory, "source-state"),
   });
+  t.after(() => stopWorker(source));
+  const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory, ingestionConfig);
   const ingestion = await startWorker({
+    ...checkpointTransport,
     config: ingestionConfig,
     envFile: ingestionEnv,
     statePath,
@@ -116,7 +118,13 @@ test("the owner publishes a complete Fusion World source for authenticated consu
     const rejectedRunId = JSON.parse(rejectedCollection.stdout).id;
     const rejectedResume = await runCli(["source", "resume", "--run-id", rejectedRunId, "--json"], cliEnvironment);
     assert.equal(rejectedResume.code, 0, rejectedResume.stderr);
-    const rejected = await waitForRunState(rejectedRunId, "failed", cliEnvironment, ingestion, runStateDeadline);
+    const rejected = await waitForNativeCollection(
+      rejectedRunId,
+      "failed",
+      cliEnvironment,
+      ingestion,
+      runStateDeadline,
+    );
     assert.equal(rejected.failure_code, "source_parse_failed", failureCase);
   }
   await setPlanMarker(planPath, fixtureMarker);
@@ -128,32 +136,14 @@ test("the owner publishes a complete Fusion World source for authenticated consu
   const runId = JSON.parse(collected.stdout).id;
   const resumed = await runCli(["source", "resume", "--run-id", runId, "--json"], cliEnvironment);
   assert.equal(resumed.code, 0, resumed.stderr);
-  await waitForRunState(runId, "awaiting_approval", cliEnvironment, ingestion, runStateDeadline);
+  await waitForNativeCollection(runId, "sealed", cliEnvironment, ingestion, runStateDeadline);
 
-  const inspected = await runCli(["candidate", "inspect", "--run-id", runId, "--json"], cliEnvironment);
-  assert.equal(inspected.code, 0, inspected.stderr);
-  const candidate = JSON.parse(inspected.stdout);
-  assert.equal(candidate.diff.summary.cards_added, 2);
-  assert.equal(candidate.diff.summary.printings_added, 2);
-  const approved = await runCli(
-    [
-      "run",
-      "approve",
-      "--run-id",
-      runId,
-      "--candidate-digest",
-      candidate.candidate_digest,
-      "--expected-current-revision",
-      "catrev_spine_000",
-      "--idempotency-key",
-      "fusion-world-issue-32-approve",
-      "--yes",
-      "--json",
-    ],
-    cliEnvironment,
-  );
-  assert.equal(approved.code, 0, `${approved.stderr}\n${ingestion.getOutput()}`);
-  const revisionId = JSON.parse(approved.stdout).resulting_revision_id;
+  const inspected = await inspectNativeCollection(runId, cliEnvironment);
+  const candidate = inspected;
+  assert.equal(candidate.counts.cards.added, 2);
+  assert.equal(candidate.counts.printings.added, 3);
+  const approved = await publishNativeCollection(candidate, "fusion-world-issue-32-approve", cliEnvironment, ingestion);
+  const revisionId = approved.resulting_revision_id;
   await stopWorker(ingestion);
 
   const api = await startWorker({
@@ -181,10 +171,10 @@ test("the owner publishes a complete Fusion World source for authenticated consu
       "errata",
       "distribution-contexts",
       "relationships",
-    ].map((component) => exportRecords(api.port, apiKey, revisionId, component)),
+    ].map((component) => nativeExportRecords(api.url, apiKey, revisionId, component)),
   );
   assert.equal(cards.length, 2);
-  assert.equal(printings.length, 2);
+  assert.equal(printings.length, 3);
   assert.equal(products.length, 2);
   assert.equal(releases.length, 2);
   assert.equal(errata.length, 0);
@@ -224,6 +214,9 @@ test("the owner publishes a complete Fusion World source for authenticated consu
     },
   });
   assert.equal(JSON.stringify(card.game_data).includes("FB99-001_p2"), false);
+  const leaderPrintings = printings.filter(({ card_id }) => card_id === card.id);
+  assert.equal(leaderPrintings.length, 2, "synthetic base and alternate retain distinct consumer identities");
+  assert.equal(new Set(leaderPrintings.map(({ id }) => id)).size, 2);
   const leaderPrinting = printings.find(({ card_id }) => card_id === card.id);
   const energyMarkerPrinting = printings.find(({ card_id }) => card_id === energyMarker.id);
   assert.equal(leaderPrinting.printed_rules_text, "Official front skill");
@@ -245,7 +238,7 @@ test("the owner publishes a complete Fusion World source for authenticated consu
   // reconciliation drops it to an unknown-vocabulary warning and the Card
   // publishes with no profile colour at all.
   assert.deepEqual(energyMarker.game_data.attributes.colours, []);
-  assert.deepEqual(images.map(({ role }) => role).sort(), ["back", "front", "front"]);
+  assert.deepEqual(images.map(({ role }) => role).sort(), ["back", "back", "front", "front", "front"]);
   const availableProduct = products.find(({ official_code }) => official_code === "FB-RAW-01");
   const comingSoonProduct = products.find(({ official_code }) => official_code === "FB-COMING-02");
   const [cardCollection, printingCollection, productCollection] = await Promise.all([
@@ -281,19 +274,6 @@ async function setPlanMarker(planPath, marker) {
   const plan = JSON.parse(await readFile(planPath, "utf8"));
   plan.plans[0].requests[0].headers["user-agent"] = marker;
   await writeFile(planPath, JSON.stringify(plan), { mode: 0o600 });
-}
-
-async function exportRecords(port, apiKey, revisionId, component) {
-  const response = await fetch(`http://127.0.0.1:${port}/v1/catalogue-exports/${revisionId}/components/${component}`, {
-    headers: { authorization: `Bearer ${apiKey}` },
-  });
-  assert.equal(response.status, 200);
-  return gunzipSync(Buffer.from(await response.arrayBuffer()))
-    .toString("utf8")
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
 }
 
 async function authenticatedApiJson(port, apiKey, path) {

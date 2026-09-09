@@ -84,8 +84,8 @@ test("reaching request capacity pauses the Ingestion Run without failing retaine
   expect(pause?.required_capacity).toBe(fusionWorldRequestCapacity + overflow);
   expect(typeof pause?.paused_at).toBe("string");
 
-  // The paused run retains the single active-run reservation, so another
-  // Ingestion Run cannot start while it holds retained work.
+  // The paused collection keeps its own reservation. Independent collections
+  // can now start without consuming or changing that retained work.
   expect(
     await ingestionQueries.readOperationStateActiveIngestionRunId(env.CATALOGUE_DB).first("active_ingestion_run_id"),
   ).toBe(runId);
@@ -96,8 +96,8 @@ test("reaching request capacity pauses the Ingestion Run without failing retaine
     idempotency_key: "request_capacity_pause_competitor_001",
     requests: officialSourceDiscoveryRequests("fusion-world-en"),
   });
-  expect(competing.status).toBe(409);
-  expect(await competing.json()).toMatchObject({ code: "active_ingestion_run" });
+  expect(competing.status).toBe(201);
+  expect(await competing.json()).toMatchObject({ state: "collecting" });
 
   // The collection barrier cannot finalize a paused run into any other state.
   await finalizeEvidenceRun(catalogueStore(env.CATALOGUE_DB), runId);
