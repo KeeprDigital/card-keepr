@@ -14,6 +14,8 @@ import type {
 import { ReconciliationCandidateState } from "./reconciliation-candidate-state";
 import { canonicalValueChunks } from "./reconciliation-preparation";
 import { ReconciliationReducerIndex } from "./reconciliation-reducer-state";
+import { prepareMembershipProducts, type MembershipCursor } from "./reconciliation-membership-state";
+import type { ReconciliationPlanState } from "./reconciliation-plan-state";
 import {
   type ProductReleaseEvidenceInput,
   aggregateContexts,
@@ -42,6 +44,7 @@ type Stage =
   | "new_contexts"
   | "existing_relationships"
   | "new_relationships"
+  | "memberships"
   | "complete";
 type ProductCursor = {
   stage: Stage;
@@ -53,6 +56,7 @@ type ProductCursor = {
   warnings: { position: number; count: number };
   processedInputs: number;
   priorProductCount: number;
+  membership?: MembershipCursor;
 };
 
 /** Each Product's evidence is reduced separately; source-wide observations are never collected in memory. */
@@ -66,7 +70,11 @@ export async function reconcileProductReleaseState(
     readonly cursor: { position: number; count: number };
     resumeAt(cursor: { position: number; count: number }): void;
   },
-  options: { hasInputs: boolean; yieldAtCheckpoint: boolean },
+  options: {
+    hasInputs: boolean;
+    yieldAtCheckpoint: boolean;
+    membershipPlans?: ReconciliationPlanState;
+  },
 ) {
   const result = new ReconciliationCandidateState(database, runId, `product_result_${game}`, prior);
   const index = <T>(name: string, group?: (value: T) => string) =>
@@ -86,6 +94,7 @@ export async function reconcileProductReleaseState(
   let inputAfter = checkpoint?.value.inputAfter ?? null;
   let processedInputs = checkpoint?.value.processedInputs ?? 0;
   let priorProductCount = checkpoint?.value.priorProductCount ?? 0;
+  let membership = checkpoint?.value.membership;
   let ordinal = (checkpoint?.ordinal ?? -1) + 1;
   const checkedLineages = new Set<string>(checkpoint?.value.checkedLineages);
   if (checkpoint) {
@@ -104,6 +113,7 @@ export async function reconcileProductReleaseState(
       warnings: warnings.cursor,
       processedInputs,
       priorProductCount,
+      ...(membership === undefined ? {} : { membership }),
     } satisfies ProductCursor);
     if (options.yieldAtCheckpoint) throw new ReconciliationContinuation({ phase, ordinal });
     ordinal++;
@@ -335,13 +345,27 @@ export async function reconcileProductReleaseState(
       });
     });
   });
-  await runStage("new_relationships", "complete", async () => {
+  await runStage("new_relationships", options.membershipPlans ? "memberships" : "complete", async () => {
     await consume(relationships.entityValues(after), async (relationship) => {
       if (!(await priorRelationships.has(relationship.id))) await result.set("product_relationships", relationship);
     });
   });
+  let draft = result;
+  if (options.membershipPlans && (stage === "memberships" || stage === "complete")) {
+    draft = await prepareMembershipProducts(database, runId, result, options.membershipPlans, game, {
+      cursor: membership,
+      retain: async (cursor) => {
+        membership = cursor;
+        await save();
+      },
+    });
+    if (stage === "memberships") {
+      stage = "complete";
+      await save();
+    }
+  }
   return {
-    draft: result,
+    draft,
     observedProducts,
     productSurfaceObserved,
     checkedLineages: [...checkedLineages],

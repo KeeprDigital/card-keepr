@@ -14,7 +14,6 @@ export class ReconciliationContinuation extends Error {
         | "curated_diagnostics"
         | `record_sorting:${string}`
         | "semantic_preparation"
-        | "membership_preparation"
         | "identity_application"
         | "curated_revisions"
         | "source_selection"
