@@ -272,3 +272,29 @@ polling at that same origin, including the restarted ingestion Worker. Consumer
 requests and all existing deadlines are unchanged. Its original test deletes
 temporary state unconditionally; no additional retained-database diagnosis is
 claimed. The full Product rerun is queued after image/caller diagnostics.
+
+## Node 22 pacing verification and complete hosted ingestion
+
+At `7e7b62f9bd8033449064dfc993b49e15b2629c49`, the complete composed-recovery
+and Product files passed 3/3 on Node 22.23.2, serially and under the exclusive
+host lease: recovery 82.689 s, fresh baseline 50.402 s, Product 118.290 s.
+No test or poll deadline changed and no retry hides a 429. The declared aggregate
+bound was 900 s; all cases exited naturally. Machine-readable command metadata
+and the full log are retained as `reliability-native-pacing.{json,log}` in the
+coordinator evidence directory. Independent incremental Standards and Spec
+reviews of `a016843a` through `7e7b62f9` found no actionable findings.
+
+The complete hosted ingestion selection at `a016843a` in run `34336773653`
+finished naturally: 750 passed, three failed out of 753 across all 88 files.
+Shard 1 passed 253/253 in 845.67 s; shard 2 passed 246 with three failures in
+985.12 s; shard 3 passed 251/251 in 929.06 s. This resolves the prior truncated
+selection gap, but does not satisfy full-green acceptance.
+
+The final stacks now confirm an immutable Source Observation object-key
+collision in reviewed identity application, the normative observation-threshold
+legacy reconciliation helper timeout, and a substantial-coverage-loss source
+refresh still parsing at its existing wait deadline. These are failures on this
+exact head, unlike the earlier incomplete run whose causes were unavailable.
+The identity collision is under focused Node 22 context diagnosis; native caller
+migration must preserve the latter two completeness assertions. Full raw logs
+are `reliability-complete-ci-ingestion-{1,2,3}.log`.
