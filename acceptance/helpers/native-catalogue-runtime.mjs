@@ -102,6 +102,7 @@ export async function inspectNativeCollection(runId, environment, { partitionKin
         counts[kind] ??= {};
         counts[kind][change] = (counts[kind][change] ?? 0) + count;
       }
+    if (partitionKinds?.length === 0) continue;
     let after = null;
     do {
       const page = await get(
@@ -135,7 +136,10 @@ export async function inspectNativeCollection(runId, environment, { partitionKin
 
 /** Invoke native owner preparation, approval and real retained checkpoint verification. */
 export async function publishNativeCollection(runId, idempotencyKey, environment, worker, deadlineMs = 30000) {
-  const inspection = typeof runId === "string" ? await inspectNativeCollection(runId, environment) : runId;
+  // Publication needs the sealed identities and manifests, not a second copy
+  // of every catalogue partition already inspected by the caller.
+  const inspection =
+    typeof runId === "string" ? await inspectNativeCollection(runId, environment, { partitionKinds: [] }) : runId;
   let publication;
   const publications = [];
   for (const candidate of inspection.candidates) {
