@@ -114,7 +114,7 @@ export async function prepareMembershipProducts(
     bytes += size;
   };
   const tick = async () => {
-    if (++work >= 8 || bytes >= 512000) await save();
+    if (++work >= 4 || bytes >= 512000) await save();
   };
   const advance = async (stage: MembershipCursor["stage"]) => {
     cursor.stage = stage;
@@ -183,29 +183,6 @@ export async function prepareMembershipProducts(
             (product
               ? await productIdFor(game, { kind: "official_code", value })
               : await membershipDistributionContextId(game, plan.sourceLineage, value));
-          if (product && target === undefined) {
-            const id = targetId;
-            const priorReceipt = await products.get(id);
-            const hash = new StreamingSha256(priorReceipt?.hash);
-            hash.update(
-              new TextEncoder().encode(
-                `${canonicalJson([plan.sourceLineage, plan.sourceObservationId, plan.printingId, value])}\n`,
-              ),
-            );
-            await products.seed(id, { id, value, hash: hash.checkpoint, count: (priorReceipt?.count ?? 0) + 1 });
-          }
-          if (!product && target === undefined)
-            await result.set("distribution_contexts", {
-              id: targetId,
-              game,
-              key: value,
-              kind: "other",
-              label: value,
-              product_id: null,
-              evidence_category: "derived",
-              observed: true,
-              source_lineages: [plan.sourceLineage],
-            });
           const id = await membershipRelationshipId(
             game,
             plan.printingId,
@@ -229,14 +206,39 @@ export async function prepareMembershipProducts(
             relationship_value: value,
             observed: true,
           };
-          if (!(await declaredRelationships.get(relationshipTargetKey(relationship)))) {
+          const declaredRelationship = await declaredRelationships.get(relationshipTargetKey(relationship));
+          if (!declaredRelationship) {
             const previous = await relationships.get(id);
             relationship.source_observation_ids = [
               ...new Set([...(previous?.source_observation_ids ?? []), plan.sourceObservationId]),
             ].sort();
+            // A byte-bound continuation precedes every effect of this membership.
             await before(relationship);
-            await relationships.seed(id, relationship);
           }
+          if (product && target === undefined) {
+            const id = targetId;
+            const priorReceipt = await products.get(id);
+            const hash = new StreamingSha256(priorReceipt?.hash);
+            hash.update(
+              new TextEncoder().encode(
+                `${canonicalJson([plan.sourceLineage, plan.sourceObservationId, plan.printingId, value])}\n`,
+              ),
+            );
+            await products.seed(id, { id, value, hash: hash.checkpoint, count: (priorReceipt?.count ?? 0) + 1 });
+          }
+          if (!product && target === undefined)
+            await result.set("distribution_contexts", {
+              id: targetId,
+              game,
+              key: value,
+              kind: "other",
+              label: value,
+              product_id: null,
+              evidence_category: "derived",
+              observed: true,
+              source_lineages: [plan.sourceLineage],
+            });
+          if (!declaredRelationship) await relationships.seed(id, relationship);
           cursor.membership++;
           await tick();
         }
