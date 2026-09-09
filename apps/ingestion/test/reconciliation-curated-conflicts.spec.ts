@@ -7,6 +7,7 @@ import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 
 installReconciliationSuite();
 
+// The complete owner/publication journey took 34.451s on the isolated hosted runner.
 test("all 32 changed Curated Revisions become reconfirmable with a bounded final transaction", async () => {
   const source = await collect("/reconciliation/curated-conflict-fanout-base", "curated-fanout-seed");
   const seed = await prepareNativeCandidate(source.id, "one-piece", "catrev_spine_000", "curated-fanout-candidate");
@@ -180,4 +181,4 @@ test("all 32 changed Curated Revisions become reconfirmable with a bounded final
       revision: { status: action === "reaffirm" ? "active" : "retired", event_version: 3, pending_conflict: null },
     });
   }
-});
+}, 60_000);
