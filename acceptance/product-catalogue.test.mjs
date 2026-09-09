@@ -123,7 +123,12 @@ test("native publication: the CLI publishes separated Product catalogue data con
   const resumed = await runCli(["source", "resume", "--run-id", collectedRun.id, "--json"], cliEnvironment);
   assert.equal(resumed.code, 0, resumed.stderr);
   await waitForRunState(collectedRun.id, "sealed", cliEnvironment, ingestion, statePath);
-  const inspected = await inspectNativeCollection(collectedRun.id, cliEnvironment);
+  // Only fetch partition bodies used by the assertions; the public API checks
+  // below verify published Product data. Reading every internal partition for
+  // every publication can exhaust the fixture request budget.
+  const inspected = await inspectNativeCollection(collectedRun.id, cliEnvironment, {
+    partitionKinds: ["inspection", "warnings", "shared_warnings"],
+  });
   const inspection = inspected;
   assert.equal(inspection.run_id, collectedRun.id);
   assert.equal(inspection.counts.cards.added, 1);
@@ -207,7 +212,7 @@ test("native publication: the CLI publishes separated Product catalogue data con
   const multiResumed = await runCli(["source", "resume", "--run-id", multiRun.id, "--json"], cliEnvironment);
   assert.equal(multiResumed.code, 0, multiResumed.stderr);
   await waitForRunState(multiRun.id, "sealed", cliEnvironment, ingestion, statePath);
-  const multiInspectionResult = await inspectNativeCollection(multiRun.id, cliEnvironment);
+  const multiInspectionResult = await inspectNativeCollection(multiRun.id, cliEnvironment, { partitionKinds: [] });
   const multiInspection = multiInspectionResult;
   assert.equal(multiInspection.ready, true);
   assert.deepEqual(
@@ -251,7 +256,7 @@ test("native publication: the CLI publishes separated Product catalogue data con
   const carryRun = JSON.parse(carryCollected.stdout);
   assert.equal((await runCli(["source", "resume", "--run-id", carryRun.id, "--json"], cliEnvironment)).code, 0);
   await waitForRunState(carryRun.id, "sealed", cliEnvironment, ingestion, statePath);
-  const carryInspectionResult = await inspectNativeCollection(carryRun.id, cliEnvironment);
+  const carryInspectionResult = await inspectNativeCollection(carryRun.id, cliEnvironment, { partitionKinds: [] });
   const carryInspection = carryInspectionResult;
   const carryApproved = await publishNativeCollection(
     carryInspection,
@@ -492,7 +497,9 @@ test("native publication: the CLI publishes separated Product catalogue data con
   const provenanceRun = JSON.parse(provenanceCollected.stdout);
   assert.equal((await runCli(["source", "resume", "--run-id", provenanceRun.id, "--json"], cliEnvironment)).code, 0);
   await waitForRunState(provenanceRun.id, "sealed", cliEnvironment, provenanceIngestion, statePath);
-  const provenanceInspectionResult = await inspectNativeCollection(provenanceRun.id, cliEnvironment);
+  const provenanceInspectionResult = await inspectNativeCollection(provenanceRun.id, cliEnvironment, {
+    partitionKinds: [],
+  });
   const provenanceInspection = provenanceInspectionResult;
   const provenanceApproved = await publishNativeCollection(
     provenanceInspection,
