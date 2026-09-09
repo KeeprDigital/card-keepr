@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import { publishProductRelationshipLifecyclesStatements } from "../../../src/catalogue/reconciliation/product-release-publication-repository";
 import { catalogueStore } from "../../../src/catalogue/shared";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import {
   missingRetainedCandidateEvidence,
   missingRetainedProductEvidence,
@@ -11,23 +12,20 @@ import {
   retainedObservation,
 } from "./query-helpers/evidence-retention";
 import { seedSearchMaterializationRevision } from "./query-helpers/search-materialization";
-import {
-  approve,
-  collect,
-  installReconciliationSuite,
-  reconcile,
-  requiredString,
-  testEnv,
-} from "./reconciliation-helpers";
+import { collect, installReconciliationSuite, requiredString, testEnv } from "./reconciliation-helpers";
 
 installReconciliationSuite();
 test("candidate and Product publication retains every observation without materialization triggers", async () => {
   await removeEvidenceRetentionTriggers(testEnv.CATALOGUE_DB);
   const run = await collect("/reconciliation/product-release", "repository_retention_product");
-  const reconciled = await reconcile(run.id);
-  expect(reconciled.response.status).toBe(200);
+  const candidate = await prepareNativeCandidate(
+    run.id,
+    "one-piece",
+    "catrev_spine_000",
+    "retention-repository-candidate",
+  );
   expect(await missingRetainedCandidateEvidence(testEnv.CATALOGUE_DB, run.id).first("count")).toBe(0);
-  const published = await approve(reconciled.document);
+  const published = await approveNativeCandidate(candidate, "retention-repository-publication");
   expect(published.response.status, JSON.stringify(published.document)).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
   expect(await missingRetainedProductEvidence(testEnv.CATALOGUE_DB, revisionId).first("count")).toBe(0);
