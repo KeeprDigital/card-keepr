@@ -26,5 +26,12 @@ export function installWorkflowIsolation(): void {
 }
 
 export async function resetTestStorage(): Promise<void> {
+  // Idle R2 actors can retain their objects across reset. Reactivate each
+  // configured bucket with a bounded read before deleting runtime storage.
+  await Promise.all(
+    [env.EVIDENCE_OBJECTS, env.PRINTING_IMAGES, env.CATALOGUE_EXPORTS, env.BACKUPS].map((bucket) =>
+      bucket.list({ limit: 1 }),
+    ),
+  );
   await reset();
 }
