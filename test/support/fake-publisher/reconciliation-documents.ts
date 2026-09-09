@@ -828,7 +828,7 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
       ],
     };
   }
-  if (/^observation-count-(?:100|124|149)$/u.test(scenario)) {
+  if (/^observation-count-(?:1|25|50|100)$/u.test(scenario)) {
     const count = Number(scenario.slice("observation-count-".length));
     return {
       cards: Array.from({ length: count }, (_, index) =>

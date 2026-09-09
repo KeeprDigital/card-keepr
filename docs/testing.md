@@ -76,7 +76,8 @@ preflight; use the smoke command for ordinary publication/restore feedback.
 The workflow is [ci.yml](../.github/workflows/ci.yml). Superseded runs for a PR or
 ref are cancelled within the same event type; manual runs cannot cancel push-main
 runs. Ingestion and acceptance each use three independent shards;
-each shard runs at most two test files concurrently. Drafts skip those two large
+each shard runs at most two test files concurrently. Each matrix job receives its
+own hosted runner; shards do not share a CPU. Drafts skip those two large
 jobs, while the same job IDs and shard names remain mandatory for ready PRs and
 main. Smoke runs in the domain job only for drafts. Full acceptance includes smoke,
 so ready PRs and main run it once.
@@ -103,6 +104,11 @@ test. This cleanup preserves their existing names.
   each allow at most two concurrent test files. Stress and extended acceptance
   run one file at a time. These are concurrency limits, not hard RAM quotas;
   Worker integration is still more expensive than domain tests.
+- Ingestion CI uses a disposable tmpfs capped at 512 MiB for temporary Worker
+  databases. This bounds its extra storage memory and avoids slow temporary
+  database writes on hosted disks. It does not change local storage settings,
+  storage isolation, transactions, or SQL export/restore assertions. The mount
+  is removed when the test step exits; hosted machines are disposable.
 - Routine acceptance tests time out after two minutes; ingestion tests and Worker
   setup hooks retain thirty-second deadlines. API tests retain the Vitest
   default five-second deadline. Do not increase timeouts to mask a hang.
@@ -128,9 +134,29 @@ dependencies installed):
 
 Ingestion is excluded from `npm test` and sharded in CI because of this cost.
 The full local command remains slower than the quick default; sharding does not
-remove its total work. CI timings must be confirmed on GitHub runners after these
-changes land. Historical acceptance timings are linked from its README and are
-not measurements of the current full suite.
+remove its total work. Historical acceptance timings are linked from its README
+and are not measurements of the current full suite.
+
+Hosted measurements on 2026-09-10 (Ubuntu, Node 22, standard public-repository
+runners):
+
+- All three acceptance shards passed in 2m37s–3m49s, including setup.
+- The bounded stress job passed in 1m13s, including a clean install.
+- Ingestion's first shard fell from 8m25s on disk to 4m47s with capped tmpfs.
+  The next full run completed its three shards in 4m47s–6m47s, with one remaining
+  oversized warning-threshold fixture timing out. That fixture was reduced from
+  373 to 76 observations while preserving the 24/25-record threshold boundary.
+- A focused comparison of the same two publication tests took 26s with one
+  worker and 16s with two. This supports retaining two workers; it is a small
+  sample, not a claim that every test benefits equally from concurrency.
+
+The [hosted suite run](https://github.com/KeeprDigital/card-keepr/actions/runs/34416927409)
+and [concurrency comparison](https://github.com/KeeprDigital/card-keepr/actions/runs/34417355093)
+record these measurements. GitHub documents each standard public Linux runner
+as a separate VM with four CPUs and 16 GB RAM in its
+[runner specification](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+Tmpfs's size option limits storage allocation; see the
+[Linux filesystem documentation](https://www.kernel.org/doc/html/latest/filesystems/tmpfs.html).
 
 ## Adding and maintaining tests
 
