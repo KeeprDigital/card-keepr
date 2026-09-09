@@ -338,3 +338,64 @@ above 100 observed binding calls. Total elapsed time is still a failure:
 6,318ms. This spread identifies measurements for investigation, not a cause or
 permission to change the performance target. Parsed callback data is retained
 as `253-native-callback-report.json` alongside its raw hosted log.
+
+
+## Hosted idle storage isolation diagnosis
+
+Temporary diagnostic branch `codex/issue-271-hosted-diagnostic` is deliberately
+non-integrable: it contains mismatch instrumentation, repeated tests and a
+manual-only workflow that cannot satisfy the release check set. Only the two
+fixture files in `c455f8414d5dcc01e5f0057dca570e291142df46` are proposed
+for integration; production immutable-object guards and original keys remain.
+
+- [Original hosted reproduction](https://github.com/KeeprDigital/card-keepr/actions/runs/34340756409)
+  at `21bf3105f76eb6d8e1a91636a2623074407384f9`: 7 failures and 8 passes
+  among 15 selected identity cases, 193.60s, natural exit. Every collision
+  retained the preceding test's observation timestamp and storage digest.
+- [Idle storage control](https://github.com/KeeprDigital/card-keepr/actions/runs/34341601110)
+  at `f24a3c9fd17880ae0f75ae4a76f5188f10f2628c`: active and explicitly
+  evicted R2 reset passed; naturally idle R2 reset failed, 2 passes/1 failure
+  in 16.90s. No application workflow was needed to reproduce retained storage.
+- [Shared fixture regression, red](https://github.com/KeeprDigital/card-keepr/actions/runs/34342067925)
+  at `2c5b7a5080353128a7f23fc63412e9cbba5f27d1`: all four configured
+  buckets retained the prior object after 12 seconds idle followed by reset.
+- [Same regression, green](https://github.com/KeeprDigital/card-keepr/actions/runs/34342835998)
+  at `5f4094c83f13d840c514b1e4ed606ca34cf52b64`: 1/1 pass, 16.99s
+  total (12.06s test). The same code passed locally under Node 22 in 14.25s.
+
+The fix performs one bounded `list({ limit: 1 })` on each configured R2 bucket
+before the existing runtime reset, after Workflow introspectors are disposed.
+Typechecking passes. The 12-second regression interval is load-bearing; explicit
+eviction did not reproduce the natural idle failure. The original repeated
+identity sequence is separately running at
+[34343020426](https://github.com/KeeprDigital/card-keepr/actions/runs/34343020426);
+its pending result is not a pass. Full ingestion validation remains required.
+
+## Multiple requests within one acceptance CLI command
+
+Combined integration run
+[34338746227](https://github.com/KeeprDigital/card-keepr/actions/runs/34338746227)
+at `bb972a4b20b7b275575bebf5d4955f1829995bcb` still failed. Acceptance
+shard 2 completed naturally with 110 passes and 1 failure in 1610.735s; the
+Riftbound journey failed after 1128.039s on candidate poll 7 with HTTP 429.
+This fixture uses the actual 30-request/60-second administration binding.
+Ingestion shard 2 reached its 36-minute job limit and was cancelled while
+executing `native-errata-locators.spec.ts`; it is incomplete, not passed.
+The other ingestion and acceptance shards and static/API checks passed.
+
+A real Curated Revision CLI mutation performs a confirmation GET followed by
+a POST inside one subprocess. The parent queue spaced subprocesses but allowed
+these two requests to burst. A new real CLI/server regression observed a 5ms
+gap despite an 80ms fixture interval and failed naturally in 186.84ms overall.
+Commit `5cf62613c4805d5f7555da834dbeedc23d2567b6` adds an acceptance-only
+Node preload that spaces administration requests within the child process.
+The parent still holds its queue slot until the command exits, preserving
+spacing with concurrent helper reads and polls. Production CLI code, rate
+limits, retry behavior and test deadlines are unchanged.
+
+The request queue, Curated Revision CLI and runtime-helper selections pass
+20/20 in 1.880s under Node 22, with typechecking passing. Full Riftbound and
+combined CI verification remain required; this focused result does not close
+#271 or #253. Raw logs are retained in `/tmp/card-keepr-launch-20260909/` as
+`271-cli-multiple-requests-{red,green}.log` and
+`workflow-isolation-hosted-{red-2c5b7a50,reactivation-5f4094c8}.log`.
