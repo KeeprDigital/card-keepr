@@ -176,3 +176,12 @@ from retained collection, inspects its bounded records and exact warnings, check
 the native preparation's retained warning checkpoint, and uses native approval.
 It retains every tolerated image-failure scenario and the 32-warning continuation
 assertions. It has typecheck/Biome validation; runtime is pending.
+
+Two writer-only lifecycle cases retire with their implementation: synchronous
+new-writer late-put compensation and new-writer prefix-adoption races. No current
+entry point can launch those writes. Existing historical recovery validates the
+exact immutable export and prefix; registered-prefix cleanup fencing, unexpected
+recovery objects, cleanup retry and CAS replay remain covered. Cleanup CAS and
+registered-prefix tests now inject an explicit pre-retirement reservation and
+observe its failed recovery, instead of invoking the deleted writer to create
+their seed. Their runtime validation remains pending.
