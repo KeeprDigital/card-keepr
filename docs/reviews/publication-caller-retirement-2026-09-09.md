@@ -359,3 +359,11 @@ identity provider owner is diagnosing both at those exact existing tests.
 No fixture oracle is weakened; neither failure is called a harmless flake. Full
 raw log and SHA-256 remain alongside the background cancellation/RPC-stub warnings.
 The runtime lease was returned to the coordinator with no Workers process left.
+
+The mixed-game empty-plan case now prepares and inspects each native game
+candidate independently, checks actual retained disappearance warnings in both
+plan orders, preserves the original decision to decline the first pair, and
+approves the second pair with their exact game predecessors. Fusion World
+locator history remains bound to its actual publication. Historical export
+repair assertions and explicit retired approval remain separate. Typecheck and
+focused formatting pass; the export/repair runtime selection remains queued.

@@ -4,6 +4,8 @@ import { canonicalJson, catalogueCandidateContract, catalogueStore, sha256 } fro
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { EMPTY_CATALOGUE_GZIP_HEX, GZIP_PROFILE_GOLDENS } from "./deterministic-gzip-golden";
 import { recoverHistoricalPublication } from "./historical-publication-fixture";
+import { nativeCandidateRecords } from "./native-candidate-helpers";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import * as cardSearchQueries from "./query-helpers/card-search";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import {
@@ -14,7 +16,6 @@ import {
   post,
   postFixtureEvidence,
   reconcile,
-  requiredFirst,
   requiredString,
   testEnv,
   waitForRunState,
@@ -198,10 +199,17 @@ test("heterogeneous empty plans inspect and publish every lineage independently 
     lineage: "fusion-world-en",
     adapter: "fixture-fusion-world-json@2",
   });
-  const seeded = await reconcile(seededRun.id);
-  const cardId = requiredString(requiredFirst(seeded.document, "cards"), "id");
-  const printingId = requiredString(requiredFirst(seeded.document, "printings"), "id");
-  expect((await approve(seeded.document)).response.status).toBe(200);
+  const seeded = await prepareNativeCandidate(
+    seededRun.id,
+    "fusion-world",
+    "catrev_spine_000",
+    "mixed-plan-empty-native-seed",
+  );
+  const seededRecords = await nativeCandidateRecords(String(seeded.id));
+  const cardId = String(seededRecords.cards![0]!.id);
+  const printingId = String(seededRecords.printings![0]!.id);
+  const seedPublication = await approveNativeCandidate(seeded, "mixed-plan-empty-seed-publication");
+  expect(seedPublication.response.status).toBe(200);
 
   const inspectOrder = async (lineages: readonly ("one-piece" | "fusion-world")[], suffix: string, publish = false) => {
     const started = await postFixtureEvidence({
@@ -229,47 +237,58 @@ test("heterogeneous empty plans inspect and publish every lineage independently 
       runId,
     );
     await waitForRunState(runId, "parsing");
-    const candidate = await reconcile(runId);
-    expect(candidate.response.status).toBe(200);
-    const inspected = await get(`/v1/ingestion-runs/${runId}/candidate`);
-    const result = {
-      cards: (
-        inspected.document.diff as {
-          cards: { missing_observations: string[] };
+    const result: { cards: string[]; printings: string[] } = { cards: [], printings: [] };
+    for (const game of lineages) {
+      const candidate = await prepareNativeCandidate(
+        runId,
+        game,
+        game === "fusion-world" ? String(seedPublication.document.resulting_revision_id) : "catrev_spine_000",
+        `mixed-plan-${suffix}-${game}-candidate`,
+      );
+      const inspected = await get(
+        `/v1/game-candidates/${candidate.id}/inspection?manifest=${candidate.manifest_digest}`,
+      );
+      expect(inspected.response.status).toBe(200);
+      expect(inspected.document).toMatchObject({ ready: true, approval_scope: "whole_candidate" });
+      const records = await nativeCandidateRecords(String(candidate.id));
+      for (const warning of [...(records.warnings ?? []), ...(records.shared_warnings ?? [])]) {
+        if (warning.code !== "record_not_observed") continue;
+        if (typeof warning.card_id === "string") result.cards.push(warning.card_id);
+        if (typeof warning.printing_id === "string") result.printings.push(warning.printing_id);
+      }
+      if (publish) {
+        const published = await approveNativeCandidate(candidate, `mixed-plan-${suffix}-${game}-publication`);
+        expect(published.response.status).toBe(200);
+        if (game === "fusion-world") {
+          const revisionId = requiredString(published.document, "resulting_revision_id");
+          const lifecycle = await get(`/v1/reconciliation/printings/${printingId}`);
+          expect(lifecycle.document).toMatchObject({
+            locators: {
+              current: [],
+              historical: [
+                expect.objectContaining({
+                  source_lineage: "fusion-world-en",
+                  current: false,
+                  last_missing_revision_id: revisionId,
+                }),
+              ],
+            },
+          });
         }
-      ).cards.missing_observations,
-      printings: (
-        inspected.document.diff as {
-          printings: { missing_observations: string[] };
-        }
-      ).printings.missing_observations,
-    };
-    if (publish) {
-      const published = await approve(candidate.document);
-      expect(published.response.status).toBe(200);
-      const revisionId = requiredString(published.document, "resulting_revision_id");
-      const lifecycle = await get(`/v1/reconciliation/printings/${printingId}`);
-      expect(lifecycle.document).toMatchObject({
-        locators: {
-          current: [],
-          historical: [
-            expect.objectContaining({
-              source_lineage: "fusion-world-en",
-              current: false,
-              last_missing_revision_id: revisionId,
-            }),
-          ],
-        },
-      });
-    } else
-      expect(
-        (
-          await post(`/v1/ingestion-runs/${runId}/rejection`, {
-            candidate_digest: requiredString(candidate.document, "candidate_digest"),
-            idempotency_key: `reject-mixed-plan-empty-lineage-${suffix}`,
-          })
-        ).response.status,
-      ).toBe(200);
+      } else {
+        // The original owner rejection declines both independently reviewed games.
+        expect(
+          (
+            await post(`/v1/game-candidates/${candidate.id}/abandon`, {
+              generation: candidate.generation,
+              idempotency_key: `reject-mixed-plan-empty-lineage-${suffix}-${game}`,
+            })
+          ).response.status,
+        ).toBe(200);
+      }
+    }
+    result.cards.sort();
+    result.printings.sort();
     return result;
   };
 
