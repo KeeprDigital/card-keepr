@@ -1248,12 +1248,14 @@ type ProductFaultCase = {
   prior?: boolean;
   stage?: string;
   checkpoint?: boolean;
+  beforeCommit?: boolean;
 };
 const productFaultCases: ProductFaultCase[] = [
   { name: "uninterrupted", namespace: "product_observations_one-piece", cursor: "groups" },
-  { name: "before commit", namespace: "product_observations_one-piece", cursor: "groups" },
+  { name: "before commit", namespace: "product_observations_one-piece", cursor: "groups", beforeCommit: true },
   { name: "after commit", namespace: "product_observations_one-piece", cursor: "groups" },
   { name: "context after commit", namespace: "product_contexts_one-piece", cursor: "contexts" },
+  { name: "context before commit", namespace: "product_contexts_one-piece", cursor: "contexts", beforeCommit: true },
   { name: "relationship after commit", namespace: "product_relationships_one-piece", cursor: "relationships" },
   { name: "prior names after commit", namespace: "prior_product_names_one-piece", cursor: "names", prior: true },
   { name: "prior codes after commit", namespace: "prior_product_codes_one-piece", cursor: "codes", prior: true },
@@ -1307,7 +1309,7 @@ test.each(productFaultCases)(
       };
     }
     const run = await collect("/reconciliation/product-typed-relationships", caseKey);
-    const afterCommit = boundary !== "uninterrupted" && boundary !== "before commit";
+    const afterCommit = boundary !== "uninterrupted" && !fault.beforeCommit;
     const pauses = boundary !== "uninterrupted" && !fault.checkpoint;
     let advancedCheckpointReads = 0;
     let lostCheckpoint: { ordinal: number; content: string; sha256: string } | undefined;
@@ -1316,6 +1318,7 @@ test.each(productFaultCases)(
     let failures = 0;
     const committedEffects: { content: string; sha256: string }[] = [];
     const checkpointPositions: number[] = [];
+    const rejectedContextWrites: { effect: unknown; position: number; ordinal: number }[] = [];
     const wrap = (statement: D1PreparedStatement, sql: string, values: unknown[] = []): D1PreparedStatement => {
       const proxy = new Proxy(statement, {
         get(target, property) {
@@ -1359,6 +1362,20 @@ test.each(productFaultCases)(
               )
                 return target.batch(batch);
               failures++;
+              if (fault.beforeCommit && fault.cursor === "contexts") {
+                const [preparation, namespace, key, ordinal] = entry.values;
+                const effect = await target
+                  .prepare(
+                    "SELECT content, sha256 FROM reconciliation_reducer_state WHERE preparation_id = ? AND namespace = ? AND key_digest = ? AND observation_ordinal = ?",
+                  )
+                  .bind(preparation, namespace, key, ordinal)
+                  .first();
+                rejectedContextWrites.push({
+                  effect,
+                  position: cursor.indexes.contexts ?? 0,
+                  ordinal: Number(ordinal),
+                });
+              }
               if (afterCommit) {
                 await target.batch(batch);
                 if (fault.checkpoint) {
@@ -1448,6 +1465,14 @@ test.each(productFaultCases)(
     } as unknown as import("cloudflare:workers").WorkflowStep;
     await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
     expect(failures).toBe(boundary === "uninterrupted" ? 0 : fault.checkpoint ? 1 : 4);
+    if (fault.beforeCommit && fault.cursor === "contexts") {
+      expect(rejectedContextWrites).toHaveLength(4);
+      for (const rejected of rejectedContextWrites) {
+        expect(rejected.effect).toBeNull();
+        expect(rejected.position).toBeLessThan(rejected.ordinal);
+      }
+      expect(new Set(rejectedContextWrites.map(({ position }) => position)).size).toBe(1);
+    }
     if (fault.checkpoint) {
       expect(lostCheckpoint).toBeDefined();
       expect(advancedCheckpointReads).toBeGreaterThan(0);
@@ -1764,7 +1789,7 @@ test("one Product evidence group's capacity budget includes partitioned source t
   });
 });
 
-test.each(["entity", "selection"])(
+test.each(["entity", "selection", "entity after commit"])(
   "curated edits resume after %s storage failure and retain one applied provenance entry",
   async (failure) => {
     const { post, testEnv, requiredFirst } = await import("./reconciliation-helpers");
@@ -1833,6 +1858,14 @@ test.each(["entity", "selection"])(
     expect(preparation.response.status, JSON.stringify(preparation.document)).toBe(201);
     expect(payload).toBeDefined();
     const candidateId = requiredString(preparation.document, "id");
+    const afterCommit = failure === "entity after commit";
+    const committedWrites: {
+      expected: { content: string; sha256: string };
+      retained: { content: string; sha256: string } | null;
+      checkpointBefore: { ordinal: number; content: string; sha256: string } | null;
+      checkpointAfter: { ordinal: number; content: string; sha256: string } | null;
+      ordinal: number;
+    }[] = [];
     const statements = new WeakMap<object, { sql: string; values: unknown[] }>();
     let unavailable = true;
     let failures = 0;
@@ -1858,19 +1891,42 @@ test.each(["entity", "selection"])(
             return wrap(target.prepare(sql), sql);
           };
         if (property === "batch")
-          return (batch: D1PreparedStatement[]) => {
-            if (
-              failure === "entity" &&
-              unavailable &&
-              batch.some((statement) => {
-                const entry = statements.get(statement);
-                return (
+          return async (batch: D1PreparedStatement[]) => {
+            const entry = batch
+              .map((statement) => statements.get(statement))
+              .find(
+                (entry) =>
                   entry?.sql.includes("INSERT INTO reconciliation_reducer_state") &&
-                  entry.values.includes("candidate_curated_cards")
-                );
-              })
-            ) {
+                  entry.values.includes("candidate_curated_cards") &&
+                  (!afterCommit || JSON.parse(String(entry.values[4])).value.entity?.name === "Synthetic curated name"),
+              );
+            if (failure !== "selection" && unavailable && entry) {
               failures++;
+              if (afterCommit) {
+                const [preparation, namespace, key, ordinal, content, sha256] = entry.values;
+                const checkpoint = () =>
+                  target
+                    .prepare(
+                      "SELECT ordinal, content, sha256 FROM reconciliation_checkpoints WHERE preparation_id = ? AND phase = ? ORDER BY ordinal DESC LIMIT 1",
+                    )
+                    .bind(preparation, "curated_revisions")
+                    .first<{ ordinal: number; content: string; sha256: string }>();
+                const checkpointBefore = await checkpoint();
+                await target.batch(batch);
+                const retained = await target
+                  .prepare(
+                    "SELECT content, sha256 FROM reconciliation_reducer_state WHERE preparation_id = ? AND namespace = ? AND key_digest = ? AND observation_ordinal = ?",
+                  )
+                  .bind(preparation, namespace, key, ordinal)
+                  .first<{ content: string; sha256: string }>();
+                committedWrites.push({
+                  expected: { content: String(content), sha256: String(sha256) },
+                  retained,
+                  checkpointBefore,
+                  checkpointAfter: await checkpoint(),
+                  ordinal: Number(ordinal),
+                });
+              }
               throw new Error("Injected curated entity storage outage");
             }
             return target.batch(batch);
@@ -1895,6 +1951,34 @@ test.each(["entity", "selection"])(
     } as unknown as import("cloudflare:workers").WorkflowStep;
     await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
     expect(failures).toBe(4);
+    if (afterCommit) {
+      expect(committedWrites).toHaveLength(4);
+      for (const write of committedWrites) {
+        expect(write.retained).toEqual(write.expected);
+        expect(await sha256Text(write.retained!.content)).toBe(write.retained!.sha256);
+        expect(write.checkpointBefore).not.toBeNull();
+        expect(write.checkpointAfter).toEqual(write.checkpointBefore);
+        const cursor = JSON.parse(write.checkpointBefore!.content);
+        expect(cursor.progress).toMatchObject({ stage: "apply", revision: -1 });
+        expect(cursor.curated.cards ?? 0).toBeLessThan(write.ordinal);
+        expect(JSON.parse(write.retained!.content).value.entity).toMatchObject({
+          id: original.id,
+          name: "Synthetic curated name",
+          curated_provenance: [
+            expect.objectContaining({
+              curated_revision_id: created.document.curated_revision_id,
+              author: "owner",
+              reviewed_source_value: original.name,
+            }),
+          ],
+        });
+      }
+      expect(
+        committedWrites.every(
+          ({ retained }) => canonicalJson(retained) === canonicalJson(committedWrites[0]!.retained),
+        ),
+      ).toBe(true);
+    }
     expect((await get(`/v1/game-candidates/${candidateId}`)).document).toMatchObject({
       state: "paused",
       generation: 1,
@@ -1915,6 +1999,21 @@ test.each(["entity", "selection"])(
     );
     const status = await get(`/v1/game-candidates/${candidateId}`);
     expect(status.document.state).toBe("sealed");
+    if (afterCommit) {
+      const sealedRecords = await nativeCandidateRecords(candidateId);
+      expect(requiredFirst(sealedRecords, "cards")).toMatchObject({
+        id: original.id,
+        name: "Synthetic curated name",
+        curated_provenance: [expect.objectContaining({ curated_revision_id: created.document.curated_revision_id })],
+      });
+      await runReconciliationWorkflow(
+        { ...testEnv, CATALOGUE_DB: database },
+        { payload: { ...event.payload, generation: 1 } } as typeof event,
+        step,
+      );
+      expect((await get(`/v1/game-candidates/${candidateId}`)).document).toEqual(status.document);
+      expect(await nativeCandidateRecords(candidateId)).toEqual(sealedRecords);
+    }
     const accepted = await approveNativeCandidate(status.document, `publish-curated-draft-${failure}`);
     expect(accepted.response.status, JSON.stringify(accepted.document)).toBe(200);
     const refreshRun = await collect("/reconciliation/base", `curated-draft-refresh-${failure}`);
