@@ -77,8 +77,8 @@ test("a collected source publishes through exact native owner operations after r
 
 test("a repeated native publication retains unchanged source evidence and obtains the required checkpoint", async () => {
   const collection = await collect("/reconciliation/base", "retired-callers-repeat-source");
-  const evidence = (await get(`/v1/ingestion-runs/${collection.id}/evidence`)).document;
   const first = await prepareNativeCandidate(collection.id, "one-piece", "catrev_spine_000", "native-repeat-first");
+  const evidence = (await get(`/v1/ingestion-runs/${collection.id}/evidence`)).document;
   const published = await approveNativeCandidate(first, "native-repeat-first-publication");
   const revision = String(published.document.resulting_revision_id);
   const repeated = await prepareNativeCandidate(collection.id, "one-piece", revision, "native-repeat-second");
@@ -89,4 +89,6 @@ test("a repeated native publication retains unchanged source evidence and obtain
   expect(retained.snapshots).toEqual(evidence.snapshots);
   expect(retained.source_coverage).toEqual(evidence.source_coverage);
   expect((await get(`/v1/publications/${published.document.id}`)).document).toEqual(published.document);
+  const fresh = await collect("/reconciliation/base", "native-after-verified-checkpoint");
+  expect(fresh.id).not.toBe(collection.id);
 });

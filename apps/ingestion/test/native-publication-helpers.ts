@@ -23,7 +23,12 @@ export async function prepareNativeCandidate(
 }
 
 /** Exercise the owner protocol; return its actual publication result, not legacy run aliases. */
-export async function approveNativeCandidate(candidate: Record<string, unknown>, key: string, timeoutMs = 15_000) {
+export async function approveNativeCandidate(
+  candidate: Record<string, unknown>,
+  key: string,
+  timeoutMs = 15_000,
+  extraHeaders: Record<string, string> = {},
+) {
   const id = requiredString(candidate, "id");
   const manifest = requiredString(candidate, "manifest_digest");
   const inspected = await get(`/v1/game-candidates/${id}/inspection?manifest=${manifest}`);
@@ -43,13 +48,17 @@ export async function approveNativeCandidate(candidate: Record<string, unknown>,
   expect(prepared.response.status, JSON.stringify(prepared.document)).toBe(202);
   const artifacts = await observeUntil(preparationPath, (state) => state !== "preparing", timeoutMs);
   expect(artifacts.document.state, JSON.stringify(artifacts.document)).toBe("verified");
-  const approved = await post("/v1/publications/start", {
-    candidate_id: id,
-    manifest_digest: manifest,
-    expected_game_revision_id: requiredString(candidate, "expected_game_revision_id"),
-    generation: candidate.generation,
-    idempotency_key: key,
-  });
+  const approved = await post(
+    "/v1/publications/start",
+    {
+      candidate_id: id,
+      manifest_digest: manifest,
+      expected_game_revision_id: requiredString(candidate, "expected_game_revision_id"),
+      generation: candidate.generation,
+      idempotency_key: key,
+    },
+    extraHeaders,
+  );
   expect(approved.response.status, JSON.stringify(approved.document)).toBe(202);
   expect(approved.document).toMatchObject({
     candidate_id: id,
@@ -63,6 +72,13 @@ export async function approveNativeCandidate(candidate: Record<string, unknown>,
     timeoutMs,
   );
   expect(result.document.state, JSON.stringify(result.document)).toBe("published");
+  const backup = await observeUntil(
+    `/v1/backups/${requiredString(result.document, "backup_attempt_id")}`,
+    (state) => ["verified", "failed"].includes(state),
+    timeoutMs,
+  );
+  expect(backup.document.state, JSON.stringify(backup.document)).toBe("verified");
+  expect(backup.document.catalogue_revision_id).toBe(result.document.resulting_revision_id);
   return result;
 }
 

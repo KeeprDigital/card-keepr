@@ -185,3 +185,64 @@ recovery objects, cleanup retry and CAS replay remain covered. Cleanup CAS and
 registered-prefix tests now inject an explicit pre-retirement reservation and
 observe its failed recovery, instead of invoking the deleted writer to create
 their seed. Their runtime validation remains pending.
+
+## Repeat-publication blocker
+
+At `929bc80e`, the next focused runtime selection exited naturally in 24.09
+seconds: six passed, one failed, 21 unselected. Historical no-write, both exact
+claim cases, cleanup CAS and registered-prefix fencing pass. Native extra-field,
+manifest/predecessor/generation, concurrent acknowledgement and first-publication
+checks pass. The second native publication remains `waiting_backup` after its
+15-second observation window, while the backup Workflow repeatedly reports
+`Restored composition snapshot differs`. The comparison was not weakened and no
+verified checkpoint was synthesized. Full evidence is retained beside prior logs.
+
+The Workers fixture Cloudflare API in `test/support/fake-publisher/cloudflare-api.ts`
+serves a comment-only SQL export, discards the upload and answers verification
+with hardcoded legacy fields or empty rows. It has no native composition-state,
+schema or table-page data. Thus it cannot prove the native restore checkpoint.
+This is a concrete fixture prerequisite for repeated publication callers, not
+evidence of a production restore defect. The coordinator separately reported
+real SQLite-backed native composed acceptance passing. Its
+`acceptance/helpers/native-recovery-cloudflare.mjs` is the existing faithful
+export/import/query model; adapting Workers fixtures needs scoped work and proof.
+
+The old unchanged-refresh lifecycle scenario remains an explicit pending native
+migration. Its no-extra-revision/export expectation is being checked alongside
+the Product and provenance callers; the checkpoint probe does not settle that
+policy. The candidate-expiry scenario still asserts the exact seven-day boundary
+and now expects a new expired aggregate intent to receive the same intentional
+410 retirement as other unreserved intents.
+
+## Faithful Workers backup fixture
+
+The fixture now exports the current Miniflare `CATALOGUE_DB` using the installed
+Wrangler local export mechanism (`PRAGMA miniflare_d1_export(?,?,?);`). The
+Miniflare `V4FetchHandler(request, miniflare)` callback supplies the exact owning
+runtime; a WeakMap keeps each runtime's transport state separate. Exported SQL
+contains actual schema and rows and fails if virtual tables remain, matching
+[Cloudflare's export boundary](https://developers.cloudflare.com/d1/best-practices/import-export-data/).
+The fixture imports uploaded bytes into an independent Node SQLite database and
+executes every verification/reconstruction query there. It never echoes expected
+snapshot values. The original ambiguous probe-table failure injections remain.
+Node SQLite is imported only by the test configuration, not the shared publisher's
+Worker bundle. No production recovery checks, schema or storage layout changed.
+
+The native approval helper now waits for the actual backup attempt to reach
+`verified`, rejects `failed`, and checks its revision matches the publication.
+The existing 15-second observation bound is unchanged. An optional fourth header
+argument affects only the approval POST, preserving explicit test clock scenarios.
+The repeated-publication proof captures evidence after preparation completes
+parsing, verifies unchanged source bytes/coverage through publication, observes
+both real backups and starts another collection after the recovery fence clears.
+
+A first probe used the host default Node 26.3.0 and exited naturally in 6.50s.
+Both publication/restore operations completed; the remaining assertion compared
+pre-parse incomplete coverage with completed coverage. Moving that observation
+to after preparation corrected the test without changing production behavior.
+The Node 22.23.2 focused rerun passed 7/7 selected cases across two files in 12.53s;
+20 cases were unselected. Two independent SQLite contracts also pass, proving
+restored facts/FTS reconstruction, database isolation and failed-import rollback.
+Typecheck and focused Biome checks pass. Full logs retain eight workerd
+canceled/hung background warnings; they are not silently suppressed. Broader
+caller/provider runtime validation and final independent reviews remain open.
