@@ -252,3 +252,23 @@ and one explicitly opt-in skip in 392.118 seconds. Shard 3 passed. Shard 2
 naturally reached its 20-minute outer cap and was cancelled, without a final
 suite verdict. None of these results closes #271 or #253. Raw acceptance logs
 are retained beside the ingestion logs with the same shard suffixes.
+
+## Complete current-runtime serial acceptance baseline
+
+The toolchain provider at exact `0b4b41ddc6be9501a6e810e83c3e6955fba55741`
+finished its complete 68-file selection naturally in 2,623.437 seconds: 343
+passed, two failed, one opt-in skip out of 346 tests, zero cancelled. Full
+retained Riftbound passed in 1,151.255 seconds, including actual SQL restore;
+retained One Piece passed in 663.772 seconds. These are complete baseline
+results, not results for the later reliability or publication changes.
+
+Both failure stacks report HTTP 429. The composed-recovery failure and retained
+state are analysed above. The Product journey failed in 56.740 seconds at
+`inspectNativeCollection` (helper line 96, Product caller line 495) after several
+native publications. Its fixture limit is 300 administration requests/minute,
+but its CLI environment had not opted into the existing shared pacing queue.
+It now requests a 250-ms minimum interval, used by CLI, native inspection and
+polling at that same origin, including the restarted ingestion Worker. Consumer
+requests and all existing deadlines are unchanged. Its original test deletes
+temporary state unconditionally; no additional retained-database diagnosis is
+claimed. The full Product rerun is queued after image/caller diagnostics.

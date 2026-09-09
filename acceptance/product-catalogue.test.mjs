@@ -113,6 +113,7 @@ test("native publication: the CLI publishes separated Product catalogue data con
   const cliEnvironment = {
     KEEPR_INGESTION_URL: ingestion.url,
     KEEPR_ADMINISTRATION_KEY: administrationKey,
+    KEEPR_NATIVE_REQUEST_INTERVAL_MS: "250",
   };
   const collected = await runCli(
     ["source", "collect", "--plan-file", initialPlanPath, "--idempotency-key", "acceptance-product-collect", "--json"],
