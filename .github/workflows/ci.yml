@@ -122,7 +122,11 @@ jobs:
 
   acceptance:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Files run serially to avoid competing real Worker/restore runtimes.
+    # Retained Riftbound has four 600s waits plus publication/backup phases;
+    # this job budget leaves room for the remaining files and setup. Individual
+    # test/poll deadlines are unchanged and still surface failed scenarios.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:

@@ -17,7 +17,7 @@
     "test:workers": "npm run test:workers:api && npm run test:workers:ingestion",
     "test:workers:api": "vitest run --config apps/api/vitest.config.ts",
     "test:workers:ingestion": "vitest run --config apps/ingestion/vitest.config.ts",
-    "test:acceptance": "node --test acceptance/*.test.mjs",
+    "test:acceptance": "node --test --test-concurrency=1 acceptance/*.test.mjs",
     "test:acceptance:shard": "node scripts/acceptance-shard.mjs",
     "test:stress": "KEEPR_TEST_SUITE=stress vitest run --config apps/ingestion/vitest.config.ts",
     "lint": "biome lint .",

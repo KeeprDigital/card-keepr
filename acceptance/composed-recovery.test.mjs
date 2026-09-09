@@ -9,15 +9,27 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { proveNativePopulatedHandoff } from "./helpers/native-fresh-baseline.mjs";
 import { nativeRecoveryCloudflare } from "./helpers/native-recovery-cloudflare.mjs";
+import { withNativeRequestPacing } from "./helpers/native-request-pacing.mjs";
 import { persistedDatabaseDirectory, executeSql } from "./helpers/acceptance-runtime.mjs";
 import { runCli, startWorker, stopWorker, waitForHealth } from "./helpers/acceptance-runtime.mjs";
 
 // Synthetic publisher responses exercise the shipped native collection/preparation Workflows.
 // The legacy publication acceptance harness is deliberately absent.
 async function proveNativeComposition(t, proof) {
+  // Share the existing per-origin queue across owner CLI calls and direct polls.
+  // 250 ms keeps this fixture below its 300/minute administration limit even
+  // through the deliberately exhausted backup retries, without retrying 429s.
+  const administrationOrigins = new Set();
+  const requestInterval = "250";
   const fetch = async (url, options) => {
     try {
-      return await globalThis.fetch(url, options);
+      return await withNativeRequestPacing(
+        {
+          KEEPR_INGESTION_URL: url,
+          KEEPR_NATIVE_REQUEST_INTERVAL_MS: administrationOrigins.has(new URL(url).origin) ? requestInterval : "0",
+        },
+        () => globalThis.fetch(url, options),
+      );
     } catch (cause) {
       throw new Error(`Local HTTP request failed: ${options?.method ?? "GET"} ${url}`, { cause });
     }
@@ -138,11 +150,16 @@ async function proveNativeComposition(t, proof) {
     vars: { D1_EXPORT_TOKEN: "local-export", D1_VERIFICATION_TOKEN: "local-verify" },
   });
   workers.push(ingestion);
+  administrationOrigins.add(new URL(ingestion.url).origin);
   await waitForHealth(`${ingestion.url}/health`, adminKey, ingestion);
   const api = await startWorker({ config: "apps/api/wrangler.jsonc", envFile: apiEnv, statePath });
   workers.push(api);
   await waitForHealth(`${api.url}/health`, apiKey, api);
-  const environment = { KEEPR_INGESTION_URL: ingestion.url, KEEPR_ADMINISTRATION_KEY: adminKey };
+  const environment = {
+    KEEPR_INGESTION_URL: ingestion.url,
+    KEEPR_ADMINISTRATION_KEY: adminKey,
+    KEEPR_NATIVE_REQUEST_INTERVAL_MS: requestInterval,
+  };
   const cli = async (args) => {
     const result = await runCli([...args, "--json"], environment);
     assert.equal(result.code, 0, result.stdout + result.stderr);
@@ -997,6 +1014,7 @@ async function proveNativeComposition(t, proof) {
     vars: { D1_EXPORT_TOKEN: "local-export", D1_VERIFICATION_TOKEN: "local-verify" },
   });
   workers.push(replacement);
+  administrationOrigins.add(new URL(replacement.url).origin);
   const replacedEnvironment = { ...environment, KEEPR_INGESTION_URL: replacement.url };
   const accepted = await mutate(
     [

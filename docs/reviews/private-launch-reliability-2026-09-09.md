@@ -158,3 +158,55 @@ isolation and timeout guards. Reviewers performed read-only analysis and no
 runtime tests. Both axes explicitly retain complete current-runtime validation,
 suite-context diagnosis and #253's green scheduled/manual run as unfinished
 acceptance; this is a reviewed partial implementation checkpoint.
+
+## Complete provider acceptance and host allocation
+
+Toolchain-provider CI run `34331767421` completed naturally on Node 22/Ubuntu:
+340 acceptance passes, five failures and one opt-in capacity skip. Acceptance
+shards 1/2/3 recorded 109/75/156 passes respectively, with all five failures in
+shard 2. Its 15 ingestion failures are a distinct baseline. No jobs in that
+provider run were cancelled. Root reliability's preceding CI `34332109032`
+recorded acceptance-1 failure, acceptance-3 success and acceptance-2 cancellation
+at the 20-minute job bound; that cancelled shard remains incomplete evidence.
+
+The acceptance entrypoints now all select `--test-concurrency=1`, including
+local default, shard and tier commands. Native test files each start several
+Worker/restore processes, so default Node file concurrency previously ran
+competing heavy journeys on each host. The local serial provider run has already
+passed native One Piece in 119.069 seconds and five-game/current-plus-two actual
+SQL import in 65.58 seconds, while those scenarios failed in hosted concurrent
+contexts. This is supporting evidence, not proof that every acceptance failure
+shares that cause. The complete serial run remains in progress.
+
+The CI acceptance job budget is 60 minutes, replacing its former 20-minute cap.
+This is an outer host-allocation bound, not a test or polling timeout increase.
+The prior completed provider's sums of top-level reported test durations were
+469.110/1,488.433/1,718.623 seconds per shard, excluding setup; those are
+concurrent-context sums, not measured serial wall times. Retained One Piece
+alone passed in 787.419 seconds. Riftbound's four existing 600-second waits plus
+its 120-second publication/backup phases and other assigned tests cannot fit
+inside the old cap in the worst case. Individual assertions, retry bounds and
+poll deadlines are unchanged. The local complete 68-file provider run has a
+separately declared 90-minute aggregate bound. Any failed or interrupted checks
+must still be reported, and the exact release SHA still requires every CI gate.
+
+## Composed recovery polling regression
+
+The current-runtime serial provider run reproduced the native composed-recovery
+case failure in 46.1478 seconds. Its preserved failure state is
+`/var/folders/h9/r2hp35sx2bs4v69vcsxsls900000gn/T/card-keepr-native-preparation-r3nK4i`.
+After deduplicating the shared runtime log by request ID, exactly 300 accepted
+administration requests precede one 429. Of those requests, 123 poll backups
+and 111 inspect collection/candidate progress. The test polls every 100 ms
+against its 300/minute fixture limit. The retained database confirms the
+injected export failure and four-generation import failure terminalized as
+intended; the final retry had imported generation two and was verifying when
+the request budget was exhausted. The second fresh-baseline case passed.
+
+The composed-recovery fixture now shares the existing 250-ms per-origin queue
+between owner CLI calls and direct administration HTTP, including the replacement
+runtime. Consumer traffic and provider simulation are unchanged. No response is
+retried or ignored, no request limit is raised, and all existing deadlines remain.
+The established queue tests pass 4/4; the release-contract tests pass 10/10 after
+the CI allocation change. The complete native journey rerun is queued behind
+the provider's exclusive full acceptance lease and has **not yet passed**.
