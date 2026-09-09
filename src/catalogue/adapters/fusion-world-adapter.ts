@@ -97,6 +97,7 @@ export const fusionWorldAdapter = createBandaiAdapter(
         {
           titleSuffix: /\s*[|｜]\s*Dragon Ball Super Card Game Fusion World - Official Web Site$/u,
           seasonPrecisionReleases: true,
+          nonCardClassification: fusionWorldNonCardClassification,
         },
         lineage,
         url,
@@ -779,6 +780,12 @@ function requireFusionWorldLiveProductStatusCoverage(html: string): void {
   }
 }
 
+function fusionWorldNonCardClassification(value: string): "accessory" | null {
+  // The official PLAYMAT & CARD SET detail lists both a playmat and a Card.
+  // Preserve this Card-bearing bundle before applying accessory vocabulary.
+  return /\bPLAYMAT\s*&\s*CARD SET\b/iu.test(value) ? null : nonCardProductClassificationV2(value);
+}
+
 function parseFusionWorldLiveProductIndex(
   html: string,
   sourceLineage: string,
@@ -835,7 +842,7 @@ function parseFusionWorldLiveProductIndex(
       if (unknownLabel !== undefined || release.length !== 1) {
         throw new AdapterParseFailure("Fusion World Product listing entry publishes an unmodelled field.");
       }
-      const nonCardClassification = nonCardProductClassificationV2(`${resolved.pathname} ${title}`);
+      const nonCardClassification = fusionWorldNonCardClassification(`${resolved.pathname} ${title}`);
       if (nonCardClassification !== null) {
         entries.push({
           non_card_context: {

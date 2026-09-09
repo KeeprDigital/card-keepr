@@ -80,3 +80,56 @@ test("an explicit Fusion Card search role cannot turn a Product page into Card d
     "category discovery is unavailable",
   );
 });
+
+test("Fusion's retained playmat and Card set remains a Card-bearing Product in both listing and detail", () => {
+  const title = "OFFICIAL PLAYMAT & CARD SET Limited Edition 02";
+  const products = adapter
+    .parseBytes(bytes, context)
+    .flatMap((observation) => observation.product_release_catalogue?.products ?? []);
+  expect(products.find((product) => product.name === title)?.releases[0]).toMatchObject({
+    date: { precision: "unknown", value: null },
+    status: "announced",
+  });
+  expect(products.some((product) => product.name.includes("SLEEVE"))).toBe(false);
+  const detail = JSON.parse(
+    readFileSync(
+      new URL(
+        "../../acceptance/fixtures/retained-official-source/history/2026-09-09/fusion-world-playmat-card-set.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  const body = Buffer.from(detail.body_base64, "base64");
+  expect(createHash("sha256").update(body).digest("hex")).toBe(detail.body_sha256);
+  expect(body.toString("utf8")).toContain("<li>Card x 1</li>");
+  const observations = adapter.parseBytes(body, {
+    url: detail.source_url,
+    mediaType: detail.content_type,
+    requestId: `fusion-world-en:product_detail:${"0".repeat(64)}`,
+  });
+  expect(observations.flatMap((observation) => observation.product_release_catalogue?.products ?? [])).toContainEqual(
+    expect.objectContaining({ name: title }),
+  );
+  const firstEdition = JSON.parse(
+    readFileSync(
+      new URL(
+        "../../acceptance/fixtures/retained-official-source/history/2026-09-09/fusion-world-playmat-card-set-01.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  const firstBytes = Buffer.from(firstEdition.body_base64, "base64");
+  expect(createHash("sha256").update(firstBytes).digest("hex")).toBe(firstEdition.body_sha256);
+  expect(firstBytes.toString("utf8")).toContain("<li>Card x 1</li>");
+  expect(
+    adapter
+      .parseBytes(firstBytes, {
+        url: firstEdition.source_url,
+        mediaType: firstEdition.content_type,
+        requestId: `fusion-world-en:product_detail:${"0".repeat(64)}`,
+      })
+      .flatMap((observation) => observation.product_release_catalogue?.products ?? []),
+  ).toContainEqual(expect.objectContaining({ name: "OFFICIAL PLAYMAT & CARD SET Limited Edition 01" }));
+});

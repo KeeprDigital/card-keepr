@@ -167,3 +167,31 @@ and wrong-role checks. After updating only the audited three observation hashes,
 the full domain suite passes (45 files, 250 tests), 12 Node recapture tests pass,
 and typecheck passes. The initial full-domain rerun correctly failed against the
 old three discovery hashes; that failed run is not counted as final validation.
+
+## Card-bearing playmat bundle found during semantic review
+
+Both official Fusion World Product details `/fw/en/products/03_240.html`
+(Limited Edition 02) and `/fw/en/products/01_331.html` (Limited Edition 01)
+explicitly list `Playmat x 1` and `Card x 1` under Contents. Their complete raw
+responses are retained beside this review's other history captures. The shared
+accessory predicate previously excluded these Products because their titles
+contain `PLAYMAT`. A Fusion-only classification policy now recognizes the exact
+publisher `PLAYMAT & CARD SET` vocabulary before applying the existing accessory
+vocabulary. Both listing and detail use that policy; other games retain their
+existing classification. No Card identity or date is inferred from the bundle.
+
+The retained September listing regression failed before the correction and now
+proves Edition 02 is an announced Product with unknown Release date, both raw
+detail pages retain their Card-bearing Products, and sleeves remain excluded.
+The historical observation census changes only the Fusion products-hub hash:
+three parse identities now preserve Edition 01, whose retained listing gives
+April 18, 2026 and AVAILABLE NOW, instead of an accessory context. The full
+before/after outputs were inspected; all discovery outputs and the other 68
+fixtures remain identical. The first full-domain check failed against that old
+hash as expected; this was reviewed before updating the single expectation.
+
+Independent reviews of adapter commit `6a258fb66a1e2c712e4328e47ef89b0af8064a58`
+against `c7440ae7` reported no actionable findings: Standards by the toolchain
+agent and Spec by the capacity agent. They correctly retain the actual scheduled
+run as an outstanding #267 gate. The bundle correction and reviewed monitoring
+baseline are subsequent changes requiring their own review.
