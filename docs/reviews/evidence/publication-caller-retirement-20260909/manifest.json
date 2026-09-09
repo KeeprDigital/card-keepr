@@ -68,6 +68,26 @@
       "duration_seconds": 0.066,
       "interrupted": false,
       "notes": "Full raw output retained, including background workerd canceled/hung diagnostics where emitted. Actual SQL restore/query used; no synthetic verified checkpoint."
+    },
+    {
+      "file": "native-export-and-repository-runtime.log.gz",
+      "uncompressed_sha256": "168b1442fb6737a348477a1f2d1d1241cd99b7edf4df56cce42519f2834e5ddb",
+      "commit": "working tree before378e6075",
+      "node": "22.23.2",
+      "result": "2 passed; 2 failed. Native reader and explicit duplicate relationship repository case pass; incorrect native seeds for historical Errata/retention materializers fail.",
+      "duration_seconds": 16.9,
+      "interrupted": false,
+      "notes": "Raw background cancellation diagnostics retained. Test-reader whole fixture output is not Worker isolate capacity evidence."
+    },
+    {
+      "file": "native-export-reader-fixed-runtime.log.gz",
+      "uncompressed_sha256": "ef1e82eac9f1b3759dd576c792c71a17174064010daaa64a11306ed91615e6e6",
+      "commit": "378e60756ad8f1f2bf350b5db85f046695abe2b6",
+      "node": "22.23.2",
+      "result": "1 passed:32Card native reader pages plus manifest/component integrity guards",
+      "duration_seconds": 9.01,
+      "interrupted": false,
+      "notes": "Raw background cancellation diagnostics retained. Test-reader whole fixture output is not Worker isolate capacity evidence."
     }
   ]
 }

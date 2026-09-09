@@ -264,3 +264,25 @@ The Errata target-guard and evidence-retention repository tests now seed through
 real native preparation/publication. Their existing invalid-target, sibling
 rollback and every-observation retention assertions remain intact. Typechecking
 is required before their dedicated runtime selection; no runtime claim yet.
+
+## Native export reader and historical materializer distinction
+
+`378e60756ad8f1f2bf350b5db85f046695abe2b6` updates the existing export fixture
+reader to follow native public routes and all four-component pages, verifying
+manifest checksums, compressed/uncompressed sizes and digests, and record counts.
+It preserves legacy direct decoding and returns actual native public records.
+`exportManifest` returns an honest native first page with its cursor. A 32-Card
+case proves full traversal, exact public IDs/type/game, failed corrupt-manifest
+references, missing components and same-size damaged gzip, then restores all
+bytes. Exact Node22.23.2 runtime passed 1/1 in 9.01s. Coordinator Spec and capacity
+agent Standards independently reviewed fixed `88c41fbd..378e6075`; both are clear.
+
+The preceding three-file run passed the reader and duplicate-relationship case
+but failed two attempted native seed migrations in 16.90s. Those tests exercise
+retained historical materializer tables, which native publication does not fill:
+Errata target lookup was null and old evidence-retention counts were zero. Their
+assertions are retained. They require actual pre-retirement reservation/export
+fixtures and the existing recovery observer, not production writes into obsolete
+tables. The coordinator authorized a dedicated historical fixture for that scope.
+Both failed and green logs are retained with digests. All runs exited naturally;
+the runtime lease was handed to the native ambiguity diagnosis lane.
