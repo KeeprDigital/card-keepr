@@ -868,7 +868,7 @@ test.each([true, false])(
   "an interrupted publication finalizes only its exact verified export (retained claim=%s)",
   async (retainedClaim) => {
     testObservedAt = "2026-07-29T01:00:00.000Z";
-    const started = await startRun("start-complete-interruption");
+    const started = await startRun(`start-complete-interruption-${retainedClaim}`);
     const runId = requiredDocumentString(started.document, "id");
     const digest = requiredDocumentString(started.document, "candidate_digest");
     const expectedRevision = requiredDocumentString(started.document, "expected_current_revision_id");
@@ -877,7 +877,7 @@ test.each([true, false])(
       candidateDigest: digest,
       expectedCurrentRevisionId: expectedRevision,
     });
-    const approvalKey = "approve-complete-interruption";
+    const approvalKey = `approve-complete-interruption-${retainedClaim}`;
     const approval = {
       action: "approved",
       approved_at: testObservedAt,
