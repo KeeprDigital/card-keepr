@@ -304,12 +304,9 @@ test("injected loss of a replaced before-image prevents a native inspection inte
 });
 
 test("canonical legacy candidate JSON preserves before-images regardless of member order", async () => {
-  const { canonicalJson, catalogueRevisionIdentity } = await import("../../../src/catalogue/shared");
-  const { buildCatalogueExport } = await import("../../../src/catalogue/export");
-  const { publicationLeaseMilliseconds } = await import("../../../src/catalogue/ingestion/run-types");
-  const { readIngestionRunsCandidateJson, setIngestionRunsStateApprovalJson } = await import(
-    "./query-helpers/ingestion"
-  );
+  const { canonicalJson } = await import("../../../src/catalogue/shared");
+  const { readIngestionRunsCandidateJson } = await import("./query-helpers/ingestion");
+  const { recoverHistoricalPublication } = await import("./historical-publication-fixture");
   const { seedRunFixtureStatement } = await import("./query-helpers/run-events");
   const source = await collect("/reconciliation/base", "inspection-legacy-image-source");
   const reconciled = await reconcile(source.id);
@@ -341,68 +338,18 @@ test("canonical legacy candidate JSON preserves before-images regardless of memb
       printing_images: records.printing_images,
     }),
   }).run();
-  const startedAt = new Date(Date.now() - publicationLeaseMilliseconds - 1_000).toISOString();
-  const retried = await post(
-    `/v1/ingestion-runs/${legacyId}/retry`,
-    { idempotency_key: "inspection-legacy-image-retry" },
-    { "x-keepr-test-now": startedAt },
-  );
-  expect(retried.response.status, JSON.stringify(retried.document)).toBe(201);
-  // Retain an already reserved historical writer and its exact completed export.
-  // The retired endpoint can recover this evidence; it cannot start a new writer.
-  const runId = requiredString(retried.document, "id");
-  const digest = requiredString(retried.document, "candidate_digest");
-  const predecessor = requiredString(retried.document, "expected_current_revision_id");
-  const revisionId = await catalogueRevisionIdentity({
-    runId,
-    candidateDigest: digest,
-    expectedCurrentRevisionId: predecessor,
+  const retried = await post(`/v1/ingestion-runs/${legacyId}/retry`, {
+    idempotency_key: "inspection-legacy-image-retry",
   });
-  const approvalKey = "inspection-legacy-image-publish";
+  expect(retried.response.status, JSON.stringify(retried.document)).toBe(201);
+  const runId = requiredString(retried.document, "id");
   const candidateJson = await readIngestionRunsCandidateJson(testEnv.CATALOGUE_DB)
     .bind(runId)
     .first<string>("candidate_json");
   expect(candidateJson).not.toBeNull();
   const historicalCandidate = JSON.parse(candidateJson!) as import("../../../src/catalogue/shared").CatalogueCandidate;
   expect(candidateJson).toBe(canonicalJson(historicalCandidate));
-  const catalogueExport = await buildCatalogueExport(historicalCandidate, digest, revisionId, startedAt);
-  const approval = {
-    action: "approved",
-    approved_at: startedAt,
-    candidate_digest: digest,
-    expected_current_revision_id: predecessor,
-  };
-  await setIngestionRunsStateApprovalJson(testEnv.CATALOGUE_DB)
-    .bind(
-      JSON.stringify(approval),
-      approvalKey,
-      JSON.stringify([approval]),
-      JSON.stringify({
-        completed_stages: ["planning", "collecting", "parsing", "reconciling", "awaiting_approval"],
-        current_stage: "publishing",
-      }),
-      revisionId,
-      startedAt,
-      new Date(Date.parse(startedAt) + publicationLeaseMilliseconds).toISOString(),
-      catalogueExport.manifest.manifest_sha256,
-      `writer:${revisionId}`,
-      runId,
-    )
-    .run();
-  for (const object of catalogueExport.objects) {
-    const body = object.body();
-    await Promise.all([
-      testEnv.CATALOGUE_EXPORTS.put(object.key, body.readable, { sha256: object.sha256 }),
-      body.completed,
-    ]);
-  }
-  const published = await post(`/v1/ingestion-runs/${retried.document.id}/approval`, {
-    candidate_digest: digest,
-    expected_current_revision_id: predecessor,
-    idempotency_key: approvalKey,
-  });
-  expect(published.response.status, JSON.stringify(published.document)).toBe(200);
-  expect(published.document).toMatchObject({ state: "published", resulting_revision_id: revisionId });
+  const published = await recoverHistoricalPublication(runId, "inspection-legacy-image-publish");
   const next = await collect("/reconciliation/base", "inspection-legacy-image-next");
   const created = await post("/v1/game-candidates", {
     ingestion_run_id: next.id,

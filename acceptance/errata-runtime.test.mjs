@@ -1,10 +1,3 @@
-import {
-  inspectNativeCollection,
-  publishNativeCollection,
-  waitForNativeCollection,
-  nativeCheckpointTransport,
-  nativeExportRecords,
-} from "./helpers/native-catalogue-runtime.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -12,6 +5,14 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { runCli, startWorker, stopWorker, waitForHealth, waitForRunState } from "./helpers/acceptance-runtime.mjs";
+import {
+  inspectNativeCollection,
+  nativeCheckpointTransport,
+  nativeExportRecords,
+  publishNativeCollection,
+  waitForNativeCollection,
+} from "./helpers/native-catalogue-runtime.mjs";
+import { withNativeRequestPacing } from "./helpers/native-request-pacing.mjs";
 import { syntheticSourceAdapterMigrations } from "./helpers/synthetic-source-adapters.mjs";
 
 const root = resolve(import.meta.dirname, "..");
@@ -208,6 +209,9 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   await waitForHealth(`${runtime.url}/health`, apiKey, runtime);
 
   const cliEnvironment = {
+    // This fixture permits 300 administration requests per minute. Keep CLI,
+    // inspection, polling and direct owner calls below that shared allowance.
+    KEEPR_NATIVE_REQUEST_INTERVAL_MS: "250",
     KEEPR_API_KEY: apiKey,
     KEEPR_API_URL: runtime.url,
     KEEPR_ADMINISTRATION_KEY: administrationKey,
@@ -517,7 +521,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   const repeatedRevision = repeatedPublication.resulting_revision_id;
   assert.notEqual(repeatedRevision, revisionId);
   const approvedCandidate = repeatedCandidate.candidates[0];
-  const approvalReplay = await fetch(`${runtime.url}/v1/publications`, {
+  const approvalReplay = await administrationFetch(cliEnvironment, `${runtime.url}/v1/publications`, {
     method: "POST",
     headers: { authorization: `Bearer ${administrationKey}`, "content-type": "application/json" },
     body: JSON.stringify({
@@ -675,27 +679,31 @@ async function collectSource(input, environment, runtime) {
 const injectedFixtureRuns = new Set();
 
 async function collectFixtureSource(input, environment) {
-  const response = await fetch(new URL("/acceptance/synthetic-evidence", environment.KEEPR_INGESTION_URL), {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}`,
-      "content-type": "application/json",
+  const response = await administrationFetch(
+    environment,
+    new URL("/acceptance/synthetic-evidence", environment.KEEPR_INGESTION_URL),
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        supported_game: "one-piece",
+        source_lineage: "one-piece-en",
+        adapter_version: input.adapter,
+        idempotency_key: input.idempotencyKey,
+        requests: [
+          {
+            id: input.requestId,
+            method: "GET",
+            url: input.url,
+            headers: { accept: "application/json" },
+          },
+        ],
+      }),
     },
-    body: JSON.stringify({
-      supported_game: "one-piece",
-      source_lineage: "one-piece-en",
-      adapter_version: input.adapter,
-      idempotency_key: input.idempotencyKey,
-      requests: [
-        {
-          id: input.requestId,
-          method: "GET",
-          url: input.url,
-          headers: { accept: "application/json" },
-        },
-      ],
-    }),
-  });
+  );
   const document = await response.json();
   assert.equal(response.status, 201, JSON.stringify(document));
   injectedFixtureRuns.add(document.id);
@@ -703,17 +711,21 @@ async function collectFixtureSource(input, environment) {
 }
 
 async function representRetainedSnapshotAdapter(sourceSnapshotId, adapterVersion, environment) {
-  const response = await fetch(new URL("/acceptance/retained-snapshot-adapter", environment.KEEPR_INGESTION_URL), {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}`,
-      "content-type": "application/json",
+  const response = await administrationFetch(
+    environment,
+    new URL("/acceptance/retained-snapshot-adapter", environment.KEEPR_INGESTION_URL),
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        source_snapshot_id: sourceSnapshotId,
+        adapter_version: adapterVersion,
+      }),
     },
-    body: JSON.stringify({
-      source_snapshot_id: sourceSnapshotId,
-      adapter_version: adapterVersion,
-    }),
-  });
+  );
   const document = await response.json();
   assert.equal(response.status, 201, JSON.stringify(document));
   assert.equal(typeof document.source_snapshot_id, "string");
@@ -722,7 +734,9 @@ async function representRetainedSnapshotAdapter(sourceSnapshotId, adapterVersion
 
 async function resumeAndWait(runId, environment, runtime) {
   const headers = { authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}` };
-  const sourceResponse = await fetch(`${runtime.url}/v1/ingestion-runs/${runId}/evidence`, { headers });
+  const sourceResponse = await administrationFetch(environment, `${runtime.url}/v1/ingestion-runs/${runId}/evidence`, {
+    headers,
+  });
   assert.equal(sourceResponse.status, 200);
   const source = await sourceResponse.json();
   if (!injectedFixtureRuns.has(runId)) {
@@ -736,7 +750,7 @@ async function resumeAndWait(runId, environment, runtime) {
     assert.equal(source.state, "parsing");
     const status = await runCli(["status", "--json"], environment);
     assert.equal(status.code, 0, status.stderr);
-    const response = await fetch(`${runtime.url}/v1/game-candidates`, {
+    const response = await administrationFetch(environment, `${runtime.url}/v1/game-candidates`, {
       method: "POST",
       headers: { ...headers, "content-type": "application/json" },
       body: JSON.stringify({
@@ -752,19 +766,25 @@ async function resumeAndWait(runId, environment, runtime) {
     return await waitForNativeCollection(runId, "sealed", environment, runtime, { deadlineMs: 20_000 });
   } catch (error) {
     const collection = await (
-      await fetch(`${runtime.url}/v1/ingestion-runs/${runId}/game-candidates`, { headers })
+      await administrationFetch(environment, `${runtime.url}/v1/ingestion-runs/${runId}/game-candidates`, { headers })
     ).json();
     const diagnostics = [];
     for (const candidate of collection.candidates) {
       const partitions = await (
-        await fetch(`${runtime.url}/v1/game-candidates/${candidate.id}/partitions`, { headers })
+        await administrationFetch(environment, `${runtime.url}/v1/game-candidates/${candidate.id}/partitions`, {
+          headers,
+        })
       ).json();
       for (const partition of partitions.partitions.filter((p) => ["warnings", "shared_warnings"].includes(p.kind)))
         diagnostics.push(
           await (
-            await fetch(`${runtime.url}/v1/game-candidates/${candidate.id}/partitions/${partition.ordinal}`, {
-              headers,
-            })
+            await administrationFetch(
+              environment,
+              `${runtime.url}/v1/game-candidates/${candidate.id}/partitions/${partition.ordinal}`,
+              {
+                headers,
+              },
+            )
           ).json(),
         );
     }
@@ -817,4 +837,8 @@ async function apiJson(baseUrl, pathname, apiKey) {
 async function exportComponent(baseUrl, revisionId, component, apiKey) {
   const records = await nativeExportRecords(baseUrl, apiKey, revisionId, component);
   return records.map((record) => JSON.stringify(record)).join("\n") + (records.length ? "\n" : "");
+}
+
+function administrationFetch(environment, url, init) {
+  return withNativeRequestPacing(environment, () => fetch(url, init));
 }
