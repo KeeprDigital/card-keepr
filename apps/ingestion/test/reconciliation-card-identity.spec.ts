@@ -19,32 +19,39 @@ installReconciliationSuite();
 
 test("a structurally complete non-DON Card may have zero catalogued Printings", async () => {
   const run = await collect("/reconciliation/card-without-printing", "reconcile-card-without-printing");
-  const reconciled = await reconcile(run.id);
-  expect(reconciled.response.status).toBe(200);
-  expect(reconciled.document.cards).toHaveLength(1);
-  expect(reconciled.document.printings).toEqual([]);
-  const published = await approve(reconciled.document);
+  const candidate = await prepareNativeCandidate(
+    run.id,
+    "one-piece",
+    "catrev_spine_000",
+    "card-without-printing-candidate",
+  );
+  const records = await nativeCandidateRecords(String(candidate.id));
+  expect(records.cards).toHaveLength(1);
+  expect(records.printings ?? []).toEqual([]);
+  const published = await approveNativeCandidate(candidate, "card-without-printing-publication");
   expect(published.response.status).toBe(200);
 });
 
 test("DON!! accepts explicit known Printing evidence while retaining incomplete-coverage warning semantics", async () => {
   const run = await collect("/reconciliation/profile-don-printing", "reconcile-don-known-printing");
-  const reconciled = await reconcile(run.id);
-  if (reconciled.response.status !== 200) {
-    throw new Error(JSON.stringify(reconciled.document));
-  }
-  expect(reconciled.response.status).toBe(200);
-  expect(reconciled.document.cards).toHaveLength(1);
-  expect(reconciled.document.printings).toHaveLength(1);
-  expect(reconciled.document.warnings).toEqual(
+  const candidate = await prepareNativeCandidate(
+    run.id,
+    "one-piece",
+    "catrev_spine_000",
+    "don-known-printing-candidate",
+  );
+  const records = await nativeCandidateRecords(String(candidate.id));
+  expect(records.cards).toHaveLength(1);
+  expect(records.printings).toHaveLength(1);
+  expect([...(records.warnings ?? []), ...(records.shared_warnings ?? [])]).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
         code: "printing_coverage_incomplete",
-        card_id: requiredString(requiredFirst(reconciled.document, "cards"), "id"),
+        card_id: requiredString(requiredFirst(records, "cards"), "id"),
       }),
     ]),
   );
-  await approve(reconciled.document);
+  await approveNativeCandidate(candidate, "don-known-printing-publication");
 });
 
 test("unnumbered DON!! card content survives collection and publication", async () => {
@@ -53,11 +60,9 @@ test("unnumbered DON!! card content survives collection and publication", async 
     lineage: "one-piece-en",
     adapter: "fixture-one-piece-json@3",
   });
-  const reconciled = await reconcile(run.id);
-  if (reconciled.response.status !== 200) {
-    throw new Error(JSON.stringify(reconciled.document));
-  }
-  const cards = reconciled.document.cards as Array<Record<string, unknown>>;
+  const candidate = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", "don-card-candidate");
+  const records = await nativeCandidateRecords(String(candidate.id));
+  const cards = records.cards!;
   const don = cards.find(
     (card) => (card.official_identity as Record<string, unknown>).kind === "functional_designation",
   );
@@ -66,17 +71,24 @@ test("unnumbered DON!! card content survives collection and publication", async 
     throw new Error("DON!! card fixture cards are absent");
   }
   expect(don.official_identity).toEqual({ kind: "functional_designation", value: "DON!!" });
-  expect(reconciled.document).not.toHaveProperty("legality_rules");
+  expect(records).not.toHaveProperty("legality_rules");
 
-  const published = await approve(reconciled.document);
+  const published = await approveNativeCandidate(candidate, "don-card-publication");
   expect(published.response.status).toBe(200);
+  expect(await exportComponentRecords(String(published.document.resulting_revision_id), "cards")).toContainEqual(
+    expect.objectContaining({ id: don.id, official_identity: don.official_identity }),
+  );
 });
 
 test("functional DON!! identity rejects a non-don Card shape even when Printing evidence exists", async () => {
   const run = await collect("/reconciliation/profile-don-invalid-printing", "reconcile-invalid-don-printing");
-  const blocked = await reconcile(run.id);
-  expect(blocked.response.status).toBe(409);
-  expect(blocked.document).toMatchObject({
+  const blocked = await prepareFailedNativeIdentity(
+    run.id,
+    "one-piece",
+    "catrev_spine_000",
+    "invalid-don-printing-candidate",
+  );
+  expect(blocked.outcome).toMatchObject({
     diagnostics: [
       {
         code: "retained_evidence_invalid",
@@ -88,9 +100,13 @@ test("functional DON!! identity rejects a non-don Card shape even when Printing 
 
 test("numbered One Piece identities cannot claim the functional DON card type", async () => {
   const run = await collect("/reconciliation/profile-numbered-don-invalid", "reconcile-invalid-numbered-don");
-  const blocked = await reconcile(run.id);
-  expect(blocked.response.status).toBe(409);
-  expect(blocked.document).toMatchObject({
+  const blocked = await prepareFailedNativeIdentity(
+    run.id,
+    "one-piece",
+    "catrev_spine_000",
+    "invalid-numbered-don-candidate",
+  );
+  expect(blocked.outcome).toMatchObject({
     diagnostics: [
       {
         code: "retained_evidence_invalid",
@@ -102,28 +118,36 @@ test("numbered One Piece identities cannot claim the functional DON card type", 
 
 test("official numbered identities canonicalize permitted case and reject whitespace or malformed variants", async () => {
   const lowerRun = await collect("/reconciliation/identity-lower", "reconcile-identity-lower");
-  const lower = await reconcile(lowerRun.id);
-  expect(lower.response.status).toBe(200);
-  const cardId = requiredString(requiredFirst(lower.document, "cards"), "id");
-  expect(requiredFirst(lower.document, "cards")).toMatchObject({
+  const lower = await prepareNativeCandidate(lowerRun.id, "one-piece", "catrev_spine_000", "identity-lower-candidate");
+  const lowerRecords = await nativeCandidateRecords(String(lower.id));
+  const cardId = requiredString(requiredFirst(lowerRecords, "cards"), "id");
+  expect(requiredFirst(lowerRecords, "cards")).toMatchObject({
     official_identity: { kind: "card_number", value: "OP06-006" },
   });
-  await approve(lower.document);
+  const lowerPublication = await approveNativeCandidate(lower, "identity-lower-publication");
 
   const upperRun = await collect("/reconciliation/identity-upper", "reconcile-identity-upper");
-  const upper = await reconcile(upperRun.id);
-  expect(upper.response.status).toBe(200);
-  expect(requiredFirst(upper.document, "cards")).toMatchObject({
+  const upper = await prepareNativeCandidate(
+    upperRun.id,
+    "one-piece",
+    String(lowerPublication.document.resulting_revision_id),
+    "identity-upper-candidate",
+  );
+  expect(requiredFirst(await nativeCandidateRecords(String(upper.id)), "cards")).toMatchObject({
     id: cardId,
     official_identity: { kind: "card_number", value: "OP06-006" },
   });
-  await approve(upper.document);
+  const upperPublication = await approveNativeCandidate(upper, "identity-upper-publication");
 
   for (const scenario of ["identity-whitespace", "identity-malformed"]) {
     const run = await collect(`/reconciliation/${scenario}`, `reconcile-${scenario}`);
-    const blocked = await reconcile(run.id);
-    expect(blocked.response.status).toBe(409);
-    expect(blocked.document).toMatchObject({
+    const blocked = await prepareFailedNativeIdentity(
+      run.id,
+      "one-piece",
+      String(upperPublication.document.resulting_revision_id),
+      `${scenario}-candidate`,
+    );
+    expect(blocked.outcome).toMatchObject({
       diagnostics: [
         {
           code: "retained_evidence_invalid",
@@ -136,10 +160,14 @@ test("official numbered identities canonicalize permitted case and reject whites
 
 test("conflicting explicit withdrawal assertions fail during reconciliation with stable diagnostics", async () => {
   const run = await collect("/reconciliation/withdrawal-conflict", "reconcile-withdrawal-conflict");
-  const blocked = await reconcile(run.id);
-  expect(blocked.response.status).toBe(409);
-  expect(blocked.document).toMatchObject({
-    state: "failed",
+  const blocked = await prepareFailedNativeIdentity(
+    run.id,
+    "one-piece",
+    "catrev_spine_000",
+    "withdrawal-conflict-candidate",
+  );
+  expect(blocked).toMatchObject({ state: "failed" });
+  expect(blocked.outcome).toMatchObject({
     publishable: false,
     diagnostics: [
       expect.objectContaining({
