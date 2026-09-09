@@ -113,8 +113,12 @@ test("native whole-candidate publication streams separately retained images into
   expect(approval.document).toMatchObject({ approval_scope: "whole_candidate", state: "approved" });
   expect((await post("/v1/publications", intent)).document).toEqual(approval.document);
   const publication = requiredString(approval.document, "id");
+  // Each fixture Printing has one Card and one image: image verification,
+  // export/projection records and three Card search fields each take units.
+  // Reserve sixteen per Printing plus bounded partition/composition overhead.
+  const maximumPreparationUnits = references.length * 16 + 128;
   let sequence = 0;
-  for (let unit = 0; unit < 250; unit++) {
+  for (let unit = 0; unit < maximumPreparationUnits; unit++) {
     const prepared = await post(`/v1/game-candidates/${id}/publication-preparation`, {
       manifest_digest: candidate.manifest_digest,
       generation: 0,
@@ -125,9 +129,10 @@ test("native whole-candidate publication streams separately retained images into
     if (prepared.document.state === "verified") break;
     expect(prepared.document.state).toBe("preparing");
     sequence = Number(prepared.document.sequence);
-    if (unit === 249) throw new Error("Image publication artifacts exceeded their bounded units.");
+    if (unit === maximumPreparationUnits - 1)
+      throw new Error("Image publication artifacts exceeded their bounded units.");
   }
-  for (let unit = 0; unit < 250; unit++) {
+  for (let unit = 0; unit < maximumPreparationUnits; unit++) {
     const prepared = await post(`/v1/publications/${publication}/export-preparation/advance`, {
       generation: 0,
       idempotency_key: `native-images-export-${unit}`,
@@ -135,7 +140,7 @@ test("native whole-candidate publication streams separately retained images into
     expect(prepared.response.status, JSON.stringify(prepared.document)).toBe(200);
     if (prepared.document.state === "verified") break;
     expect(prepared.document.state).toBe("preparing");
-    if (unit === 249) throw new Error("Image export preparation exceeded its bounded units.");
+    if (unit === maximumPreparationUnits - 1) throw new Error("Image export preparation exceeded its bounded units.");
   }
   const published = await post(`/v1/publications/${publication}/advance`, { generation: 0 });
   expect(published.document, JSON.stringify(published.document)).toMatchObject({ state: "published" });

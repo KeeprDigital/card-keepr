@@ -24,8 +24,9 @@ positive dimensions, tolerated unavailable-image behavior and novelty rules
 remain in force. Historical synthetic observations that explicitly carry
 base64 retain their validated fallback.
 
-The serving write uses the retained R2 body directly, the existing conditional
-immutable write, and the SHA-256 precondition. The stored serving object is
+The serving write transfers the retained R2 body through a `FixedLengthStream`
+using its authenticated length, the existing conditional immutable write,
+and the SHA-256 precondition. The stored serving object is
 read back as a stream and verified. Image identities and object keys remain
 unchanged, as do the `PRINTING_IMAGES` bucket and durable staging ownership.
 This change makes no storage consolidation claim and changes no cleanup or
@@ -65,11 +66,89 @@ Vitest 4.1.11, Workers plugin 1.1.6, Wrangler 4.130.0 and Miniflare
 - No runtime, stress, capacity measurement, deployment or live operation has
   run for this image change. No check was interrupted.
 
+## Independent review and subsequent hosted red
+
+The fixed diff from `4d02a199b56faae3a6d4f4efa4c62ebf12fb2a79` to
+`9736d445b98273209bb0c1d30a272a3e38e9ba7e` received separate Standards and
+Spec reviews: zero hard violations, zero smells and no Spec findings. These
+were static reviews, not execution proof. A separate offline comparison
+authenticated all 22 retained images (9,104,686 bytes) against their manifests
+and fed seven-byte chunks through the new dimension reader; all dimensions
+matched the previous implementation exactly. This is compatibility evidence
+for the retained bounded sample, not a whole-publisher census.
+
+[CI run 34334457703](https://github.com/KeeprDigital/card-keepr/actions/runs/34334457703)
+executed that exact head on Ubuntu/Node 22. Lint, domain and combined checks
+passed, while all three ingestion and acceptance shards failed. Ingestion
+reported 733 passing and 21 failing tests. The newly added native image test
+failed after 26.574 seconds: the candidate was paused with
+`Candidate image storage is temporarily unavailable.` instead of sealed.
+The retained stack reaches the serving write in `retainCandidateImage`,
+after retained-stream validation. Hosted logs do not expose the nested cause.
+This new image regression cannot be dismissed as previously recorded suite
+interference. Other native publisher/retained-source paths also paused at
+the image-storage boundary.
+
+Raw logs are retained under `/tmp/issue-274-ci-ingestion{1,2,3}.log` and
+`/tmp/issue-274-ci-acceptance{1,2,3}.log`.
+
+## Local diagnosis and corrected image checkpoint
+
+After the provider acceptance run released the exclusive runtime lease, the
+original native test reproduced the paused-candidate failure in 4.298 seconds
+(5.99 seconds total). One temporary error trace exposed the actual cause:
+`Provided readable stream must have a known length (request/response body or readable half of FixedLengthStream)`.
+The callback resource wrapper replaces the native R2 body with a generic
+ReadableStream to track resource usage. Retained-byte verification succeeded,
+but the serving R2 write rejected that generic stream. This is an application
+integration defect introduced by the image checkpoint, not fixture contention.
+
+The one-image minimization first failed at `staging_writer_fenced` because
+its artificial owner did not identify a real run. Removing that nonessential
+wrapper reached the same known-length error in 0.328 seconds (1.99 seconds
+total). The native test still exercises actual durable staging ownership.
+The production fix bridges the resource-wrapped body through a
+`FixedLengthStream` using the already authenticated byte length. Upload and
+transfer settle together; a failed upload aborts the transfer before the
+callback completes. No resource guard or error classification changed.
+
+The smaller copy/replay regression passed in 0.341 seconds after the fix.
+The original native test then sealed and approved correctly, but exposed an
+insufficient test-authoring bound: 250 artifact units cannot cover image
+verification alone plus all 128 Card/Printing/image export and projection
+records and three Card search fields. That synthetic fixture now reserves
+16 units per Printing plus 128 partition/tree units (2,176 total). The
+30-second test deadline remains unchanged; no production budget changed.
+
+Final local results on the corrected code, macOS arm64/Node 26.3.0 with the
+same selected #272 toolchain:
+
+- Native whole-candidate test: 1 passed, 18.15 seconds (19.87 seconds total).
+  It seals all 128 references, approves and replays the exact candidate,
+  prepares artifacts/export, publishes and replays, verifies all 128 serving
+  images' bytes/digests, and reads the composition export without base64.
+- Three focused files: 11 passed, 17.71 seconds total. Includes image
+  copy/replay, early rejected-upload settlement, existing callback resource
+  bounds and tolerated image failures. The deliberately malformed
+  Content-Length fixtures emit their existing runtime errors; the complete
+  selection exits zero. No failure is ignored by a new rule.
+- Full domain selection: 268 passed across 46 files, 2.73 seconds.
+- Full typechecking and targeted lint/format pass. The temporary diagnostic
+  was removed; no check was interrupted. The runtime lease was handed to
+  the caller-migration lane after all processes exited naturally.
+
+Local raw records: `/tmp/issue-274-native-probe.log`,
+`/tmp/issue-274-one-image-red.log`, `/tmp/issue-274-one-image-red-minimal.log`,
+`/tmp/issue-274-one-image-green.log`, `/tmp/issue-274-native-green.log`
+(the insufficient 250-unit bound), `/tmp/issue-274-native-green-bounded.log`,
+`/tmp/issue-274-focused-image-green.log`, `/tmp/issue-274-typecheck-final.log`
+and `/tmp/issue-274-domain-final.log`.
+
 ## Remaining evidence
 
-Run the new native test and relevant existing image failure/integrity checks
-under the exclusive runtime lease; record the exact commit, duration and any
-failure. Complete the integrated full validation and independent Standards
-and Spec reviews. The complete #274 acceptance also requires the caller
+Complete the integrated full validation and independently review the fix
+against its fixed predecessor. Hosted results on `9736d445` remain red;
+these focused local passes do not replace exact-release-SHA CI. The complete
+#274 acceptance also requires the caller
 migration plus native export/cleanup/actual restore proof. Neither #274 nor
 its launch parents can close on this checkpoint.

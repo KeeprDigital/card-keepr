@@ -81,14 +81,28 @@ export async function retainCandidateImage(
       throw new Error("Captured Printing Image bytes failed verification.");
   }
   const key = `printing-images/${image.content_sha256}`;
-  await imageStorage(() =>
-    bucket.put(key, bytes, {
+  await imageStorage(async () => {
+    // The callback resource wrapper exposes a generic stream. Restore its
+    // authenticated length for R2 without buffering the retained payload.
+    const fixed = bytes instanceof ReadableStream ? new FixedLengthStream(image.content_byte_length) : undefined;
+    const upload = bucket.put(key, fixed?.readable ?? bytes, {
       onlyIf: { etagDoesNotMatch: "*" },
       sha256: image.content_sha256,
       httpMetadata: { contentType: image.media_type, cacheControl: "private, max-age=31536000, immutable" },
       customMetadata: { sha256: image.content_sha256 },
-    }),
-  );
+    });
+    if (fixed && bytes instanceof ReadableStream) {
+      const controller = new AbortController();
+      const transfer = bytes.pipeTo(fixed.writable, { signal: controller.signal });
+      try {
+        await Promise.all([upload, transfer]);
+      } catch (cause) {
+        controller.abort(cause);
+        await Promise.allSettled([upload, transfer]);
+        throw cause;
+      }
+    } else await upload;
+  });
   const stored = await imageStorage(() => bucket.get(key));
   if (stored === null || stored.size !== image.content_byte_length)
     throw new Error("Retained Printing Image bytes are unavailable.");
