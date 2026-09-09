@@ -76,7 +76,12 @@ export async function prepareCandidateInspection(
   const cursor: InspectionCursor = state ?? {
     stage: "before",
     predecessor: await documentStorage(() =>
-      predecessorGameCandidateStatement(database, candidate.expected_game_revision_id, candidate.supported_game).first<{
+      predecessorGameCandidateStatement(
+        database,
+        candidate.expected_game_revision_id,
+        candidate.supported_game,
+        candidate.preparation_id,
+      ).first<{
         id: string;
         preparation_id: string;
         partition_count: number;

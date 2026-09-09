@@ -3,7 +3,11 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "vitest";
 import { catalogueStore } from "../../src/catalogue/shared/catalogue-store-repository.ts";
 import { publicationCheckpointStatement } from "../../src/catalogue/reconciliation/game-publication-repository.ts";
-import { insertPendingBackupStatement } from "../../src/catalogue/backup-recovery/backup-repository.ts";
+import {
+  insertPendingBackupStatement,
+  nativeBackupRevisionStatement,
+} from "../../src/catalogue/backup-recovery/backup-repository.ts";
+import { currentRevisionVerifiedBackupStatement } from "../../src/catalogue/ingestion/administration-inspection-repository.ts";
 import { d1Adapter } from "../../acceptance/helpers/query-helpers/sqlite-d1-adapter.mjs";
 import {
   seedAcceptanceCheckpoint,
@@ -31,6 +35,7 @@ test("latest accepted evidence waits for its own verified retry despite an older
     const store = catalogueStore(d1Adapter(db));
     const ready = async () => (await publicationCheckpointStatement(store, "revision").first()).ready;
     assert.equal(await ready(), 0);
+    assert.equal(await currentRevisionVerifiedBackupStatement(store, "revision").first(), null);
     await insertPendingBackupStatement(store, retryInput("retry")).run();
     assert.deepEqual(
       { ...backupIdentity(db).get("retry") },
@@ -44,8 +49,10 @@ test("latest accepted evidence waits for its own verified retry despite an older
     assert.equal(await ready(), 0);
     markBackupVerified(db).run("retry");
     assert.equal(await ready(), 1);
+    assert.equal((await currentRevisionVerifiedBackupStatement(store, "revision").first()).idempotency_key, "retry");
     removeAcceptanceHead(db).run();
     assert.equal(await ready(), 0, "missing native acceptance metadata must not admit an older backup");
+    assert.equal(await currentRevisionVerifiedBackupStatement(store, "revision").first(), null);
   } finally {
     db.close();
   }
@@ -65,6 +72,31 @@ test.each([
       /backup_acceptance_metadata_mismatch/u,
     );
     assert.equal(backupIdentity(db).get(key), undefined);
+  } finally {
+    db.close();
+  }
+});
+
+test("manual native backups bind the latest acceptance while preserving the original consumer revision", async () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    seedAcceptanceCheckpoint(db);
+    const store = catalogueStore(d1Adapter(db));
+    assert.deepEqual(
+      { ...(await nativeBackupRevisionStatement(store, "revision").first()) },
+      {
+        publication_operation_id: "refresh",
+        catalogue_revision_id: "revision",
+        composition_digest: "consumer-digest",
+      },
+    );
+    await insertPendingBackupStatement(store, retryInput("fresh-manual", "refresh", null)).run();
+    assert.equal(backupIdentity(db).get("fresh-manual").publication_operation_id, "refresh");
+    removeAcceptanceHead(db).run();
+    await assert.rejects(
+      () => nativeBackupRevisionStatement(store, "revision").first(),
+      /backup_acceptance_metadata_mismatch/u,
+    );
   } finally {
     db.close();
   }

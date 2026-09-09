@@ -474,8 +474,12 @@ export function fenceCompositionSnapshotStatement(database: CatalogueStore): D1P
 
 export function nativeBackupRevisionStatement(database: CatalogueStore, revision: string) {
   return repositoryStatements(database)
-    .prepare(`SELECT publication_operation_id,id AS catalogue_revision_id,
-    content_digest AS composition_digest FROM catalogue_revisions WHERE id=? AND publication_operation_id IS NOT NULL`)
+    .prepare(`SELECT CASE WHEN accepted.state='published' AND accepted.resulting_revision_id=revision.id
+      THEN accepted.id ELSE json_extract('{}','backup_acceptance_metadata_mismatch') END AS publication_operation_id,
+    revision.id AS catalogue_revision_id,revision.content_digest AS composition_digest
+    FROM catalogue_revisions revision LEFT JOIN catalogue_acceptance_head head ON head.singleton=1
+    LEFT JOIN game_publication_operations accepted ON accepted.id=head.publication_operation_id
+    WHERE revision.id=? AND revision.publication_operation_id IS NOT NULL`)
     .bind(revision);
 }
 

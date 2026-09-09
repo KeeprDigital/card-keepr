@@ -56,3 +56,35 @@ export function latestAcceptanceCheckpointSql(revision: "?1" | "?3") {
     OR (NOT EXISTS(SELECT 1 FROM catalogue_acceptance_head) AND backup.publication_operation_id IS NULL
       AND EXISTS(SELECT 1 FROM catalogue_revisions revision WHERE revision.id=${revision} AND revision.publication_operation_id IS NULL)))))`;
 }
+
+export function equalGameSemanticsSql(candidate: "?1" | "c.id" | "publication.candidate_id") {
+  return `EXISTS(SELECT 1 FROM game_candidates proposed
+    JOIN game_candidate_predecessors pin ON pin.candidate_id=proposed.id
+    JOIN game_accepted_candidates head ON head.supported_game=proposed.supported_game AND head.candidate_id=pin.predecessor_candidate_id
+    JOIN game_candidates prior ON prior.id=head.candidate_id AND prior.state='published'
+    JOIN game_candidate_semantic_receipts before ON before.candidate_id=prior.id AND before.manifest_digest=prior.manifest_digest
+    JOIN game_candidate_semantic_receipts after ON after.candidate_id=proposed.id AND after.manifest_digest=proposed.manifest_digest
+    WHERE proposed.id=${candidate} AND after.content_digest=before.content_digest)`;
+}
+
+export function equalGameSemanticsStatement(db: CatalogueStore, candidateId: string) {
+  return repositoryStatements(db)
+    .prepare(`SELECT CASE WHEN ${equalGameSemanticsSql("?1")} THEN 1 ELSE 0 END AS equal`)
+    .bind(candidateId);
+}
+
+export function publicationUnchangedFactsStatement(db: CatalogueStore, publicationId: string) {
+  return repositoryStatements(db)
+    .prepare(`SELECT CASE WHEN ${equalGameSemanticsSql("publication.candidate_id")} THEN 1 ELSE 0 END AS equal
+    FROM game_publication_operations publication WHERE publication.id=?1`)
+    .bind(publicationId);
+}
+
+export function unchangedPublicPackageStatement(db: CatalogueStore, revision: string) {
+  return repositoryStatements(db)
+    .prepare(`SELECT revision.content_digest AS digest,export.manifest_key AS object_key
+    FROM catalogue_revisions revision JOIN catalogue_exports export ON export.catalogue_revision_id=revision.id
+    WHERE revision.id=? AND revision.publication_operation_id IS NOT NULL AND export.verified=1
+    AND export.maintenance_state='available' AND export.manifest_digest=revision.content_digest`)
+    .bind(revision);
+}

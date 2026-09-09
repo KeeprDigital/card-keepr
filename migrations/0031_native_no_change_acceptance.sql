@@ -32,6 +32,17 @@ INSERT INTO catalogue_acceptance_head
  SELECT 1,publication_operation_id FROM catalogue_revisions
  WHERE id=(SELECT current_revision_id FROM catalogue_state WHERE singleton=1) AND publication_operation_id IS NOT NULL;
 
+-- Only the atomic publication reservation is unique per accepted operation.
+-- A later explicitly requested manual backup is a distinct root, with the same exact mutation identity.
+ALTER TABLE catalogue_backup_attempts ADD COLUMN publication_reserved INTEGER NOT NULL DEFAULT 0 CHECK(publication_reserved IN (0,1));
+UPDATE catalogue_backup_attempts SET publication_reserved=1
+ WHERE linked_attempt_id IS NULL AND EXISTS(SELECT 1 FROM game_publication_operations publication
+ WHERE publication.backup_attempt_id=catalogue_backup_attempts.idempotency_key
+ AND publication.id=catalogue_backup_attempts.publication_operation_id);
+DROP INDEX catalogue_publication_backup;
+CREATE UNIQUE INDEX catalogue_publication_backup ON catalogue_backup_attempts(publication_operation_id)
+ WHERE publication_operation_id IS NOT NULL AND linked_attempt_id IS NULL AND publication_reserved=1;
+
 -- Several accepted candidates may refer to one unchanged consumer revision.
 -- Rebuild only this binding table; consumer revisions and composition stay immutable.
 PRAGMA defer_foreign_keys=ON;
