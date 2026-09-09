@@ -56,6 +56,13 @@ test("native memberships publish derived targets and relationships while source 
     expect.objectContaining({ kind: "other", label: "context_event", product_id: null }),
   ]);
   expect(records.product_relationships).toHaveLength(2);
+  for (const relationship of records.product_relationships!)
+    expect(relationship).toMatchObject({
+      evidence_category: "derived",
+      source_lineage: expect.any(String),
+      source_observation_ids: [expect.any(String)],
+      observed: true,
+    });
   const published = await approveNativeCandidate(candidate, "membership-targets-publish");
   const revision = requiredString(published.document, "resulting_revision_id");
   const products = await exportComponentRecords(revision, "products");
@@ -70,18 +77,14 @@ test("native memberships publish derived targets and relationships while source 
         kind: "printing-product",
         from: { type: "printing", id: printings[0]!.id },
         to: { type: "product", id: products[0]!.id },
-        evidence_category: "derived",
         relationship_value: "product_promotion",
-        source_observation_ids: [expect.any(String)],
         lifecycle: expect.objectContaining({ current: true, first_revision_id: revision }),
       }),
       expect.objectContaining({
         kind: "printing-distribution-context",
         from: { type: "printing", id: printings[0]!.id },
         to: { type: "distribution_context", id: contexts[0]!.id },
-        evidence_category: "derived",
         relationship_value: "context_event",
-        source_observation_ids: [expect.any(String)],
         lifecycle: expect.objectContaining({ current: true, first_revision_id: revision }),
       }),
     ]),
@@ -90,4 +93,5 @@ test("native memberships publish derived targets and relationships while source 
   expect(printings[0]!.products).toEqual([expect.objectContaining({ id: products[0]!.id })]);
   expect(printings[0]!.distribution_contexts).toEqual([expect.objectContaining({ id: contexts[0]!.id })]);
   expect(JSON.stringify({ products, contexts, relationships, printings })).not.toContain("promotion-list");
+  expect(JSON.stringify(relationships)).not.toContain("source_observation");
 });

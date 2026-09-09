@@ -3,6 +3,7 @@ export { MissingObjectError } from "./missing-object-error";
 // modules every other cluster may import. Nothing here imports another
 // cluster. See ../README.md for the cluster map (issue #96).
 
+export { membershipRelationshipId, membershipDistributionContextId } from "./membership-identity";
 export {
   administrationClaimGuardStatement,
   administrationOutcomeGuardStatement,
