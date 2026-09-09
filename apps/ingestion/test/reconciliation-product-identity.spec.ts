@@ -1,5 +1,7 @@
-import { env } from "cloudflare:test";
 import { expect, test } from "vitest";
+import { compositionEntityResponse } from "../../../src/catalogue/read";
+import { catalogueStore } from "../../../src/catalogue/shared";
+import { nativeProductIdentity, mutateNativeProductOfficialCode } from "./query-helpers/native-product-history";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
 import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
@@ -199,26 +201,30 @@ test.each([
         withdrawn: false,
       },
     });
-    const persistedIdentity = await reconciliationQueries
-      .readReconciledProductsIdOfficialCode(env.CATALOGUE_DB)
-      .bind(firstId)
+    const persistedIdentity = await nativeProductIdentity(testEnv.CATALOGUE_DB)
+      .bind(requiredString(secondCandidate.header, "id"), firstId)
       .first<{ id: string; official_code: string | null }>();
     expect(persistedIdentity).toEqual({
       id: firstId,
       official_code: secondCode,
     });
     await expect(
-      reconciliationQueries.setReconciledProductsOfficialCode(env.CATALOGUE_DB).bind(firstId).run(),
-    ).rejects.toThrow(/reconciled_product_identity_immutable/u);
-    const apiProjection = await publishedCatalogueQueries
-      .readRevisionProductsDocumentJsonForReconciliationProductIdentity(env.CATALOGUE_DB)
-      .bind(secondRevision, firstId)
-      .first<{ document_json: string }>();
-    expect(JSON.parse(apiProjection!.document_json)).toMatchObject({
-      data: {
-        id: firstId,
-        official_code: secondCode,
-      },
+      mutateNativeProductOfficialCode(testEnv.CATALOGUE_DB)
+        .bind(requiredString(secondCandidate.header, "id"), firstId)
+        .run(),
+    ).rejects.toThrow(/publication_read_immutable/u);
+    const productResponse = await compositionEntityResponse(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      new Request(`https://card-keepr.invalid/v1/products/${firstId}`),
+      { origin: "https://card-keepr.invalid", basePath: "" },
+      "products",
+      firstId,
+    );
+    if (!productResponse) throw new Error("Native Product response missing.");
+    expect(productResponse.status).toBe(200);
+    expect(await productResponse.json()).toMatchObject({
+      data: { id: firstId, official_code: secondCode },
+      meta: { catalogue_revision_id: secondRevision },
     });
     const productRelationships = await exportComponentRecords(secondRevision, "relationships");
     expect(
@@ -424,17 +430,9 @@ test("Product observations and disappearance remain scoped to their Source Linea
     (await approveNativeCandidate(asiaMissing.header, `publish-${asiaMissing.header.id}`)).document,
     "resulting_revision_id",
   );
-  const storedProduct = await publishedCatalogueQueries
-    .readRevisionProductsDocumentJsonForProductObservationsDisappearanceRemainScopedTheirSourceLineage(
-      testEnv.CATALOGUE_DB,
-    )
-    .bind(missingRevision)
-    .first<{ document_json: string }>();
-  const carried = JSON.parse(storedProduct?.document_json ?? "{}") as Record<string, unknown>;
+  const carried = asiaMissing.records.products?.find(({ official_code }) => official_code === "GD-CROSS");
   expect(carried).toMatchObject({
-    data: {
-      releases: [expect.objectContaining({ region: "EN-US" })],
-    },
+    releases: [expect.objectContaining({ region: "EN-US" })],
     included: [expect.objectContaining({ source: "gundam-en-us" })],
   });
   expect(JSON.stringify(carried).includes("gundam-en-asia")).toBe(false);
