@@ -134,3 +134,28 @@ not the completion review or runtime approval. The retained-reservation fixture
 is now explicit about whether an original writer claim exists, because the old
 fixture depended on the removed writer acquiring one implicitly. Both variants
 assert the observer leaves claim ownership unchanged while pending.
+
+## Focused runtime checkpoint
+
+The native fixture helper is proven at `20661b33`. The focused selection passes
+4/4 cases in 4.64 seconds: a new unreserved intent creates no writes; an already
+reserved historical intent preserves its original claim or remains claimless;
+both recover the exact verified export and preserve bound replay; and a source
+collection prepares, inspects and publishes an actual native candidate, then
+replays the original approval acknowledgement and rejects changed reuse.
+
+The first run at `b32abca9` passed three cases and failed the claimless variant
+because both parameter variants reused the same retained fixture/approval keys.
+The corrected test uses distinct exact intents; no production behavior changed.
+Both runs exited naturally. Their complete compressed logs and digests are in
+[evidence](evidence/publication-caller-retirement-20260909/manifest.json). The green
+run still logged three workerd canceled/hung background requests around historical
+backup dispatch. These diagnostics are retained and passed to the reliability
+coordinator; focused approval success is not backup completion or restore proof.
+
+The other 27 lifecycle cases were unselected. Seed-only native migrations in
+Product cursor, Curated Revision fanout and reviewed Printing matches are
+committed at `3dccd78a` with typecheck/Biome checks, but their runtime cases have
+not run. Remaining caller migrations, complete native/provider coverage, final
+independent reviews and full validation remain open. The host runtime lease was
+returned after verifying no Workers/Vitest process remained.
