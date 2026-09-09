@@ -139,3 +139,10 @@ This supports investigating host contention and timeout cascades; it does not
 establish that all suite failures are resolved. Operational error logs from
 intentional fault paths and runtime teardown remain visible in the retained
 log; the process exited normally with status zero.
+
+The ingestion configuration now explicitly uses one Vitest worker, including
+stress selections. Each file still receives isolated storage and retains its
+existing deadlines. This bounds concurrent runtime processes per host; it does
+not serialize the application concurrency exercised inside a test. Complete
+local and hosted validation of this configuration remains pending. The
+49-test comparison above exercised the same setting through the CLI.
