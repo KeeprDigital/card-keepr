@@ -8,13 +8,18 @@ export async function prepareNativeCandidate(
   expectedGameRevision: string,
   key: string,
   timeoutMs = 15_000,
+  extraHeaders: Record<string, string> = {},
 ) {
-  const created = await post("/v1/game-candidates", {
-    ingestion_run_id: runId,
-    supported_game: game,
-    expected_game_revision_id: expectedGameRevision,
-    idempotency_key: key,
-  });
+  const created = await post(
+    "/v1/game-candidates",
+    {
+      ingestion_run_id: runId,
+      supported_game: game,
+      expected_game_revision_id: expectedGameRevision,
+      idempotency_key: key,
+    },
+    extraHeaders,
+  );
   expect(created.response.status, JSON.stringify(created.document)).toBe(201);
   const id = requiredString(created.document, "id");
   const observed = await observeUntil(`/v1/game-candidates/${id}`, (state) => state !== "preparing", timeoutMs);
