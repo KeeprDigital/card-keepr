@@ -72,14 +72,22 @@ export async function approveNativeCandidate(
     timeoutMs,
   );
   expect(result.document.state, JSON.stringify(result.document)).toBe("published");
+  await waitForVerifiedPublicationBackup(
+    requiredString(result.document, "backup_attempt_id"),
+    requiredString(result.document, "resulting_revision_id"),
+    timeoutMs,
+  );
+  return result;
+}
+
+export async function waitForVerifiedPublicationBackup(attemptId: string, revisionId: string, timeoutMs = 15_000) {
   const backup = await observeUntil(
-    `/v1/backups/${requiredString(result.document, "backup_attempt_id")}`,
+    `/v1/backups/${attemptId}`,
     (state) => ["verified", "failed"].includes(state),
     timeoutMs,
   );
   expect(backup.document.state, JSON.stringify(backup.document)).toBe("verified");
-  expect(backup.document.catalogue_revision_id).toBe(result.document.resulting_revision_id);
-  return result;
+  expect(backup.document.catalogue_revision_id).toBe(revisionId);
 }
 
 async function observeUntil(path: string, complete: (state: string) => boolean, timeoutMs: number) {
