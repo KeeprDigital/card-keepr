@@ -35,10 +35,20 @@ INSERT INTO catalogue_acceptance_head
 -- Only the atomic publication reservation is unique per accepted operation.
 -- A later explicitly requested manual backup is a distinct root, with the same exact mutation identity.
 ALTER TABLE catalogue_backup_attempts ADD COLUMN publication_reserved INTEGER NOT NULL DEFAULT 0 CHECK(publication_reserved IN (0,1));
+-- Within the migration transaction only, classify existing terminal records
+-- without changing their retained evidence. Restore the exact terminal fence
+-- before any further migration work; all other backup fences remain active.
+DROP TRIGGER catalogue_backup_attempts_terminal_immutable;
 UPDATE catalogue_backup_attempts SET publication_reserved=1
  WHERE linked_attempt_id IS NULL AND EXISTS(SELECT 1 FROM game_publication_operations publication
  WHERE publication.backup_attempt_id=catalogue_backup_attempts.idempotency_key
  AND publication.id=catalogue_backup_attempts.publication_operation_id);
+CREATE TRIGGER catalogue_backup_attempts_terminal_immutable
+BEFORE UPDATE ON catalogue_backup_attempts
+WHEN OLD.state IN ('verified', 'failed')
+BEGIN
+  SELECT RAISE(ABORT, 'terminal backup attempt is immutable');
+END;
 DROP INDEX catalogue_publication_backup;
 CREATE UNIQUE INDEX catalogue_publication_backup ON catalogue_backup_attempts(publication_operation_id)
  WHERE publication_operation_id IS NOT NULL AND linked_attempt_id IS NULL AND publication_reserved=1;
