@@ -134,3 +134,54 @@ for (const filename of ["capture.json", "report.json"]) {
     assert.equal(await readFile(golden, "utf8"), original);
   });
 }
+
+test("recapture preserves a growing complete response and separates HTTP failure from byte drift", async (t) => {
+  const input = await fixture(t);
+  const body = Buffer.from("before retained after plus new publisher content");
+  const result = await recaptureOfficialBytes({
+    fixturesDirectory: input.directory,
+    outputDirectory: input.output,
+    fetch: async () => new Response(body, { status: 503 }),
+    intervalMs: 0,
+  });
+  const capture = JSON.parse(await readFile(join(input.output, "capture.json"), "utf8"));
+  assert.deepEqual(await readFile(join(input.output, capture.full_body_file)), body);
+  assert.equal(result.captures[0].category, "transport_failure");
+  assert.equal(result.captures[0].actionable, true);
+  assert.equal(result.ok, false);
+});
+
+test("out-of-scope captures still verify retained integrity before skipping the network", async (t) => {
+  const input = await fixture(t);
+  const options = {
+    fixturesDirectory: input.directory,
+    outputDirectory: input.output,
+    intervalMs: 0,
+    excludedCaptures: new Set(["capture.json"]),
+    fetch: async () => {
+      assert.fail("excluded captures must not fetch");
+    },
+  };
+  const skipped = await recaptureOfficialBytes(options);
+  assert.equal(skipped.captures[0].category, "out_of_scope");
+  await writeFile(join(input.directory, "capture.json"), JSON.stringify({ ...input.capture, body_base64: "" }));
+  const invalid = await recaptureOfficialBytes({ ...options, outputDirectory: join(input.directory, "invalid") });
+  assert.equal(invalid.captures[0].category, "integrity_failure");
+  assert.equal(invalid.ok, false);
+});
+
+test("a shared-URL output failure does not duplicate already captured evidence or become a transport failure", async (t) => {
+  const input = await fixture(t);
+  await writeFile(join(input.directory, "second.json"), JSON.stringify(input.capture));
+  await mkdir(input.output);
+  await writeFile(join(input.output, "second.json"), "existing evidence");
+  const result = await recaptureOfficialBytes({
+    fixturesDirectory: input.directory,
+    outputDirectory: input.output,
+    intervalMs: 0,
+    fetch: async () => new Response(input.body),
+  });
+  assert.equal(result.captures.length, 2);
+  assert.equal(result.captures[0].category, "unchanged");
+  assert.equal(result.captures[1].category, "integrity_failure");
+});
