@@ -1,5 +1,7 @@
 import { expect, test } from "vitest";
-import { installReconciliationSuite, post, get, collect, reconcile, approve } from "./reconciliation-helpers";
+import { nativeCandidateRecords } from "./native-candidate-helpers";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import { collect, get, installReconciliationSuite, post } from "./reconciliation-helpers";
 
 installReconciliationSuite();
 const supplemental = { game: "one-piece", lineage: "limitless-one-piece-en", adapter: "fixture-one-piece-tabular@1" };
@@ -26,35 +28,35 @@ test.each([true, false])(
   async (reviewed) => {
     // Synthetic source and owner evidence exercise the production admission API;
     // these invented appearances are not the retained P-001 acceptance evidence.
-    const seed = await reconcile((await collect("/reconciliation/canonical-official", "reviewed-seed")).id);
-    const published = await approve(seed.document);
+    const source = await collect("/reconciliation/canonical-official", "reviewed-seed");
+    const seed = await prepareNativeCandidate(source.id, "one-piece", "catrev_spine_000", "reviewed-candidate");
+    const records = await nativeCandidateRecords(String(seed.id));
+    const published = await approveNativeCandidate(seed, "reviewed-publication");
     expect(published.response.status, JSON.stringify(published.document)).toBe(200);
     const revision = String(published.document.resulting_revision_id);
-    const cardId = (seed.document.cards as { id: string }[])[0]!.id;
-    {
-      for (const area of ["card_facts", "printing_details"]) {
-        const designation = await post("/v1/source-authorities", {
-          game: "one-piece",
-          locale: "en",
-          release_region: "OCEANIA",
-          area,
-          source_lineage: "limitless-one-piece-en",
-          expected_generation: "0",
-          rationale: "Synthetic unresolved matcher exercise",
-          idempotency_key: `many-${area}`,
-        });
-        expect(designation.response.status).toBe(200);
-      }
+    const cardId = (records.cards as { id: string }[])[0]!.id;
+    for (const area of ["card_facts", "printing_details"]) {
+      const designation = await post("/v1/source-authorities", {
+        game: "one-piece",
+        locale: "en",
+        release_region: "OCEANIA",
+        area,
+        source_lineage: "limitless-one-piece-en",
+        expected_generation: "0",
+        rationale: "Synthetic unresolved matcher exercise",
+        idempotency_key: `many-${area}`,
+      });
+      expect(designation.response.status).toBe(200);
     }
     const ids = new Set<string>();
     if (reviewed)
       for (let index = 0; index < 10; index++) {
-        const { id: _cardId, ...card } = (seed.document.cards as Record<string, unknown>[])[0]!;
+        const { id: _cardId, ...card } = (records.cards as Record<string, unknown>[])[0]!;
         const {
           id: _printingId,
           card_id: _printingCard,
           ...printing
-        } = (seed.document.printings as Record<string, unknown>[])[0]!;
+        } = (records.printings as Record<string, unknown>[])[0]!;
         const created = await post("/v1/entity-proposals", {
           game: "one-piece",
           source_lineage: "limitless-one-piece-en",
@@ -98,16 +100,18 @@ test.each(["known-first", "known-last", "conflict"])(
   "reviewed same-Printing unknowns preserve known facts: %s",
   async (mode) => {
     const conflict = mode === "conflict";
-    const seed = await reconcile((await collect("/reconciliation/canonical-official", "known-seed")).id);
-    const published = await approve(seed.document);
+    const source = await collect("/reconciliation/canonical-official", "known-seed");
+    const seed = await prepareNativeCandidate(source.id, "one-piece", "catrev_spine_000", "known-candidate");
+    const records = await nativeCandidateRecords(String(seed.id));
+    const published = await approveNativeCandidate(seed, "known-publication");
     expect(published.response.status).toBe(200);
     const revision = String(published.document.resulting_revision_id);
-    const { id: _cardId, ...card } = (seed.document.cards as Record<string, unknown>[])[0]!;
+    const { id: _cardId, ...card } = (records.cards as Record<string, unknown>[])[0]!;
     const {
       id: printingId,
       card_id: _printingCard,
       ...printing
-    } = (seed.document.printings as Record<string, unknown>[])[0]!;
+    } = (records.printings as Record<string, unknown>[])[0]!;
     for (const area of ["card_facts", "printing_details"])
       expect(
         (

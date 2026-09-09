@@ -1,5 +1,11 @@
 import { type CheckedCardScope } from "./scoped-disappearance";
-import { nativePrintingsAtLocator, retainPrintingLocator } from "./native-printing-locators";
+import {
+  nativePrintingMatches,
+  nativePrintingsAtLocator,
+  nativePrintingLocatorKey,
+  nativePrintingLocatorStateKey,
+  retainPrintingLocator,
+} from "./native-printing-locators";
 import {
   nativePreparationFailureCode,
   type NativePreparationGuardState,
@@ -23,6 +29,7 @@ import {
   retainReconciliationCheckpoint,
   prepareCheckpointReadWindow,
 } from "./reconciliation-checkpoint";
+import type { NativePrintingIdentity } from "./prior-state-types";
 import { candidateAtRevision, type PriorStatePositions } from "./reconciliation-prior-state";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
 import { ReconciliationRecordCollection } from "./reconciliation-record-collection";
@@ -261,6 +268,18 @@ export async function reconcileRetainedCardPrintingEvidence(
     "prior_printings",
     (printing) => printing.card_id,
   );
+  const priorPrintingIdentities = new ReconciliationReducerIndex<NativePrintingIdentity>(
+    database,
+    runId,
+    "prior_printing_identities",
+    (identity) => identity.compatibility.card_id,
+  );
+  const priorPrintingLocators = new ReconciliationReducerIndex<NativePrintingIdentity>(
+    database,
+    runId,
+    "prior_printing_locators",
+    (identity) => nativePrintingLocatorKey(identity.locators[0]!),
+  );
   const printingImages = new ReconciliationReducerIndex<CataloguePrintingImage>(database, runId, "printing_images");
   const selectedGames = JSON.parse(run.selected_games_json) as SupportedGame[];
   const priorErrata = new ReconciliationErrataState(database, runId, "prior_errata");
@@ -278,6 +297,8 @@ export async function reconcileRetainedCardPrintingEvidence(
     priorCards: priorCards.position,
     printings: printings.position,
     priorPrintings: priorPrintings.position,
+    priorPrintingIdentities: priorPrintingIdentities.position,
+    priorPrintingLocators: priorPrintingLocators.position,
     printingImages: printingImages.position,
     priorProducts: priorProducts.positions,
     priorErrata: priorErrata.position,
@@ -288,6 +309,8 @@ export async function reconcileRetainedCardPrintingEvidence(
     priorCards.resumeAt(positions.priorCards);
     printings.resumeAt(positions.printings);
     priorPrintings.resumeAt(positions.priorPrintings);
+    priorPrintingIdentities.resumeAt(positions.priorPrintingIdentities ?? 0);
+    priorPrintingLocators.resumeAt(positions.priorPrintingLocators ?? 0);
     printingImages.resumeAt(positions.printingImages);
     priorProducts.resumeAt(positions.priorProducts);
     priorErrata.resumeAt(positions.priorErrata);
@@ -307,11 +330,15 @@ export async function reconcileRetainedCardPrintingEvidence(
               await priorCards.seed(card);
               await cards.seed(card);
             },
-            printing: async (printing) => {
+            printing: async (printing, identity) => {
               const card = await priorCards.get(printing.card_id);
               if (card && selectedGames.includes(card.game)) restoreCuratedEntitySourceFields(printing);
               await priorPrintings.seed(printing.id, printing);
               await printings.seed(printing.id, printing);
+              if (identity) await priorPrintingIdentities.seed(printing.id, identity);
+            },
+            printingLocator: async (identity) => {
+              await priorPrintingLocators.seed(nativePrintingLocatorStateKey(identity), identity);
             },
             image: async (image) => {
               await printingImages.seed(image.id, image);
@@ -977,14 +1004,28 @@ export async function reconcileRetainedCardPrintingEvidence(
           // canonical-fact checks, without spending the ambiguous-match budget
           // scanning every other appearance of this Card.
           let reviewedPrintingId: string | null = admission?.decision?.printing?.id ?? reviewedCardPrintingId;
-          const [located, unfilteredDatabaseMatches, appearanceMatches, crossSourceCandidates] = await Promise.all([
-            printingAtLocatorVariant(database, observation.sourceLineage, locator, observation.variantKey),
-            reviewedPrintingId === null ? compatiblePrintings(database, compatibility) : Promise.resolve([]),
-            reviewedPrintingId === null ? printingsWithAppearance(database, compatibility) : Promise.resolve([]),
-            reviewedPrintingId !== null || observation.supportedGame === "gundam"
-              ? Promise.resolve([])
-              : crossSourcePrintingCandidates(database, compatibility),
-          ]);
+          const nativeMatches = await nativePrintingMatches(
+            database,
+            {
+              preparationId: runId,
+              revision: run.expected_current_revision_id,
+              game: observation.supportedGame,
+              through: priorPrintingIdentities.position,
+              locatorThrough: priorPrintingLocators.position,
+            },
+            compatibility,
+            { locator, variantKey: observation.variantKey, reviewed: reviewedPrintingId !== null },
+          );
+          const [located, unfilteredDatabaseMatches, appearanceMatches, crossSourceCandidates] =
+            nativeMatches ??
+            (await Promise.all([
+              printingAtLocatorVariant(database, observation.sourceLineage, locator, observation.variantKey),
+              reviewedPrintingId === null ? compatiblePrintings(database, compatibility) : Promise.resolve([]),
+              reviewedPrintingId === null ? printingsWithAppearance(database, compatibility) : Promise.resolve([]),
+              reviewedPrintingId !== null || observation.supportedGame === "gundam"
+                ? Promise.resolve([])
+                : crossSourcePrintingCandidates(database, compatibility),
+            ]));
           const databaseMatches = unfilteredDatabaseMatches;
           const matchIds = new Set(databaseMatches.map((match) => match.id));
           if (reviewedPrintingId === null) {

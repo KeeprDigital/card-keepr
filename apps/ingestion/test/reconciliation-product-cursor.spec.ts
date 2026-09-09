@@ -1,21 +1,14 @@
 import { expect, test } from "vitest";
-import {
-  approve,
-  collect,
-  get,
-  post,
-  installReconciliationSuite,
-  reconcile,
-  requiredString,
-  testEnv,
-} from "./reconciliation-helpers";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import { collect, get, installReconciliationSuite, post, requiredString, testEnv } from "./reconciliation-helpers";
 import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 
 installReconciliationSuite();
 
 test("Product work resumes after partial writes and carries forward releases absent from the next source check", async () => {
-  const seed = await reconcile((await collect("/reconciliation/card-only-work-units", "product-cursor-seed")).id);
-  expect((await approve(seed.document)).response.status).toBe(200);
+  const source = await collect("/reconciliation/card-only-work-units", "product-cursor-seed");
+  const seed = await prepareNativeCandidate(source.id, "one-piece", "catrev_spine_000", "product-cursor-candidate");
+  expect((await approveNativeCandidate(seed, "product-cursor-publish")).document.state).toBe("published");
   const run = await collect("/reconciliation/card-only-work-units-changed", "product-cursor-next");
   let calls = 0;
   let armed = false;
