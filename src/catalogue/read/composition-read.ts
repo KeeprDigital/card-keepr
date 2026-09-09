@@ -220,7 +220,7 @@ const publicRecordFields: Record<string, [string, string[]]> = {
   distribution_contexts: ["distribution_context", ["id", "game", "kind", "label", "product_id"]],
   errata: [
     "erratum",
-    ["id", "game", "target_type", "target_id", "effective_from", "official_wording", "corrected_value"],
+    ["id", "game", "target_type", "target_id", "effective_from", "official_wording", "corrected_value", "lifecycle"],
   ],
   relationships: ["relationship", ["id", "kind", "from", "to", "relationship_value", "lifecycle"]],
   product_relationships: ["relationship", ["id", "kind", "from", "to", "relationship_value", "lifecycle"]],
