@@ -95,6 +95,7 @@ import {
   mergeCatalogueErrata,
 } from "./errata-rules-text";
 import { reconcileProductReleaseState, type ProductInputEntry } from "./product-release-state";
+import { prepareMembershipProducts } from "./reconciliation-membership-state";
 import {
   failReconciliation,
   persistBlockedCandidate,
@@ -200,6 +201,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   if (errataReduction?.value.errataComplete && yieldAtCheckpoint) {
     await prepareCheckpointReadWindow(database, runId, [
       ...errataReduction.value.productGames.map((game) => `product_reduction:${game}`),
+      ...(run.supported_game === null ? [] : ["membership_preparation"]),
       "withdrawal_diagnostics",
       "official_assembly",
       "disappearance_warnings",
@@ -1717,6 +1719,15 @@ export async function reconcileRetainedCardPrintingEvidence(
         for (const sourceLineage of reconciled.checkedLineages) observedProductLineages.add(sourceLineage);
       }
     }
+    if (run.supported_game !== null)
+      productCatalogue.draft = await prepareMembershipProducts(
+        database,
+        runId,
+        productCatalogue.draft,
+        plans,
+        run.supported_game as SupportedGame,
+        yieldAtCheckpoint,
+      );
   } catch (error) {
     if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
     if (isStorageOrCapacityFailure(error)) throw error;
