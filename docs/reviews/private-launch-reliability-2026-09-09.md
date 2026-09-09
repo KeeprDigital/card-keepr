@@ -240,3 +240,15 @@ Independent incremental Standards and Spec reviews of `12f996bc` through
 (Standards: zero hard violations and zero smells). Both confirmed that the
 composed-recovery rerun and final complete suites remain pending. This later
 outer ingestion allocation and its new evidence are subsequent changes.
+
+Independent Standards and Spec reviews of `5e0503d1` through
+`864f4ddae907efc71f86baa953ad2aa07570e3aa` also found no actionable findings.
+Both reviewed the measured allocation separately and confirmed that interrupted
+partial verdicts do not meet the complete-suite acceptance requirement.
+
+The same `12f996bc` run subsequently completed acceptance shard 1 with 108
+passes, one failure (Gundam candidate still preparing after 82.235 seconds),
+and one explicitly opt-in skip in 392.118 seconds. Shard 3 passed. Shard 2
+naturally reached its 20-minute outer cap and was cancelled, without a final
+suite verdict. None of these results closes #271 or #253. Raw acceptance logs
+are retained beside the ingestion logs with the same shard suffixes.
