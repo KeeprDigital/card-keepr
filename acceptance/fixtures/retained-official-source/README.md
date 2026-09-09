@@ -213,3 +213,35 @@ and [disable/enable guidance](https://docs.github.com/en/actions/how-tos/manage-
 Use a fresh output directory for each manual recapture. The tool rejects a direct
 or symlink alias of the golden directory and creates each capture/report
 exclusively, so existing output files or symlinks cannot overwrite retained bytes.
+
+### Reviewed monitoring baselines
+
+The top-level captures remain historical parser regression evidence. After an
+explicit byte/output review, `monitoring/baselines.json` may select a separate
+complete capture for a monitored URL. Each `<original-name>.json.gz` contains
+ordinary gzip-compressed capture JSON with exact original HTTP body bytes,
+metadata and SHA-256 digests; the manifest pins the complete body digest and
+links the review. The recapture command uses these reviewed baselines by default,
+validating completeness, URL and digests before comparing current adapters.
+It never rewrites either the historical fixtures or monitoring baselines.
+
+The report's `category` and `actionable` describe the monitoring comparison.
+`baseline_file` and `baseline_full_body_sha256` identify its exact evidence.
+The older `status`, `differences` and `expected_full_body_sha256` continue to show
+the byte comparison against the top-level regression capture; consequently a
+reviewed source may correctly have `status: drift` and `category: unchanged`.
+Semantic comparison still includes all observations, raw source sidecars and
+requests. Image query parameters and optional source fields are not normalized.
+
+Offline replay preserves historical comparison by default. To explicitly use
+the reviewed monitoring baseline, append `--reviewed-baselines`:
+
+```sh
+node scripts/assess-official-recapture.mjs /path/to/artifact /tmp/new-report.json --reviewed-baselines
+```
+
+The [September review](../../../docs/reviews/official-source-recapture-2026-09-09.md)
+records each of the first twenty selections and the first complete Gundam
+baseline. It does not claim whole-response equivalence for the earlier partial
+Gundam capture. Manual replay or recapture success does not satisfy #267's
+required successful default-branch scheduled run.

@@ -1,0 +1,3923 @@
+[
+  {
+    "file": "digimon-en-card-list-appmon-leaf.json",
+    "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522204&cardcategory=Digimon&color=Purple",
+    "retrieved_at": "2026-09-09T08:50:01.019Z",
+    "full_body_sha256": "aa54372640aea9a5961ca3925899a330e04a7275a6a26b048db93f05561c1375",
+    "request_id": "digimon-en:listing:0000000000000000000000000000000000000000000000000000000000000000",
+    "comparison_scope": "complete original and current responses",
+    "comparisons": {
+      "card": {
+        "before_count": 1,
+        "after_count": 1,
+        "equal": true,
+        "before_sha256": "a4a27cbe52e72149d4817bc646816414207eadd9d54dcd424fa1f5a61df2df10",
+        "after_sha256": "a4a27cbe52e72149d4817bc646816414207eadd9d54dcd424fa1f5a61df2df10"
+      },
+      "printing": {
+        "before_count": 1,
+        "after_count": 1,
+        "equal": true,
+        "before_sha256": "dcf33cd2b4a0cad78a87c5322a1d0830dee93dbaff5494051ffac17185d78a05",
+        "after_sha256": "dcf33cd2b4a0cad78a87c5322a1d0830dee93dbaff5494051ffac17185d78a05"
+      },
+      "product_release_catalogue": {
+        "before_count": 1,
+        "after_count": 1,
+        "equal": true,
+        "before_sha256": "935c099c6c1644ceebe753a4bdca93fc74df80147a48bdbeb22a1e9455c65755",
+        "after_sha256": "935c099c6c1644ceebe753a4bdca93fc74df80147a48bdbeb22a1e9455c65755"
+      }
+    },
+    "requests": {
+      "before_count": 177,
+      "after_count": 179,
+      "after_role_counts": {
+        "detail": 2,
+        "image": 105,
+        "listing": 71,
+        "product_detail": 1
+      },
+      "added": [
+        "image https://world.digimoncard.com/images/products/pack/ver26/thumb.png",
+        "listing https://world.digimoncard.com/cards/index.php?search=true&category=522038"
+      ],
+      "removed": []
+    }
+  },
+  {
+    "file": "digimon-en-card-list-bt01-leaf.json",
+    "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522001&cardcategory=Digimon&color=Blue",
+    "retrieved_at": "2026-09-09T08:50:02.662Z",
+    "full_body_sha256": "ec21fa46a80f9d06d5293f18e8b9e591e50e828a4097b4dd907f20c456d4cb66",
+    "request_id": "digimon-en:listing:0000000000000000000000000000000000000000000000000000000000000000",
+    "comparison_scope": "complete original and current responses",
+    "comparisons": {
+      "card": {
+        "before_count": 24,
+        "after_count": 24,
+        "equal": true,
+        "before_sha256": "f9838c5a722253405a554d48e88aff0a1e5c08dcbca9bf8afd9e83cf185b3a83",
+        "after_sha256": "f9838c5a722253405a554d48e88aff0a1e5c08dcbca9bf8afd9e83cf185b3a83"
+      },
+      "printing": {
+        "before_count": 24,
+        "after_count": 24,
+        "equal": true,
+        "before_sha256": "c1def2be3549bbd1d9502cfd3119f93d860bdfa78901ba0c54a0dfd8d17f8ac2",
+        "after_sha256": "c1def2be3549bbd1d9502cfd3119f93d860bdfa78901ba0c54a0dfd8d17f8ac2"
+      },
+      "product_release_catalogue": {
+        "before_count": 24,
+        "after_count": 24,
+        "equal": true,
+        "before_sha256": "f879683c7f117d03373c07ad41f71b27fc3fcc41d25247259d323599ff41d741",
+        "after_sha256": "f879683c7f117d03373c07ad41f71b27fc3fcc41d25247259d323599ff41d741"
+      }
+    },
+    "requests": {
+      "before_count": 196,
+      "after_count": 198,
+      "after_role_counts": {
+        "image": 126,
+        "listing": 71,
+        "product_detail": 1
+      },
+      "added": [
+        "image https://world.digimoncard.com/images/products/pack/ver26/thumb.png",
+        "listing https://world.digimoncard.com/cards/index.php?search=true&category=522038"
+      ],
+      "removed": []
+    }
+  },
+  {
+    "file": "digimon-en-card-list-promo-leaf.json",
+    "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522901&cardcategory=Digimon&color=Red",
+    "retrieved_at": "2026-09-09T08:50:04.161Z",
+    "full_body_sha256": "cfb9f8065f25d4d4440e956c61dceea372a91138d50976ba4cf34262e58be5d8",
+    "request_id": "digimon-en:listing:0000000000000000000000000000000000000000000000000000000000000000",
+    "comparison_scope": "complete original and current responses",
+    "comparisons": {
+      "card": {
+        "before_count": 19,
+        "after_count": 19,
+        "equal": true,
+        "before_sha256": "8aa30454ce48e1e50ded9a23a3a00b12616153e6a73a35344d9d65582d2ef29f",
+        "after_sha256": "8aa30454ce48e1e50ded9a23a3a00b12616153e6a73a35344d9d65582d2ef29f"
+      },
+      "printing": {
+        "before_count": 19,
+        "after_count": 19,
+        "equal": true,
+        "before_sha256": "0de955c42df4d549e9d730e71dd2dcae0ea025a99b0eb07e50cfe04a5557fcbc",
+        "after_sha256": "0de955c42df4d549e9d730e71dd2dcae0ea025a99b0eb07e50cfe04a5557fcbc"
+      },
+      "product_release_catalogue": {
+        "before_count": 19,
+        "after_count": 19,
+        "equal": true,
+        "before_sha256": "f419ce7f5803a213018360351273b115e26832eafabf0ca17efb57644f21ea7b",
+        "after_sha256": "f419ce7f5803a213018360351273b115e26832eafabf0ca17efb57644f21ea7b"
+      }
+    },
+    "requests": {
+      "before_count": 193,
+      "after_count": 195,
+      "after_role_counts": {
+        "detail": 2,
+        "image": 122,
+        "listing": 71
+      },
+      "added": [
+        "image https://world.digimoncard.com/images/products/pack/ver26/thumb.png",
+        "listing https://world.digimoncard.com/cards/index.php?search=true&category=522038"
+      ],
+      "removed": []
+    }
+  },
+  {
+    "file": "digimon-en-card-list-related-qa-leaf.json",
+    "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522035&cardcategory=Digimon&color=Black",
+    "retrieved_at": "2026-09-09T08:50:05.639Z",
+    "full_body_sha256": "329d06ea5e9d7eb5f96bc61c65138f97e82e66a8468653624f6317c2dcd2e55b",
+    "request_id": "digimon-en:listing:0000000000000000000000000000000000000000000000000000000000000000",
+    "comparison_scope": "complete original and current responses",
+    "comparisons": {
+      "card": {
+        "before_count": 5,
+        "after_count": 5,
+        "equal": true,
+        "before_sha256": "296d50cdbac2979dc6bf0ca2756a7f8d23a2f6c23c9948d6c9ff39d3e74ef2bf",
+        "after_sha256": "296d50cdbac2979dc6bf0ca2756a7f8d23a2f6c23c9948d6c9ff39d3e74ef2bf"
+      },
+      "printing": {
+        "before_count": 5,
+        "after_count": 5,
+        "equal": true,
+        "before_sha256": "3076e43f3d8d9ed5347d5d4134c27db3d7613e57c686eee5e641e9404ebc5df1",
+        "after_sha256": "3076e43f3d8d9ed5347d5d4134c27db3d7613e57c686eee5e641e9404ebc5df1"
+      },
+      "product_release_catalogue": {
+        "before_count": 5,
+        "after_count": 5,
+        "equal": true,
+        "before_sha256": "648a1c56f578f430c466e4a2919d75e5ce38248da61fb759dda00299bdcce225",
+        "after_sha256": "648a1c56f578f430c466e4a2919d75e5ce38248da61fb759dda00299bdcce225"
+      }
+    },
+    "requests": {
+      "before_count": 183,
+      "after_count": 185,
+      "after_role_counts": {
+        "detail": 3,
+        "image": 110,
+        "listing": 71,
+        "product_detail": 1
+      },
+      "added": [
+        "image https://world.digimoncard.com/images/products/pack/ver26/thumb.png",
+        "listing https://world.digimoncard.com/cards/index.php?search=true&category=522038"
+      ],
+      "removed": []
+    }
+  },
+  {
+    "file": "digimon-en-product-gift-box.json",
+    "source_url": "https://world.digimoncard.com/products/goods/gift_box.php",
+    "retrieved_at": "2026-09-09T08:50:09.687Z",
+    "full_body_sha256": "03fd2d10500fd2ed4b6db57c7f159cefe328b89cfd68f6e78ec032ccb552ba06",
+    "request_id": "digimon-en:product_detail:0000000000000000000000000000000000000000000000000000000000000000",
+    "comparison_scope": "complete original and current responses",
+    "comparisons": {
+      "card": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "printing": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "product_release_catalogue": {
+        "before_count": 1,
+        "after_count": 1,
+        "equal": true,
+        "before_sha256": "d8269a8b008033472ad282a29e86a5af45e120f838162575aa2e7b5c41a2dc0a",
+        "after_sha256": "d8269a8b008033472ad282a29e86a5af45e120f838162575aa2e7b5c41a2dc0a"
+      }
+    },
+    "requests": {
+      "before_count": 287,
+      "after_count": 295,
+      "after_role_counts": {
+        "image": 165,
+        "listing": 1,
+        "product_detail": 129
+      },
+      "added": [
+        "image https://world.digimoncard.com/images/common/article/snavi_close.png?260818",
+        "image https://world.digimoncard.com/images/common/article/tit_snavi_products.png?260818",
+        "image https://world.digimoncard.com/images/products/goods/liberator-debuggers-set/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/goods/nexus-of-digimon/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/goods/official_sleeve_gallantmon-crimson/thumb.png",
+        "image https://world.digimoncard.com/images/products/goods/official_sleeve_imperialdramon-paladin/thumb.png",
+        "image https://world.digimoncard.com/images/products/goods/playmat-wc26-27/thumb.png",
+        "image https://world.digimoncard.com/images/products/goods/premium-collection_scramble-set/thumb.png",
+        "image https://world.digimoncard.com/images/products/goods/tamers-evolution-box/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ex-05/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ex-06/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ex-07/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ex-08/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ex-09/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ex-10/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ex-11/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ex-12/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ex-13/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ver18-19/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ver19-20/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/subnav.png?260818",
+        "product_detail https://world.digimoncard.com/products/goods/official_sleeve_gallantmon-crimson.php",
+        "product_detail https://world.digimoncard.com/products/goods/official_sleeve_imperialdramon-paladin.php",
+        "product_detail https://world.digimoncard.com/products/goods/playmat-wc26-27.php",
+        "product_detail https://world.digimoncard.com/products/goods/premium-collection_scramble-set.php"
+      ],
+      "removed": [
+        "image https://world.digimoncard.com/images/common/article/snavi_close.png?260604",
+        "image https://world.digimoncard.com/images/common/article/tit_snavi_products.png?260604",
+        "image https://world.digimoncard.com/images/products/goods/liberator-debuggers-set/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/goods/nexus-of-digimon/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/goods/tamers-evolution-box/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ex-05/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ex-06/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ex-07/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ex-08/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ex-09/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ex-10/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ex-11/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ex-12/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ex-13/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ver18-19/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ver19-20/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/subnav.png?260604"
+      ]
+    }
+  },
+  {
+    "file": "digimon-en-product-theme-booster.json",
+    "source_url": "https://world.digimoncard.com/products/pack/ex-01.php",
+    "retrieved_at": "2026-09-09T08:50:12.961Z",
+    "full_body_sha256": "a40bf1a568b734aace146dea1ae5986aeb562aae85493b0d257ca3d40d7a0a98",
+    "request_id": "digimon-en:product_detail:0000000000000000000000000000000000000000000000000000000000000000",
+    "comparison_scope": "complete original and current responses",
+    "comparisons": {
+      "card": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "printing": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "product_release_catalogue": {
+        "before_count": 1,
+        "after_count": 1,
+        "equal": true,
+        "before_sha256": "5df0e90977ec919ee4934ddbf0ec69b9c5f7faf4c7e29ca94becdf951f21786f",
+        "after_sha256": "5df0e90977ec919ee4934ddbf0ec69b9c5f7faf4c7e29ca94becdf951f21786f"
+      }
+    },
+    "requests": {
+      "before_count": 284,
+      "after_count": 292,
+      "after_role_counts": {
+        "image": 162,
+        "listing": 1,
+        "product_detail": 129
+      },
+      "added": [
+        "image https://world.digimoncard.com/images/common/article/snavi_close.png?260818",
+        "image https://world.digimoncard.com/images/common/article/tit_snavi_products.png?260818",
+        "image https://world.digimoncard.com/images/products/goods/liberator-debuggers-set/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/goods/nexus-of-digimon/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/goods/official_sleeve_gallantmon-crimson/thumb.png",
+        "image https://world.digimoncard.com/images/products/goods/official_sleeve_imperialdramon-paladin/thumb.png",
+        "image https://world.digimoncard.com/images/products/goods/playmat-wc26-27/thumb.png",
+        "image https://world.digimoncard.com/images/products/goods/premium-collection_scramble-set/thumb.png",
+        "image https://world.digimoncard.com/images/products/goods/tamers-evolution-box/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ex-05/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ex-06/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ex-07/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ex-08/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ex-09/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ex-10/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ex-11/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ex-12/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ex-13/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ver18-19/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/pack/ver19-20/thumb.png?260818",
+        "image https://world.digimoncard.com/images/products/subnav.png?260818",
+        "product_detail https://world.digimoncard.com/products/goods/official_sleeve_gallantmon-crimson.php",
+        "product_detail https://world.digimoncard.com/products/goods/official_sleeve_imperialdramon-paladin.php",
+        "product_detail https://world.digimoncard.com/products/goods/playmat-wc26-27.php",
+        "product_detail https://world.digimoncard.com/products/goods/premium-collection_scramble-set.php"
+      ],
+      "removed": [
+        "image https://world.digimoncard.com/images/common/article/snavi_close.png?260604",
+        "image https://world.digimoncard.com/images/common/article/tit_snavi_products.png?260604",
+        "image https://world.digimoncard.com/images/products/goods/liberator-debuggers-set/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/goods/nexus-of-digimon/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/goods/tamers-evolution-box/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ex-05/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ex-06/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ex-07/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ex-08/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ex-09/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ex-10/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ex-11/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ex-12/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ex-13/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ver18-19/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/pack/ver19-20/thumb.png?260604",
+        "image https://world.digimoncard.com/images/products/subnav.png?260604"
+      ]
+    }
+  },
+  {
+    "file": "digimon-en-restructured-card-search.json",
+    "source_url": "https://world.digimoncard.com/cards/index.php?search=true",
+    "retrieved_at": "2026-09-09T08:50:07.295Z",
+    "full_body_sha256": "d6e1b37e930a844cf145a1c5cc0775f8b827393dae1edcc9df2fb36301164b00",
+    "request_id": "digimon-en:card-list",
+    "comparison_scope": "complete original and current responses",
+    "comparisons": {
+      "card": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "printing": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "product_release_catalogue": {
+        "before_count": 1,
+        "after_count": 1,
+        "equal": true,
+        "before_sha256": "935c099c6c1644ceebe753a4bdca93fc74df80147a48bdbeb22a1e9455c65755",
+        "after_sha256": "935c099c6c1644ceebe753a4bdca93fc74df80147a48bdbeb22a1e9455c65755"
+      }
+    },
+    "requests": {
+      "before_count": 170,
+      "after_count": 172,
+      "after_role_counts": {
+        "image": 101,
+        "listing": 71
+      },
+      "added": [
+        "image https://world.digimoncard.com/images/products/pack/ver26/thumb.png",
+        "listing https://world.digimoncard.com/cards/index.php?search=true&category=522038"
+      ],
+      "removed": []
+    }
+  },
+  {
+    "file": "fusion-world-en-product-starter-deck.json",
+    "source_url": "https://www.dbs-cardgame.com/fw/en/products/02_229.html",
+    "retrieved_at": "2026-09-09T08:50:36.536Z",
+    "full_body_sha256": "f3b2691f2ff2b75f455bf584c11cda23c482d76eb2606eba1b897317129c9a09",
+    "request_id": "fusion-world-en:product_detail:0000000000000000000000000000000000000000000000000000000000000000",
+    "comparison_scope": "complete original and current responses",
+    "comparisons": {
+      "card": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "printing": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "product_release_catalogue": {
+        "before_count": 1,
+        "after_count": 1,
+        "equal": true,
+        "before_sha256": "a2b93d6a4aa1c68aa25efaf265a87a1228326089665937932c6897dd26b796e1",
+        "after_sha256": "a2b93d6a4aa1c68aa25efaf265a87a1228326089665937932c6897dd26b796e1"
+      }
+    },
+    "requests": {
+      "before_count": 21,
+      "after_count": 21,
+      "after_role_counts": {
+        "image": 1,
+        "listing": 8,
+        "product_detail": 12
+      },
+      "added": [
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/01_422.html"
+      ],
+      "removed": [
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/01_294.html"
+      ]
+    }
+  },
+  {
+    "file": "fusion-world-en-product-story-booster.json",
+    "source_url": "https://www.dbs-cardgame.com/fw/en/products/01_401.html",
+    "retrieved_at": "2026-09-09T08:50:38.924Z",
+    "full_body_sha256": "d798df45b8bc48844dec7f66ae9e698bcf2aba807f86eeb19f321866bc4aa258",
+    "request_id": "fusion-world-en:product_detail:0000000000000000000000000000000000000000000000000000000000000000",
+    "comparison_scope": "complete original and current responses",
+    "comparisons": {
+      "card": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "printing": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "product_release_catalogue": {
+        "before_count": 1,
+        "after_count": 1,
+        "equal": true,
+        "before_sha256": "1907797c330c7c000aba03c98393b139842ce331e017483498499ebd932a0ecc",
+        "after_sha256": "1907797c330c7c000aba03c98393b139842ce331e017483498499ebd932a0ecc"
+      }
+    },
+    "requests": {
+      "before_count": 22,
+      "after_count": 23,
+      "after_role_counts": {
+        "image": 1,
+        "listing": 8,
+        "product_detail": 14
+      },
+      "added": [
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/01_422.html"
+      ],
+      "removed": []
+    }
+  },
+  {
+    "file": "fusion-world-en-product-winter-booster.json",
+    "source_url": "https://www.dbs-cardgame.com/fw/en/products/01_477.html",
+    "retrieved_at": "2026-09-09T08:50:41.096Z",
+    "full_body_sha256": "077b20b10fe40360d1be124ed5c080c491315806dc1effe477aa074cecacf134",
+    "request_id": "fusion-world-en:product_detail:0000000000000000000000000000000000000000000000000000000000000000",
+    "comparison_scope": "complete original and current responses",
+    "comparisons": {
+      "card": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "printing": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "product_release_catalogue": {
+        "before_count": 1,
+        "after_count": 1,
+        "equal": true,
+        "before_sha256": "07b5e1c4d6a1c3b1a73af4420854dc9a4739103396ecebf1fd84a0de9fab6882",
+        "after_sha256": "07b5e1c4d6a1c3b1a73af4420854dc9a4739103396ecebf1fd84a0de9fab6882"
+      }
+    },
+    "requests": {
+      "before_count": 22,
+      "after_count": 22,
+      "after_role_counts": {
+        "image": 1,
+        "listing": 8,
+        "product_detail": 13
+      },
+      "added": [
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/01_422.html"
+      ],
+      "removed": [
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/01_294.html"
+      ]
+    }
+  },
+  {
+    "file": "fusion-world-en-products-hub.json",
+    "source_url": "https://www.dbs-cardgame.com/fw/en/products/",
+    "retrieved_at": "2026-09-09T08:50:43.520Z",
+    "full_body_sha256": "3d002472100d427ffd8506d1c968b56d2a59f4edaf3448fd5ae6d72c55773253",
+    "request_id": "fusion-world-en:products",
+    "comparison_scope": "complete original and current responses",
+    "comparisons": {
+      "card": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "printing": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "product_release_catalogue": {
+        "before_count": 15,
+        "after_count": 18,
+        "equal": false,
+        "before_sha256": "c5d5749cc6a564085aeebc03c6bf970e1960381a29d5514ae5f9d9089c79c59f",
+        "after_sha256": "2c04c6bb7ba07b31180eeb3a70e0bc261e31bfd1550ea7a31252d811ebcc5cf4",
+        "before": [
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FB10"
+                },
+                "official_code": "FB10",
+                "name": "BOOSTER PACK -CROSS FORCE- [FB10]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FB10",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-06-12"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "name",
+                  "value": "OFFICIAL PLAYMAT & CARD SET Limited Edition 01"
+                },
+                "official_code": null,
+                "name": "OFFICIAL PLAYMAT & CARD SET Limited Edition 01",
+                "releases": [
+                  {
+                    "event_key": "product-release:name-4f4646494349414c20504c41594d41542026204341524420534554204c696d697465642045646974696f6e203031-f29c13d11327758b",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-04-18"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [],
+            "distribution_contexts": [
+              {
+                "key": "non-card:accessory:official card sleeves 04",
+                "kind": "other",
+                "label": "accessory",
+                "evidence_category": "explicit"
+              }
+            ],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS12"
+                },
+                "official_code": "FS12",
+                "name": "STARTER DECK EX THE BEAT OF KI [FS12]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS12",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-03-13"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS11"
+                },
+                "official_code": "FS11",
+                "name": "STARTER DECK EX THE PHASE OF EVOLUTION [FS11]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS11",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-03-13"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FB09"
+                },
+                "official_code": "FB09",
+                "name": "BOOSTER PACK -DUAL EVOLUTION- [FB09]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FB09",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-03-13"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [],
+            "distribution_contexts": [
+              {
+                "key": "non-card:accessory:official card sleeves -illustrations- special",
+                "kind": "other",
+                "label": "accessory",
+                "evidence_category": "explicit"
+              }
+            ],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FB08"
+                },
+                "official_code": "FB08",
+                "name": "BOOSTER PACK -SAIYAN’s PRIDE- [FB08]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FB08",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2025-12-12"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "SB02"
+                },
+                "official_code": "SB02",
+                "name": "MANGA BOOSTER 02 [SB02]",
+                "releases": [
+                  {
+                    "event_key": "product-release:SB02",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2025-11-14"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FB07"
+                },
+                "official_code": "FB07",
+                "name": "BOOSTER PACK -WISH FOR SHENRON- [FB07]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FB07",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2025-09-19"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "ST01"
+                },
+                "official_code": "ST01",
+                "name": "STORY BOOSTER 01 [ST01]",
+                "releases": [
+                  {
+                    "event_key": "product-release:ST01",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-08-21"
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FB11"
+                },
+                "official_code": "FB11",
+                "name": "BOOSTER PACK -BRIGHTNESS OF HOPE- [FB11]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FB11",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-10-16"
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FB12"
+                },
+                "official_code": "FB12",
+                "name": "BOOSTER PACK -REACH THE GOD- [FB12]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FB12",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "season",
+                      "value": "2026-winter"
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS14"
+                },
+                "official_code": "FS14",
+                "name": "STARTER DECK THE PRINCE OF SAIYAN [FS14]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS14",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "unknown",
+                      "value": null
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS13"
+                },
+                "official_code": "FS13",
+                "name": "STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS13",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "unknown",
+                      "value": null
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          }
+        ],
+        "after": [
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "ST01"
+                },
+                "official_code": "ST01",
+                "name": "STORY BOOSTER 01 [ST01]",
+                "releases": [
+                  {
+                    "event_key": "product-release:ST01",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-08-21"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FB10"
+                },
+                "official_code": "FB10",
+                "name": "BOOSTER PACK -CROSS FORCE- [FB10]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FB10",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-06-12"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "name",
+                  "value": "OFFICIAL PLAYMAT & CARD SET Limited Edition 01"
+                },
+                "official_code": null,
+                "name": "OFFICIAL PLAYMAT & CARD SET Limited Edition 01",
+                "releases": [
+                  {
+                    "event_key": "product-release:name-4f4646494349414c20504c41594d41542026204341524420534554204c696d697465642045646974696f6e203031-f29c13d11327758b",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-04-18"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [],
+            "distribution_contexts": [
+              {
+                "key": "non-card:accessory:official card sleeves 04",
+                "kind": "other",
+                "label": "accessory",
+                "evidence_category": "explicit"
+              }
+            ],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS12"
+                },
+                "official_code": "FS12",
+                "name": "STARTER DECK EX THE BEAT OF KI [FS12]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS12",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-03-13"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS11"
+                },
+                "official_code": "FS11",
+                "name": "STARTER DECK EX THE PHASE OF EVOLUTION [FS11]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS11",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-03-13"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FB09"
+                },
+                "official_code": "FB09",
+                "name": "BOOSTER PACK -DUAL EVOLUTION- [FB09]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FB09",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-03-13"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [],
+            "distribution_contexts": [
+              {
+                "key": "non-card:accessory:official card sleeves -illustrations- special",
+                "kind": "other",
+                "label": "accessory",
+                "evidence_category": "explicit"
+              }
+            ],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FB08"
+                },
+                "official_code": "FB08",
+                "name": "BOOSTER PACK -SAIYAN’s PRIDE- [FB08]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FB08",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2025-12-12"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "SB02"
+                },
+                "official_code": "SB02",
+                "name": "MANGA BOOSTER 02 [SB02]",
+                "releases": [
+                  {
+                    "event_key": "product-release:SB02",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2025-11-14"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FB11"
+                },
+                "official_code": "FB11",
+                "name": "BOOSTER PACK -BRIGHTNESS OF HOPE- [FB11]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FB11",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-10-16"
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FB12"
+                },
+                "official_code": "FB12",
+                "name": "BOOSTER PACK -REACH THE GOD- [FB12]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FB12",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "season",
+                      "value": "2026-winter"
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS14"
+                },
+                "official_code": "FS14",
+                "name": "STARTER DECK THE PRINCE OF SAIYAN [FS14]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS14",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "unknown",
+                      "value": null
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS13"
+                },
+                "official_code": "FS13",
+                "name": "STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS13",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "unknown",
+                      "value": null
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [],
+            "distribution_contexts": [
+              {
+                "key": "non-card:accessory:official card sleeve limited edition 05 -broly-",
+                "kind": "other",
+                "label": "accessory",
+                "evidence_category": "explicit"
+              }
+            ],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "name",
+                  "value": "Premium Card Collection 03"
+                },
+                "official_code": null,
+                "name": "Premium Card Collection 03",
+                "releases": [
+                  {
+                    "event_key": "product-release:name-5072656d69756d204361726420436f6c6c656374696f6e203033-ee7a0bb82a0159fd",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "unknown",
+                      "value": null
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "name",
+                  "value": "OFFICIAL PLAYMAT & CARD SET Limited Edition 02"
+                },
+                "official_code": null,
+                "name": "OFFICIAL PLAYMAT & CARD SET Limited Edition 02",
+                "releases": [
+                  {
+                    "event_key": "product-release:name-4f4646494349414c20504c41594d41542026204341524420534554204c696d697465642045646974696f6e203032-f29c14d11327773e",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "unknown",
+                      "value": null
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [],
+            "distribution_contexts": [
+              {
+                "key": "non-card:accessory:official card sleeve limited edition 06 -vegeta-",
+                "kind": "other",
+                "label": "accessory",
+                "evidence_category": "explicit"
+              }
+            ],
+            "relationships": []
+          }
+        ]
+      }
+    },
+    "requests": {
+      "before_count": 33,
+      "after_count": 36,
+      "after_role_counts": {
+        "image": 1,
+        "listing": 13,
+        "product_detail": 22
+      },
+      "added": [
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/03_239.html",
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/03_240.html",
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/03_241.html",
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/03_242.html"
+      ],
+      "removed": [
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/01_191.html"
+      ]
+    }
+  },
+  {
+    "file": "fusion-world-en-products-page2.json",
+    "source_url": "https://www.dbs-cardgame.com/fw/en/products/?page=2",
+    "retrieved_at": "2026-09-09T08:50:46.506Z",
+    "full_body_sha256": "560f63a6c67fcd1debe64861ac13a91769c3f6df13f4d788ad00efe9949413ef",
+    "request_id": "fusion-world-en:listing:0000000000000000000000000000000000000000000000000000000000000000",
+    "comparison_scope": "complete original and current responses",
+    "comparisons": {
+      "card": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "printing": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "product_release_catalogue": {
+        "before_count": 15,
+        "after_count": 18,
+        "equal": false,
+        "before_sha256": "d71cf3b018cf2740c2dd1867a9a8fe1e56330fafd5e2ff2229df95b695592e22",
+        "after_sha256": "dcece3f714d234cf356f08d6787932afa14d5ace20d46e9697d34b76671ef1d6",
+        "before": [
+          {
+            "products": [],
+            "distribution_contexts": [
+              {
+                "key": "non-card:accessory:official card sleeves -illustrations-",
+                "kind": "other",
+                "label": "accessory",
+                "evidence_category": "explicit"
+              }
+            ],
+            "relationships": []
+          },
+          {
+            "products": [],
+            "distribution_contexts": [
+              {
+                "key": "non-card:accessory:official card sleeves limited edition 03 -bulma-",
+                "kind": "other",
+                "label": "accessory",
+                "evidence_category": "explicit"
+              }
+            ],
+            "relationships": []
+          },
+          {
+            "products": [],
+            "distribution_contexts": [
+              {
+                "key": "non-card:accessory:official card sleeves limited edition 04 -son goku-",
+                "kind": "other",
+                "label": "accessory",
+                "evidence_category": "explicit"
+              }
+            ],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "name",
+                  "value": "Premium Card Collection 02"
+                },
+                "official_code": null,
+                "name": "Premium Card Collection 02",
+                "releases": [
+                  {
+                    "event_key": "product-release:name-5072656d69756d204361726420436f6c6c656374696f6e203032-ee7a0ab82a01584a",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "month",
+                      "value": "2025-09"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "name",
+                  "value": "1st ANNIVERSARY SET"
+                },
+                "official_code": null,
+                "name": "1st ANNIVERSARY SET",
+                "releases": [
+                  {
+                    "event_key": "product-release:name-31737420414e4e495645525341525920534554-d2e8b63899ff054d",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2025-07-11"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "SB01"
+                },
+                "official_code": "SB01",
+                "name": "MANGA BOOSTER 01 [SB01]",
+                "releases": [
+                  {
+                    "event_key": "product-release:SB01",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2025-06-27"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [],
+            "distribution_contexts": [
+              {
+                "key": "non-card:accessory:official card case & card sleeves set 02 -vegito-",
+                "kind": "other",
+                "label": "accessory",
+                "evidence_category": "explicit"
+              }
+            ],
+            "relationships": []
+          },
+          {
+            "products": [],
+            "distribution_contexts": [
+              {
+                "key": "non-card:accessory:official card case & card sleeves set 03 -gogeta-",
+                "kind": "other",
+                "label": "accessory",
+                "evidence_category": "explicit"
+              }
+            ],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS10"
+                },
+                "official_code": "FS10",
+                "name": "STARTER DECK EX GIBLET [FS10]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS10",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2025-06-13"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS09"
+                },
+                "official_code": "FS09",
+                "name": "STARTER DECK EX SHALLOT [FS09]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS09",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2025-06-13"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "ST01"
+                },
+                "official_code": "ST01",
+                "name": "STORY BOOSTER 01 [ST01]",
+                "releases": [
+                  {
+                    "event_key": "product-release:ST01",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-08-21"
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FB11"
+                },
+                "official_code": "FB11",
+                "name": "BOOSTER PACK -BRIGHTNESS OF HOPE- [FB11]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FB11",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-10-16"
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FB12"
+                },
+                "official_code": "FB12",
+                "name": "BOOSTER PACK -REACH THE GOD- [FB12]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FB12",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "season",
+                      "value": "2026-winter"
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS14"
+                },
+                "official_code": "FS14",
+                "name": "STARTER DECK THE PRINCE OF SAIYAN [FS14]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS14",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "unknown",
+                      "value": null
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS13"
+                },
+                "official_code": "FS13",
+                "name": "STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS13",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "unknown",
+                      "value": null
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          }
+        ],
+        "after": [
+          {
+            "products": [],
+            "distribution_contexts": [
+              {
+                "key": "non-card:accessory:official card sleeves -illustrations-",
+                "kind": "other",
+                "label": "accessory",
+                "evidence_category": "explicit"
+              }
+            ],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "name",
+                  "value": "Premium Card Collection 02"
+                },
+                "official_code": null,
+                "name": "Premium Card Collection 02",
+                "releases": [
+                  {
+                    "event_key": "product-release:name-5072656d69756d204361726420436f6c6c656374696f6e203032-ee7a0ab82a01584a",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "month",
+                      "value": "2025-09"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [],
+            "distribution_contexts": [
+              {
+                "key": "non-card:accessory:official card sleeves limited edition 03 -bulma-",
+                "kind": "other",
+                "label": "accessory",
+                "evidence_category": "explicit"
+              }
+            ],
+            "relationships": []
+          },
+          {
+            "products": [],
+            "distribution_contexts": [
+              {
+                "key": "non-card:accessory:official card sleeves limited edition 04 -son goku-",
+                "kind": "other",
+                "label": "accessory",
+                "evidence_category": "explicit"
+              }
+            ],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FB07"
+                },
+                "official_code": "FB07",
+                "name": "BOOSTER PACK -WISH FOR SHENRON- [FB07]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FB07",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2025-09-19"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "name",
+                  "value": "1st ANNIVERSARY SET"
+                },
+                "official_code": null,
+                "name": "1st ANNIVERSARY SET",
+                "releases": [
+                  {
+                    "event_key": "product-release:name-31737420414e4e495645525341525920534554-d2e8b63899ff054d",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2025-07-11"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "SB01"
+                },
+                "official_code": "SB01",
+                "name": "MANGA BOOSTER 01 [SB01]",
+                "releases": [
+                  {
+                    "event_key": "product-release:SB01",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2025-06-27"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [],
+            "distribution_contexts": [
+              {
+                "key": "non-card:accessory:official card case & card sleeves set 02 -vegito-",
+                "kind": "other",
+                "label": "accessory",
+                "evidence_category": "explicit"
+              }
+            ],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS10"
+                },
+                "official_code": "FS10",
+                "name": "STARTER DECK EX GIBLET [FS10]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS10",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2025-06-13"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS09"
+                },
+                "official_code": "FS09",
+                "name": "STARTER DECK EX SHALLOT [FS09]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS09",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2025-06-13"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FB11"
+                },
+                "official_code": "FB11",
+                "name": "BOOSTER PACK -BRIGHTNESS OF HOPE- [FB11]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FB11",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-10-16"
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FB12"
+                },
+                "official_code": "FB12",
+                "name": "BOOSTER PACK -REACH THE GOD- [FB12]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FB12",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "season",
+                      "value": "2026-winter"
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS14"
+                },
+                "official_code": "FS14",
+                "name": "STARTER DECK THE PRINCE OF SAIYAN [FS14]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS14",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "unknown",
+                      "value": null
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS13"
+                },
+                "official_code": "FS13",
+                "name": "STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS13",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "unknown",
+                      "value": null
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [],
+            "distribution_contexts": [
+              {
+                "key": "non-card:accessory:official card sleeve limited edition 05 -broly-",
+                "kind": "other",
+                "label": "accessory",
+                "evidence_category": "explicit"
+              }
+            ],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "name",
+                  "value": "Premium Card Collection 03"
+                },
+                "official_code": null,
+                "name": "Premium Card Collection 03",
+                "releases": [
+                  {
+                    "event_key": "product-release:name-5072656d69756d204361726420436f6c6c656374696f6e203033-ee7a0bb82a0159fd",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "unknown",
+                      "value": null
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "name",
+                  "value": "OFFICIAL PLAYMAT & CARD SET Limited Edition 02"
+                },
+                "official_code": null,
+                "name": "OFFICIAL PLAYMAT & CARD SET Limited Edition 02",
+                "releases": [
+                  {
+                    "event_key": "product-release:name-4f4646494349414c20504c41594d41542026204341524420534554204c696d697465642045646974696f6e203032-f29c14d11327773e",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "unknown",
+                      "value": null
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [],
+            "distribution_contexts": [
+              {
+                "key": "non-card:accessory:official card sleeve limited edition 06 -vegeta-",
+                "kind": "other",
+                "label": "accessory",
+                "evidence_category": "explicit"
+              }
+            ],
+            "relationships": []
+          }
+        ]
+      }
+    },
+    "requests": {
+      "before_count": 40,
+      "after_count": 43,
+      "after_role_counts": {
+        "image": 1,
+        "listing": 15,
+        "product_detail": 27
+      },
+      "added": [
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/01_191.html",
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/03_239.html",
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/03_240.html",
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/03_241.html",
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/03_242.html"
+      ],
+      "removed": [
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/01_170.html",
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/01_294.html"
+      ]
+    }
+  },
+  {
+    "file": "fusion-world-en-products-starter-tag.json",
+    "source_url": "https://www.dbs-cardgame.com/fw/en/products/?tags=StarterDecks&page=1",
+    "retrieved_at": "2026-09-09T08:50:49.013Z",
+    "full_body_sha256": "fb6ae7cfb0372676c4c5bf6acd8258f57ec019357a887b5531255a955ca826b6",
+    "request_id": "fusion-world-en:listing:0000000000000000000000000000000000000000000000000000000000000000",
+    "comparison_scope": "complete original and current responses",
+    "comparisons": {
+      "card": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "printing": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "product_release_catalogue": {
+        "before_count": 15,
+        "after_count": 18,
+        "equal": false,
+        "before_sha256": "bb99630afb8b7b991023de4db9625d5ce2c98ddbb6dcf4475ed2bb31bedc358d",
+        "after_sha256": "b41eef9177bc684438fb25c703f80a7aeb58e737db19eabd92e1b34ea4e0fe30",
+        "before": [
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS12"
+                },
+                "official_code": "FS12",
+                "name": "STARTER DECK EX THE BEAT OF KI [FS12]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS12",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-03-13"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS11"
+                },
+                "official_code": "FS11",
+                "name": "STARTER DECK EX THE PHASE OF EVOLUTION [FS11]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS11",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-03-13"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS10"
+                },
+                "official_code": "FS10",
+                "name": "STARTER DECK EX GIBLET [FS10]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS10",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2025-06-13"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS09"
+                },
+                "official_code": "FS09",
+                "name": "STARTER DECK EX SHALLOT [FS09]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS09",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2025-06-13"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS08"
+                },
+                "official_code": "FS08",
+                "name": "STARTER DECK -VEGETA(MINI) SUPER SAIYAN 3- [FS08]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS08",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2025-04-25"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS06"
+                },
+                "official_code": "FS06",
+                "name": "STARTER DECK -SON GOKU(MINI)- [FS06]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS06",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2024-11-08"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS07"
+                },
+                "official_code": "FS07",
+                "name": "STARTER DECK -VEGETA(MINI)- [FS07]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS07",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2024-11-08"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS05"
+                },
+                "official_code": "FS05",
+                "name": "STARTER DECK -BARDOCK- [FS05]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS05",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2024-08-09"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS01"
+                },
+                "official_code": "FS01",
+                "name": "STARTER DECK -SON GOKU- [FS01]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS01",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2024-02-16"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS02"
+                },
+                "official_code": "FS02",
+                "name": "STARTER DECK -VEGETA- [FS02]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS02",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2024-02-16"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "ST01"
+                },
+                "official_code": "ST01",
+                "name": "STORY BOOSTER 01 [ST01]",
+                "releases": [
+                  {
+                    "event_key": "product-release:ST01",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-08-21"
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FB11"
+                },
+                "official_code": "FB11",
+                "name": "BOOSTER PACK -BRIGHTNESS OF HOPE- [FB11]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FB11",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-10-16"
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FB12"
+                },
+                "official_code": "FB12",
+                "name": "BOOSTER PACK -REACH THE GOD- [FB12]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FB12",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "season",
+                      "value": "2026-winter"
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS14"
+                },
+                "official_code": "FS14",
+                "name": "STARTER DECK THE PRINCE OF SAIYAN [FS14]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS14",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "unknown",
+                      "value": null
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS13"
+                },
+                "official_code": "FS13",
+                "name": "STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS13",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "unknown",
+                      "value": null
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          }
+        ],
+        "after": [
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS12"
+                },
+                "official_code": "FS12",
+                "name": "STARTER DECK EX THE BEAT OF KI [FS12]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS12",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-03-13"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS11"
+                },
+                "official_code": "FS11",
+                "name": "STARTER DECK EX THE PHASE OF EVOLUTION [FS11]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS11",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-03-13"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS09"
+                },
+                "official_code": "FS09",
+                "name": "STARTER DECK EX SHALLOT [FS09]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS09",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2025-06-13"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS10"
+                },
+                "official_code": "FS10",
+                "name": "STARTER DECK EX GIBLET [FS10]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS10",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2025-06-13"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS08"
+                },
+                "official_code": "FS08",
+                "name": "STARTER DECK -VEGETA(MINI) SUPER SAIYAN 3- [FS08]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS08",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2025-04-25"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS06"
+                },
+                "official_code": "FS06",
+                "name": "STARTER DECK -SON GOKU(MINI)- [FS06]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS06",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2024-11-08"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS07"
+                },
+                "official_code": "FS07",
+                "name": "STARTER DECK -VEGETA(MINI)- [FS07]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS07",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2024-11-08"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS05"
+                },
+                "official_code": "FS05",
+                "name": "STARTER DECK -BARDOCK- [FS05]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS05",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2024-08-09"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS01"
+                },
+                "official_code": "FS01",
+                "name": "STARTER DECK -SON GOKU- [FS01]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS01",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2024-02-16"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS02"
+                },
+                "official_code": "FS02",
+                "name": "STARTER DECK -VEGETA- [FS02]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS02",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2024-02-16"
+                    },
+                    "status": "released"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FB11"
+                },
+                "official_code": "FB11",
+                "name": "BOOSTER PACK -BRIGHTNESS OF HOPE- [FB11]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FB11",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "day",
+                      "value": "2026-10-16"
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FB12"
+                },
+                "official_code": "FB12",
+                "name": "BOOSTER PACK -REACH THE GOD- [FB12]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FB12",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "season",
+                      "value": "2026-winter"
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS14"
+                },
+                "official_code": "FS14",
+                "name": "STARTER DECK THE PRINCE OF SAIYAN [FS14]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS14",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "unknown",
+                      "value": null
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "official_code",
+                  "value": "FS13"
+                },
+                "official_code": "FS13",
+                "name": "STARTER DECK THE SAIYAN RAISED ON EARTH [FS13]",
+                "releases": [
+                  {
+                    "event_key": "product-release:FS13",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "unknown",
+                      "value": null
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [],
+            "distribution_contexts": [
+              {
+                "key": "non-card:accessory:official card sleeve limited edition 05 -broly-",
+                "kind": "other",
+                "label": "accessory",
+                "evidence_category": "explicit"
+              }
+            ],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "name",
+                  "value": "Premium Card Collection 03"
+                },
+                "official_code": null,
+                "name": "Premium Card Collection 03",
+                "releases": [
+                  {
+                    "event_key": "product-release:name-5072656d69756d204361726420436f6c6c656374696f6e203033-ee7a0bb82a0159fd",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "unknown",
+                      "value": null
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [
+              {
+                "reference": {
+                  "kind": "name",
+                  "value": "OFFICIAL PLAYMAT & CARD SET Limited Edition 02"
+                },
+                "official_code": null,
+                "name": "OFFICIAL PLAYMAT & CARD SET Limited Edition 02",
+                "releases": [
+                  {
+                    "event_key": "product-release:name-4f4646494349414c20504c41594d41542026204341524420534554204c696d697465642045646974696f6e203032-f29c14d11327773e",
+                    "region": "unknown",
+                    "date": {
+                      "precision": "unknown",
+                      "value": null
+                    },
+                    "status": "announced"
+                  }
+                ]
+              }
+            ],
+            "distribution_contexts": [],
+            "relationships": []
+          },
+          {
+            "products": [],
+            "distribution_contexts": [
+              {
+                "key": "non-card:accessory:official card sleeve limited edition 06 -vegeta-",
+                "kind": "other",
+                "label": "accessory",
+                "evidence_category": "explicit"
+              }
+            ],
+            "relationships": []
+          }
+        ]
+      }
+    },
+    "requests": {
+      "before_count": 32,
+      "after_count": 35,
+      "after_role_counts": {
+        "image": 1,
+        "listing": 9,
+        "product_detail": 25
+      },
+      "added": [
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/03_239.html",
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/03_240.html",
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/03_241.html",
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/03_242.html"
+      ],
+      "removed": [
+        "product_detail https://www.dbs-cardgame.com/fw/en/products/01_294.html"
+      ]
+    }
+  },
+  {
+    "file": "fusion-world-en-restructured-card-search.json",
+    "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583301",
+    "retrieved_at": "2026-09-09T08:50:52.417Z",
+    "full_body_sha256": "7d200b1e47ce87078ec9216eeb754dcc4e7a72a94988ba8266146e143a77c98b",
+    "request_id": "fusion-world-en:card-search",
+    "comparison_scope": "complete original and current responses",
+    "comparisons": {
+      "card": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "printing": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "product_release_catalogue": {
+        "before_count": 172,
+        "after_count": 172,
+        "equal": true,
+        "before_sha256": "7b42fe1d602722181dc5dacee42e4651ce67ed6dc062e862707c12d1212be1bb",
+        "after_sha256": "7b42fe1d602722181dc5dacee42e4651ce67ed6dc062e862707c12d1212be1bb"
+      }
+    },
+    "requests": {
+      "before_count": 198,
+      "after_count": 199,
+      "after_role_counts": {
+        "listing": 27,
+        "detail": 172
+      },
+      "added": [
+        "listing https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583011"
+      ],
+      "removed": []
+    }
+  },
+  {
+    "file": "gundam-en-asia-card-detail-dash-live.json",
+    "source_url": "https://www.gundam-gcg.com/asia-en/cards/detail.php?detailSearch=GD02-016",
+    "retrieved_at": "2026-09-09T08:50:54.026Z",
+    "full_body_sha256": "ee953c992615c8667ed1c9a3b5e95c32f8569d34e0663a8b2c0a460155689f69",
+    "request_id": "gundam-en-asia:detail:0000000000000000000000000000000000000000000000000000000000000000",
+    "comparison_scope": "complete original and current responses",
+    "comparisons": {
+      "card": {
+        "before_count": 1,
+        "after_count": 1,
+        "equal": true,
+        "before_sha256": "30e73f9b4714907f3652c35e6e5ff6fa02ef577bfd39b6312e53e6e547502db0",
+        "after_sha256": "30e73f9b4714907f3652c35e6e5ff6fa02ef577bfd39b6312e53e6e547502db0"
+      },
+      "printing": {
+        "before_count": 1,
+        "after_count": 1,
+        "equal": true,
+        "before_sha256": "13ee3ea8016d3a244e8c585ac380b2bf82cfcf3e7b071fcbd50caf95216d32d8",
+        "after_sha256": "13ee3ea8016d3a244e8c585ac380b2bf82cfcf3e7b071fcbd50caf95216d32d8"
+      },
+      "product_release_catalogue": {
+        "before_count": 1,
+        "after_count": 1,
+        "equal": true,
+        "before_sha256": "935c099c6c1644ceebe753a4bdca93fc74df80147a48bdbeb22a1e9455c65755",
+        "after_sha256": "935c099c6c1644ceebe753a4bdca93fc74df80147a48bdbeb22a1e9455c65755"
+      }
+    },
+    "requests": {
+      "before_count": 3,
+      "after_count": 3,
+      "after_role_counts": {
+        "image": 1,
+        "listing": 1,
+        "product_detail": 1
+      },
+      "added": [
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-016.webp?260818"
+      ],
+      "removed": [
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-016.webp?260710"
+      ]
+    }
+  },
+  {
+    "file": "gundam-en-asia-card-list-complete-live.json",
+    "source_url": "https://www.gundam-gcg.com/asia-en/cards/index.php?package=619102",
+    "retrieved_at": "2026-09-09T08:50:55.624Z",
+    "full_body_sha256": "09f2b911b7ea629c63fad5aca63e10ce465c7215b9d700a09fdbc438ca6e7e13",
+    "request_id": "gundam-en-asia:listing:0000000000000000000000000000000000000000000000000000000000000000",
+    "comparison_scope": "old retained range only; first complete monitoring baseline, historical whole-response equivalence UNPROVEN",
+    "comparisons": {
+      "card": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "printing": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "product_release_catalogue": {
+        "before_count": 1,
+        "after_count": 1,
+        "equal": true,
+        "before_sha256": "935c099c6c1644ceebe753a4bdca93fc74df80147a48bdbeb22a1e9455c65755",
+        "after_sha256": "935c099c6c1644ceebe753a4bdca93fc74df80147a48bdbeb22a1e9455c65755"
+      }
+    },
+    "requests": {
+      "before_count": 374,
+      "after_count": 375,
+      "after_role_counts": {
+        "detail": 187,
+        "image": 188
+      },
+      "added": [
+        "image https://www.gundam-gcg.com/asia-en/images/common/logo.png?v2",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-001_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-001.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-002_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-002.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-003_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-003.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-004.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-005_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-005.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-006.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-007.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-008.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-009.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-010.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-011.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-012.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-013.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-014.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-015.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-016.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-017.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-018.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-019.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-020_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-020.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-021_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-021.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-022.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-023_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-023.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-024_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-024.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-025.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-026.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-027.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-028.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-029.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-030.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-031.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-032.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-033.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-034.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-035.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-036_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-036.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-037_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-037.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-038_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-038_p2.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-038.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-039.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-040_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-040.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-041_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-041.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-042.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-043.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-044.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-045.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-046.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-047.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-048.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-049.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-050.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-051.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-052.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-053_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-053.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-054_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-054_p2.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-054.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-055_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-055.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-056.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-057.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-058.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-059_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-059.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-060_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-060.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-061.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-062.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-063.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-064.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-065.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-066.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-067.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-068.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-069_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-069.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-070_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-070.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-071.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-072_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-072.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-073_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-073.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-074.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-075.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-076.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-077.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-078.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-079.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-080.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-081.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-082.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-083.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-084.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-085_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-085.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-086.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-087.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-088_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-088.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-089.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-090.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-091_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-091.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-092.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-093.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-094_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-094.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-095.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-096.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-097_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-097.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-098.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-099.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-100_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-100.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-101.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-102.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-103_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-103.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-104.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-105.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-106.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-107_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-107.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-108.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-109.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-110_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-110.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-111.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-112_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-112.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-113.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-114.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-115.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-116.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-117.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-118.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-119.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-120.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-121.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-122.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-123.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-124.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-125.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-126.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-127.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-128.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-129_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-129.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-130.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-010_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-010.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-011_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-011.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-012_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-012.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-013_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-013.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-014_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-014.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-015_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-015_p2.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-015.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-016_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-016.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-017_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-017.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-018_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-018.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-019_p1.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-019.webp?260818",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/T-012.webp?260818"
+      ],
+      "removed": [
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-001_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-001.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-002_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-002.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-003_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-003.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-004.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-005_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-005.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-006.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-007.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-008.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-009.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-010.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-011.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-012.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-013.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-014.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-015.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-016.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-017.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-018.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-019.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-020_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-020.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-021_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-021.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-022.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-023_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-023.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-024_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-024.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-025.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-026.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-027.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-028.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-029.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-030.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-031.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-032.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-033.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-034.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-035.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-036_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-036.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-037_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-037.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-038_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-038_p2.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-038.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-039.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-040_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-040.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-041_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-041.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-042.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-043.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-044.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-045.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-046.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-047.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-048.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-049.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-050.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-051.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-052.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-053_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-053.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-054_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-054_p2.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-054.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-055_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-055.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-056.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-057.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-058.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-059_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-059.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-060_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-060.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-061.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-062.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-063.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-064.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-065.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-066.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-067.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-068.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-069_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-069.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-070_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-070.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-071.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-072_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-072.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-073_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-073.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-074.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-075.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-076.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-077.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-078.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-079.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-080.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-081.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-082.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-083.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-084.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-085_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-085.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-086.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-087.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-088_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-088.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-089.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-090.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-091_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-091.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-092.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-093.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-094_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-094.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-095.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-096.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-097_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-097.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-098.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-099.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-100_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-100.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-101.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-102.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-103_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-103.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-104.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-105.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-106.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-107_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-107.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-108.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-109.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-110_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-110.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-111.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-112_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-112.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-113.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-114.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-115.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-116.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-117.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-118.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-119.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-120.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-121.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-122.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-123.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-124.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-125.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-126.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-127.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-128.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-129_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-129.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/GD02-130.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-010_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-010.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-011_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-011.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-012_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-012.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-013_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-013.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-014_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-014.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-015_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-015_p2.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-015.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-016_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-016.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-017_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-017.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-018_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-018.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-019_p1.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/R-019.webp?260710",
+        "image https://www.gundam-gcg.com/jp/images/cards/card/T-012.webp?260710"
+      ]
+    }
+  },
+  {
+    "file": "gundam-en-asia-errata-listing.json",
+    "source_url": "https://www.gundam-gcg.com/asia-en/news/?subcategory=news&tag=all&page=1",
+    "retrieved_at": "2026-09-09T08:50:58.420Z",
+    "full_body_sha256": "9ccfff805aa30b9914d6f5ee3325cf3597e25c964f7fb43b2f99777e9c5d03d0",
+    "request_id": "gundam-en-asia:errata",
+    "comparison_scope": "complete original and current responses",
+    "comparisons": {
+      "card": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "printing": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "product_release_catalogue": {
+        "before_count": 1,
+        "after_count": 1,
+        "equal": true,
+        "before_sha256": "935c099c6c1644ceebe753a4bdca93fc74df80147a48bdbeb22a1e9455c65755",
+        "after_sha256": "935c099c6c1644ceebe753a4bdca93fc74df80147a48bdbeb22a1e9455c65755"
+      }
+    },
+    "requests": {
+      "before_count": 8,
+      "after_count": 8,
+      "after_role_counts": {
+        "detail": 1,
+        "image": 4,
+        "listing": 3
+      },
+      "added": [
+        "image https://www.gundam-gcg.com/gcg/bccard/asia-en/news/2026/06/01/8v5CTEcRpLBTfoj1/thumb_03.webp?_=39381c72b7a1d42b1887515dedd4d447",
+        "image https://www.gundam-gcg.com/gcg/bccard/asia-en/news/2026/06/01/oMeHYhGI0rtGxXGo/thumb_01.webp?_=39381c72b7a1d42b1887515dedd4d447",
+        "image https://www.gundam-gcg.com/gcg/bccard/asia-en/news/2026/06/01/Ym3S2PegVz3yiaR7/thumb_02.webp?_=39381c72b7a1d42b1887515dedd4d447"
+      ],
+      "removed": [
+        "image https://www.gundam-gcg.com/gcg/bccard/asia-en/news/2026/06/01/8v5CTEcRpLBTfoj1/thumb_03.webp?_=1b2a5a18fd95333b68116d2558cb2c88",
+        "image https://www.gundam-gcg.com/gcg/bccard/asia-en/news/2026/06/01/oMeHYhGI0rtGxXGo/thumb_01.webp?_=1b2a5a18fd95333b68116d2558cb2c88",
+        "image https://www.gundam-gcg.com/gcg/bccard/asia-en/news/2026/06/01/Ym3S2PegVz3yiaR7/thumb_02.webp?_=1b2a5a18fd95333b68116d2558cb2c88"
+      ]
+    }
+  },
+  {
+    "file": "gundam-en-asia-product-booster.json",
+    "source_url": "https://www.gundam-gcg.com/asia-en/products/gd05.html",
+    "retrieved_at": "2026-09-09T08:51:03.543Z",
+    "full_body_sha256": "9d959e3ca80e0468bdade3bb7df6e64fda8a1c93f54e033af9bf962f4023a02b",
+    "request_id": "gundam-en-asia:product_detail:0000000000000000000000000000000000000000000000000000000000000000",
+    "comparison_scope": "complete original and current responses",
+    "comparisons": {
+      "card": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "printing": {
+        "before_count": 0,
+        "after_count": 0,
+        "equal": true,
+        "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "product_release_catalogue": {
+        "before_count": 1,
+        "after_count": 1,
+        "equal": true,
+        "before_sha256": "2bae676e43e69ed81c6c37e60758e1d227f0b62b7be054a776038ff48378ace0",
+        "after_sha256": "2bae676e43e69ed81c6c37e60758e1d227f0b62b7be054a776038ff48378ace0"
+      }
+    },
+    "requests": {
+      "before_count": 54,
+      "after_count": 54,
+      "after_role_counts": {
+        "image": 53,
+        "listing": 1
+      },
+      "added": [],
+      "removed": []
+    }
+  },
+  {
+    "file": "one-piece-en-card-list.json",
+    "source_url": "https://en.onepiece-cardgame.com/cardlist/?series=569001&freewords=ST01-001",
+    "retrieved_at": "2026-09-09T08:51:16.054Z",
+    "full_body_sha256": "9ad39cdad8993fa3564185d3536dcbd1abbc7c19e5a13b19a30465c8a9c371da",
+    "request_id": "one-piece-en:card-list",
+    "comparison_scope": "complete original and current responses",
+    "comparisons": {
+      "card": {
+        "before_count": 1,
+        "after_count": 1,
+        "equal": true,
+        "before_sha256": "b0a41075e7cc25537200de19c9403340cef5026d550e29c45f44a4ac0f7b7876",
+        "after_sha256": "b0a41075e7cc25537200de19c9403340cef5026d550e29c45f44a4ac0f7b7876"
+      },
+      "printing": {
+        "before_count": 1,
+        "after_count": 1,
+        "equal": true,
+        "before_sha256": "e3f1ad4f9bcaaea3d10a9b0ccba9f57e2f13ab01c7bbde0c423b1259416015d3",
+        "after_sha256": "e3f1ad4f9bcaaea3d10a9b0ccba9f57e2f13ab01c7bbde0c423b1259416015d3"
+      },
+      "product_release_catalogue": {
+        "before_count": 1,
+        "after_count": 1,
+        "equal": true,
+        "before_sha256": "935c099c6c1644ceebe753a4bdca93fc74df80147a48bdbeb22a1e9455c65755",
+        "after_sha256": "935c099c6c1644ceebe753a4bdca93fc74df80147a48bdbeb22a1e9455c65755"
+      }
+    },
+    "requests": {
+      "before_count": 60,
+      "after_count": 61,
+      "after_role_counts": {
+        "image": 2,
+        "listing": 59
+      },
+      "added": [
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/ST01-001.png?260828",
+        "listing https://en.onepiece-cardgame.com/cardlist/?series=569117&freewords=ST01-001"
+      ],
+      "removed": [
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/ST01-001.png?260731"
+      ]
+    }
+  },
+  {
+    "file": "one-piece-en-restructured-discovery.json",
+    "source_url": "https://en.onepiece-cardgame.com/cardlist/?series=569116",
+    "retrieved_at": "2026-09-09T08:51:25.514Z",
+    "full_body_sha256": "9efff60c30161e3835e998832b2d33784359e710bdf263bad122f18c8d347a7e",
+    "request_id": "one-piece-en:card-list",
+    "comparison_scope": "complete original and current responses",
+    "comparisons": {
+      "card": {
+        "before_count": 155,
+        "after_count": 155,
+        "equal": true,
+        "before_sha256": "fb1ed31b2b5b89ef54886bf6f1a1db547a819572fabeb3b41ad5b261f2476d58",
+        "after_sha256": "fb1ed31b2b5b89ef54886bf6f1a1db547a819572fabeb3b41ad5b261f2476d58"
+      },
+      "printing": {
+        "before_count": 155,
+        "after_count": 155,
+        "equal": true,
+        "before_sha256": "504a5d122b115d9cf08a8c083d889afebe77f9a2def59c9aad81ae0be65b194c",
+        "after_sha256": "504a5d122b115d9cf08a8c083d889afebe77f9a2def59c9aad81ae0be65b194c"
+      },
+      "product_release_catalogue": {
+        "before_count": 155,
+        "after_count": 155,
+        "equal": true,
+        "before_sha256": "215796d9d24a5657c2aed0d2f689ecca01e7006190de8e8aaeba2056f65cb02b",
+        "after_sha256": "215796d9d24a5657c2aed0d2f689ecca01e7006190de8e8aaeba2056f65cb02b"
+      }
+    },
+    "requests": {
+      "before_count": 219,
+      "after_count": 220,
+      "after_role_counts": {
+        "image": 161,
+        "listing": 59
+      },
+      "added": [
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/EB04-054_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP10-045_p2.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP11-067_p3.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP14-029_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP14-084_p2.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-001_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-001.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-002.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-003_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-003.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-004.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-005.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-006.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-007.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-008.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-009.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-010.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-011_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-011.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-012.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-013.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-014_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-014.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-015_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-015.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-016.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-017.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-018.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-019.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-020.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-021_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-021.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-022_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-022.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-023.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-024.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-025.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-026_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-026.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-027.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-028.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-029.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-030.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-031.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-032_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-032.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-033.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-034_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-034.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-035.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-036.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-037.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-038.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-039.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-040.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-041_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-041.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-042.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-043.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-044.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-045.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-046.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-047.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-048_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-048.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-049.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-050.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-051.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-052.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-053.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-054.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-055_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-055.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-056_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-056.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-057.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-058.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-059.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-060_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-060.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-061.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-062.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-063_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-063_p2.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-063.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-064.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-065_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-065_p2.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-065.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-066.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-067.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-068.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-069.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-070.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-071.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-072.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-073_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-073_p2.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-073.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-074.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-075.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-076.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-077.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-078.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-079_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-079.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-080_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-080.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-081.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-082_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-082.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-083.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-084.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-085_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-085.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-086.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-087.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-088.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-089.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-090.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-091.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-092.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-093.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-094.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-095.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-096.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-097.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-098_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-098.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-099.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-100.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-101.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-102.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-103.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-104.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-105.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-106.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-107.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-108_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-108.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-109.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-110.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-111.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-112.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-113.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-114.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-115.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-116_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-116.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-117.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-118_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-118.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-119_p1.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-119.png?260828",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/ST15-005_p5.png?260828",
+        "listing https://en.onepiece-cardgame.com/cardlist/?series=569117"
+      ],
+      "removed": [
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/EB04-054_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP10-045_p2.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP11-067_p3.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP14-029_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP14-084_p2.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-001_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-001.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-002.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-003_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-003.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-004.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-005.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-006.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-007.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-008.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-009.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-010.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-011_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-011.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-012.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-013.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-014_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-014.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-015_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-015.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-016.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-017.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-018.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-019.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-020.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-021_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-021.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-022_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-022.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-023.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-024.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-025.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-026_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-026.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-027.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-028.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-029.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-030.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-031.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-032_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-032.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-033.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-034_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-034.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-035.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-036.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-037.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-038.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-039.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-040.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-041_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-041.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-042.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-043.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-044.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-045.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-046.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-047.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-048_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-048.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-049.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-050.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-051.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-052.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-053.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-054.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-055_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-055.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-056_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-056.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-057.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-058.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-059.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-060_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-060.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-061.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-062.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-063_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-063_p2.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-063.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-064.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-065_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-065_p2.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-065.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-066.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-067.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-068.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-069.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-070.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-071.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-072.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-073_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-073_p2.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-073.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-074.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-075.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-076.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-077.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-078.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-079_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-079.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-080_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-080.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-081.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-082_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-082.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-083.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-084.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-085_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-085.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-086.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-087.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-088.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-089.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-090.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-091.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-092.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-093.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-094.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-095.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-096.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-097.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-098_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-098.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-099.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-100.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-101.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-102.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-103.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-104.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-105.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-106.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-107.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-108_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-108.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-109.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-110.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-111.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-112.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-113.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-114.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-115.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-116_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-116.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-117.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-118_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-118.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-119_p1.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/OP16-119.png?260731",
+        "image https://en.onepiece-cardgame.com/images/cardlist/card/ST15-005_p5.png?260731"
+      ]
+    }
+  }
+]

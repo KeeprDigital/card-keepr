@@ -175,7 +175,10 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const fixturesDirectory = resolve(root, "acceptance/fixtures/retained-official-source");
   const result = await recaptureOfficialBytes({
     fixturesDirectory,
-    assess: await createOfficialSourceAssessment({ fixturesDirectory }),
+    assess: await createOfficialSourceAssessment({
+      fixturesDirectory,
+      reviewedBaselinesDirectory: join(fixturesDirectory, "monitoring"),
+    }),
     excludedCaptures: excludedRecaptures,
     outputDirectory: resolve(process.argv[2] ?? join(root, ".artifacts/official-source-recapture")),
   });

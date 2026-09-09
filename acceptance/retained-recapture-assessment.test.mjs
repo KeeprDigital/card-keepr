@@ -65,3 +65,41 @@ test("offline reassessment rejects corrupted complete evidence and reports old t
   assert.equal(partial.captures[0].category, "unresolved_drift");
   assert.match(partial.captures[0].reason, /discarded bytes/u);
 });
+
+test("a separately reviewed complete baseline accepts only its exact adapter meaning and verifies its bytes", async (t) => {
+  const { mkdtemp, writeFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { gzipSync } = await import("node:zlib");
+  const directory = await mkdtemp(join(tmpdir(), "keepr-reviewed-baseline-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const body = Buffer.from(
+    Buffer.from(golden.body_base64, "base64").toString("utf8").replaceAll("Krillin", "Reviewed card name"),
+  );
+  const baseline = {
+    ...golden,
+    range_start: 0,
+    range_end_exclusive: body.length,
+    full_body_size: body.length,
+    body_base64: body.toString("base64"),
+    body_sha256: digest(body),
+    full_body_sha256: digest(body),
+  };
+  await writeFile(join(directory, "baselines.json"), JSON.stringify({ [name]: { full_body_sha256: digest(body) } }));
+  await writeFile(join(directory, `${name}.gz`), gzipSync(JSON.stringify(baseline)));
+  const reviewed = await createOfficialSourceAssessment({ fixturesDirectory, reviewedBaselinesDirectory: directory });
+  const accepted = await reviewed({ name, golden, actual: baseline, bytes: body, differences: ["full_body_sha256"] });
+  assert.equal(accepted.category, "unchanged");
+  assert.equal(accepted.actionable, false);
+  const future = Buffer.from(body.toString().replaceAll("Reviewed card name", "Future card name"));
+  assert.equal(
+    (await reviewed({ name, golden, actual: baseline, bytes: future, differences: ["full_body_sha256"] })).category,
+    "semantic_drift",
+  );
+  await writeFile(join(directory, `${name}.gz`), gzipSync(JSON.stringify({ ...baseline, body_base64: "corrupt" })));
+  const corrupt = await createOfficialSourceAssessment({ fixturesDirectory, reviewedBaselinesDirectory: directory });
+  assert.equal(
+    (await corrupt({ name, golden, actual: baseline, bytes: body, differences: [] })).category,
+    "integrity_failure",
+  );
+});

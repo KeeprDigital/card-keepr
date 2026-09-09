@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { gunzipSync } from "node:zlib";
 import { readFile, readdir } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { build } from "esbuild";
@@ -47,7 +48,10 @@ function changedPaths(before, after, path = "$", result = []) {
   return result;
 }
 
-export async function createOfficialSourceAssessment({ fixturesDirectory }) {
+export async function createOfficialSourceAssessment({ fixturesDirectory, reviewedBaselinesDirectory }) {
+  const reviewedBaselines = reviewedBaselinesDirectory
+    ? JSON.parse(await readFile(join(reviewedBaselinesDirectory, "baselines.json"), "utf8"))
+    : {};
   const root = resolve(import.meta.dirname, "..");
   const bundle = await build({
     stdin: {
@@ -91,7 +95,25 @@ export async function createOfficialSourceAssessment({ fixturesDirectory }) {
     const base = { adapter_version: adapter?.adapterVersion };
     if (!adapter)
       return { ...base, category: "unresolved_drift", actionable: true, reason: "No current adapter for capture." };
-    const fullGolden = fullGoldens.get(golden.full_body_sha256);
+    let fullGolden = fullGoldens.get(golden.full_body_sha256);
+    if (Object.hasOwn(reviewedBaselines, name)) {
+      try {
+        if (!/^[a-z0-9-]+\.json$/u.test(name)) throw new Error("Invalid reviewed capture filename.");
+        const compressed = await readFile(join(reviewedBaselinesDirectory, `${name}.gz`));
+        const capture = JSON.parse(gunzipSync(compressed, { maxOutputLength: 24 * 1024 * 1024 }).toString("utf8"));
+        validateGolden(capture);
+        if (
+          capture.source_url !== golden.source_url ||
+          capture.range_start !== 0 ||
+          capture.range_end_exclusive !== capture.full_body_size ||
+          capture.full_body_sha256 !== reviewedBaselines[name].full_body_sha256
+        )
+          throw new Error("Reviewed baseline must retain the complete declared Source response and digest.");
+        fullGolden = { name: `monitoring/${name}.gz`, capture };
+      } catch (error) {
+        return { ...base, category: "integrity_failure", actionable: true, reason: error.message };
+      }
+    }
     const baseline = fullGolden?.capture ?? golden;
     if (!fullGolden && differences.length)
       return {
@@ -131,11 +153,16 @@ export async function createOfficialSourceAssessment({ fixturesDirectory }) {
     const semanticChanged = expectedDigest !== actualDigest;
     return {
       ...base,
-      category: semanticChanged ? "semantic_drift" : differences.length ? "cosmetic_drift" : "unchanged",
+      category: semanticChanged
+        ? "semantic_drift"
+        : baseline.full_body_sha256 !== actual.full_body_sha256
+          ? "cosmetic_drift"
+          : "unchanged",
       actionable: semanticChanged,
       comparison:
         "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
       baseline_file: fullGolden?.name ?? name,
+      baseline_full_body_sha256: baseline.full_body_sha256,
       expected_observations_sha256: expectedDigest,
       actual_observations_sha256: actualDigest,
       observation_count: observed.observations.length,

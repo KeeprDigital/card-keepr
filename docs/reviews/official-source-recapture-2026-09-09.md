@@ -216,3 +216,43 @@ an exhaustive before/after comparison verifies all 68 changed outputs remove
 exactly one root-URL detail request, with all parse results and every other
 request identical. Top-level raw captures remain unchanged. The first full
 suite correctly failed against those historical hashes before this audit.
+
+## Reviewed monitoring selections
+
+After the source corrections above, twenty complete captured responses are
+selected in `monitoring/baselines.json`; none of the top-level regression bytes
+is overwritten. Its per-file digest, URL, retrieval time and review reason bind
+each selection to the complete September response in `current-capture.tar.gz`.
+`reviewed-semantic-changes.json` retains per-capture Card, Printing and Product
+comparison counts/digests, changed Product catalogues and complete request
+additions/removals using the corrected current adapters. Exact sidecar changes
+remain in the original report and full raw evidence. These selections accept
+actual publisher changes for future monitoring; they do not prove image-byte
+identity, infer new Printings, or establish enabled-source readiness by themselves.
+
+| Captures | Reviewed official evidence and decision |
+| --- | --- |
+| Four Digimon card leaves: appmon, BT01, promo, related QA | Respectively 1, 24, 19 and 5 Card/Printing facts remain identical. Category `522038` and `/images/products/pack/ver26/thumb.png` are added in raw navigation. Accept the exact discovery additions. |
+| Digimon root | The same category is present in the source; summary count changes 98 → 99, with new publication links and image navigation. No card facts are inferred at the root. |
+| Digimon Gift Box and theme booster | Their Product/Release facts remain identical. Navigation adds Gallantmon/Imperialdramon sleeves, WC26–27 playmat and Scramble premium collection; 17 existing image queries change `260604` → `260818`. Accept navigation evidence without asserting newly discovered detail contents. |
+| Three Fusion Product details: starter, story and winter | Product/Release facts remain identical. FB11 `01_422.html` is added; FB08 `01_294.html` is replaced where it appeared in navigation. |
+| Fusion card root | All 172 listing observations retain their Product catalogue. Raw category `583011` adds FB11 discovery; corresponding source links change. |
+| Fusion products hub, page2 and starter tag | ST01 moves to AVAILABLE NOW with its unchanged 2026-08-21 date. Raw upcoming entries add Broly/Vegeta sleeves (accessories), PLAYMAT & CARD SET Limited Edition 02 and Premium Card Collection 03 (Card-bearing Products). The literal `.` dates remain unknown, with raw evidence retained. Older FB07/FB08 and other entries move between pages. Product pagination remains followed, so a page move is not a Product deletion. |
+| Gundam GD02-016 detail | Card/Printing facts are identical; image query changes `260710` → `260818`. Accept the new evidence-bearing image request without inferring image equality or a new Printing. |
+| Gundam GD02 complete listing | Establish the first complete monitoring baseline: 187 detail requests and 188 image requests are now retained. The earlier partial response cannot prove whole-response equivalence; this historical limitation remains explicit in the comparison artifact. The registered Products root is no longer scheduled under an invalid detail role. |
+| Gundam errata listing | Product facts and Errata article discovery remain unchanged. Three collaboration thumbnail query tokens and source navigation ordering/labels change. Accept these exact source sidecars and requests. |
+| Gundam GD05 Product | Product/Release facts and discovery remain unchanged. Raw Rarity adds `138+10 Card Types`, with 50 Common, 36 Uncommon, 32 Rare, 12 Legend Rare, 8 Special, 2 Token and 8 Special EXResource. Preserve this as optional source evidence. |
+| Two One Piece card lists | Respectively 1 and 155 Card/Printing facts remain identical. Image queries change `260731` → `260828`; raw Recording `569117` is added to discovery. No new Printing is inferred from an image URL change. |
+
+Replaying the preserved September capture against these reviewed baselines is
+successful: 21 unchanged, 29 cosmetic and 10 out of scope; zero semantic,
+structural, unresolved, transport or integrity failures. Replaying without the
+explicit reviewed-baseline option still reports 19 semantic and one unresolved
+capture, preserving the old comparison and Gundam limitation. A changed baseline
+body, incomplete capture or digest/URL mismatch fails as an integrity error.
+
+Independent review of `6a258fb6` → `92ce2549` is complete on both axes: coordinator
+Spec review and toolchain Standards review each found no actionable findings,
+independently verified four retained complete body digests and checked the
+Fusion-only policy and both exact Gundam root URLs. These reviews do not assert
+that the separate monitoring-baseline commit or required future schedule passed.
