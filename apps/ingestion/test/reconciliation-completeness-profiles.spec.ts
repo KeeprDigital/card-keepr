@@ -292,6 +292,24 @@ test("a partial-game publication carries an unselected curation and its immutabl
     reviewed_source_digest: await sha256(new TextEncoder().encode(canonicalJson(officialName))),
     supersedes_revision_id: null,
   };
+  const missingEvidenceProposal = {
+    ...proposal,
+    evidence: [
+      {
+        kind: "source_observation",
+        id: String(retainedEvidence.source_observation_id).replace(/_[0-9]+$/u, "_999999"),
+      },
+    ],
+  };
+  const missingEvidence = await post("/admin/v1/curated-revisions", {
+    environment: "production",
+    expected_current_revision_id: initialRevision,
+    proposal: missingEvidenceProposal,
+    proposal_digest: await sha256(new TextEncoder().encode(canonicalJson(missingEvidenceProposal))),
+    idempotency_key: "partial-curation-missing-observation",
+  });
+  expect(missingEvidence.response.status).toBe(422);
+  expect(missingEvidence.document.code).toBe("curated_revision_evidence_not_retained");
   const created = await post("/admin/v1/curated-revisions", {
     environment: "production",
     expected_current_revision_id: initialRevision,
@@ -516,6 +534,8 @@ test("complete image evidence publishes an unidentified artwork once without col
   // Verify the actual consumer projection and streamed content against the
   // immutable native export, without relying on legacy reconciliation rows.
   for (const image of targetImages) {
+    const retainedImage = thirdRecords.printing_images!.find(({ id }) => id === image.id);
+    expect(retainedImage).toMatchObject({ id: image.id, content_sha256: image.content_sha256 });
     const printingResponse = await readPublished(`/v1/printings/${image.printing_id}?revision=${revisionId}`);
     const printingDocument = (await printingResponse.json()) as {
       data: { printing_images: Record<string, unknown>[] };
@@ -525,14 +545,14 @@ test("complete image evidence publishes an unidentified artwork once without col
       id: image.id,
       media_type: image.media_type,
       content_sha256: image.content_sha256,
-      content_byte_length: image.content_byte_length,
+      content_byte_length: retainedImage!.content_byte_length,
       width: image.width,
       height: image.height,
     });
     const content = await readPublished(`/v1/printing-images/${image.id}/content?revision=${revisionId}`);
     expect(content.headers.get("content-type")).toBe(image.media_type);
     const bytes = new Uint8Array(await content.arrayBuffer());
-    expect(bytes.byteLength).toBe(image.content_byte_length);
+    expect(bytes.byteLength).toBe(retainedImage!.content_byte_length);
     expect(await sha256(bytes)).toBe(image.content_sha256);
   }
 }, 120_000);
@@ -628,10 +648,11 @@ test("Product lifecycle aggregates every related Printing deterministically", as
   );
   const multiplePublished = await approveNativeCandidate(multiple, "publish-lifecycle-multiple");
   const latestRevision = requiredString(multiplePublished.document, "resulting_revision_id");
-  const product = (await exportComponentRecords(latestRevision, "products")).find(
+  const products = await exportComponentRecords(latestRevision, "products");
+  const product = products.find(
     (record) => record.game === "one-piece" && record.official_code === "product_lifecycle_shared",
   );
-  expect(product).toMatchObject({
+  expect(product, JSON.stringify(products)).toMatchObject({
     lifecycle: {
       first_revision_id: firstRevision,
       last_observed_revision_id: latestRevision,
