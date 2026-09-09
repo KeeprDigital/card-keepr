@@ -13,9 +13,8 @@ beforeEach(async () => {
   await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
 });
 
-// Storage persists across the tests in this file, so the single test that
-// publishes a revision also carries every assertion that needs an empty
-// catalogue first.
+// One journey checks the empty baseline and then the published catalogue,
+// so the Bootstrap Mode transition is observed within the same isolated test.
 test("a Bootstrap Mode Production Release names the Spine Revision", async () => {
   const intent = {
     ...(await bootstrapIntent("bootstrap-wrong")),
