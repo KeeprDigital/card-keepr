@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import { injectFixturePublication } from "./fixture-plan-injection";
 import * as catalogueExportQueries from "./query-helpers/catalogue-export";
 import * as ingestionQueries from "./query-helpers/ingestion";
@@ -24,20 +25,33 @@ import {
 
 installReconciliationSuite();
 
-test("fresh provenance changes the approval digest but records semantic no-change", async () => {
-  const firstRun = await collect("/reconciliation/repeatable", "reconcile-repeatable-first");
-  const first = await reconcile(firstRun.id);
-  const firstPublished = await approve(first.document);
+test("fresh native provenance retains the consumer revision and export for semantic no-change", async () => {
+  const firstRun = await collect("/reconciliation/repeatable", "native-repeatable-first");
+  const first = await prepareNativeCandidate(firstRun.id, "one-piece", "catrev_spine_000", "repeatable-first-prepare");
+  const firstPublished = await approveNativeCandidate(first, "repeatable-first-publish");
   const revisionId = requiredString(firstPublished.document, "resulting_revision_id");
+  const firstExport = await exportManifest(revisionId);
+  const firstEvidence = (await get(`/v1/ingestion-runs/${firstRun.id}/evidence`)).document;
+  const firstChecks = firstEvidence.source_coverage as Record<string, unknown>[];
+  const firstCheck = firstChecks.find(({ source_lineage }) => source_lineage === "one-piece-en");
+  expect(firstCheck).toMatchObject({ status: "complete", successful_checked_at: expect.any(String) });
 
-  const secondRun = await collect("/reconciliation/repeatable", "reconcile-repeatable-second");
-  const second = await reconcile(secondRun.id);
-  expect(second.document.candidate_digest).not.toBe(first.document.candidate_digest);
-  const secondPublished = await approve(second.document);
-  expect(secondPublished.document).toMatchObject({
-    publication_outcome: "no_change",
-    resulting_revision_id: revisionId,
-  });
+  const secondRun = await collect("/reconciliation/repeatable", "native-repeatable-second");
+  const second = await prepareNativeCandidate(secondRun.id, "one-piece", revisionId, "repeatable-second-prepare");
+  expect(second.manifest_digest).not.toBe(first.manifest_digest);
+  const secondPublished = await approveNativeCandidate(second, "repeatable-second-publish");
+  const secondRevision = requiredString(secondPublished.document, "resulting_revision_id");
+  const secondEvidence = (await get(`/v1/ingestion-runs/${secondRun.id}/evidence`)).document;
+  const secondChecks = secondEvidence.source_coverage as Record<string, unknown>[];
+  const secondCheck = secondChecks.find(({ source_lineage }) => source_lineage === "one-piece-en");
+  expect(secondCheck).toMatchObject({ status: "complete", successful_checked_at: expect.any(String) });
+  expect(String(secondCheck?.successful_checked_at) > String(firstCheck?.successful_checked_at)).toBe(true);
+  expect(secondEvidence.snapshots).not.toEqual(firstEvidence.snapshots);
+  expect((await get(`/v1/ingestion-runs/${firstRun.id}/evidence`)).document.snapshots).toEqual(firstEvidence.snapshots);
+  // A different review manifest is not a consumer content change. Preserve the
+  // established revision/export contract without depending on retired run fields.
+  expect(secondRevision).toBe(revisionId);
+  expect(await exportManifest(secondRevision)).toEqual(firstExport);
 });
 
 test("locator and SourceBucket evidence refresh without minting Catalogue Revisions or exports", async () => {
