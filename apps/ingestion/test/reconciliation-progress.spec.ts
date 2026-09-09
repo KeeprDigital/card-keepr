@@ -1,12 +1,26 @@
 import { expect, test } from "vitest";
 import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
 import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
-import { collect, get, installReconciliationSuite, reconcile, requiredString } from "./reconciliation-helpers";
+import {
+  collect,
+  get,
+  installReconciliationSuite,
+  post,
+  reconcile,
+  requiredString,
+  testEnv,
+} from "./reconciliation-helpers";
 
 installReconciliationSuite();
 
 test("game predecessor follows pinned ancestry despite publication clock skew", async () => {
+  const { advanceGamePublication } = await import("../../../src/catalogue/reconciliation");
+  const { advancePublicationExports } = await import("../../../src/catalogue/ingestion");
+  const { startOrObserveCatalogueBackupWorkflow } = await import("../../../src/catalogue/backup-recovery");
+  const { catalogueStore } = await import("../../../src/catalogue/shared");
+  const { readCatalogueRevisionPublishedAt } = await import("./query-helpers/published-catalogue");
   const revisions: string[] = [];
+  const publicationTimes: string[] = [];
   const now = Date.now();
   for (const [index, scenario] of ["query-hot-window-1", "query-hot-window-2"].entries()) {
     const run = await collect(`/reconciliation/${scenario}`, `game-predecessor-${index}`);
@@ -16,14 +30,69 @@ test("game predecessor follows pinned ancestry despite publication clock skew", 
       revisions.at(-1) ?? "catrev_spine_000",
       `game-predecessor-candidate-${index}`,
     );
-    const approvedAt = new Date(now + (2 - index) * 60000).toISOString();
-    const published = await approveNativeCandidate(candidate, `game-predecessor-approve-${index}`, 15_000, {
-      "x-keepr-test-now": approvedAt,
+    const manifest = requiredString(candidate, "manifest_digest");
+    const inspection = await get(`/v1/game-candidates/${candidate.id}/inspection?manifest=${manifest}`);
+    expect(inspection.document.ready).toBe(true);
+    const approved = await post("/v1/publications", {
+      candidate_id: candidate.id,
+      manifest_digest: manifest,
+      expected_game_revision_id: candidate.expected_game_revision_id,
+      generation: candidate.generation,
+      idempotency_key: `game-predecessor-approve-${index}`,
     });
-    expect(published.response.status).toBe(200);
-    expect(published.document.approved_at).toBe(approvedAt);
-    revisions.push(requiredString(published.document, "resulting_revision_id"));
+    expect(approved.response.status, JSON.stringify(approved.document)).toBe(202);
+    const operation = requiredString(approved.document, "id");
+    let artifacts: Record<string, unknown> = { sequence: 0, state: "preparing" };
+    for (let unit = 0; artifacts.state === "preparing" && unit < 250; unit++) {
+      const result = await post(`/v1/game-candidates/${candidate.id}/publication-preparation`, {
+        manifest_digest: manifest,
+        generation: candidate.generation,
+        sequence: artifacts.sequence,
+        idempotency_key: `game-predecessor-artifacts-${index}-${unit}`,
+      });
+      expect(result.response.status, JSON.stringify(result.document)).toBe(200);
+      artifacts = result.document;
+    }
+    expect(artifacts.state).toBe("verified");
+    const env = { ...testEnv, CATALOGUE_DB: catalogueStore(testEnv.CATALOGUE_DB) };
+    let exports: { state: string } = { state: "preparing" };
+    for (let unit = 0; exports.state === "preparing" && unit < 250; unit++)
+      exports = await advancePublicationExports(env, operation, 0, `game-predecessor-export-${index}-${unit}`);
+    expect(exports.state).toBe("verified");
+    // Drive the real switch clock; approval metadata alone does not affect the
+    // native Workflow's independently chosen publication timestamp.
+    const publishedAt = new Date(now + (2 - index) * 60000).toISOString();
+    const published = await advanceGamePublication(env, operation, 0, publishedAt);
+    expect(published.state, JSON.stringify(published)).toBe("published");
+    const revision = requiredString(published, "resulting_revision_id");
+    const retained = await readCatalogueRevisionPublishedAt(testEnv.CATALOGUE_DB)
+      .bind(revision)
+      .first<{ published_at: string }>();
+    expect(retained?.published_at).toBe(publishedAt);
+    publicationTimes.push(retained!.published_at);
+    revisions.push(revision);
+    await startOrObserveCatalogueBackupWorkflow(
+      env.CATALOGUE_DB,
+      testEnv.CATALOGUE_BACKUP_WORKFLOW,
+      {
+        expected_current_revision_id: revision,
+        idempotency_key: requiredString(published, "backup_attempt_id"),
+      },
+      new Date().toISOString(),
+    );
+    const backupPath = `/v1/backups/${published.backup_attempt_id}`;
+    let backup = await get(backupPath);
+    const deadline = Date.now() + 15000;
+    while (!["verified", "failed"].includes(String(backup.document.state)) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      backup = await get(backupPath);
+    }
+    expect(backup.document, JSON.stringify(backup.document)).toMatchObject({
+      state: "verified",
+      catalogue_revision_id: revision,
+    });
   }
+  expect(Date.parse(publicationTimes[0]!)).toBeGreaterThan(Date.parse(publicationTimes[1]!));
   expect(revisions[0]).not.toBe(revisions[1]);
   const next = await collect("/reconciliation/query-hot-window-3", "game-predecessor-next");
   expect((await reconcile(next.id)).response.status).toBe(200);
