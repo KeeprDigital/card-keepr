@@ -97,10 +97,10 @@ jobs:
 
   ingestion-tests:
     runs-on: ubuntu-latest
-    # A shard normally finishes in ~4 min. The workers pool occasionally
-    # wedges in per-file teardown after every test has passed (seen on main
-    # before sharding); the cap bounds what such a hang costs.
-    timeout-minutes: 12
+    # Serial files avoid competing Workers runtimes. At the old 12-minute
+    # cap, completed files alone consumed 669–696s while other files remained.
+    # Keep test/poll deadlines unchanged and budget the complete serial shard.
+    timeout-minutes: 36
     strategy:
       fail-fast: false
       matrix:
@@ -122,7 +122,11 @@ jobs:
 
   acceptance:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Files run serially to avoid competing real Worker/restore runtimes.
+    # Retained Riftbound has four 600s waits plus publication/backup phases;
+    # this job budget leaves room for the remaining files and setup. Individual
+    # test/poll deadlines are unchanged and still surface failed scenarios.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:

@@ -158,3 +158,143 @@ isolation and timeout guards. Reviewers performed read-only analysis and no
 runtime tests. Both axes explicitly retain complete current-runtime validation,
 suite-context diagnosis and #253's green scheduled/manual run as unfinished
 acceptance; this is a reviewed partial implementation checkpoint.
+
+## Complete provider acceptance and host allocation
+
+Toolchain-provider CI run `34331767421` completed naturally on Node 22/Ubuntu:
+340 acceptance passes, five failures and one opt-in capacity skip. Acceptance
+shards 1/2/3 recorded 109/75/156 passes respectively, with all five failures in
+shard 2. Its 15 ingestion failures are a distinct baseline. No jobs in that
+provider run were cancelled. Root reliability's preceding CI `34332109032`
+recorded acceptance-1 failure, acceptance-3 success and acceptance-2 cancellation
+at the 20-minute job bound; that cancelled shard remains incomplete evidence.
+
+The acceptance entrypoints now all select `--test-concurrency=1`, including
+local default, shard and tier commands. Native test files each start several
+Worker/restore processes, so default Node file concurrency previously ran
+competing heavy journeys on each host. The local serial provider run has already
+passed native One Piece in 119.069 seconds and five-game/current-plus-two actual
+SQL import in 65.58 seconds, while those scenarios failed in hosted concurrent
+contexts. This is supporting evidence, not proof that every acceptance failure
+shares that cause. The complete serial run remains in progress.
+
+The CI acceptance job budget is 60 minutes, replacing its former 20-minute cap.
+This is an outer host-allocation bound, not a test or polling timeout increase.
+The prior completed provider's sums of top-level reported test durations were
+469.110/1,488.433/1,718.623 seconds per shard, excluding setup; those are
+concurrent-context sums, not measured serial wall times. Retained One Piece
+alone passed in 787.419 seconds. Riftbound's four existing 600-second waits plus
+its 120-second publication/backup phases and other assigned tests cannot fit
+inside the old cap in the worst case. Individual assertions, retry bounds and
+poll deadlines are unchanged. The local complete 68-file provider run has a
+separately declared 90-minute aggregate bound. Any failed or interrupted checks
+must still be reported, and the exact release SHA still requires every CI gate.
+
+## Composed recovery polling regression
+
+The current-runtime serial provider run reproduced the native composed-recovery
+case failure in 46.1478 seconds. Its preserved failure state is
+`/var/folders/h9/r2hp35sx2bs4v69vcsxsls900000gn/T/card-keepr-native-preparation-r3nK4i`.
+After deduplicating the shared runtime log by request ID, exactly 300 accepted
+administration requests precede one 429. Of those requests, 123 poll backups
+and 111 inspect collection/candidate progress. The test polls every 100 ms
+against its 300/minute fixture limit. The retained database confirms the
+injected export failure and four-generation import failure terminalized as
+intended; the final retry had imported generation two and was verifying when
+the request budget was exhausted. The second fresh-baseline case passed.
+
+The composed-recovery fixture now shares the existing 250-ms per-origin queue
+between owner CLI calls and direct administration HTTP, including the replacement
+runtime. Consumer traffic and provider simulation are unchanged. No response is
+retried or ignored, no request limit is raised, and all existing deadlines remain.
+The established queue tests pass 4/4; the release-contract tests pass 10/10 after
+the CI allocation change. The complete native journey rerun is queued behind
+the provider's exclusive full acceptance lease and has **not yet passed**.
+
+## Serial ingestion CI boundary
+
+At `12f996bc56488a8ee33ab825b9bc1eea070f4e58`, CI run `34334241396`
+naturally cancelled all three ingestion jobs at their 12-minute outer cap.
+They were still progressing through files, not hung after completion. The
+completed-file verdicts cover 517 passes and three failures out of 520 tests:
+13/16/8 completed files in shards 1/2/3, with 677.287/695.577/669.335 seconds
+summed completed-file durations. Other tests/files remained unfinished; these
+counts do not constitute a complete 753-test selection result.
+
+The three reported failures were the normative observation threshold (28.946s),
+reviewed identity application (0.907s), and larger-than-1-MiB prior catalogue
+(32.596s). Cancellation prevented Vitest's final failure stacks. Their names
+match earlier failures, but their exact causes on this head are **unconfirmed**;
+no earlier collision or deadline stack is relabelled as evidence for this run.
+The full 23-test cleanup file passed remotely.
+
+The ingestion job allocation is now 36 minutes to cover serial files, based on
+these measured partial durations and the repository's prior 12-minute shard cap.
+Individual test, hook and polling deadlines are unchanged. Three-times the old
+job allocation is a finite verification bound, not a claim of success or an
+operating performance target. Raw logs remain
+`/tmp/card-keepr-launch-20260909/reliability-serial-ci-ingestion-{1,2,3}.log`.
+
+Independent incremental Standards and Spec reviews of `12f996bc` through
+`5e0503d1daa581f9d707938bf649ff518b63623d` found no actionable findings
+(Standards: zero hard violations and zero smells). Both confirmed that the
+composed-recovery rerun and final complete suites remain pending. This later
+outer ingestion allocation and its new evidence are subsequent changes.
+
+Independent Standards and Spec reviews of `5e0503d1` through
+`864f4ddae907efc71f86baa953ad2aa07570e3aa` also found no actionable findings.
+Both reviewed the measured allocation separately and confirmed that interrupted
+partial verdicts do not meet the complete-suite acceptance requirement.
+
+The same `12f996bc` run subsequently completed acceptance shard 1 with 108
+passes, one failure (Gundam candidate still preparing after 82.235 seconds),
+and one explicitly opt-in skip in 392.118 seconds. Shard 3 passed. Shard 2
+naturally reached its 20-minute outer cap and was cancelled, without a final
+suite verdict. None of these results closes #271 or #253. Raw acceptance logs
+are retained beside the ingestion logs with the same shard suffixes.
+
+## Complete current-runtime serial acceptance baseline
+
+The toolchain provider at exact `0b4b41ddc6be9501a6e810e83c3e6955fba55741`
+finished its complete 68-file selection naturally in 2,623.437 seconds: 343
+passed, two failed, one opt-in skip out of 346 tests, zero cancelled. Full
+retained Riftbound passed in 1,151.255 seconds, including actual SQL restore;
+retained One Piece passed in 663.772 seconds. These are complete baseline
+results, not results for the later reliability or publication changes.
+
+Both failure stacks report HTTP 429. The composed-recovery failure and retained
+state are analysed above. The Product journey failed in 56.740 seconds at
+`inspectNativeCollection` (helper line 96, Product caller line 495) after several
+native publications. Its fixture limit is 300 administration requests/minute,
+but its CLI environment had not opted into the existing shared pacing queue.
+It now requests a 250-ms minimum interval, used by CLI, native inspection and
+polling at that same origin, including the restarted ingestion Worker. Consumer
+requests and all existing deadlines are unchanged. Its original test deletes
+temporary state unconditionally; no additional retained-database diagnosis is
+claimed. The full Product rerun is queued after image/caller diagnostics.
+
+## Node 22 pacing verification and complete hosted ingestion
+
+At `7e7b62f9bd8033449064dfc993b49e15b2629c49`, the complete composed-recovery
+and Product files passed 3/3 on Node 22.23.2, serially and under the exclusive
+host lease: recovery 82.689 s, fresh baseline 50.402 s, Product 118.290 s.
+No test or poll deadline changed and no retry hides a 429. The declared aggregate
+bound was 900 s; all cases exited naturally. Machine-readable command metadata
+and the full log are retained as `reliability-native-pacing.{json,log}` in the
+coordinator evidence directory. Independent incremental Standards and Spec
+reviews of `a016843a` through `7e7b62f9` found no actionable findings.
+
+The complete hosted ingestion selection at `a016843a` in run `34336773653`
+finished naturally: 750 passed, three failed out of 753 across all 88 files.
+Shard 1 passed 253/253 in 845.67 s; shard 2 passed 246 with three failures in
+985.12 s; shard 3 passed 251/251 in 929.06 s. This resolves the prior truncated
+selection gap, but does not satisfy full-green acceptance.
+
+The final stacks now confirm an immutable Source Observation object-key
+collision in reviewed identity application, the normative observation-threshold
+legacy reconciliation helper timeout, and a substantial-coverage-loss source
+refresh still parsing at its existing wait deadline. These are failures on this
+exact head, unlike the earlier incomplete run whose causes were unavailable.
+The identity collision is under focused Node 22 context diagnosis; native caller
+migration must preserve the latter two completeness assertions. Full raw logs
+are `reliability-complete-ci-ingestion-{1,2,3}.log`.
