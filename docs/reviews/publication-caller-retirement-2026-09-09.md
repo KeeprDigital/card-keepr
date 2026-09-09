@@ -303,3 +303,17 @@ integrity-checked repository seam. They retain four failed retries, intermediate
 cursor and 100-call bounds, deadlines, immutable old exports and exact identity
 assertions. The historical empty-correction-pin case retains its legacy resume
 seam. Typecheck passes; native runtime proof is still pending.
+
+Historical provider `ad42319e` passes all three retained materializer cases across
+two files on Node22.23.2 in 5.66 seconds at the exact committed head. The earlier
+5.30-second run passed one case and failed two before recovery because the
+evidence-run summary intentionally omits the candidate digest. A 3.04-second
+state probe confirmed the run was awaiting approval; the existing `/candidate`
+inspection supplies the exact immutable binding. That fixture-only correction
+passed in 6.33 seconds before commit, then passed the fixed-head run above.
+The helper verifies original image/export bytes, recovers an actual expired
+historical reservation, checks exact replay and waits for actual SQL restore
+verification. Every original Errata/retention assertion passes without filling
+legacy tables from native publication. Full red/green logs and digests are
+retained. Background canceled/hung diagnostics remain visible; every run exited
+naturally. Independent review of the historical provider is still required.
