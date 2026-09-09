@@ -19,6 +19,7 @@ import {
   waitForVerifiedPublicationBackup,
 } from "./native-publication-helpers";
 import * as ingestionQueries from "./query-helpers/ingestion";
+import { nativeErratumHistory } from "./query-helpers/native-erratum-history";
 import * as reconciliationQueries from "./query-helpers/reconciliation";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import { exportComponentRecords } from "./reconciliation-helpers";
@@ -738,9 +739,13 @@ describe("Errata rules-text lifecycle", () => {
     const retained = (
       await exportComponentRecords(String(missingPublished.document.resulting_revision_id), "errata")
     ).find(({ id }) => id === observedErratum.id);
-    expect(retained).toMatchObject({
-      lifecycle: { last_observed_revision_id: observedRevisionId },
-    });
+    expect(retained).toBeDefined();
+    expect(retained).not.toHaveProperty("lifecycle");
+    const history = await nativeErratumHistory(testEnv.CATALOGUE_DB, String(missing.id), String(observedErratum.id));
+    expect(history.results).toEqual([
+      { kind: "erratum", first_revision_id: observedRevisionId, last_observed_revision_id: observedRevisionId },
+      { kind: "provenance", first_revision_id: observedRevisionId, last_observed_revision_id: observedRevisionId },
+    ]);
   });
 
   test("a dedicated Printing Erratum fails closed for ambiguous or unpublished locators", async () => {
@@ -978,9 +983,12 @@ describe("Errata rules-text lifecycle", () => {
     const original = originalErrata.find(({ id }) => id === firstErratum.id);
     const retained = currentErrata.find(({ id }) => id === firstErratum.id);
     expect(retained).toEqual(original);
-    expect(retained).toMatchObject({
-      lifecycle: { first_revision_id: firstRevisionId, last_observed_revision_id: firstRevisionId },
-    });
+    expect(retained).not.toHaveProperty("lifecycle");
+    const history = await nativeErratumHistory(testEnv.CATALOGUE_DB, String(second.id), String(firstErratum.id));
+    expect(history.results).toEqual([
+      { kind: "erratum", first_revision_id: firstRevisionId, last_observed_revision_id: firstRevisionId },
+      { kind: "provenance", first_revision_id: firstRevisionId, last_observed_revision_id: firstRevisionId },
+    ]);
     expect(relationships).toContainEqual(
       expect.objectContaining({
         kind: "erratum-target",
