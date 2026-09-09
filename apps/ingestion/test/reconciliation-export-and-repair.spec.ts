@@ -353,7 +353,8 @@ test("Card search repair permits only retained revisions and revalidates unfinis
 }, 60_000);
 
 test("Card search repair binds exact target/current/idempotency and fails stale or conflicting requests closed", async () => {
-  const run = await collect("/reconciliation/complete-empty-lineage", "guarded-search-repair-published-target");
+  // Actual backup verification requires a representative retained record.
+  const run = await collect("/reconciliation/base", "guarded-search-repair-published-target");
   const candidate = await prepareNativeCandidate(
     run.id,
     "one-piece",
@@ -395,7 +396,8 @@ test("Card search repair binds exact target/current/idempotency and fails stale 
 
 test("retained legacy publication and bounded Card search repair need no obsolete gram table and replay only their completed result", async () => {
   await cardSearchQueries.dropObsoleteCardSearchTerms(testEnv.CATALOGUE_DB).run();
-  const run = await collect("/reconciliation/complete-empty-lineage", "bounded-25-card-search-repair");
+  // Retain real nonempty publication/restore evidence before adding the repair-only legacy rows.
+  const run = await collect("/reconciliation/base", "bounded-25-card-search-repair");
   const reconciled = await reconcile(run.id);
   expect(reconciled.response.status).toBe(200);
   // Explicit retained legacy projection seam; current publication never populates revision_cards.
