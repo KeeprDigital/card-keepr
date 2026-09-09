@@ -304,3 +304,28 @@ Final focused validation passes 14 Node recapture tests. Most recent full domain
 validation passes 46 files / 252 tests and typecheck; those production files
 have not changed since. No heavy runtime test or live environment operation ran
 in this lane. Full runtime validation and integration remain coordinator-owned.
+
+## Reviewed hosted manual proof
+
+Both independent reviews of `92ce2549` →
+`afbd4495baeb86874eb3a481392c6a3b380dc40c` are clear: coordinator Spec and toolchain
+Standards reported zero actionable findings. The Spec review independently
+matched all twenty baseline bodies (2,091,639 bytes) to their original complete
+capture artifact and checked URL, full range and digest integrity. Both reviewed
+the limited cosmetic rules, raw-first parsing and negative contract cases.
+
+After those reviews, manual workflow run
+[34335244239](https://github.com/KeeprDigital/card-keepr/actions/runs/34335244239)
+succeeded at exact commit `afbd4495baeb86874eb3a481392c6a3b380dc40c`. Locked install,
+14 recapture contracts, actual network acquisition and artifact upload all pass.
+The hosted report records 37 cosmetic, 13 unchanged and 10 out of scope, with no
+actionable failures. Its complete artifact, report and GitHub run/job metadata
+are retained as `manual-run-34335244239.tar.gz`,
+`manual-run-34335244239-report.json` and `manual-run-34335244239.json`.
+Archive SHA-256:
+`453cb1581a2874a58f0132023115f3c849644bb28b4e9d1237977d0e77b566a3`.
+
+This is `workflow_dispatch` on the reviewed feature branch, not `schedule` on the
+default branch. #267 remains open until integration checks, the actual scheduled
+run and enabled-source convergence through #240 meet its acceptance. The weekly
+Tuesday 04:23 UTC schedule was not changed or simulated to manufacture that proof.
