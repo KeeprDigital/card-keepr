@@ -864,113 +864,143 @@ test("an interrupted publication fails atomically and leaves cleanup independent
   expect(cleanupReplay.document).toEqual(cleanup.document);
 });
 
-test("an interrupted publication finalizes only its exact verified export", async () => {
-  testObservedAt = "2026-07-29T01:00:00.000Z";
-  const started = await startRun("start-complete-interruption");
-  const runId = requiredDocumentString(started.document, "id");
-  const digest = requiredDocumentString(started.document, "candidate_digest");
-  const expectedRevision = requiredDocumentString(started.document, "expected_current_revision_id");
-  const revisionId = await catalogueRevisionIdentity({
-    runId,
-    candidateDigest: digest,
-    expectedCurrentRevisionId: expectedRevision,
-  });
-  const approvalKey = "approve-complete-interruption";
-  const approval = {
-    action: "approved",
-    approved_at: testObservedAt,
-    candidate_digest: digest,
-    expected_current_revision_id: expectedRevision,
-  };
-  const candidate = await fixtureCandidate("first-catalogue", ["one-piece"]);
-  const catalogueExport = await buildCatalogueExport(candidate.candidate, digest, revisionId, testObservedAt);
-  const reconcileAfter = "2026-07-29T01:05:00.000Z";
-  await ingestionQueries
-    .setIngestionRunsStateApprovalJson(testEnv.CATALOGUE_DB)
-    .bind(
-      JSON.stringify(approval),
-      approvalKey,
-      JSON.stringify([approval]),
-      JSON.stringify({
-        completed_stages: ["planning", "collecting", "parsing", "reconciling", "awaiting_approval"],
-        current_stage: "publishing",
-      }),
-      revisionId,
-      testObservedAt,
-      reconcileAfter,
-      catalogueExport.manifest.manifest_sha256,
-      `writer:${revisionId}`,
+test.each([true, false])(
+  "an interrupted publication finalizes only its exact verified export (retained claim=%s)",
+  async (retainedClaim) => {
+    testObservedAt = "2026-07-29T01:00:00.000Z";
+    const started = await startRun("start-complete-interruption");
+    const runId = requiredDocumentString(started.document, "id");
+    const digest = requiredDocumentString(started.document, "candidate_digest");
+    const expectedRevision = requiredDocumentString(started.document, "expected_current_revision_id");
+    const revisionId = await catalogueRevisionIdentity({
       runId,
-    )
-    .run();
-  const inProgress = await approve(runId, digest, expectedRevision, approvalKey);
-  expect(inProgress.response.status).toBe(202);
-  expect(inProgress.document).toMatchObject({
-    contract: "card-keepr-administration-operation@1",
-    operation: "approve_ingestion_run",
-    status: "in_progress",
-    run_id: runId,
-    idempotency_key: approvalKey,
-    claimed_at: testObservedAt,
-  });
-  const inProgressReplay = await approve(runId, digest, expectedRevision, approvalKey);
-  expect(inProgressReplay.response.status).toBe(202);
-  expect(inProgressReplay.document).toEqual(inProgress.document);
-  for (const [changedRun, changedDigest, changedPredecessor] of [
-    [runId, "0".repeat(64), expectedRevision],
-    [runId, digest, "catrev_changed_predecessor"],
-    ["run_changed_intent", digest, expectedRevision],
-  ]) {
-    const changedInFlightReuse = await approve(changedRun!, changedDigest!, changedPredecessor!, approvalKey);
-    expect(changedInFlightReuse.response.status).toBe(409);
-    expect(changedInFlightReuse.document).toMatchObject({ code: "idempotency_key_reused" });
-  }
-  const unreservedKey = await approve(runId, digest, expectedRevision, "unreserved-historical-key");
-  expect(unreservedKey.response.status).toBe(409);
-  for (const object of catalogueExport.objects) {
-    const body = object.body();
-    await Promise.all([
-      testEnv.CATALOGUE_EXPORTS.put(object.key, body.readable, {
-        sha256: object.sha256,
-      }),
-      body.completed,
-    ]);
-  }
-  const listed = await testEnv.CATALOGUE_EXPORTS.list({
-    prefix: `catalogue-exports/${revisionId}/`,
-  });
-  expect(listed.objects.map((object) => object.key).sort()).toEqual(
-    [...new Set(catalogueExport.objects.map((object) => object.key))].sort(),
-  );
-  for (const object of catalogueExport.objects) {
-    expect((await testEnv.CATALOGUE_EXPORTS.get(object.key))?.size).toBe(object.byteLength);
-  }
+      candidateDigest: digest,
+      expectedCurrentRevisionId: expectedRevision,
+    });
+    const approvalKey = "approve-complete-interruption";
+    const approval = {
+      action: "approved",
+      approved_at: testObservedAt,
+      candidate_digest: digest,
+      expected_current_revision_id: expectedRevision,
+    };
+    const candidate = await fixtureCandidate("first-catalogue", ["one-piece"]);
+    const catalogueExport = await buildCatalogueExport(candidate.candidate, digest, revisionId, testObservedAt);
+    const reconcileAfter = "2026-07-29T01:05:00.000Z";
+    await ingestionQueries
+      .setIngestionRunsStateApprovalJson(testEnv.CATALOGUE_DB)
+      .bind(
+        JSON.stringify(approval),
+        approvalKey,
+        JSON.stringify([approval]),
+        JSON.stringify({
+          completed_stages: ["planning", "collecting", "parsing", "reconciling", "awaiting_approval"],
+          current_stage: "publishing",
+        }),
+        revisionId,
+        testObservedAt,
+        reconcileAfter,
+        catalogueExport.manifest.manifest_sha256,
+        `writer:${revisionId}`,
+        runId,
+      )
+      .run();
+    // Durable historical input, including its original writer claim when retained.
+    // The observer must never acquire a replacement claim in either case.
+    if (retainedClaim)
+      await ingestionQueries
+        .insertHistoricalApprovalClaim(testEnv.CATALOGUE_DB)
+        .bind(
+          approvalKey,
+          canonicalJson({ run_id: runId, candidate_digest: digest, expected_current_revision_id: expectedRevision }),
+          testObservedAt,
+          `owner:${approvalKey}`,
+          reconcileAfter,
+        )
+        .run();
+    const originalClaim = await ingestionQueries
+      .readHistoricalApprovalClaim(testEnv.CATALOGUE_DB)
+      .bind(approvalKey)
+      .first();
+    const inProgress = await approve(runId, digest, expectedRevision, approvalKey);
+    expect(inProgress.response.status).toBe(202);
+    expect(inProgress.document).toMatchObject({
+      contract: "card-keepr-administration-operation@1",
+      operation: "approve_ingestion_run",
+      status: "in_progress",
+      run_id: runId,
+      idempotency_key: approvalKey,
+      ...(retainedClaim ? { claimed_at: testObservedAt, retry_after: reconcileAfter } : {}),
+    });
+    if (!retainedClaim) expect(inProgress.document).not.toHaveProperty("claimed_at");
+    const inProgressReplay = await approve(runId, digest, expectedRevision, approvalKey);
+    expect(inProgressReplay.response.status).toBe(202);
+    expect(inProgressReplay.document).toEqual(inProgress.document);
+    for (const [changedRun, changedDigest, changedPredecessor] of [
+      [runId, "0".repeat(64), expectedRevision],
+      [runId, digest, "catrev_changed_predecessor"],
+      ["run_changed_intent", digest, expectedRevision],
+    ]) {
+      const changedInFlightReuse = await approve(changedRun!, changedDigest!, changedPredecessor!, approvalKey);
+      expect(changedInFlightReuse.response.status).toBe(409);
+      expect(changedInFlightReuse.document).toMatchObject({ code: "idempotency_key_reused" });
+    }
+    const unreservedKey = await approve(runId, digest, expectedRevision, "unreserved-historical-key");
+    expect(unreservedKey.response.status).toBe(409);
+    expect(await ingestionQueries.readHistoricalApprovalClaim(testEnv.CATALOGUE_DB).bind(approvalKey).first()).toEqual(
+      originalClaim,
+    );
+    expect(
+      await ingestionQueries
+        .readHistoricalApprovalClaim(testEnv.CATALOGUE_DB)
+        .bind("unreserved-historical-key")
+        .first(),
+    ).toBeNull();
+    for (const object of catalogueExport.objects) {
+      const body = object.body();
+      await Promise.all([
+        testEnv.CATALOGUE_EXPORTS.put(object.key, body.readable, {
+          sha256: object.sha256,
+        }),
+        body.completed,
+      ]);
+    }
+    const listed = await testEnv.CATALOGUE_EXPORTS.list({
+      prefix: `catalogue-exports/${revisionId}/`,
+    });
+    expect(listed.objects.map((object) => object.key).sort()).toEqual(
+      [...new Set(catalogueExport.objects.map((object) => object.key))].sort(),
+    );
+    for (const object of catalogueExport.objects) {
+      expect((await testEnv.CATALOGUE_EXPORTS.get(object.key))?.size).toBe(object.byteLength);
+    }
 
-  testObservedAt = reconcileAfter;
-  const reconciled = await showRun(runId);
-  expect(reconciled.response.status).toBe(200);
-  expect(reconciled.document).toMatchObject({
-    id: runId,
-    state: "published",
-    publication_outcome: "revision",
-    published_revision_id: revisionId,
-    resulting_revision_id: revisionId,
-    export_manifest_digest: catalogueExport.manifest.manifest_sha256,
-    publication_cleanup: null,
-  });
-  const replay = await approve(runId, digest, expectedRevision, approvalKey);
-  expect(replay.response.status).toBe(200);
-  expect(replay.document).toEqual(reconciled.document);
-  for (const [changedRun, changedDigest, changedPredecessor] of [
-    [runId, "0".repeat(64), expectedRevision],
-    [runId, digest, "catrev_changed_predecessor"],
-    ["run_changed_intent", digest, expectedRevision],
-  ]) {
-    const changedReplay = await approve(changedRun!, changedDigest!, changedPredecessor!, approvalKey);
-    expect(changedReplay.response.status).toBe(409);
-    expect(changedReplay.document).toMatchObject({ code: "idempotency_key_reused" });
-  }
-});
+    testObservedAt = reconcileAfter;
+    const reconciled = await showRun(runId);
+    expect(reconciled.response.status).toBe(200);
+    expect(reconciled.document).toMatchObject({
+      id: runId,
+      state: "published",
+      publication_outcome: "revision",
+      published_revision_id: revisionId,
+      resulting_revision_id: revisionId,
+      export_manifest_digest: catalogueExport.manifest.manifest_sha256,
+      publication_cleanup: null,
+    });
+    const replay = await approve(runId, digest, expectedRevision, approvalKey);
+    expect(replay.response.status).toBe(200);
+    expect(replay.document).toEqual(reconciled.document);
+    for (const [changedRun, changedDigest, changedPredecessor] of [
+      [runId, "0".repeat(64), expectedRevision],
+      [runId, digest, "catrev_changed_predecessor"],
+      ["run_changed_intent", digest, expectedRevision],
+    ]) {
+      const changedReplay = await approve(changedRun!, changedDigest!, changedPredecessor!, approvalKey);
+      expect(changedReplay.response.status).toBe(409);
+      expect(changedReplay.document).toMatchObject({ code: "idempotency_key_reused" });
+    }
+  },
+);
 
 test("a stalled late publication write reopens completed cleanup when exact compensation fails", async () => {
   const startedAt = "2026-07-29T02:00:00.000Z";

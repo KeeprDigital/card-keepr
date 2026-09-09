@@ -126,3 +126,11 @@ an existing reservation. Typecheck and focused Biome checks pass at this
 checkpoint; the runtime lease remains queued, so these assertions are not yet
 reported as passing. The supported native fixture helper and full owner journey
 are committed at `3383b02c`, with runtime proof likewise pending.
+
+Independent early review of `b28d2afc` through `464b2af8`: coordinator Spec
+reported no actionable production-contract findings; toolchain Standards reported
+zero hard violations and zero actionable smells. This is an early code checkpoint,
+not the completion review or runtime approval. The retained-reservation fixture
+is now explicit about whether an original writer claim exists, because the old
+fixture depended on the removed writer acquiring one implicitly. Both variants
+assert the observer leaves claim ownership unchanged while pending.
