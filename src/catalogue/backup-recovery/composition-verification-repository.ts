@@ -31,6 +31,7 @@ export const compositionSnapshotTables = [
   "game_catalogue_heads",
   "catalogue_query_revisions",
   "game_candidates",
+  "game_candidate_partitions",
   "game_publication_operations",
   "game_publication_actions",
   "publication_preparations",
@@ -176,4 +177,15 @@ export function compositionArtifactRootsStatement(db: CatalogueStore, revisionId
  LEFT JOIN game_publication_operations o ON o.id=p.publication_operation_id
  WHERE m.catalogue_revision_id=? ORDER BY m.supported_game LIMIT 5`)
     .bind(revisionId);
+}
+
+/** At most one current accepted private root per supported game, including same-revision evidence. */
+export function acceptedEvidenceArtifactRootsStatement(db: CatalogueStore) {
+  return repositoryStatements(db).prepare(`SELECT head.supported_game,candidate.id AS candidate_id,
+    candidate.preparation_id,candidate.manifest_digest,prepared.root_digest
+    FROM game_accepted_candidates head JOIN game_candidates candidate ON candidate.id=head.candidate_id
+    LEFT JOIN publication_preparations prepared ON prepared.candidate_id=candidate.id
+      AND prepared.state='verified' AND prepared.manifest_digest=candidate.manifest_digest
+      AND prepared.generation=candidate.generation
+    WHERE candidate.state='published' ORDER BY head.supported_game LIMIT 5`);
 }
