@@ -16,3 +16,10 @@ permissions and has a twelve-minute finite allocation for fifteen 30-second
 cases, initialization and cleanup. It has no deployment credentials or live
 provider calls. Its job set cannot satisfy the production release CI guard.
 A pass is a non-reproduction and cannot replace full suite validation.
+
+The first hosted sequence at `21bf3105` reproduced seven collisions in fifteen
+cases (193.60s). Every retained observation carried the preceding test's parse
+timestamp and record-storage digest. The next manual experiment isolates reset
+of active, explicitly evicted, and twelve-second idle R2 objects. The first two
+passed locally in20ms; the idle case is new and has not yet run. All these are
+temporary diagnostic tests and never release-gate evidence.
