@@ -1711,7 +1711,11 @@ export async function reconcileRetainedCardPrintingEvidence(
         {
           hasInputs: productCheckTimes.has(game),
           yieldAtCheckpoint,
-          ...(run.supported_game === null ? {} : { membershipPlans: plans }),
+          ...(run.supported_game === null
+            ? {}
+            : {
+                membershipEvidence: { plans, checkedLineages: errataOnlyEvidence ? [] : [...completeLineages].sort() },
+              }),
         },
       );
       productCatalogue = {

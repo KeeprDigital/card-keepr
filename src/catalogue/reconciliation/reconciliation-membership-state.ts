@@ -36,23 +36,25 @@ export type MembershipCursor = {
   contexts: number;
   declaredRelationships: number;
   relationships: number;
+  contextOrigins: number;
   products: number;
   result: ReconciliationCandidateState["positions"];
 };
 
 /** Derive membership targets before sealing, one retained observation or target per bounded unit. */
-export async function prepareMembershipProducts(
+export async function prepareMembershipState(
   database: CatalogueStore,
   runId: string,
   prior: ReconciliationCandidateState,
-  plans: ReconciliationPlanState,
+  evidence: { plans: ReconciliationPlanState; checkedLineages: readonly string[] },
   game: SupportedGame,
   continuation: {
     cursor: MembershipCursor | undefined;
     retain: (cursor: MembershipCursor) => Promise<void>;
   },
 ) {
-  if (plans.position === 0) return prior;
+  const { plans, checkedLineages } = evidence;
+  const checked = new Set(checkedLineages);
   const result = new ReconciliationCandidateState(database, runId, "membership", prior);
   const declared = new ReconciliationReducerIndex<{ id: string; target: string }>(
     database,
@@ -75,7 +77,14 @@ export async function prepareMembershipProducts(
     runId,
     "membership_relationships",
   );
-  const input = await sha256Text(canonicalJson({ game, prior: prior.positions, plans: plans.position }));
+  const contextOrigins = new ReconciliationReducerIndex<{ id: string; lineage: string }>(
+    database,
+    runId,
+    "membership_context_origins",
+  );
+  const input = await sha256Text(
+    canonicalJson({ game, prior: prior.positions, plans: plans.position, checkedLineages }),
+  );
   const cursor: MembershipCursor = continuation.cursor ?? {
     input,
     stage: "declared_products",
@@ -85,6 +94,7 @@ export async function prepareMembershipProducts(
     contexts: 0,
     declaredRelationships: 0,
     relationships: 0,
+    contextOrigins: 0,
     products: 0,
     result: {},
   };
@@ -95,6 +105,7 @@ export async function prepareMembershipProducts(
   contexts.resumeAt(cursor.contexts);
   declaredRelationships.resumeAt(cursor.declaredRelationships);
   relationships.resumeAt(cursor.relationships);
+  contextOrigins.resumeAt(cursor.contextOrigins);
   let work = 0;
   let bytes = 0;
   const save = async () => {
@@ -104,6 +115,7 @@ export async function prepareMembershipProducts(
     cursor.contexts = contexts.position;
     cursor.declaredRelationships = declaredRelationships.position;
     cursor.relationships = relationships.position;
+    cursor.contextOrigins = contextOrigins.position;
     await continuation.retain(cursor);
     work = bytes = 0;
   };
@@ -133,31 +145,44 @@ export async function prepareMembershipProducts(
       cursor.after = product.id;
       await tick();
     }
+    await advance("declared_relationships");
+  }
+  if (cursor.stage === "declared_relationships") {
+    for await (const relationship of prior.values("product_relationships", cursor.after)) {
+      await before(relationship);
+      if (relationship.game === game) {
+        if (await isMembershipRelationship(relationship)) {
+          const lineage = relationship.source_lineage!;
+          if (checked.has(lineage)) await result.set("product_relationships", { ...relationship, observed: false });
+          if (
+            relationship.kind === "printing-distribution-context" &&
+            relationship.to.id ===
+              (await membershipDistributionContextId(game, lineage, relationship.relationship_value))
+          )
+            await contextOrigins.seed(relationship.to.id, { id: relationship.to.id, lineage });
+        } else {
+          const id = relationshipTargetKey(relationship);
+          if (!(await declaredRelationships.get(id))) await declaredRelationships.seed(id, { id });
+        }
+      }
+      cursor.after = relationship.id;
+      await tick();
+    }
     await advance("declared_contexts");
   }
   if (cursor.stage === "declared_contexts") {
     for await (const context of prior.values("distribution_contexts", cursor.after)) {
       await before(context);
-      const lineage = context.source_lineages?.length === 1 ? context.source_lineages[0] : undefined;
+      const lineage = (await contextOrigins.get(context.id))?.lineage;
       const inferred =
         lineage !== undefined &&
         context.evidence_category === "derived" &&
         context.id === (await membershipDistributionContextId(game, lineage, context.label));
       if (context.game === game && !inferred && !(await contexts.get(context.key)))
         await contexts.seed(context.key, { id: context.key, target: context.id });
+      if (inferred && checked.has(lineage!))
+        await result.set("distribution_contexts", { ...context, observed: false, source_lineages: [] });
       cursor.after = context.id;
-      await tick();
-    }
-    await advance("declared_relationships");
-  }
-  if (cursor.stage === "declared_relationships") {
-    for await (const relationship of prior.values("product_relationships", cursor.after)) {
-      await before(relationship);
-      if (relationship.game === game && !(await isMembershipRelationship(relationship))) {
-        const id = relationshipTargetKey(relationship);
-        if (!(await declaredRelationships.get(id))) await declaredRelationships.seed(id, { id });
-      }
-      cursor.after = relationship.id;
       await tick();
     }
     await advance("plans");

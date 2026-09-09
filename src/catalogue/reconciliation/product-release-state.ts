@@ -14,7 +14,7 @@ import type {
 import { ReconciliationCandidateState } from "./reconciliation-candidate-state";
 import { canonicalValueChunks } from "./reconciliation-preparation";
 import { ReconciliationReducerIndex } from "./reconciliation-reducer-state";
-import { prepareMembershipProducts, type MembershipCursor } from "./reconciliation-membership-state";
+import { prepareMembershipState, type MembershipCursor } from "./reconciliation-membership-state";
 import type { ReconciliationPlanState } from "./reconciliation-plan-state";
 import {
   type ProductReleaseEvidenceInput,
@@ -73,7 +73,7 @@ export async function reconcileProductReleaseState(
   options: {
     hasInputs: boolean;
     yieldAtCheckpoint: boolean;
-    membershipPlans?: ReconciliationPlanState;
+    membershipEvidence?: { plans: ReconciliationPlanState; checkedLineages: readonly string[] };
   },
 ) {
   const result = new ReconciliationCandidateState(database, runId, `product_result_${game}`, prior);
@@ -345,14 +345,14 @@ export async function reconcileProductReleaseState(
       });
     });
   });
-  await runStage("new_relationships", options.membershipPlans ? "memberships" : "complete", async () => {
+  await runStage("new_relationships", options.membershipEvidence ? "memberships" : "complete", async () => {
     await consume(relationships.entityValues(after), async (relationship) => {
       if (!(await priorRelationships.has(relationship.id))) await result.set("product_relationships", relationship);
     });
   });
   let draft = result;
-  if (options.membershipPlans && (stage === "memberships" || stage === "complete")) {
-    draft = await prepareMembershipProducts(database, runId, result, options.membershipPlans, game, {
+  if (options.membershipEvidence && (stage === "memberships" || stage === "complete")) {
+    draft = await prepareMembershipState(database, runId, result, options.membershipEvidence, game, {
       cursor: membership,
       retain: async (cursor) => {
         membership = cursor;
