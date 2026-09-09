@@ -361,6 +361,13 @@ test("conflicting Distribution Context facts fail closed without publication", a
 test("identical Product facts are a semantic no-change while source freshness advances", async () => {
   const firstRun = await collect("/reconciliation/product-standalone-v1", "product-semantic-first");
   const firstCandidate = await prepareProductCandidate(firstRun.id, "catrev_spine_000", "one-piece");
+  expect(firstCandidate.records.source_checks).toContainEqual(
+    expect.objectContaining({
+      game: "one-piece",
+      area: "products-and-releases",
+      checked_at: expect.any(String),
+    }),
+  );
   const firstPublished = await approveNativeCandidate(firstCandidate.header, `publish-${firstCandidate.header.id}`);
   const revisionId = requiredString(firstPublished.document, "resulting_revision_id");
   const firstFreshness = await productSourceFreshness();
@@ -556,6 +563,13 @@ test("only an actual Product surface checks its Gundam Source Lineage", async ()
 test("Product freshness is emitted only for an actually checked Product surface", async () => {
   const checkedRun = await collect("/reconciliation/product-standalone-v1", "product-freshness-checked");
   const checkedCandidate = await prepareProductCandidate(checkedRun.id, "catrev_spine_000", "one-piece");
+  expect(checkedCandidate.records.source_checks).toContainEqual(
+    expect.objectContaining({
+      game: "one-piece",
+      area: "products-and-releases",
+      checked_at: expect.any(String),
+    }),
+  );
   const checkedPublication = await approveNativeCandidate(
     checkedCandidate.header,
     `publish-${checkedCandidate.header.id}`,
