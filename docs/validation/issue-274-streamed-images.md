@@ -144,10 +144,17 @@ Local raw records: `/tmp/issue-274-native-probe.log`,
 `/tmp/issue-274-focused-image-green.log`, `/tmp/issue-274-typecheck-final.log`
 and `/tmp/issue-274-domain-final.log`.
 
+The correction is committed as `fa8b77ba9e92b5f4fcb8de614b27e6e144b3df35`.
+Independent incremental reviews of the fixed `9736d445` through `fa8b77ba`
+four-file diff are clear: Standards found zero hard violations and zero
+actionable smells; Spec found no issues. Both examined the confirmed
+known-length cause, bounded bridge/transfer settlement, replay/failure tests
+and unchanged 30-second native deadline. These reviews and focused passes
+do not imply integrated full-suite, capacity or actual restore completion.
+
 ## Remaining evidence
 
-Complete the integrated full validation and independently review the fix
-against its fixed predecessor. Hosted results on `9736d445` remain red;
+Complete the integrated full validation. Hosted results on `9736d445` remain red;
 these focused local passes do not replace exact-release-SHA CI. The complete
 #274 acceptance also requires the caller
 migration plus native export/cleanup/actual restore proof. Neither #274 nor
