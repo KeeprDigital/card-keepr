@@ -254,8 +254,8 @@ test("a terminated run refuses every lifecycle continuation and frees the reserv
         expected_current_revision_id: run.expected_current_revision_id,
         idempotency_key: "termination_gates_approval_001",
       },
-      409,
-      "run_not_awaiting_approval",
+      410,
+      "run_approval_retired",
     ],
     [
       `/v1/ingestion-runs/${run.id}/retry`,

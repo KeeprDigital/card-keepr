@@ -1,7 +1,8 @@
 // Run one shard of the acceptance suite: `--shard=<index>/<total>` (1-based).
 // Local Worker boots dominate acceptance time, so each file is weighted by
 // its boot and migration call sites and assigned, heaviest first, to the
-// shard with the least weight so far.
+// shard with the least weight so far. Each shard runs files serially: a file
+// owns the host while its real Worker and restore runtimes are active.
 import { spawn } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -27,9 +28,7 @@ const files = readdirSync(directory)
 
 const shards = Array.from({ length: total }, () => ({ weight: 0, files: [] }));
 for (const file of files) {
-  const shard = shards.reduce((least, candidate) =>
-    candidate.weight < least.weight ? candidate : least
-  );
+  const shard = shards.reduce((least, candidate) => (candidate.weight < least.weight ? candidate : least));
   shard.weight += file.weight;
   shard.files.push(file.name);
 }
@@ -42,7 +41,7 @@ if (selected.length === 0) {
 console.log(`shard ${index}/${total}: ${selected.join(" ")}`);
 const child = spawn(
   process.execPath,
-  ["--test", ...selected.map((name) => `acceptance/${name}`)],
+  ["--test", "--test-concurrency=1", ...selected.map((name) => `acceptance/${name}`)],
   { cwd: root, stdio: "inherit" },
 );
 child.once("exit", (code, signal) => process.exit(code ?? (signal ? 1 : 0)));

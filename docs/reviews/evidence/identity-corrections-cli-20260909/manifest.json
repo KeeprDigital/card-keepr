@@ -1,0 +1,28 @@
+{
+  "phase": "native_cli",
+  "sha": "e7d2fe30a1b11c3f3b8f8383b72149912e29d173",
+  "worktree_status": "",
+  "command": [
+    "/Users/marcus/.n/n/versions/node/22.23.2/bin/node",
+    "--test",
+    "--test-concurrency=1",
+    "acceptance/identity-corrections-cli.test.mjs"
+  ],
+  "timeout_seconds": 900,
+  "started_at": "2026-09-09T12:03:38.567016+00:00",
+  "log": "/tmp/card-keepr-launch-20260909/issue-274-identity-cli/native_cli.log",
+  "exit_code": 0,
+  "interrupted": false,
+  "seconds": 178.729,
+  "finished_at": "2026-09-09T12:06:37.294467+00:00",
+  "evidence_file": "native-cli-e7d2fe30.log.gz",
+  "log_sha256": "7bff9533766d207d6526a01057fbf57a7bef8c6bc092099077ec8f18feba90d2",
+  "gzip_sha256": "9598badc8027c30a944d6aaee7ed30f7bf3d84a76c8c19f08aa50d77578ca023",
+  "result": {
+    "tests": 1,
+    "pass": 1,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0
+  }
+}

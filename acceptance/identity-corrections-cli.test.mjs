@@ -3,11 +3,23 @@ import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { runCli, startWorker, stopWorker, waitForHealth, waitForRunState } from "./helpers/acceptance-runtime.mjs";
+import {
+  runCli,
+  startWorker,
+  stopWorker,
+  waitForHealth,
+  waitForAdministrationDocument,
+} from "./helpers/acceptance-runtime.mjs";
+import {
+  inspectNativeCollection,
+  nativeCheckpointTransport,
+  publishNativeCollection,
+} from "./helpers/native-catalogue-runtime.mjs";
+import { withNativeRequestPacing } from "./helpers/native-request-pacing.mjs";
 import { syntheticSourceAdapterMigrations } from "./helpers/synthetic-source-adapters.mjs";
 
-// Synthetic owner evidence. The harness injects successful backup health to
-// isolate CLI/publication/consumer behavior; this is not recovery evidence.
+// Synthetic owner evidence, shipped native owner/publication Workflows and
+// actual SQL export/import verification before authenticated consumer reads.
 test("owner CLI publishes a reviewed split and authenticated consumers retain the replacement choice", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "keepr-corrections-"));
   const root = resolve(import.meta.dirname, "..");
@@ -15,20 +27,25 @@ test("owner CLI publishes a reviewed split and authenticated consumers retain th
   const key = crypto.randomUUID();
   const ingestionEnv = join(directory, "ingestion.env"),
     apiEnv = join(directory, "api.env");
-  await writeFile(ingestionEnv, `ADMINISTRATION_KEY=${key}\nADMINISTRATION_CLOCK_MODE=request\n`);
+  await writeFile(
+    ingestionEnv,
+    `ADMINISTRATION_KEY=${key}\nAPI_BEARER_KEY=${key}\nADMINISTRATION_CLOCK_MODE=request\n`,
+  );
   await writeFile(apiEnv, `API_BEARER_KEY=${key}\n`);
   const config = JSON.parse(await readFile(join(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
   delete config.$schema;
-  config.main = join(root, "acceptance/fixtures/retained-evidence-base-harness.ts");
+  config.main = join(root, "acceptance/fixtures/native-combined-card-keepr-runtime.ts");
   config.d1_databases[0].migrations_dir = join(root, "migrations");
   config.services = [{ binding: "OFFICIAL_SOURCE_TRANSPORT", service: "card-keepr-synthetic-official-source" }];
   const configPath = join(directory, "ingestion.json");
   await writeFile(configPath, JSON.stringify(config));
+  const checkpoint = await nativeCheckpointTransport(t, statePath, directory, configPath);
   const source = await startWorker({
     config: "acceptance/fixtures/synthetic-official-source.wrangler.jsonc",
     statePath: join(directory, "source"),
   });
   const ingestion = await startWorker({
+    ...checkpoint,
     config: configPath,
     envFile: ingestionEnv,
     statePath,
@@ -36,12 +53,20 @@ test("owner CLI publishes a reviewed split and authenticated consumers retain th
     testMigrations: await syntheticSourceAdapterMigrations(),
   });
   let api;
+  let journeyCompleted = false;
   t.after(async () => {
+    if (!journeyCompleted) await writeFile(join(directory, "failure-runtime.log"), ingestion.getOutput());
     await Promise.all([stopWorker(source), stopWorker(ingestion), ...(api ? [stopWorker(api)] : [])]);
-    await rm(directory, { recursive: true, force: true });
+    if (journeyCompleted) await rm(directory, { recursive: true, force: true });
+    else t.diagnostic(`Failed identity CLI state retained at ${directory}`);
   });
   await waitForHealth(`${ingestion.url}/health`, key, ingestion);
-  const environment = { KEEPR_INGESTION_URL: ingestion.url, KEEPR_ADMINISTRATION_KEY: key };
+  const environment = {
+    KEEPR_INGESTION_URL: ingestion.url,
+    KEEPR_ADMINISTRATION_KEY: key,
+    // Preserve this fixture's 30/minute guard across CLI and inspection calls.
+    KEEPR_NATIVE_REQUEST_INTERVAL_MS: "2500",
+  };
   const cli = async (args) => {
     const result = await runCli([...args, "--json"], environment);
     assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
@@ -104,44 +129,58 @@ test("owner CLI publishes a reviewed split and authenticated consumers retain th
     ids.push(admitted.history[0].decision.printing.id);
     cardIds.push(admitted.history[0].decision.card.id);
   }
-  async function publish(key, expected) {
-    const run = await cli([
-      "source",
-      "collect",
-      "--game",
-      "one-piece",
-      "--lineage",
-      "one-piece-en",
-      "--adapter",
-      "fixture-one-piece-json@3",
-      "--request-id",
-      "one-piece-en:discovery",
-      "--url",
-      "https://shared-profile-source.invalid/nested",
-      "--idempotency-key",
-      key,
-    ]);
-    const response = await fetch(`${ingestion.url}/v1/ingestion-runs/${run.id}/reconciliation`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}`, "content-type": "application/json" },
-      body: JSON.stringify({ expected_current_revision_id: expected, idempotency_key: `${key}-reconcile` }),
-    });
-    assert.ok(response.ok, await response.text());
-    await waitForRunState(run.id, "awaiting_approval", environment, ingestion);
-    const candidate = await cli(["candidate", "inspect", "--run-id", run.id]);
-    return cli([
-      "run",
-      "approve",
+  async function publish(idempotencyKey, expected) {
+    const collected = await withNativeRequestPacing(environment, () =>
+      fetch(`${ingestion.url}/acceptance/synthetic-evidence`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          supported_game: "one-piece",
+          source_lineage: "one-piece-en",
+          adapter_version: "fixture-one-piece-json@3",
+          idempotency_key: idempotencyKey,
+          requests: [{ id: "one-piece-en:discovery", url: "https://shared-profile-source.invalid/nested" }],
+        }),
+      }),
+    );
+    const run = await collected.json();
+    assert.equal(collected.status, 201, JSON.stringify(run));
+    const prepared = await cli([
+      "game-candidate",
+      "prepare",
       "--run-id",
       run.id,
-      "--candidate-digest",
-      candidate.candidate_digest,
-      "--expected-current-revision",
+      "--game",
+      "one-piece",
+      "--expected-game-revision-id",
       expected,
       "--idempotency-key",
-      `${key}-approve`,
+      `${idempotencyKey}-prepare`,
       "--yes",
     ]);
+    const candidate = await waitForAdministrationDocument(
+      `/v1/game-candidates/${prepared.id}`,
+      (document) =>
+        document.state === "sealed" ||
+        (["failed", "paused"].includes(document.state) ? JSON.stringify(document) : false),
+      environment,
+      ingestion,
+    );
+    assert.equal(candidate.expected_game_revision_id, expected);
+    const reviewed = await cli([
+      "game-candidate",
+      "inspect",
+      "--candidate-id",
+      candidate.id,
+      "--manifest",
+      candidate.manifest_digest,
+    ]);
+    assert.equal(reviewed.ready, true);
+    assert.equal(reviewed.manifest_digest, candidate.manifest_digest);
+    const inspection = await inspectNativeCollection(run.id, environment);
+    assert.equal(inspection.candidates.length, 1);
+    assert.equal(inspection.candidates[0].id, candidate.id);
+    return publishNativeCollection(inspection, `${idempotencyKey}-approve`, environment, ingestion);
   }
   const initial = await publish("initial", "catrev_spine_000");
   const merge = {
@@ -213,4 +252,5 @@ test("owner CLI publishes a reviewed split and authenticated consumers retain th
     headers: { authorization: `Bearer ${key}`, "if-none-match": response.headers.get("etag") },
   });
   assert.equal(conditional.status, 304);
+  journeyCompleted = true;
 });
