@@ -847,7 +847,13 @@ function parseFusionWorldLiveProductIndex(
         });
         continue;
       }
-      const date = normalizedOfficialReleaseDate(liveOfficialReleaseDateText(release[0]!.value), { seasons: true });
+      // The September 2026 listing uses a literal dot for an unpublished
+      // Release date (including Premium Card Collection 03). Preserve the
+      // existing unknown date shape; the raw RELEASE cell stays in the sidecar.
+      const date =
+        release[0]!.value === "."
+          ? { precision: "unknown", value: null }
+          : normalizedOfficialReleaseDate(liveOfficialReleaseDateText(release[0]!.value), { seasons: true });
       entries.push({
         product: { code: liveOfficialProductCode(title), title },
         status: expected.status,

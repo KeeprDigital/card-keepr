@@ -132,3 +132,38 @@ readiness with #240. The new manual capture intentionally exits nonzero because
 these findings are unresolved. The old script's circular CLI import was caught in
 a local attempt (exit 13 before fetching) and removed before the successful fresh
 capture. No interrupted check is being counted as a pass.
+
+## Adapter corrections after the first monitoring commit
+
+The follow-up implementation resolves the two verified Fusion World defects.
+Only the literal `.` RELEASE token in the Fusion World product listing maps to
+`{ precision: "unknown", value: null }`; the original raw cell remains explicit
+unmapped evidence. Other unsupported date tokens still fail closed. Existing date
+precision, publication status, Card facts and shared normalization are unchanged.
+
+Dynamic Fusion World Product listings now discover their Product pagination and
+details without requiring a Card category facet. This exception requires both the
+dynamic listing role and the registered Product-listing origin/path. Other games
+and an explicitly wrong Card-search role retain their previous fail-closed guards.
+The complete bounded extraction seam consumes actual requests in regression tests.
+
+The observation census changes exactly three hashes: the historical Fusion World
+products hub, page2 and starter-tag captures. A before/after matrix audit confirmed
+each changed output is only `discover:listing:<digest>`, previously a category
+error and now respectively 33, 40 and 32 discovered requests. Their bytes and all
+other 66 fixture outputs remain identical. These are deliberate behavior changes,
+not golden replacements.
+
+`fixed-adapters-assessment.json` replays the same preserved September capture with
+the corrected adapters: 29 cosmetic, 19 semantic, one unchanged, ten out of scope,
+one unresolved (the incomplete original Gundam listing), and no structural,
+transport or integrity failures. The three repaired product captures now expose
+actual semantic changes for review instead of hiding them behind parser errors.
+All semantic drift remains actionable; the monitoring job therefore correctly
+stays non-green until the evidence review and baseline decisions are complete.
+
+Focused regressions include the two reproduced failures and explicit invalid-date
+and wrong-role checks. After updating only the audited three observation hashes,
+the full domain suite passes (45 files, 250 tests), 12 Node recapture tests pass,
+and typecheck passes. The initial full-domain rerun correctly failed against the
+old three discovery hashes; that failed run is not counted as final validation.

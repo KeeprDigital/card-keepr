@@ -250,6 +250,14 @@ function bandaiRequestDiscovery(
     }
     if (
       ((initialSurface !== null && isDiscoverySurface(initialSurface)) || dynamicRole === "listing") &&
+      // Fusion Product pagination has the listing role too, but no Card
+      // category facet. Its Product links are discovered by the URL loop below.
+      !(
+        format === "fusion-world" &&
+        dynamicRole === "listing" &&
+        current.origin === adapterUrl(urls.products!).origin &&
+        current.pathname === adapterUrl(urls.products!).pathname
+      ) &&
       !(completeGundamCatalogue && (initialSurface === "errata" || gundamErrataListingUrl(current, sourceLineage)))
     ) {
       discoveredRequests.push(
