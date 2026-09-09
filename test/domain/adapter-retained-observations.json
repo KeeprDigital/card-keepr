@@ -153,43 +153,43 @@
   },
   "gundam-en-asia-discovery.json": {
     "bytes_sha256": "ac5d3b87203186a9a3737f006283ae43414182a00545ab25350d554809b8fbf7",
-    "observations_sha256": "258d1e92122f885cb42fe968d816b7b58cb2f3ca9abbef253c717dbfeba5a02e"
+    "observations_sha256": "0ab3499cbafa8449672239647cd40eb7943e368479e5800f10857d160a481e0f"
   },
   "gundam-en-asia-errata-listing.json": {
     "bytes_sha256": "5ae78bf07eec81af4487afe6309fc045c90c96f365b763ad2f19473a20dac30d",
-    "observations_sha256": "074c285ddf2ede5b56e157e9d27288c8ffbeb47ea042ac008bbe1eb82880d170"
+    "observations_sha256": "1b4891ca642101a15c2494888941d37b0eb924272ba12a7838934be2c6824be4"
   },
   "gundam-en-asia-news-hub.json": {
     "bytes_sha256": "6bfb1a587431fece22fa0193142f5bb27e01fa41850293b5125812706a72646d",
-    "observations_sha256": "2bba2128745707ffd6697fec3fa2ba814a1b050c9df82409a4664fe62907d5e2"
+    "observations_sha256": "9bfb4feae360875b8713534d4cf67b156c8a213aa6ba89abe9b3f01f576fc938"
   },
   "gundam-en-asia-policy-detail.json": {
     "bytes_sha256": "b5289eb79fc7852679d3928442caf8009a35fda44b20df039d0bcc48b54f3aa4",
-    "observations_sha256": "b6aaaf499e141e4442aaf33c38e8000febcbc55e9ef5b26a0c61d5e0d7e650c5"
+    "observations_sha256": "351a59e7181b65daeca12f7a8b179dbdff5fc8895dca8b457b5af6e7db85caa5"
   },
   "gundam-en-asia-policy.json": {
     "bytes_sha256": "94c9c13dc5954a6f2a126ac31b536bd41273630c919917f06f7193b378ba2ecf",
-    "observations_sha256": "71246b9318b671bd301e620cd733de179bd6e11d6361a9dae185f54c35afa0e4"
+    "observations_sha256": "49f4ee195101cc231db6801a3ec7690c16f295610a62923d8e55e50edc74e54b"
   },
   "gundam-en-asia-product-anniversary-set.json": {
     "bytes_sha256": "d7511f52e820cbb8b4113d2d43267e0bedb8899d2997c97aa82ba19957b5bf00",
-    "observations_sha256": "de372f24794b49bbd0d8fb6c977fe6332ca18991693a13cdf578b7cb1aa645df"
+    "observations_sha256": "7e169317bfc185279b5354cee20fe0809d512fc515b5dbb835dc49283f199f52"
   },
   "gundam-en-asia-product-booster.json": {
     "bytes_sha256": "d8a49d8f15f885edd0190e8dab2d5fc9b50b31be5d2ba27bffd05cea23ad5784",
-    "observations_sha256": "5a32cdc8cc2e905f073758b20ab884428b1817aa5d216a3925914db6c5fb77d4"
+    "observations_sha256": "55ee357ad356fc53f506c3be9848b3d08714e018ec6f1e96a4a475c2231c6056"
   },
   "gundam-en-asia-product-card-case.json": {
     "bytes_sha256": "31ff00bee5d9b4156a24fb8e7a611e8bd9511576f77c299dd68e6e751f9b0550",
-    "observations_sha256": "553fe488cce4cc6f34efcfa78e8eb47d3f7fb4965c10f39e1393231933c48267"
+    "observations_sha256": "243cd0c800a8fad7818aae470625c76e5d4a936ff3a1f3203d5e65c5b8a89196"
   },
   "gundam-en-asia-product-deck-build-box.json": {
     "bytes_sha256": "8e166af19bd29d3d680639686f30d5c11d2aab7cc3b9374b770236a3c496978f",
-    "observations_sha256": "78743a7c91f47c1646ea61204c2abebf79ae2422deca6cbcdb63bbea70be646f"
+    "observations_sha256": "b145870f5e4358213f0057ab570b7b9280377809cf24c5dfbcc728ae71537ea5"
   },
   "gundam-en-asia-restructured-card-search.json": {
     "bytes_sha256": "3cc0d146b170502bee3ec7e62a9fdaf78ea73b8088f74d138748476c81473ffa",
-    "observations_sha256": "fef8430daf7754e9d08c066f4ed48a269ad1efe283c8993c5937b5d8f32bb169"
+    "observations_sha256": "60af8e20c955127d0fc9fd794489d26c14fb70b9419ba2d4ae55951a62f9ccfd"
   },
   "gundam-en-us-card-detail-base-live-fragment.html": {
     "bytes_sha256": "8ff9381ed14a6d6d445abc6f7880dffb32064e7418b8ec1c043c9e232b055b7a",
@@ -209,31 +209,31 @@
   },
   "gundam-en-us-discovery.json": {
     "bytes_sha256": "47f1e750d0c2ef5bae0b8bccffd8e3403d259fa242ef10dca5838793eba85923",
-    "observations_sha256": "58301ce6b3d45f3bb02eac23a0f69ecc47e1f23e9573dd043189ad5c9edc47ff"
+    "observations_sha256": "17bfbb2aa31ee72ec688958e2e7671031e00be8eb5c11a64d090b66515af6a20"
   },
   "gundam-en-us-news-hub.json": {
     "bytes_sha256": "492b3eed2846b86c43aeebb64fad925b7d2033e5547820878e549b37322ae23e",
-    "observations_sha256": "397d0061db382287423eef34d9ffcffce3dd91f41279b4ccae023212996a6026"
+    "observations_sha256": "1f76b1118414611bccef55389c0e1aa4a92ae1b96ac1583364179e110241926f"
   },
   "gundam-en-us-policy-detail.json": {
     "bytes_sha256": "e905fcc2521e976804a2024c0fad5f5a15c1f5251c1faec60ec2c619c0b14d56",
-    "observations_sha256": "bd934de58fb04db15d19dbff65f5218e5d13ce334b07d16413060ad15ca671bc"
+    "observations_sha256": "65430a7673535f46e4239a7df891fc941ec5d81f7fcc0c57b2df8006ea9255b2"
   },
   "gundam-en-us-policy.json": {
     "bytes_sha256": "f96f2c431b2370500faee7dcb67e34d644095f0fcfec87ca36501bfed65a9d23",
-    "observations_sha256": "b6364fd92741b4538b4ffbfb10cfd471bea0e8813f56cc0fdf847efa12c60271"
+    "observations_sha256": "7747e7f963f8a05a8fc5b7c41c613fe0a800987f7e98285556a439e3dc52adc8"
   },
   "gundam-en-us-product-card-case.json": {
     "bytes_sha256": "b2f2d9e50eaeec11d92accf4fa816d83b999e7981c9117e7240307c3c59bd589",
-    "observations_sha256": "8e807b9ab57eabb0eff5b4d8f0f0e2b9acb9609ceb118e8381532898d893019b"
+    "observations_sha256": "5ffeaf1fb55e2bee8ee13394bca45dd7e388e0930928979334d38f47082a2b48"
   },
   "gundam-en-us-product-playmat.json": {
     "bytes_sha256": "bbf44a21fc3100808f6cc90557fb9b1dca6145cab04d589fabc9962c52d67f6c",
-    "observations_sha256": "00063d6bcff8735d90d6a0bb726272e985337232ac74b77f64cbad65f9df4549"
+    "observations_sha256": "f4e6bb0318ff264189a8d936452118b87568f61c935d1113baa6e7bd3ee72068"
   },
   "gundam-en-us-restructured-card-search.json": {
     "bytes_sha256": "a50888ca95e35c9e7c7eba56fee2a82667b2d25c547fcf47c9d6240ced7d3283",
-    "observations_sha256": "848574060a680934618221c140a57c2f96dafa5e525423bc64fed9ca02c98152"
+    "observations_sha256": "7557e832242a1d7d64a0744ee14c9e907f1220566b32f526864687852e5053c2"
   },
   "one-piece-en-block-policy-topic.json": {
     "bytes_sha256": "4b71a77f5cd778a50cd94171cab3ffd55e8f6d208ef74bf6172a86eb1028f4c4",

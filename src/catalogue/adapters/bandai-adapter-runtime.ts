@@ -788,6 +788,10 @@ function discoveredHtmlRole(
     return "detail";
   }
   if (initialSurface === "products" || initialSurface === "releases" || /\/products?\//iu.test(target)) {
+    // Gundam's registered Products surface is already collected under its
+    // surface identity. Navigation back to it must not acquire a detail role.
+    if (catalogueComplete && format === "gundam" && /^\/(?:asia-en|en)\/products\/list\.php$/u.test(target))
+      return null;
     // The live product-detail model fetches accessory pages and classifies
     // them from their retained markup instead of skipping them by URL
     // vocabulary.

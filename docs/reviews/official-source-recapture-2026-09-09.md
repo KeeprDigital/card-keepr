@@ -195,3 +195,24 @@ against `c7440ae7` reported no actionable findings: Standards by the toolchain
 agent and Spec by the capacity agent. They correctly retain the actual scheduled
 run as an outstanding #267 gate. The bundle correction and reviewed monitoring
 baseline are subsequent changes requiring their own review.
+
+## Complete Gundam capture role correction
+
+The new full GD02 listing includes a Products navigation link omitted by the old
+retained range. The current adapter classified `/asia-en/products/list.php` as
+`product_detail`, although that exact URL is the registered Products surface.
+This is a concrete acquisition defect: discovered IDs include the role, so
+`appendDiscoveredEvidenceRequests` cannot deduplicate it against the surface
+request; the dynamic detail role takes precedence in the decoder. A fresh exact
+Products-root capture parses with `gundam-en-asia:products` and rejects the
+incorrect detail identity with `Product detail heading does not match its
+official title.` Both complete raw responses are retained as gzip JSON history.
+
+The narrow discovery correction excludes only the two locale Products root URLs
+from detail classification; registered Products surface collection and GD05
+Product-detail discovery still work. The regression failed before the change
+and passes after it. The historical identity matrix changes 17 Gundam hashes;
+an exhaustive before/after comparison verifies all 68 changed outputs remove
+exactly one root-URL detail request, with all parse results and every other
+request identical. Top-level raw captures remain unchanged. The first full
+suite correctly failed against those historical hashes before this audit.
