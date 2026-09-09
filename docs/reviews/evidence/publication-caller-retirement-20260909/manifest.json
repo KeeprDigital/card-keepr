@@ -206,6 +206,36 @@
       "duration_seconds": 6.57,
       "interrupted": false,
       "notes": "Actual original route oracle retained. Temporary diagnostic restored byte-for-byte after natural completion. No application guard changed; raw background diagnostics retained."
+    },
+    {
+      "file": "native-owner-routes-6e0339c3.log.gz",
+      "uncompressed_sha256": "77512bf958609e11372742fd51235e6026e7e6f98e22de789919084b73c3dbf2",
+      "commit": "6e0339c32d132d7e5f5983a7255096289dd16b43",
+      "node": "22.23.2",
+      "result": "2 passed;21 unselected",
+      "duration_seconds": 17.62,
+      "interrupted": false,
+      "notes": "Original native owner identity reviews, no duplicate Card/Printing, exact replay, changed key/intent409 and invalid target422. Actual source/publication/backup provider. Natural18.825s harness; unchanged30s cases/120s outer; background diagnostics retained."
+    },
+    {
+      "file": "native-owner-schema32-green.log.gz",
+      "uncompressed_sha256": "ec108a3ca9a8f5e8e80cf5c247c5797f35292b92285a1ed9642144637826db2c",
+      "commit": "6e0339c32d132d7e5f5983a7255096289dd16b43",
+      "node": "22.23.2",
+      "result": "9 passed",
+      "duration_seconds": 2.39,
+      "interrupted": false,
+      "notes": "Real SQLite schema/repository integrity proof; synthetic retained relational facts are not actual owner publication or restore."
+    },
+    {
+      "file": "native-owner-schema32-migrations.log.gz",
+      "uncompressed_sha256": "1d6cb464b72cff93029898266d79557e38afce7a9bcbdfe0c8b3aa5dd1b4276e",
+      "commit": "6e0339c32d132d7e5f5983a7255096289dd16b43",
+      "node": "22.23.2",
+      "result": "10 passed",
+      "duration_seconds": 3.765,
+      "interrupted": false,
+      "notes": "Existing schema hygiene and populated no-change migration proof through schema32; no live database mutation."
     }
   ]
 }
