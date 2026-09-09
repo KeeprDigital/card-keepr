@@ -98,6 +98,28 @@ Workflow's backup and independently restored composed catalogue proof before
 merging the joint work. Local integration tests are the gate; report actual CI
 status separately.
 
+## Retired run approval
+
+`keepr run approve` returns `run_approval_retired` locally with exit status 2;
+it sends no request. Historical run status and candidate inspection remain
+available, but their aggregate digest and global predecessor are not native
+approval inputs. Prepare a game candidate from retained collection evidence,
+inspect its exact manifest, and use the publication commands above.
+
+POST `/v1/ingestion-runs/:run/approval` returns HTTP 410
+`run_approval_retired` for a new unreserved intent. It creates no administration
+claim, publication reservation, result or export. It does not translate the
+request into game-candidate approval or infer the owner's selection.
+
+That endpoint remains an observer of already durable historical approvals.
+Replaying an exact persisted result returns its original status and document;
+reusing its key with a different run, digest or predecessor returns 409. An
+already reserved historical publication returns its existing pending status,
+or reconciles its exact existing reservation after the prior lease expires.
+Candidate bytes, approval metadata, predecessor, writer ownership and recovery
+fences still govern that recovery. No new historical reservation is acquired.
+These retained recovery semantics do not make the aggregate writer available.
+
 ## Recovery handoff
 
 Schema 22 keeps the existing `catalogue_revisions` ancestry spine but removes

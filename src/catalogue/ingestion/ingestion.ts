@@ -5,7 +5,7 @@ export {
   productionReleaseSmokeTargets,
   releaseSmokeSearchQuery,
 } from "./administration-inspection";
-export { approveRun } from "./publication-lifecycle";
+export { observeHistoricalRunApproval } from "./publication-lifecycle";
 export { rejectRun, retryPublicationCleanup, retryRun, showRun } from "./run-lifecycle";
 export type {
   ApproveRunRequest,

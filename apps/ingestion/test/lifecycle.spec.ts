@@ -3,7 +3,7 @@ import { exports } from "cloudflare:workers";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import {
-  approveRun as approveRunDirect,
+  observeHistoricalRunApproval as observeHistoricalRunApprovalDirect,
   retryPublicationCleanup as retryPublicationCleanupDirect,
   showRun as showRunDirect,
 } from "../../../src/catalogue/ingestion/ingestion";
@@ -916,11 +916,17 @@ test("an interrupted publication finalizes only its exact verified export", asyn
   const inProgressReplay = await approve(runId, digest, expectedRevision, approvalKey);
   expect(inProgressReplay.response.status).toBe(202);
   expect(inProgressReplay.document).toEqual(inProgress.document);
-  const changedInFlightReuse = await approve(runId, "0".repeat(64), expectedRevision, approvalKey);
-  expect(changedInFlightReuse.response.status).toBe(409);
-  expect(changedInFlightReuse.document).toMatchObject({
-    code: "idempotency_key_reused",
-  });
+  for (const [changedRun, changedDigest, changedPredecessor] of [
+    [runId, "0".repeat(64), expectedRevision],
+    [runId, digest, "catrev_changed_predecessor"],
+    ["run_changed_intent", digest, expectedRevision],
+  ]) {
+    const changedInFlightReuse = await approve(changedRun!, changedDigest!, changedPredecessor!, approvalKey);
+    expect(changedInFlightReuse.response.status).toBe(409);
+    expect(changedInFlightReuse.document).toMatchObject({ code: "idempotency_key_reused" });
+  }
+  const unreservedKey = await approve(runId, digest, expectedRevision, "unreserved-historical-key");
+  expect(unreservedKey.response.status).toBe(409);
   for (const object of catalogueExport.objects) {
     const body = object.body();
     await Promise.all([
@@ -955,6 +961,15 @@ test("an interrupted publication finalizes only its exact verified export", asyn
   const replay = await approve(runId, digest, expectedRevision, approvalKey);
   expect(replay.response.status).toBe(200);
   expect(replay.document).toEqual(reconciled.document);
+  for (const [changedRun, changedDigest, changedPredecessor] of [
+    [runId, "0".repeat(64), expectedRevision],
+    [runId, digest, "catrev_changed_predecessor"],
+    ["run_changed_intent", digest, expectedRevision],
+  ]) {
+    const changedReplay = await approve(changedRun!, changedDigest!, changedPredecessor!, approvalKey);
+    expect(changedReplay.response.status).toBe(409);
+    expect(changedReplay.document).toMatchObject({ code: "idempotency_key_reused" });
+  }
 });
 
 test("a stalled late publication write reopens completed cleanup when exact compensation fails", async () => {
@@ -993,7 +1008,7 @@ test("a stalled late publication write reopens completed cleanup when exact comp
       throw new Error("synthetic late compensation failure");
     },
   });
-  const approval = approveRunDirect(
+  const approval = observeHistoricalRunApprovalDirect(
     catalogueStore(testEnv.CATALOGUE_DB),
     stalledBucket,
     runId,
@@ -1115,7 +1130,7 @@ test("a cleanup CAS loser replays the immutable completion that won the race", a
     },
   });
   await expect(
-    approveRunDirect(
+    observeHistoricalRunApprovalDirect(
       catalogueStore(testEnv.CATALOGUE_DB),
       failingBucket,
       runId,
@@ -1255,7 +1270,7 @@ test("normal approval never adopts a prefix that becomes a registered export", a
   });
 
   await expect(
-    approveRunDirect(
+    observeHistoricalRunApprovalDirect(
       catalogueStore(testEnv.CATALOGUE_DB),
       racingBucket,
       runId,
@@ -1349,7 +1364,7 @@ test("cleanup deletes nothing when its failed prefix becomes registered", async 
     },
   });
   await expect(
-    approveRunDirect(
+    observeHistoricalRunApprovalDirect(
       catalogueStore(testEnv.CATALOGUE_DB),
       failingBucket,
       runId,

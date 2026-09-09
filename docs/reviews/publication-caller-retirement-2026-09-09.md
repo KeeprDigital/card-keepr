@@ -106,8 +106,9 @@ retain 409, and an existing publishing reservation must match key, digest and
 predecessor before observing its prior active claim or invoking historical
 recovery. An unreserved new intent gets HTTP 410 without acquiring a claim,
 reserving a writer or persisting an outcome. This is deliberately not a native
-approval translator. The old function name temporarily remains for existing
-runtime caller migration; its aggregate writer has been deleted.
+approval translator. The facade now names the retained function `observeHistoricalRunApproval`;
+its aggregate writer has been deleted. The unused Printing Images argument has
+been removed from this observation path.
 
 Deleted sole-new-writer code includes aggregate/export allocation guards, the
 16 MiB constant, transient image base64 conversion/writing, new export writes,
@@ -118,3 +119,10 @@ errors. The new public/runtime no-write regression and existing exact reserved
 publication recovery test are queued for the host lease; they have not run yet.
 Supported test callers still need native approval migration, so this checkpoint
 is not ready for integration or issue completion.
+
+The focused historical regression now checks exact pending and persisted replay
+against changed run ID, digest and predecessor, and rejects a fresh key against
+an existing reservation. Typecheck and focused Biome checks pass at this
+checkpoint; the runtime lease remains queued, so these assertions are not yet
+reported as passing. The supported native fixture helper and full owner journey
+are committed at `3383b02c`, with runtime proof likewise pending.

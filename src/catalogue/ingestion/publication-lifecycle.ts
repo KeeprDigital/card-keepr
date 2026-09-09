@@ -5,14 +5,14 @@ import {
   type CatalogueCandidate,
   CatalogueExportLimitError,
   type CatalogueStore,
-  type SupportedGame,
   canonicalJson,
   retainedPayload,
+  type SupportedGame,
   sha256,
 } from "../shared";
 import {
-  currentAdministrationClaimOwner,
   administrationClaim,
+  currentAdministrationClaimOwner,
   pendingAdministrationOperation,
   replayAdministration,
 } from "./administration-idempotency";
@@ -209,13 +209,12 @@ async function reconcileReservedPublication(
 
 // This boundary observes only an approval that was durably reserved before
 // aggregate publication was retired. It cannot acquire a claim or start writes.
-export async function approveRun(
+export async function observeHistoricalRunApproval(
   database: CatalogueStore,
   catalogueExports: R2Bucket,
   runId: string,
   request: ApproveRunRequest,
   observedAt = new Date().toISOString(),
-  _printingImages?: R2Bucket,
 ): Promise<Record<string, unknown>> {
   assertOpaqueId(runId, "run_id");
   assertSha256(request.candidate_digest, "candidate_digest");
@@ -245,7 +244,7 @@ export async function approveRun(
     );
   // Validate the existing key, digest and predecessor before any recovery work.
   approvalInProgress(run, request, requestJson);
-  if (claim !== null && claim.claim_expires_at > observedAt)
+  if (claim !== null && Date.parse(claim.claim_expires_at) > Date.parse(observedAt))
     return pendingAdministrationOperation(
       { key: request.idempotency_key, operation: "approve_ingestion_run", requestJson, observedAt },
       claim,
