@@ -170,6 +170,6 @@ test("native whole-candidate publication streams separately retained images into
   expect(exported?.status).toBe(200);
   const exportDocument = await exported!.json();
   expect(JSON.stringify(exportDocument)).not.toContain("content_base64");
-// Isolated hosted completion measured78.11s for all128images. Use the existing
-//120-second image integration bound; callback/resource budgets stay unchanged.
+  // Isolated hosted completion measured 78.11s for all 128 images. Use the existing
+  // 120-second image integration bound; callback/resource budgets stay unchanged.
 }, 120000);
