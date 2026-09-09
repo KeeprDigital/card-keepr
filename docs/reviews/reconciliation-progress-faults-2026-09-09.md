@@ -16,7 +16,7 @@ Exactly two new durable boundaries are added: Context rejection before commit an
 
 | Selection | Exact code / outcome |
 | --- | --- |
-| Stored publication clock before assertion correction | `d4138667` working correction: the initial exact timestamp assertion failed in 7.154s because the real switch consumed 7ms. The corrected assertion uses measured duration while still proving reversed retained timestamps. |
+| Stored publication clock before assertion correction | Exact clean `d4138667`: the initial exact timestamp assertion failed in 7.154s because the real switch consumed 7ms. The corrected assertion uses measured duration while still proving reversed retained timestamps. |
 | Corrected clock | Working correction committed as `50414022`: 1/1 passed naturally in 8.858s. |
 | Shared historical before-image fixture | Exact `50414022`: 1/1 passed naturally in 5.413s. |
 | First two new boundaries | Exact `50414022`: Context passed; curated failed before its seam because an opaque fixture key contained spaces; natural 4.953s. |
