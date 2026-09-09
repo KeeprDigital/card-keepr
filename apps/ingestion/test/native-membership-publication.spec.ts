@@ -1,7 +1,16 @@
 import { expect, test } from "vitest";
+import { catalogueStore } from "../../../src/catalogue/shared";
+import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
+import { ReconciliationReducerIndex } from "../../../src/catalogue/reconciliation/reconciliation-reducer-state";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
 import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
-import { collect, exportComponentRecords, installReconciliationSuite, requiredString } from "./reconciliation-helpers";
+import {
+  collect,
+  exportComponentRecords,
+  installReconciliationSuite,
+  requiredString,
+  testEnv,
+} from "./reconciliation-helpers";
 
 installReconciliationSuite();
 
@@ -45,6 +54,66 @@ test("native membership-derived Product lifecycle includes every related Printin
   ]);
   expect(JSON.stringify(products)).not.toContain("membership_evidence");
   expect(JSON.stringify(products)).not.toContain("source_observation");
+});
+
+test("native membership history preserves unchecked lineages and accepts a repeated disappearance without changing facts", async () => {
+  async function prepare(scenario: string, region: "asia" | "us", revision: string, key: string) {
+    const run = await collect(`/reconciliation/${scenario}`, key, {
+      game: "gundam",
+      lineage: `gundam-en-${region}`,
+      adapter: `fixture-gundam-en-${region}-json@2`,
+    });
+    return prepareNativeCandidate(run.id, "gundam", revision, `${key}-prepare`);
+  }
+  const asia = await prepare("gundam-membership-asia", "asia", "catrev_spine_000", "membership-asia");
+  const asiaPublished = await approveNativeCandidate(asia, "membership-asia-publish");
+  const asiaRevision = requiredString(asiaPublished.document, "resulting_revision_id");
+  const us = await prepare("gundam-membership-us", "us", asiaRevision, "membership-us");
+  const usRecords = await nativeCandidateRecords(requiredString(us, "id"));
+  expect(usRecords.product_relationships).toHaveLength(4);
+  const preparation = requiredString(us, "preparation_id");
+  const db = catalogueStore(testEnv.CATALOGUE_DB);
+  const checkpoint = await reconciliationCheckpoint<{ memberships: number }>(db, preparation, "semantic_preparation");
+  const memberships = new ReconciliationReducerIndex<{ id: string; value: Record<string, unknown> }>(
+    db,
+    preparation,
+    "semantic_membership_values",
+  );
+  memberships.resumeAt(checkpoint!.value.memberships);
+  const current = [];
+  for await (const membership of memberships.entityValues()) current.push(membership.value);
+  expect(current).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ source_lineage: "gundam-en-asia", relationship_value: "membership-product-asia" }),
+      expect.objectContaining({ source_lineage: "gundam-en-asia", relationship_value: "membership-context-asia" }),
+      expect.objectContaining({ source_lineage: "gundam-en-us", relationship_value: "membership-product-us" }),
+      expect.objectContaining({ source_lineage: "gundam-en-us", relationship_value: "membership-context-us" }),
+    ]),
+  );
+  expect(current).toHaveLength(4);
+  const usPublished = await approveNativeCandidate(us, "membership-us-publish");
+  const usRevision = requiredString(usPublished.document, "resulting_revision_id");
+  const missing = await prepare("gundam-membership-asia-missing", "asia", usRevision, "membership-asia-missing");
+  const missingRecords = await nativeCandidateRecords(requiredString(missing, "id"));
+  expect(
+    missingRecords.product_relationships?.filter(({ source_lineage }) => source_lineage === "gundam-en-asia"),
+  ).toEqual([expect.objectContaining({ observed: false }), expect.objectContaining({ observed: false })]);
+  expect(
+    missingRecords.product_relationships?.filter(({ source_lineage }) => source_lineage === "gundam-en-us"),
+  ).toEqual([expect.objectContaining({ observed: true }), expect.objectContaining({ observed: true })]);
+  const missingPublished = await approveNativeCandidate(missing, "membership-missing-publish");
+  const revision = requiredString(missingPublished.document, "resulting_revision_id");
+  const contexts = await exportComponentRecords(revision, "distribution-contexts");
+  expect(contexts).toEqual([expect.objectContaining({ label: "membership-context-us" })]);
+  const products = await exportComponentRecords(revision, "products");
+  expect(products).toHaveLength(2);
+  expect(products.find(({ official_code }) => official_code === "membership-product-asia")).toMatchObject({
+    lifecycle: { first_revision_id: asiaRevision, last_observed_revision_id: asiaRevision, withdrawn: false },
+  });
+  const repeated = await prepare("gundam-membership-asia-missing", "asia", revision, "membership-missing-repeat");
+  expect(repeated.canonical_digest).toBe(missing.canonical_digest);
+  const repeatedPublished = await approveNativeCandidate(repeated, "membership-missing-repeat-publish");
+  expect(repeatedPublished.document.resulting_revision_id).toBe(revision);
 });
 
 test("native memberships publish derived targets and relationships while source buckets remain private", async () => {
