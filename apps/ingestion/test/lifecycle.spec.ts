@@ -561,10 +561,8 @@ test("a candidate expires at its exact seven-day boundary and releases the run l
     requiredDocumentString(started.document, "expected_current_revision_id"),
     "approve-late",
   );
-  expect(lateApproval.response.status).toBe(409);
-  expect(lateApproval.document).toMatchObject({
-    code: "candidate_expired",
-  });
+  expect(lateApproval.response.status).toBe(410);
+  expect(lateApproval.document).toMatchObject({ code: "run_approval_retired" });
 });
 
 test("expiry repairs a dangling active identity and still wins at the deadline", async () => {
