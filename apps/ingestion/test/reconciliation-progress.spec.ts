@@ -1814,18 +1814,19 @@ test("one Product evidence group's capacity budget includes partitioned source t
 test.each(["entity", "selection", "entity after commit"])(
   "curated edits resume after %s storage failure and retain one applied provenance entry",
   async (failure) => {
+    const fixture = failure.replaceAll(" ", "-");
     const { post, testEnv, requiredFirst } = await import("./reconciliation-helpers");
     const { canonicalJson, sha256Text } = await import("../../../src/catalogue/shared");
     const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
-    const seedRun = await collect("/reconciliation/base", `curated-draft-seed-${failure}`);
+    const seedRun = await collect("/reconciliation/base", `curated-draft-seed-${fixture}`);
     const seed = await prepareNativeCandidate(
       seedRun.id,
       "one-piece",
       "catrev_spine_000",
-      `curated-draft-candidate-${failure}`,
+      `curated-draft-candidate-${fixture}`,
     );
     const original = requiredFirst(await nativeCandidateRecords(requiredString(seed, "id")), "cards");
-    const publishedSeed = await approveNativeCandidate(seed, `curated-draft-publish-${failure}`);
+    const publishedSeed = await approveNativeCandidate(seed, `curated-draft-publish-${fixture}`);
     expect(publishedSeed.response.status).toBe(200);
     const proposal = {
       game: "one-piece",
@@ -1847,39 +1848,14 @@ test.each(["entity", "selection", "entity after commit"])(
       idempotency_key: "curated-draft-create",
     });
     expect(created.response.status, JSON.stringify(created.document)).toBe(201);
-    const run = await collect("/reconciliation/base", `curated-draft-next-${failure}`);
-    const { default: worker } = await import("../src/index");
-    let payload: import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams | undefined;
-    const queued = { status: async () => ({ status: "queued" }) } as unknown as WorkflowInstance;
-    const workflow = {
-      create: async (options: {
-        params: import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams;
-      }) => {
-        payload = options.params;
-        return queued;
-      },
-      get: async () => queued,
-    } as unknown as Env["RECONCILIATION_WORKFLOW"];
-    const command = async (path: string, body: object) => {
-      const response = await worker.fetch(
-        new Request(`https://card-keepr.invalid${path}`, {
-          method: "POST",
-          headers: { authorization: "Bearer vitest-administration-key", "content-type": "application/json" },
-          body: JSON.stringify(body),
-        }),
-        { ...testEnv, RECONCILIATION_WORKFLOW: workflow },
-      );
-      return { response, document: await response.json<Record<string, unknown>>() };
-    };
-    const preparation = await command("/v1/game-candidates", {
-      ingestion_run_id: run.id,
-      supported_game: "one-piece",
-      expected_game_revision_id: publishedSeed.document.resulting_revision_id,
-      idempotency_key: `curated-draft-prepare-${failure}`,
-    });
-    expect(preparation.response.status, JSON.stringify(preparation.document)).toBe(201);
-    expect(payload).toBeDefined();
-    const candidateId = requiredString(preparation.document, "id");
+    const run = await collect("/reconciliation/base", `curated-draft-next-${fixture}`);
+    const { retainNativePreparation } = await import("./native-preparation-fixture");
+    const preparation = await retainNativePreparation(
+      run.id,
+      requiredString(publishedSeed.document, "resulting_revision_id"),
+      `curated-draft-prepare-${fixture}`,
+    );
+    const candidateId = preparation.candidateId;
     const afterCommit = failure === "entity after commit";
     const committedWrites: {
       expected: { content: string; sha256: string };
@@ -1957,7 +1933,7 @@ test.each(["entity", "selection", "entity after commit"])(
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
-    const event = { payload: payload! } as import("cloudflare:workers").WorkflowEvent<
+    const event = { payload: preparation.params } as import("cloudflare:workers").WorkflowEvent<
       import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
     >;
     const step = {
@@ -2005,14 +1981,7 @@ test.each(["entity", "selection", "entity after commit"])(
       state: "paused",
       generation: 1,
     });
-    expect(
-      (
-        await command(`/v1/game-candidates/${candidateId}/resume`, {
-          generation: 1,
-          idempotency_key: `resume-curated-draft-${failure}`,
-        })
-      ).response.status,
-    ).toBe(200);
+    expect((await preparation.resume(1, `resume-curated-draft-${fixture}`)).status).toBe(200);
     unavailable = false;
     await runReconciliationWorkflow(
       { ...testEnv, CATALOGUE_DB: database },
@@ -2036,14 +2005,14 @@ test.each(["entity", "selection", "entity after commit"])(
       expect((await get(`/v1/game-candidates/${candidateId}`)).document).toEqual(status.document);
       expect(await nativeCandidateRecords(candidateId)).toEqual(sealedRecords);
     }
-    const accepted = await approveNativeCandidate(status.document, `publish-curated-draft-${failure}`);
+    const accepted = await approveNativeCandidate(status.document, `publish-curated-draft-${fixture}`);
     expect(accepted.response.status, JSON.stringify(accepted.document)).toBe(200);
-    const refreshRun = await collect("/reconciliation/base", `curated-draft-refresh-${failure}`);
+    const refreshRun = await collect("/reconciliation/base", `curated-draft-refresh-${fixture}`);
     const refreshed = await prepareNativeCandidate(
       refreshRun.id,
       "one-piece",
       requiredString(accepted.document, "resulting_revision_id"),
-      `curated-draft-refresh-candidate-${failure}`,
+      `curated-draft-refresh-candidate-${fixture}`,
     );
     expect(requiredFirst(await nativeCandidateRecords(requiredString(refreshed, "id")), "cards")).toMatchObject({
       id: original.id,
