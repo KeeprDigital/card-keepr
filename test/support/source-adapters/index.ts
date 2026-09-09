@@ -1,3 +1,4 @@
+import { capacitySourceAdapter } from "./capacity";
 import {
   registerSourceAdapters,
   type SourceAdapterRegistration,
@@ -182,6 +183,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
       jsonRecordContainers: ["cards", "product_surfaces"],
       parse: parseCardSourceDocument,
     })),
+    capacitySourceAdapter,
   ].map((adapter) =>
     Object.freeze({
       ...adapter,
