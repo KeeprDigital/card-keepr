@@ -1,59 +1,12 @@
 import { createHash } from "node:crypto";
-import { capacityByteShare, capacityPrintingsPerPage, syntheticCapacityTier } from "./capacity-workloads.ts";
+import { capacityPageDocument, syntheticCapacityTier } from "./capacity-workloads.ts";
 
 // Synthetic reconciliation source documents served from
 // https://<scenario>-official-source.invalid/reconciliation/<scenario>. Every
 // document is a pure function of the scenario, surface, and request URL.
 export function reconciliationSourceDocument(scenario: string, surface: string, requestUrl: string) {
-  const capacity = /^capacity-(tier-[12])-page-([0-9]+)$/u.exec(scenario);
-  if (capacity) {
-    const tier = syntheticCapacityTier(capacity[1]!);
-    const page = Number(capacity[2]);
-    const pages = tier.printings / capacityPrintingsPerPage;
-    const structuredBytes = capacityByteShare(tier.structuredBytes, pages, page);
-    const cards = Array.from({ length: capacityPrintingsPerPage }, (_, offset) => {
-      const index = page * capacityPrintingsPerPage + offset;
-      const observation = printingObservation({
-        game: "one-piece",
-        profile: "one-piece@1",
-        cardNumber: `SYN-${String(index + 1).padStart(6, "0")}`,
-        name: `Synthetic capacity Card ${index + 1}`,
-        locator: `capacity-${tier.id}-${index}`,
-        lineageMarker: `capacity-${tier.id}-${index}`,
-        cardAttributes: onePieceLeaderAttributes(),
-        printingAttributes: { illustration_types: [] },
-      });
-      observation.appearance_evidence.images = (["front", "back"] as const).map((role, face) => {
-        const imageIndex = index * 2 + face;
-        const bytes = Buffer.from(
-          deterministicNoise(imageIndex + 1, capacityByteShare(tier.imageBytes, tier.images, imageIndex)),
-        );
-        return {
-          ...observation.appearance_evidence.images[0]!,
-          role,
-          source_url: `https://official-source.invalid/images/capacity-${tier.id}-${imageIndex}.png`,
-          content_base64: bytes.toString("base64"),
-          content_sha256: createHash("sha256").update(bytes).digest("hex"),
-        };
-      });
-      return observation;
-    });
-    // Census structured input separately from the synthetic adapter's inline
-    // base64 transport encoding. Each page remains below its 16 MiB contract.
-    const metadata = {
-      cards: cards.map((card) => ({
-        ...card,
-        appearance_evidence: {
-          ...card.appearance_evidence,
-          images: card.appearance_evidence.images.map(({ content_base64: _bytes, ...image }) => image),
-        },
-      })),
-    };
-    const remaining = structuredBytes - Buffer.byteLength(JSON.stringify(metadata));
-    if (remaining < 0) throw new Error("Capacity fixture metadata exceeds its accepted byte census");
-    cards[0]!.card.effective_rules_text += "x".repeat(remaining);
-    return { cards };
-  }
+  const capacity = /^capacity-(tier-[12]|128-images)-page-([0-9]+)$/u.exec(scenario);
+  if (capacity) return capacityPageDocument(syntheticCapacityTier(capacity[1]!), Number(capacity[2]));
   if (scenario.startsWith("inspection-")) {
     const observation = printingObservation({
       game: "one-piece",

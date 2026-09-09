@@ -15,8 +15,8 @@ adapter.
 
 These files are evidence snapshots, not synthetic success envelopes and not
 rewritten HTML examples. Under ADR 0004 every fixture is exercised against
-the live Source Adapter Versions only (the active version and its retained
-predecessor per Source Lineage); fixtures that only a retired parser
+the single current Source Adapter Version per Source Lineage before Go-Live
+(ADR 0008); fixtures that only a retired parser
 generation could read are removed together with that generation.
 
 `one-piece-en-card-list.json` retains the complete live one-result Card List
@@ -134,72 +134,60 @@ page shapes (issue #55):
   March 14, 2026 and a digital-version change tied to a game update rather
   than a calendar date.
 
-The live policy expectations intentionally follow the published scope rather
-than capture time or article recency:
-
-- One Piece's current-list heading states an exact April 10, 2026 effective
-  date, so its five bans and three banned-pair rules retain that date and their
-  exact effects.
-- Fusion World's current detail states only “from March 2026”. Its eight Card
-  targets are retained with an unresolved effective interval; no day is
-  invented from the March 13 article date.
-- Digimon's current affected-card summary contains two pair groups, three
-  banned Cards, and fifty restricted Cards, but does not associate every
-  carried-forward entry with one effective date. All 55 explicit target groups
-  therefore retain an unresolved effective interval.
-- Both Gundam locale details contain one banned Card, one restricted Card, two
-  explicit pairs, and one twenty-Card predicate group. The July 24 article date
-  does not state the list's effective boundary, so all five target groups per
-  locale retain an unresolved effective interval. The issue-58 adapter
-  generation (`gundam-en-asia@7` / `gundam-en-us@7`) additionally parses the
-  open-predicate group ("a Unit card that is Lv.2 with cost 1, 2 AP, and
-  2 HP, and without effects", future printings included) into one explicit
-  `unresolved` rule whose scope names both `effective_interval` and
-  `target_scope`.
-
-The issue-58 captures were verified on 2026-08-11 UTC (cold, polite user
-agent, no redirect following):
-
-- Both Gundam locale `/rules/` hubs and `news/01_279.html` details returned
-  byte-identical responses to the retained 2026-08-07 fixtures, so those
-  fixtures remain the current live evidence for the `@7` legality contract.
-- `one-piece-en-don-rules-hub.json` retains the fresh complete `/rules/` hub
-  response (the earlier `one-piece-en-rules-hub.json` capture remains as the
-  2026-08-07 restructure-generation evidence; the live page has since
-  reworded its FOR BEGINNERS header navigation). The hub publishes rule
-  PDFs, news notices, and the pinned restriction, block-policy, and errata
-  links, and no DON!! content: the `one-piece-en@6` don-rules contract
-  retains it as exact coverage evidence with a structurally complete empty
-  Legality Rule observation and makes no comprehensive DON!! Printing claim.
+The ten policy/legality-named captures remain historical raw evidence for the
+adapter regression census. ADR 0014 removed tournament eligibility from the
+catalogue. They are excluded from future recapture only after the
+[complete caller audit](../../../../docs/reviews/official-source-recapture-2026-09-09.md).
+The One Piece rules and DON!! rules hubs, Digimon rules hub, Gundam news/errata
+pages, and Fusion World Errata Applied card details remain monitored for current
+card-content and Errata parsing. No golden or regression hash was replaced.
 
 ## Weekly recapture and digest drift
 
 `.github/workflows/official-source-recapture.yml` runs every Tuesday at
-04:23 UTC and through `workflow_dispatch`. It uses the 60 JSON capture
-records in this directory as its manifest, fetches each distinct `source_url`
-once, sequentially with a one-second interval, and follows no redirects.
-It verifies the stored bytes against `body_sha256` before fetching, then
-compares the live full response size/digest and the retained range digest.
-A change outside a retained range still fails the full-body comparison.
-The standalone HTML fragments are focused, normalized parser examples with
-no full-response digest/offset metadata; they are not claimed as recapturable
-HTTP goldens. Their source pages remain covered by the JSON captures where
-available, and parser tests continue to exercise the fragments directly.
+04:23 UTC and through `workflow_dispatch`. It verifies the 60 top-level JSON
+capture records, excludes the ten audited eligibility-only URLs, and fetches each
+remaining distinct `source_url` once, sequentially one second apart with a
+30-second request timeout and 16 MiB body bound. It follows no redirects.
 
-The command keeps checked-in goldens unchanged:
+Every new capture retains the complete response in a digest-checked `.body` file
+and separately records the exact original retained range. The current adapters
+compare full observations (including sidecars) and discovered requests against
+the original full golden. When a range fixture has a complete golden of the exact
+same original response digest, that supplies its missing baseline bytes. Otherwise
+changed whole-response meaning remains unresolved. Standalone normalized HTML
+fragments remain parser examples, not recapturable HTTP goldens.
+
+After `npm ci`, use a fresh output directory:
 
 ```sh
 node scripts/recapture-official-bytes.mjs /tmp/official-source-recapture
 ```
 
-A failed run uploads the new capture records and `report.json` for 14 days,
-then opens or updates one `bug` issue with the run link. The report names
-`drift`, `invalid_golden`, or `fetch_failed` separately. Review live changes,
-update the appropriate retained captures deliberately, and run their adapter
-and runtime tests before closing the issue. Dynamic publisher markup can
-change byte digests without changing domain meaning; that still requires
-review rather than silently accepting a new golden. Local tests use fake
-HTTP responses and never recapture live sites automatically.
+The report distinguishes `unchanged`, `cosmetic_drift` (exact current adapter
+outputs equal), `semantic_drift` (observations or discovery changed),
+`structural_drift` (current response rejected), `unresolved_drift` (baseline or
+complete bytes unavailable), `integrity_failure`, `transport_failure`, and
+`out_of_scope`. All actionable results fail the job; cosmetic drift keeps the raw
+bytes and goldens unchanged. No image query strings or optional evidence fields
+are normalized away. These bounded interface checks do not establish full
+Supported Game coverage.
+
+Artifacts are retained for 14 days. A failing job opens or updates the recapture
+issue and the Actions summary lists unresolved findings. Preserve evidence needed
+for review before artifact expiry. Reassess a downloaded artifact without fetching:
+
+```sh
+node scripts/assess-official-recapture.mjs /tmp/official-source-recapture /tmp/new-assessment.json
+```
+
+The [9 September assessment](../../../../docs/reviews/official-source-recapture-2026-09-09.md)
+records original and fresh evidence archives, the ten-capture caller audit,
+current failures and exact remaining acceptance. Golden replacements require
+reviewing real changed bytes and rerunning their adapter contracts; none were
+replaced for #267. Closing the issue also requires useful successful monitoring
+from the default-branch schedule. A successful manual run alone does not prove
+that schedule ran.
 
 A quiet schedule is not evidence of success. GitHub can disable scheduled
 workflows in public repositories after 60 days without repository activity;

@@ -25,6 +25,7 @@ import {
 export type ProductDetailFields = {
   titleSuffix: RegExp;
   seasonPrecisionReleases: boolean;
+  nonCardClassification?: (value: string) => "accessory" | null;
   validateTitle?: (html: string, title: string, sourceLineage: string) => void;
 };
 
@@ -37,7 +38,9 @@ export function parseProductDetail(
   const pairs = htmlLabelPairs(html);
   const field = (...names: string[]): string | null => firstLabelValue(pairs, names);
   const title = liveOfficialProductTitle(html, fields, sourceLineage);
-  const nonCardClassification = nonCardProductClassificationV2(`${requestUrl} ${title}`);
+  const nonCardClassification = (fields.nonCardClassification ?? nonCardProductClassificationV2)(
+    `${requestUrl} ${title}`,
+  );
   const rawDocument = {
     document_title: title,
     ...Object.fromEntries(pairs.map(({ label, value }) => [label, value])),

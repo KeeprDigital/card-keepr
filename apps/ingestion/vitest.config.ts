@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-pool-workers";
+import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin";
 import { configDefaults, defineConfig } from "vitest/config";
 import {
   cloudflareApiMock,
@@ -72,6 +72,10 @@ export default defineConfig({
     }),
   ],
   test: {
+    // Each file boots a complete Workers runtime. Concurrent runtimes starve
+    // Workflow polling on supported hosts and can leave timed-out test work
+    // racing the next fixture. Keep per-file storage isolation and timeouts.
+    maxWorkers: 1,
     include: stressSuite ? ["apps/ingestion/test/**/*.stress.spec.ts"] : ["apps/ingestion/test/**/*.spec.ts"],
     exclude: stressSuite ? [...configDefaults.exclude] : [...configDefaults.exclude, "**/*.stress.spec.ts"],
     hookTimeout: 30_000,
