@@ -1,4 +1,6 @@
 import { expect, test } from "vitest";
+import { catalogueStore } from "../../../src/catalogue/shared";
+import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import { injectFixturePublication } from "./fixture-plan-injection";
@@ -28,6 +30,12 @@ installReconciliationSuite();
 test("fresh native provenance retains the consumer revision and export for semantic no-change", async () => {
   const firstRun = await collect("/reconciliation/repeatable", "native-repeatable-first");
   const first = await prepareNativeCandidate(firstRun.id, "one-piece", "catrev_spine_000", "repeatable-first-prepare");
+  const firstSemantic = await reconciliationCheckpoint<{ digest: string }>(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    requiredString(first, "id"),
+    "canonical_digest:catalogue",
+  );
+  expect(firstSemantic?.value.digest).toMatch(/^[a-f0-9]{64}$/);
   const firstPublished = await approveNativeCandidate(first, "repeatable-first-publish");
   const revisionId = requiredString(firstPublished.document, "resulting_revision_id");
   const firstExport = await exportManifest(revisionId);
@@ -39,6 +47,12 @@ test("fresh native provenance retains the consumer revision and export for seman
   const secondRun = await collect("/reconciliation/repeatable", "native-repeatable-second");
   const second = await prepareNativeCandidate(secondRun.id, "one-piece", revisionId, "repeatable-second-prepare");
   expect(second.manifest_digest).not.toBe(first.manifest_digest);
+  const secondSemantic = await reconciliationCheckpoint<{ digest: string }>(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    requiredString(second, "id"),
+    "canonical_digest:catalogue",
+  );
+  expect(secondSemantic?.value.digest).toBe(firstSemantic?.value.digest);
   const secondPublished = await approveNativeCandidate(second, "repeatable-second-publish");
   const secondRevision = requiredString(secondPublished.document, "resulting_revision_id");
   const secondEvidence = (await get(`/v1/ingestion-runs/${secondRun.id}/evidence`)).document;
