@@ -44,7 +44,7 @@ Workflow driver can exercise recovery paths with real D1/R2 and controlled child
 dispatch. Preserve a small binding test when using that driver; a controlled
 driver alone does not prove the platform wiring.
 
-Routine acceptance currently has 63 files, of which 19 directly boot a Worker.
+Routine acceptance currently has 67 files, of which 20 directly boot a Worker.
 The others include SQL, CLI and contract checks; the directory name does not
 mean every file is a complete application journey. Extended recovery and
 capacity experiments remain separately selected. Reduce duplicate journeys

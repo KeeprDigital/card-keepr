@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { runCli, } from "./acceptance-runtime.mjs";
+import { runCli } from "./acceptance-runtime.mjs";
 import {
   inspectNativeCollection,
   nativeExportRecords,

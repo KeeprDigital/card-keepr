@@ -4,9 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { runCli, startWorker, stopWorker, waitForHealth, waitForRunState } from "./helpers/acceptance-runtime.mjs";
-import {
-  nativeCheckpointTransport,
-} from "./helpers/native-catalogue-runtime.mjs";
+import { nativeCheckpointTransport } from "./helpers/native-catalogue-runtime.mjs";
 import { syntheticSourceAdapterMigrations } from "./helpers/synthetic-source-adapters.mjs";
 
 const root = resolve(import.meta.dirname, "..");

@@ -15,7 +15,7 @@ import { recoverHistoricalPublication } from "./historical-publication-fixture";
 import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
 import {
   approveNativeCandidate,
-  prepareNativeCandidate,
+  prepareNativeCandidateDirect as prepareNativeCandidate,
   waitForVerifiedPublicationBackup,
 } from "./native-publication-helpers";
 import * as ingestionQueries from "./query-helpers/ingestion";

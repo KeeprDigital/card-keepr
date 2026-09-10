@@ -181,6 +181,15 @@ export function post(pathname: string, body: Record<string, unknown>, extraHeade
   return request(pathname, body, extraHeaders);
 }
 
+/** Use for completed semantic seeds, never tests of preparation scheduling or races. */
+export function postWithControlledPreparation(
+  pathname: string,
+  body: Record<string, unknown>,
+  extraHeaders: Record<string, string> = {},
+) {
+  return request(pathname, body, extraHeaders, nativePreparationDriver(testEnv));
+}
+
 export async function postFixtureEvidence(body: StartEvidenceRunRequest) {
   const document = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, body);
   return {
@@ -193,6 +202,7 @@ export async function request(
   pathname: string,
   body?: Record<string, unknown>,
   extraHeaders: Record<string, string> = {},
+  driver = preparationDriver,
 ): Promise<{
   response: Response;
   document: Record<string, unknown>;
@@ -207,10 +217,10 @@ export async function request(
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
-  const rpcResponse = preparationDriver
-    ? await ingestionWorker.fetch(requested, preparationDriver.environment)
+  const rpcResponse = driver
+    ? await ingestionWorker.fetch(requested, driver.environment)
     : await exports.default.fetch(requested);
-  await preparationDriver?.drain();
+  await driver?.drain();
   const status = rpcResponse.status;
   const document = (await rpcResponse.json()) as Record<string, unknown>;
   return {
