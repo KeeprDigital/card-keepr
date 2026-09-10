@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 1623710332eaa0d941959da145d805827744c6d4
+          ref: 11c56b5996f927750dfcd58cefc14f14186ddfb3
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         id: node
         with:
@@ -29,20 +29,21 @@ jobs:
       - if: steps.cache.outputs.cache-hit != 'true'
         run: npm ci
       - name: Focused reproduction with host samples
+        timeout-minutes: 6
         env:
           SELECTION: ${{ matrix.selection }}
         run: |
           mkdir -p diagnostic-output
-          (while true; do date -u; free -m; ps -eo pid,ppid,pcpu,rss,stat,comm --sort=-rss | head -12; df -m /dev/shm; sleep 10; done) > diagnostic-output/host.log &
+          (while true; do date -u; free -m; ps -eo pid,ppid,pcpu,rss,stat,comm --sort=-rss | head -12; df -m -t tmpfs; sleep 10; done) | tee diagnostic-output/host.log &
           sampler=$!
           trap 'kill "$sampler" 2>/dev/null || true' EXIT
           if [ "$SELECTION" = timing ]; then
-            bash scripts/ci-test.sh npm run test:workers:ingestion -- apps/ingestion/test/reconciliation-card-identity.spec.ts apps/ingestion/test/reconciliation-curated-lookup.spec.ts apps/ingestion/test/reconciliation-provenance-locators.spec.ts apps/ingestion/test/reconciliation-workflow-binding.spec.ts apps/ingestion/test/game-reconciliation-operations.spec.ts -t 'Gundam EN-ASIA and EN-US|Gundam cross-locale formatting|curated relationships lookup|locator variant evolution|parsed observation count warnings|native source change retains reconfirmable' > diagnostic-output/tests.log 2>&1
+            bash scripts/ci-test.sh npm run test:workers:ingestion -- apps/ingestion/test/reconciliation-card-identity.spec.ts apps/ingestion/test/reconciliation-curated-lookup.spec.ts apps/ingestion/test/reconciliation-provenance-locators.spec.ts apps/ingestion/test/reconciliation-workflow-binding.spec.ts apps/ingestion/test/game-reconciliation-operations.spec.ts apps/ingestion/test/publication-caller-retirement.spec.ts -t 'Gundam EN-ASIA and EN-US|Gundam cross-locale formatting|Gundam shared-fact conflict blocks|curated .* lookup|locator variant evolution|parsed observation count warnings|native source change retains reconfirmable|a repeated native publication' > diagnostic-output/tests.log 2>&1
           else
             bash scripts/ci-test.sh npm run test:workers:ingestion -- apps/ingestion/test/identity-corrections.spec.ts apps/ingestion/test/reconciliation-completeness-profiles.spec.ts > diagnostic-output/tests.log 2>&1
           fi
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: cleanup-${{ matrix.selection }}
           path: diagnostic-output/
