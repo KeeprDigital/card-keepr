@@ -11,11 +11,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        selection: [contracts, progress, errata]
+        selection: [live, quiet]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: d7506a3e4a464ab50c3778eb1ddcae1fc89b16bb
+          ref: 30d88b9b047b2d134276022875aa021159dc6882
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         id: node
         with:
@@ -37,17 +37,10 @@ jobs:
           (while true; do date -u; free -m; ps -eo pid,ppid,pcpu,rss,stat,comm --sort=-rss | head -12; df -m -t tmpfs; sleep 10; done) | tee diagnostic-output/host.log &
           sampler=$!
           trap 'kill "$sampler" 2>/dev/null || true' EXIT
-          case "$SELECTION" in
-            contracts) files="apps/ingestion/test/native-source-verification.spec.ts apps/ingestion/test/source-refresh-publication.spec.ts apps/ingestion/test/publication-caller-retirement.spec.ts apps/ingestion/test/source-refresh.spec.ts apps/ingestion/test/runtime-game-preparation-dispatch.spec.ts" ;;
-            runtime) files="apps/ingestion/test/runtime-workflow-collection.spec.ts apps/ingestion/test/runtime-synthetic-transport.spec.ts apps/ingestion/test/runtime-adapter-reparse.spec.ts apps/ingestion/test/native-errata-locators.spec.ts" ;;
-            preparation) files="apps/ingestion/test/identity-corrections.spec.ts apps/ingestion/test/reconciliation-curated-lookup.spec.ts apps/ingestion/test/reconciliation-curated-conflicts.spec.ts apps/ingestion/test/game-reconciliation-operations.spec.ts" ;;
-            history) files="apps/ingestion/test/reconciliation-card-identity.spec.ts apps/ingestion/test/reconciliation-provenance-locators.spec.ts apps/ingestion/test/errata-rules-text.spec.ts" ;;
-            profiles) files="apps/ingestion/test/reconciliation-completeness-profiles.spec.ts apps/ingestion/test/reconciliation-product-identity.spec.ts apps/ingestion/test/reconciliation-product-release.spec.ts apps/ingestion/test/reviewed-printing-matches.spec.ts" ;;
-            progress) files="apps/ingestion/test/reconciliation-progress.spec.ts apps/ingestion/test/reconciliation-workflow-binding.spec.ts" ;;
-            errata) files="apps/ingestion/test/errata-rules-text.spec.ts" ;;
-            *) exit 2 ;;
-          esac
-          bash scripts/ci-test.sh npm run test:workers:ingestion -- $files > diagnostic-output/tests.log 2>&1
+          logging=false
+          if [ "$SELECTION" = quiet ]; then logging=passed-only; fi
+          set -o pipefail
+          bash scripts/ci-test.sh npm run test:workers:ingestion -- apps/ingestion/test/source-refresh-publication.spec.ts apps/ingestion/test/native-printing-images.spec.ts --reporter=default --silent="$logging" 2>&1 | tee diagnostic-output/tests.log
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
