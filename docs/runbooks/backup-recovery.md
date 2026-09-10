@@ -27,9 +27,9 @@ repository root. The examples use `jq` and shell variables; replace operation
 identities with unique values for the operation you intend to perform.
 
 ```sh
-npm run --silent keepr -- status --json > status.json
+pnpm --silent run keepr status --json > status.json
 CURRENT_REVISION=$(jq -er '.safe_state.current_revision_id' status.json)
-npm run --silent keepr -- backup status \
+pnpm --silent run keepr backup status \
   --catalogue-revision "$CURRENT_REVISION" --json > backups.json
 ```
 
@@ -46,12 +46,12 @@ Keep the successful backup output or status snapshot with the operation record.
 For the current revision, the following values name one exact verified target:
 
 ```sh
-npm run --silent keepr -- status --json > verified-status.json
+pnpm --silent run keepr status --json > verified-status.json
 TARGET_REVISION=$(jq -er '.safe_state.current_revision_id' verified-status.json)
 TARGET_BACKUP_ATTEMPT=$(jq -er '.release_preflight.recovery_backup_attempt_id' verified-status.json)
 TARGET_BOOKMARK=$(jq -er '.release_preflight.recovery_bookmark' verified-status.json)
 TARGET_DIGEST=$(jq -er '.release_preflight.recovery_manifest_digest' verified-status.json)
-npm run --silent keepr -- backup status \
+pnpm --silent run keepr backup status \
   --attempt-id "$TARGET_BACKUP_ATTEMPT" --json > verified-attempt.json
 jq -e --arg revision "$TARGET_REVISION" --arg digest "$TARGET_DIGEST" \
   '.state == "verified" and .catalogue_revision_id == $revision and .manifest_sha256 == $digest' \
@@ -78,11 +78,11 @@ With ingestion idle and recovery healthy, create a backup of the current revisio
 
 ```sh
 BACKUP_ATTEMPT=backup-2026-09-04-01
-npm run --silent keepr -- backup create \
+pnpm --silent run keepr backup create \
   --expected-current-revision "$CURRENT_REVISION" \
   --idempotency-key "$BACKUP_ATTEMPT" \
   --environment production --yes --confirm "$EXACT_CONFIRMATION" --json
-npm run --silent keepr -- backup status --attempt-id "$BACKUP_ATTEMPT" --json
+pnpm --silent run keepr backup status --attempt-id "$BACKUP_ATTEMPT" --json
 ```
 
 Inspect `dispatch`, `workflow_instance_id`, `state`, `restore_phase`, and `failure`.
@@ -97,13 +97,13 @@ A failed attempt is immutable. Only the latest failed leaf may be retried, using
 its exact ID and current attempt digest, with a new idempotency key:
 
 ```sh
-npm run --silent keepr -- backup status \
+pnpm --silent run keepr backup status \
   --attempt-id "$BACKUP_ATTEMPT" --json > failed-attempt.json
 jq -e '.state == "failed"' failed-attempt.json
 FAILED_ATTEMPT=$(jq -er '.idempotency_key' failed-attempt.json)
 FAILED_DIGEST=$(jq -er '.attempt_digest' failed-attempt.json)
 RETRY_ATTEMPT=backup-2026-09-04-02
-npm run --silent keepr -- backup retry \
+pnpm --silent run keepr backup retry \
   --expected-current-revision "$CURRENT_REVISION" \
   --failed-attempt-id "$FAILED_ATTEMPT" --failed-attempt-digest "$FAILED_DIGEST" \
   --idempotency-key "$RETRY_ATTEMPT" \
@@ -126,18 +126,18 @@ Production Release must be idle. Choose one method:
 | `replacement_database` | Import the retained SQL into a replacement D1 | Original/retained database and replacement database identities |
 
 ```sh
-npm run --silent keepr -- status --json > current-status.json
+pnpm --silent run keepr status --json > current-status.json
 CURRENT_REVISION=$(jq -er '.safe_state.current_revision_id' current-status.json)
 RECOVERY_ID=recovery-2026-09-04-01
 RECOVERY_METHOD=time_travel
-npm run --silent keepr -- recovery begin \
+pnpm --silent run keepr recovery begin \
   --recovery-id "$RECOVERY_ID" --method "$RECOVERY_METHOD" \
   --target-revision "$TARGET_REVISION" --target-bookmark "$TARGET_BOOKMARK" \
   --target-digest "$TARGET_DIGEST" --backup-attempt-id "$TARGET_BACKUP_ATTEMPT" \
   --expected-current-revision "$CURRENT_REVISION" \
   --idempotency-key "$RECOVERY_ID-begin" \
   --environment production --yes --confirm "$EXACT_CONFIRMATION" --json
-npm run --silent keepr -- recovery inspect --recovery-id "$RECOVERY_ID" --json
+pnpm --silent run keepr recovery inspect --recovery-id "$RECOVERY_ID" --json
 ```
 
 Set `RECOVERY_METHOD=replacement_database` to use the replacement path. Begin
@@ -152,11 +152,11 @@ request if necessary before deciding on a follow-up.
 Run verification for either method with a fresh confirmation:
 
 ```sh
-npm run --silent keepr -- recovery verify \
+pnpm --silent run keepr recovery verify \
   --recovery-id "$RECOVERY_ID" --target-digest "$TARGET_DIGEST" \
   --idempotency-key "$RECOVERY_ID-verify" \
   --environment production --yes --confirm "$EXACT_CONFIRMATION" --json
-npm run --silent keepr -- recovery inspect \
+pnpm --silent run keepr recovery inspect \
   --recovery-id "$RECOVERY_ID" --json > recovery.json
 jq -e '.state == "awaiting_acceptance" and .verification != null' recovery.json
 ```
@@ -186,14 +186,14 @@ The owner accepts only after reviewing verification and, for replacement recover
 the successful handoff evidence:
 
 ```sh
-npm run --silent keepr -- recovery accept \
+pnpm --silent run keepr recovery accept \
   --recovery-id "$RECOVERY_ID" --confirmation-recovery-id "$RECOVERY_ID" \
   --expected-restored-revision "$TARGET_REVISION" --target-digest "$TARGET_DIGEST" \
   --idempotency-key "$RECOVERY_ID-accept" \
   --environment production --yes --confirm "$EXACT_CONFIRMATION" --json
-npm run --silent keepr -- recovery inspect --recovery-id "$RECOVERY_ID" --json
-npm run --silent keepr -- status --json
-npm run --silent keepr -- health --json
+pnpm --silent run keepr recovery inspect --recovery-id "$RECOVERY_ID" --json
+pnpm --silent run keepr status --json
+pnpm --silent run keepr health --json
 ```
 
 Require `state: accepted`, the intended current revision, `recovery_health: healthy`,

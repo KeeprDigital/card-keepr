@@ -24,7 +24,7 @@ deployment credentials. Catalogue backup and recovery use the separate
    `production` environment secret `API_BASE_URL` must be the public API
    base, `https://card.keepr.digital/api`, because the smoke checks append
    route paths to it.
-3. Run `npm run check` and `npm run test:full` at the exact Production Release SHA.
+3. Run `pnpm run check` and `pnpm run test:full` at the exact Production Release SHA.
 4. Run `keepr status --json`. Production Release preflight must report the expected
    schema level, idle mutation state, a verified current-revision backup and
    usable bookmark, complete current-plus-two export/recovery evidence, exact
@@ -38,9 +38,9 @@ Read the expected migration level from the live preflight; it is the level befor
 this release applies its checked-in forward migrations, not a fixed example value.
 
 ```sh
-npm run --silent keepr -- status --json > release-status.json
+pnpm --silent run keepr status --json > release-status.json
 EXPECTED_MIGRATION_LEVEL=$(jq -er '.release_preflight.schema_migration_level' release-status.json)
-npm run keepr -- release production \
+pnpm run keepr release production \
   --release-id release-2026-08-05-01 \
   --expected-current-revision catrev_example \
   --expected-head-sha 0123456789abcdef0123456789abcdef01234567 \

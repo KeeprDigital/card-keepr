@@ -34,17 +34,32 @@ before selecting checks, adding tests, or changing CI. Start with the
 
 ## Local development
 
-Install dependencies, create the two local secret files, and start both
-runtimes:
+Use Node 26.8.2, pinned in `.node-version` for local development and all CI
+workflows. Install Corepack 0.36.0 and enable its pnpm shim; Node 25+ no longer
+bundles Corepack. The repository pins pnpm 12.3.4 with Corepack's integrity
+hash. If Corepack 0.36.0 is already installed, skip its installation step.
+
+Install dependencies, create the two local secret files, and start both runtimes:
 
 ```sh
-npm install
+npm install --global corepack@0.36.0
+corepack enable pnpm
+node --version
+corepack --version
+pnpm --version
+pnpm install --frozen-lockfile
 cp apps/api/.dev.vars.example apps/api/.dev.vars
 cp apps/ingestion/.dev.vars.example apps/ingestion/.dev.vars
 # Replace both placeholder values with locally generated credentials.
-npm run db:migrate:local
-npm run dev
+pnpm run db:migrate:local
+pnpm run dev
 ```
+
+Corepack manages pnpm; use your existing Node version manager to select Node.
+If a separately installed pnpm shadows Corepack, use `corepack pnpm` in place
+of `pnpm` and resolve the PATH conflict in your own environment. Do not force
+replacement of global tools. See the [toolchain policy](docs/toolchain.md)
+for native dependency permissions, cache behavior and upgrade checks.
 
 The API listens on `http://127.0.0.1:8787` and ingestion listens on
 `http://127.0.0.1:8788`. Local D1 and R2 state is emulated by Wrangler.
@@ -98,8 +113,8 @@ credentials only from the environment, never from command arguments:
 ```sh
 export KEEPR_API_KEY='...'
 export KEEPR_ADMINISTRATION_KEY='...'
-npm run keepr -- health
-npm run keepr -- health --json
+pnpm run keepr health
+pnpm run keepr health --json
 ```
 
 Override `KEEPR_API_URL` and `KEEPR_INGESTION_URL` when inspecting deployed
@@ -117,9 +132,9 @@ precede the atomic composition switch. Test-only synthetic adapters remain in
 Start with the installed source registry and the documented owner journeys:
 
 ```sh
-npm run keepr -- source registry --json
-npm run keepr -- game-candidate list --run-id RUN_ID --json
-npm run keepr -- game-candidate inspect --candidate-id CANDIDATE_ID --json
+pnpm run keepr source registry --json
+pnpm run keepr game-candidate list --run-id RUN_ID --json
+pnpm run keepr game-candidate inspect --candidate-id CANDIDATE_ID --json
 ```
 
 The [One Piece two-source runbook](docs/runbooks/one-piece-two-source.md) explains
@@ -168,7 +183,7 @@ that already contains Catalogue Revisions, run the bounded, idempotent search
 repair until its JSON response reports `"complete": true`:
 
 ```sh
-npm run keepr -- catalogue search repair \
+pnpm run keepr catalogue search repair \
   --target-revision CATREV_ID \
   --expected-current-revision CURRENT_CATREV_ID \
   --idempotency-key repair_CATREV_ID \
@@ -203,12 +218,12 @@ owner-authored request that becomes a Curated Revision only when created
 exactly as validated. It is never a Curated Revision itself.
 
 ```sh
-npm run keepr -- curated-revision validate \
+pnpm run keepr curated-revision validate \
   --proposal proposal.json \
   --expected-current-revision CURRENT_CATREV_ID \
   --json
 
-npm run keepr -- curated-revision create \
+pnpm run keepr curated-revision create \
   --proposal proposal.json \
   --proposal-digest PROPOSAL_SHA256 \
   --expected-current-revision CURRENT_CATREV_ID \
@@ -218,8 +233,8 @@ npm run keepr -- curated-revision create \
   --yes \
   --json
 
-npm run keepr -- curated-revision list --game one-piece --status active
-npm run keepr -- curated-revision show --revision-id CURATED_REVISION_ID
+pnpm run keepr curated-revision list --game one-piece --status active
+pnpm run keepr curated-revision show --revision-id CURATED_REVISION_ID
 ```
 
 `validate` posts the proposal to
@@ -247,27 +262,27 @@ objects at `/v1/source-snapshots/{id}/content` and
 ## Testing and verification
 
 ```sh
-npm run check
-npm test
+pnpm run check
+pnpm test
 ```
 
-`npm run check` runs lint, changed-file formatting checks, TypeScript checks,
+`pnpm run check` runs lint, changed-file formatting checks, TypeScript checks,
 generated-file checks, import rules and both Worker build dry runs. It leaves
-tests to `npm test`. See the [command reference](docs/commands.md) for every
+tests to `pnpm test`. See the [command reference](docs/commands.md) for every
 command, its scope and the renamed commands.
 
-`npm test` is the fast everyday check: domain tests, API Worker tests, and small
+`pnpm test` is the fast everyday check: domain tests, API Worker tests, and small
 external CLI / native publication-and-restore smoke tests. Use
 the affected integration file for focused feedback while changing ingestion.
-Before marking a PR ready, run `npm run test:full` when practical, or use the
+Before marking a PR ready, run `pnpm run test:full` when practical, or use the
 ready-PR CI run for the full result; it adds all ingestion integration
 and routine acceptance tests. CI runs quick checks on drafts and full regression
 checks on ready PRs and pushes to `main`, with three shards for each large suite.
 
-Full catalogue journeys (`npm run test:acceptance:extended -- <scenario>`) and benchmarks
-(`npm run test:benchmark -- <scenario>`) are separate investigations.
-`npm run test:stress` runs the small weekly pacing checks;
-`npm run test:stress:full` explicitly selects all Worker capacity tests. The normal checks have no
+Full catalogue journeys (`pnpm run test:acceptance:extended <scenario>`) and benchmarks
+(`pnpm run test:benchmark <scenario>`) are separate investigations.
+`pnpm run test:stress` runs the small weekly pacing checks;
+`pnpm run test:stress:full` explicitly selects all Worker capacity tests. The normal checks have no
 6 GiB disk-space requirement. See [the testing guide](docs/testing.md) for the
 commands, coverage, budgets, CI triggers, and rules for adding tests.
 
@@ -285,7 +300,7 @@ restore proof, backup retries, and owner-accepted Catalogue Recovery.
 
 Binding declarations live in each runtime's `wrangler.jsonc`; generated
 `worker-configuration.d.ts` files are checked in and must be regenerated after
-binding changes with `npm run generate:worker-types`.
+binding changes with `pnpm run generate:worker-types`.
 
 The API Worker has catalogue, Printing Image, and Catalogue Export read
 responsibilities and no evidence, export-mutation, or backup binding. The

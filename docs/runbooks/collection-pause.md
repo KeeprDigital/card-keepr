@@ -11,8 +11,8 @@ terminated; it can never parse, reconcile, be approved, or publish.
 ## Inspect
 
 ```sh
-npm run keepr -- source show --run-id RUN_ID
-npm run keepr -- source show --run-id RUN_ID --json
+pnpm run keepr source show --run-id RUN_ID
+pnpm run keepr source show --run-id RUN_ID --json
 ```
 
 Both forms carry the same material facts. The `collection` block reports:
@@ -82,7 +82,7 @@ Printing is published without that Printing Image, and nothing blocks
 approval. Inspect the gap with:
 
 ```sh
-npm run keepr -- source show --run-id RUN_ID --json
+pnpm run keepr source show --run-id RUN_ID --json
 ```
 
 The `collection.failed_images` block reports the exact `count` and a list
@@ -100,11 +100,11 @@ refused while the collection Workflow is live; it accepts a collecting run
 only when the Workflow is already deterministically observed dead.
 
 ```sh
-npm run keepr -- source pause \
+pnpm run keepr source pause \
   --run-id RUN_ID \
   --idempotency-key pause_RUN_ID \
   --json
-npm run keepr -- source terminate \
+pnpm run keepr source terminate \
   --run-id RUN_ID \
   --idempotency-key terminate_RUN_ID \
   --json
@@ -133,7 +133,7 @@ Read `capacity[].request_capacity`, `capacity_generation`, and
 `required_capacity` from `source show`, then:
 
 ```sh
-npm run keepr -- source capacity extend \
+pnpm run keepr source capacity extend \
   --run-id RUN_ID \
   --expected-capacity CURRENT_CAPACITY \
   --expected-generation CURRENT_GENERATION \
@@ -150,7 +150,7 @@ the same key returns the original result. Extension never resumes the run.
 ## Resume
 
 ```sh
-npm run keepr -- source resume --run-id RUN_ID --json
+pnpm run keepr source resume --run-id RUN_ID --json
 ```
 
 Resume moves the same Ingestion Run back to collecting under a new Workflow
@@ -163,7 +163,7 @@ generation. Resume is idempotent: replays reacquire the same attempt.
 ## Terminate
 
 ```sh
-npm run keepr -- source terminate \
+pnpm run keepr source terminate \
   --run-id RUN_ID \
   --idempotency-key terminate_RUN_ID \
   --json

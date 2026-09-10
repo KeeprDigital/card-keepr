@@ -50,7 +50,7 @@ const signatures = `// Generated validator signatures.\n${Object.keys(exports)
   .join("\n")}\n`;
 if (process.argv.includes("--check")) {
   if (readFileSync(output, "utf8") !== generated || readFileSync(declarations, "utf8") !== signatures)
-    throw new Error("Document validators are stale; run npm run generate:validators.");
+    throw new Error("Document validators are stale; run pnpm run generate:validators.");
 } else {
   writeFileSync(output, generated);
   writeFileSync(declarations, signatures);

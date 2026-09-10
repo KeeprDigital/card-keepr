@@ -31,10 +31,20 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        id: node
         with:
-          node-version: 22
+          node-version-file: .node-version
           package-manager-cache: false
-      - run: npm ci
+      - name: Set up Corepack and pnpm
+        id: pnpm
+        run: bash scripts/setup-pnpm.sh
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: pnpm-store
+        with:
+          path: ${{ steps.pnpm.outputs.store-path }}
+          key: pnpm-store-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.node.outputs.node-version }}-${{ steps.pnpm.outputs.version }}-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'pnpm-workspace.yaml', '.npmrc', 'scripts/setup-pnpm.sh', '.node-version') }}
+      # Always recreate node_modules and run approved native builds, even on a store hit.
+      - run: pnpm install --frozen-lockfile
       - name: Run the selected files
         run: |
           case "$TEST_WORKER" in ingestion|api) ;; *) exit 2 ;; esac
@@ -50,7 +60,7 @@ jobs:
           mkdir -p test-results
           status=0
           for ((run=1; run<=TEST_REPEATS; run++)); do
-            bash scripts/ci-test.sh npm run "test:$TEST_WORKER" -- "${files[@]}" \
+            bash scripts/ci-test.sh pnpm run "test:$TEST_WORKER" "${files[@]}" \
               --silent=passed-only --reporter=default --reporter=json \
               --outputFile.json="test-results/run-$run.json" || status=1
           done

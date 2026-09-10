@@ -41,17 +41,20 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         id: node
         with:
-          node-version: 22
+          node-version-file: .node-version
           package-manager-cache: false
+      - name: Set up Corepack and pnpm
+        id: pnpm
+        run: bash scripts/setup-pnpm.sh
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: node-modules
+        id: pnpm-store
         with:
-          path: node_modules
-          key: node-modules-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.node.outputs.node-version }}-${{ hashFiles('package-lock.json', 'package.json', '.npmrc') }}
-      - if: steps.node-modules.outputs.cache-hit != 'true'
-        run: npm ci
-      - run: npm run lint
-      - run: npm run format:check -- --since="origin/${BASE_REF}"
+          path: ${{ steps.pnpm.outputs.store-path }}
+          key: pnpm-store-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.node.outputs.node-version }}-${{ steps.pnpm.outputs.version }}-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'pnpm-workspace.yaml', '.npmrc', 'scripts/setup-pnpm.sh', '.node-version') }}
+      # Always recreate node_modules and run approved native builds, even on a store hit.
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run format:check --since="origin/${BASE_REF}"
 
   checks:
     runs-on: ubuntu-latest
@@ -61,20 +64,23 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         id: node
         with:
-          node-version: 22
+          node-version-file: .node-version
           package-manager-cache: false
+      - name: Set up Corepack and pnpm
+        id: pnpm
+        run: bash scripts/setup-pnpm.sh
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: node-modules
+        id: pnpm-store
         with:
-          path: node_modules
-          key: node-modules-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.node.outputs.node-version }}-${{ hashFiles('package-lock.json', 'package.json', '.npmrc') }}
-      - if: steps.node-modules.outputs.cache-hit != 'true'
-        run: npm ci
-      - run: npm run typecheck
-      - run: npm run check:generated
-      - run: npm run check:imports
-      - run: npm run build
-      - run: npm run test:api
+          path: ${{ steps.pnpm.outputs.store-path }}
+          key: pnpm-store-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.node.outputs.node-version }}-${{ steps.pnpm.outputs.version }}-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'pnpm-workspace.yaml', '.npmrc', 'scripts/setup-pnpm.sh', '.node-version') }}
+      # Always recreate node_modules and run approved native builds, even on a store hit.
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm run check:generated
+      - run: pnpm run check:imports
+      - run: pnpm run build
+      - run: pnpm run test:api
 
   # The local quick check is split across checks (API) and this job (domain
   # plus bounded publication/restore and external CLI smoke). Both run on drafts.
@@ -86,19 +92,22 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         id: node
         with:
-          node-version: 22
+          node-version-file: .node-version
           package-manager-cache: false
+      - name: Set up Corepack and pnpm
+        id: pnpm
+        run: bash scripts/setup-pnpm.sh
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: node-modules
+        id: pnpm-store
         with:
-          path: node_modules
-          key: node-modules-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.node.outputs.node-version }}-${{ hashFiles('package-lock.json', 'package.json', '.npmrc') }}
-      - if: steps.node-modules.outputs.cache-hit != 'true'
-        run: npm ci
-      - run: npm run test:domain
+          path: ${{ steps.pnpm.outputs.store-path }}
+          key: pnpm-store-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.node.outputs.node-version }}-${{ steps.pnpm.outputs.version }}-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'pnpm-workspace.yaml', '.npmrc', 'scripts/setup-pnpm.sh', '.node-version') }}
+      # Always recreate node_modules and run approved native builds, even on a store hit.
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run test:domain
       # Full acceptance already includes smoke; only drafts need it here.
       - if: github.event_name == 'pull_request' && github.event.pull_request.draft
-        run: bash scripts/ci-test.sh npm run test:acceptance:smoke
+        run: bash scripts/ci-test.sh pnpm run test:acceptance:smoke
 
   # Full integration runs when a PR is ready, on main, and on manual dispatch.
   # The ready_for_review event above also runs it without requiring a new push.
@@ -116,16 +125,19 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         id: node
         with:
-          node-version: 22
+          node-version-file: .node-version
           package-manager-cache: false
+      - name: Set up Corepack and pnpm
+        id: pnpm
+        run: bash scripts/setup-pnpm.sh
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: node-modules
+        id: pnpm-store
         with:
-          path: node_modules
-          key: node-modules-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.node.outputs.node-version }}-${{ hashFiles('package-lock.json', 'package.json', '.npmrc') }}
-      - if: steps.node-modules.outputs.cache-hit != 'true'
-        run: npm ci
-      - run: bash scripts/ci-test.sh npm run test:ingestion -- --shard=${{ matrix.shard }}/3 --silent=passed-only --reporter=default --reporter=json --outputFile.json=test-results/ingestion.json
+          path: ${{ steps.pnpm.outputs.store-path }}
+          key: pnpm-store-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.node.outputs.node-version }}-${{ steps.pnpm.outputs.version }}-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'pnpm-workspace.yaml', '.npmrc', 'scripts/setup-pnpm.sh', '.node-version') }}
+      # Always recreate node_modules and run approved native builds, even on a store hit.
+      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/ci-test.sh pnpm run test:ingestion --shard=${{ matrix.shard }}/3 --silent=passed-only --reporter=default --reporter=json --outputFile.json=test-results/ingestion.json
       # Preserve per-test timings and failure details from this exact shard. A
       # failed run should be diagnosable without creating a diagnostic workflow.
       - if: always()
@@ -150,13 +162,16 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         id: node
         with:
-          node-version: 22
+          node-version-file: .node-version
           package-manager-cache: false
+      - name: Set up Corepack and pnpm
+        id: pnpm
+        run: bash scripts/setup-pnpm.sh
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: node-modules
+        id: pnpm-store
         with:
-          path: node_modules
-          key: node-modules-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.node.outputs.node-version }}-${{ hashFiles('package-lock.json', 'package.json', '.npmrc') }}
-      - if: steps.node-modules.outputs.cache-hit != 'true'
-        run: npm ci
-      - run: bash scripts/ci-test.sh npm run test:acceptance -- --shard=${{ matrix.shard }}/3
+          path: ${{ steps.pnpm.outputs.store-path }}
+          key: pnpm-store-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.node.outputs.node-version }}-${{ steps.pnpm.outputs.version }}-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'pnpm-workspace.yaml', '.npmrc', 'scripts/setup-pnpm.sh', '.node-version') }}
+      # Always recreate node_modules and run approved native builds, even on a store hit.
+      - run: pnpm install --frozen-lockfile
+      - run: bash scripts/ci-test.sh pnpm run test:acceptance --shard=${{ matrix.shard }}/3
