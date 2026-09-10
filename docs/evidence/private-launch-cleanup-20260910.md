@@ -41,6 +41,14 @@ Completed preparation seeds and ordinary refreshes in the progress, game-operati
 
 The targeted history selection passed six tests, the controlled-preparation comparison passed three scenarios, and the shared owner/source helper passed all three journeys. Two independent review axes found the history corrections and controlled semantic fixture boundary acceptable. Types, lint and catalogue boundaries passed locally before the controlled-driver change; its typecheck also passed. Final required checks on the complete resulting branch remain the merge gate, followed by checks on the actual main commit. The live PR checks are the authoritative final result.
 
+### Backup verification cost
+
+The next full ingestion attempt at `8c55c4d4` again reached all three job caps. Controlled preparation alone did not resolve the hosted failures. Operational logs attribute about 17 seconds of one failed lifecycle test to three backup steps. Temporary local instrumentation found 1,641 schema queries per backup (roughly 2,000–3,000 total verification queries); SQL export and import themselves took under 0.2 seconds combined per backup.
+
+The application now scans schema records in pages of at most 32 entries and 1 MiB UTF-8 JSON, rather than one verification request per entry. It hashes the same ordered canonical rows and newlines, preserving existing snapshot identity. Both source capture and actual restored-database verification use the bounded scan. Foreign keys, table contents and final exact snapshot equality remain checked. Oversized rows fail explicitly rather than disappearing from the census.
+
+Twelve domain verification tests pass, including equivalence with single-row snapshots, corruption rejection and actual SQLite paging across the byte boundary. The representative Gundam lifecycle test, including real backups, improved from 14.03 to 9.52 seconds locally (16.12 to 11.32 seconds including startup). This is a local comparison, not a hosted performance claim. Both review axes found no lost verification; temporary instrumentation was removed.
+
 The dependency audit found no production dependency advisories. A compatible `fast-uri` patch updates the lockfile from 3.1.4 to 3.1.7. Remaining development-tool advisories concern the installed Cloudflare/Miniflare dependency chain; the automated proposed major/alpha replacements are not applied as part of cleanup.
 
 ## Launch work intentionally left open

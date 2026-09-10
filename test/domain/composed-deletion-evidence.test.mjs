@@ -114,3 +114,87 @@ test("private snapshot pages reject oversized payloads and repeated cursors", as
   ]);
   await assert.rejects(captureCompositionSnapshot(repeated.query, "current"), /Invalid snapshot cursor/);
 });
+
+// Old snapshots hash one ordered schema entry at a time. Paging must preserve that exact digest.
+test("schema pages preserve the single-entry snapshot and reject changed or malformed restore evidence", async () => {
+  const base = snapshotProvider();
+  const schema = Array.from({ length: 65 }, (_, n) => ({
+    name: `table_${String(n).padStart(3, "0")}`,
+    type: "table",
+    sql: `CREATE TABLE t${n}(id TEXT)`,
+  }));
+  const source =
+    (size, mutate = (page) => page) =>
+    async (request) =>
+      request.kind === "composition-schema"
+        ? mutate(schema.filter((row) => row.name > request.after).slice(0, size))
+        : base.query(request);
+  const expected = await captureCompositionSnapshot(source(1), "current");
+  let pages = 0;
+  const batched = source(32);
+  assert.deepEqual(
+    await captureCompositionSnapshot(async (request) => {
+      if (request.kind === "composition-schema") pages++;
+      return batched(request);
+    }, "current"),
+    expected,
+  );
+  assert.equal(pages, 4);
+  await assert.rejects(
+    verifyCompositionSnapshot(
+      source(32, (page) => page.map((row) => (row.name === "table_033" ? { ...row, sql: "changed" } : row))),
+      expected,
+    ),
+    /snapshot differs/,
+  );
+  await assert.rejects(captureCompositionSnapshot(source(33), "current"), /row budget/);
+  await assert.rejects(
+    captureCompositionSnapshot(
+      source(2, (page) => page.reverse()),
+      "current",
+    ),
+    /Invalid schema snapshot cursor/,
+  );
+  await assert.rejects(
+    captureCompositionSnapshot(
+      source(1, (page) => page.map((row) => ({ ...row, sql: "x".repeat(1048576) }))),
+      "current",
+    ),
+    /byte budget/,
+  );
+});
+
+test("the SQLite schema query pages every entry within its row and UTF-8 byte bounds", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const { compositionVerificationQuery, maximumSchemaSnapshotPageBytes } = await import(
+    "../../src/catalogue/backup-recovery/composition-verification-repository.ts"
+  );
+  const database = new DatabaseSync(":memory:");
+  try {
+    for (let n = 0; n < 65; n++) database.exec(`CREATE TABLE t_${String(n).padStart(3, "0")}(id TEXT)`);
+    for (let n = 0; n < 8; n++) database.exec(`CREATE VIEW wide_${n} AS SELECT '${"界".repeat(50000)}' AS text`);
+    const expected = database
+      .prepare("SELECT name,type,sql FROM sqlite_schema WHERE sql IS NOT NULL ORDER BY name")
+      .all();
+    let after = "";
+    const actual = [];
+    let partialBytePage = false;
+    for (;;) {
+      const query = compositionVerificationQuery({ kind: "composition-schema", after });
+      const page = database.prepare(query.sql).all(...query.params);
+      if (!page.length) break;
+      assert.ok(page.length <= 32);
+      assert.ok(
+        page.reduce((bytes, row) => bytes + Buffer.byteLength(JSON.stringify(row)), 0) <=
+          maximumSchemaSnapshotPageBytes,
+      );
+      if (page.some((row) => row.name.startsWith("wide_")) && page.at(-1).name !== "wide_7") partialBytePage = true;
+      actual.push(...page);
+      after = page.at(-1).name;
+    }
+    assert.equal(partialBytePage, true);
+    assert.deepEqual(actual, expected);
+  } finally {
+    database.close();
+  }
+});

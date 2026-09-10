@@ -3,6 +3,8 @@ import { type CatalogueStore, repositoryStatements } from "../shared";
 // These are database snapshot records, never a consumer export envelope.
 // Only schema-bounded private records use small pages; other tables retain one row.
 export const maximumPrivateSnapshotPageBytes = 1_048_576;
+export const maximumSchemaSnapshotPageRows = 32;
+export const maximumSchemaSnapshotPageBytes = 1_048_576;
 const privateSnapshotColumns = {
   reconciliation_checkpoints: ["preparation_id", "phase", "ordinal", "content", "sha256"],
   reconciliation_reducer_state: [
@@ -105,9 +107,16 @@ export function compositionVerificationQuery(input: CompositionVerificationQuery
   if (input.kind === "composition-accepted-roots") return acceptedEvidenceArtifactRootsQuery();
   if (input.kind === "composition-schema")
     return {
-      sql: `SELECT name,type,sql FROM sqlite_schema WHERE name>? AND sql IS NOT NULL
-      AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE '%_fts%'
-      AND name<>'d1_migrations' ORDER BY name LIMIT 1`,
+      sql: `WITH page AS (
+        SELECT name,type,sql FROM sqlite_schema WHERE name>? AND sql IS NOT NULL
+        AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE '%_fts%'
+        AND name<>'d1_migrations' ORDER BY name LIMIT ${maximumSchemaSnapshotPageRows}
+      ), sizes AS (
+        SELECT name,sum(length(CAST(json_object('name',name,'type',type,'sql',sql) AS BLOB)))
+          OVER (ORDER BY name) AS page_bytes FROM page
+      ) SELECT page.name,page.type,page.sql FROM page JOIN sizes USING(name)
+        WHERE sizes.page_bytes<=${maximumSchemaSnapshotPageBytes} OR page.name=(SELECT min(name) FROM page)
+        ORDER BY page.name`,
       params: [input.after],
     };
   if (input.kind === "foreign-keys") return { sql: "PRAGMA foreign_key_check", params: [] };

@@ -4,6 +4,8 @@ import {
   type AcceptedEvidenceArtifactRoot,
   compositionSnapshotTables,
   maximumPrivateSnapshotPageBytes,
+  maximumSchemaSnapshotPageRows,
+  maximumSchemaSnapshotPageBytes,
 } from "./composition-verification-repository";
 
 export type CompositionSnapshotEvidence = {
@@ -59,11 +61,20 @@ export async function captureCompositionSnapshot(
   const schema = new StreamingSha256();
   let schemaAfter = "";
   for (;;) {
-    const [entry] = await query({ kind: "composition-schema", after: schemaAfter });
-    if (!entry) break;
-    if (typeof entry.name !== "string" || entry.name <= schemaAfter) throw new Error("Invalid schema snapshot cursor.");
-    schemaAfter = entry.name;
-    schema.update(new TextEncoder().encode(canonicalJson(entry) + "\n"));
+    const page = await query({ kind: "composition-schema", after: schemaAfter });
+    if (page.length === 0) break;
+    if (page.length > maximumSchemaSnapshotPageRows) throw new Error("Schema snapshot page exceeds its row budget.");
+    let pageBytes = 0;
+    for (const entry of page) {
+      if (typeof entry.name !== "string" || entry.name <= schemaAfter)
+        throw new Error("Invalid schema snapshot cursor.");
+      const encoded = new TextEncoder().encode(canonicalJson(entry));
+      pageBytes += encoded.byteLength;
+      if (pageBytes > maximumSchemaSnapshotPageBytes) throw new Error("Schema snapshot page exceeds its byte budget.");
+      schemaAfter = entry.name;
+      schema.update(encoded);
+      schema.update(new Uint8Array([10]));
+    }
   }
   const tables: CompositionSnapshotEvidence["tables"] = [];
   for (const table of compositionSnapshotTables) {
