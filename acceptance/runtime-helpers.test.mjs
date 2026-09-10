@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:net";
 import test from "node:test";
+import { inspectNativeCollection } from "./helpers/native-catalogue-runtime.mjs";
 import {
   allocatePort,
   isAddressInUse,
@@ -174,4 +175,30 @@ test("a fixture's higher administration budget observes completion without a pro
   );
   assert.equal(polls, 2);
   assert.equal(now, 250);
+});
+
+test("publication metadata can be inspected without reading catalogue partitions", async (t) => {
+  const requested = [];
+  const candidate = { id: "candidate-one", manifest_digest: "manifest-one" };
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const path = new URL(url).pathname;
+    requested.push(path);
+    if (path === "/v1/ingestion-runs/run-one/game-candidates") return Response.json({ candidates: [candidate] });
+    if (path === "/v1/game-candidates/candidate-one") return Response.json(candidate);
+    if (path === "/v1/game-candidates/candidate-one/inspection")
+      return Response.json({ ready: true, manifest_digest: "manifest-one", counts: { cards: { added: 1 } } });
+    throw new Error(`Publication metadata must not fetch catalogue data: ${path}`);
+  });
+  const metadata = await inspectNativeCollection(
+    "run-one",
+    {
+      KEEPR_INGESTION_URL: "http://acceptance.invalid",
+      KEEPR_ADMINISTRATION_KEY: "test-only-key",
+    },
+    { partitionKinds: [] },
+  );
+  assert.deepEqual(metadata.candidates, [candidate]);
+  assert.deepEqual(metadata.counts, { cards: { added: 1 } });
+  assert.deepEqual(metadata.records, {});
+  assert.equal(requested.length, 3);
 });

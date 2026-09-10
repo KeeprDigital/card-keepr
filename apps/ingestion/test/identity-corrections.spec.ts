@@ -617,7 +617,7 @@ test.each(["associations", "application", "lookup"])(
   async (failurePhase) => {
     const published = await publishIdentityFixture(
       "/reconciliation/curated-conflict-fanout-base",
-      "association-seed",
+      `association-${failurePhase}-seed`,
       "catrev_spine_000",
     );
     expect(published.response.status).toBe(200);
@@ -650,7 +650,7 @@ test.each(["associations", "application", "lookup"])(
       failurePhase === "application"
         ? "/reconciliation/identity-chain-card-surface"
         : "/reconciliation/curated-conflict-fanout-base",
-      "association-refresh",
+      `association-${failurePhase}-refresh`,
     );
     const preparation = await retainNativePreparation(
       run.id,

@@ -292,6 +292,7 @@ async function providerFetch(mutate = () => {}) {
   return async (input, init) => {
     assert.equal(init.headers.authorization, "Bearer provider-token");
     const url = new URL(input);
+    assert.equal(url.href.includes("provider-token"), false, "credentials stay out of request URLs");
     let result;
     const deploymentWorker = /\/workers\/scripts\/([^/]+)\/deployments$/u.exec(url.pathname)?.[1];
     const worker = /\/workers\/scripts\/([^/]+)\/settings$/u.exec(url.pathname)?.[1];

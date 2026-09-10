@@ -1,5 +1,7 @@
 import { exports, env } from "cloudflare:workers";
 import { expect, test } from "vitest";
+import { catalogueStore } from "../../../src/catalogue/shared";
+import { stagingPreparation } from "../../../src/catalogue/source-evidence/staging-cleanup-repository";
 import { installRuntimeSuite } from "./runtime-helpers";
 
 import { seedRunFixtureStatement } from "./query-helpers/run-events";
@@ -49,6 +51,7 @@ test("owner cleanup persists the exact thirty-day eligibility boundary and resum
   const path = "/v1/ingestion-runs/cleanup_boundary/evidence-cleanup";
   const early = await request(path, "2026-08-30T23:59:59.999Z", { idempotency_key: "cleanup_boundary" });
   expect(early.status).toBe(409);
+  expect(await early.json()).toMatchObject({ code: "evidence_cleanup_not_eligible" });
   const due = await request(path, "2026-08-31T00:00:00.000Z", { idempotency_key: "cleanup_boundary" });
   expect(due.status).toBe(202);
   const intent = (await due.json()) as { id: string; retention_days: number; eligible_at: string; state: string };
@@ -320,29 +323,38 @@ async function abandonedStaging(preparation: string, key: string, extraKey?: str
     .bind(preparation)
     .run();
   await env.CATALOGUE_EXPORTS.put(key, "orphan");
-  // SQLite owns the immutable terminal clock. Drive the existing request-clock
-  // seam relative to that retained instant so this fixture does not age out.
-  const terminalAt = await env.CATALOGUE_DB.prepare("SELECT terminal_at FROM reconciliation_operations WHERE id=?")
-    .bind(preparation)
-    .first<string>("terminal_at");
-  if (terminalAt === null) throw new Error("The staging fixture has no terminal clock.");
-  const eligibleAt = Date.parse(terminalAt) + 30 * 86400000;
-  return (offsetMs = 0) => new Date(eligibleAt + offsetMs).toISOString();
+}
+
+// The database records abandonment using its own clock. Base eligibility on
+// that retained timestamp so this fixture cannot expire as calendar time passes.
+async function stagingCleanupAt(preparation: string, seconds = 0): Promise<string> {
+  const terminalAt = await stagingPreparation(catalogueStore(env.CATALOGUE_DB), preparation).first<string>(
+    "terminal_at",
+  );
+  if (terminalAt === null) throw new Error("The staging fixture has no terminal timestamp.");
+  return new Date(Date.parse(terminalAt) + 30 * 86_400_000 + seconds * 1000).toISOString();
 }
 
 test("owner reclaims a positively inventoried abandoned preparation orphan without traversing shared roots", async () => {
-  const cleanupAt = await abandonedStaging("staging_orphan", "publication-artifacts/orphan");
-  const early = await request("/v1/reconciliation-operations/staging_orphan/evidence-cleanup", cleanupAt(-1), {
-    idempotency_key: "staging_orphan",
-  });
+  await abandonedStaging("staging_orphan", "publication-artifacts/orphan");
+  const early = await request(
+    "/v1/reconciliation-operations/staging_orphan/evidence-cleanup",
+    await stagingCleanupAt("staging_orphan", -0.001),
+    { idempotency_key: "staging_orphan" },
+  );
   expect(early.status).toBe(409);
-  expect(await early.json()).toMatchObject({ code: "evidence_cleanup_not_eligible" });
-  const response = await request("/v1/reconciliation-operations/staging_orphan/evidence-cleanup", cleanupAt(), {
-    idempotency_key: "staging_orphan",
-  });
+  const response = await request(
+    "/v1/reconciliation-operations/staging_orphan/evidence-cleanup",
+    await stagingCleanupAt("staging_orphan", 0),
+    { idempotency_key: "staging_orphan" },
+  );
   expect(response.status).toBe(202);
   const intent = (await response.json()) as { id: string };
-  const advance = await request(`/v1/evidence-cleanups/${intent.id}/advance`, cleanupAt(1000), {});
+  const advance = await request(
+    `/v1/evidence-cleanups/${intent.id}/advance`,
+    await stagingCleanupAt("staging_orphan", 1),
+    {},
+  );
   expect(await advance.json()).toMatchObject({ state: "completed", deleted_objects: 1, scope: "staging" });
   expect(await env.CATALOGUE_EXPORTS.head("publication-artifacts/orphan")).toBeNull();
 });
@@ -358,12 +370,16 @@ async function activeStaging(preparation: string) {
 
 test("a conclusively deleted staging key can hold the same bytes for a new preparation; old delete tickets cannot cross incarnations", async () => {
   const key = "publication-artifacts/reused";
-  const cleanupAt = await abandonedStaging("staging_old", key);
-  const begin = await request("/v1/reconciliation-operations/staging_old/evidence-cleanup", cleanupAt(), {
-    idempotency_key: "staging_old",
-  });
+  await abandonedStaging("staging_old", key);
+  const begin = await request(
+    "/v1/reconciliation-operations/staging_old/evidence-cleanup",
+    await stagingCleanupAt("staging_old", 0),
+    { idempotency_key: "staging_old" },
+  );
   const intent = (await begin.json()) as { id: string };
-  expect((await request(`/v1/evidence-cleanups/${intent.id}/advance`, cleanupAt(1000), {})).status).toBe(200);
+  expect(
+    (await request(`/v1/evidence-cleanups/${intent.id}/advance`, await stagingCleanupAt("staging_old", 1), {})).status,
+  ).toBe(200);
   await activeStaging("staging_fresh");
   const { catalogueStore, trackedStagingBucket } = await import("../../../src/catalogue/shared");
   await trackedStagingBucket(
@@ -381,19 +397,21 @@ test("a conclusively deleted staging key can hold the same bytes for a new prepa
     env.CATALOGUE_DB.prepare(
       `INSERT INTO staging_object_deletes VALUES ('stale-deleter','CATALOGUE_EXPORTS',?,0,?,?,NULL)`,
     )
-      .bind(key, intent.id, cleanupAt(2000))
+      .bind(key, intent.id, await stagingCleanupAt("staging_old", 2))
       .run(),
   ).rejects.toThrow("staging_deleter_fenced");
-  await request(`/v1/evidence-cleanups/${intent.id}/advance`, cleanupAt(3000), {});
+  await request(`/v1/evidence-cleanups/${intent.id}/advance`, await stagingCleanupAt("staging_old", 3), {});
   expect(await (await env.CATALOGUE_EXPORTS.get(key))?.text()).toBe("orphan");
 });
 
 test("an ambiguous staging deletion keeps its ticket open and prevents reuse despite another HEAD showing absence", async () => {
   const key = "publication-artifacts/ambiguous";
-  const cleanupAt = await abandonedStaging("staging_unknown", key);
-  const begin = await request("/v1/reconciliation-operations/staging_unknown/evidence-cleanup", cleanupAt(), {
-    idempotency_key: "staging_unknown",
-  });
+  await abandonedStaging("staging_unknown", key);
+  const begin = await request(
+    "/v1/reconciliation-operations/staging_unknown/evidence-cleanup",
+    await stagingCleanupAt("staging_unknown", 0),
+    { idempotency_key: "staging_unknown" },
+  );
   const intent = (await begin.json()) as { id: string };
   const worker = (await import("../src/index")).default;
   const bucket = new Proxy(env.CATALOGUE_EXPORTS, {
@@ -413,7 +431,7 @@ test("an ambiguous staging deletion keeps its ticket open and prevents reuse des
       headers: {
         authorization: "Bearer vitest-administration-key",
         "content-type": "application/json",
-        "x-keepr-test-now": cleanupAt(1000),
+        "x-keepr-test-now": await stagingCleanupAt("staging_unknown", 1),
       },
       body: "{}",
     }),
@@ -431,7 +449,7 @@ test("an ambiguous staging deletion keeps its ticket open and prevents reuse des
       "staging_new_after_unknown",
     ).put(key, "orphan"),
   ).rejects.toThrow("staging_writer_fenced");
-  const retry = await request(`/v1/evidence-cleanups/${intent.id}/advance`, cleanupAt(365 * 86400000), {});
+  const retry = await request(`/v1/evidence-cleanups/${intent.id}/advance`, "2027-10-09T00:00:00.000Z", {});
   expect(await retry.json()).toMatchObject({ state: "paused", deleted_objects: 0 });
 });
 
@@ -561,10 +579,12 @@ test("exhausted Workflow retries retain a pause that an explicit retry resumes",
 test("an unrelated staging key progresses while a prior delete outcome remains unknown", async () => {
   const blocked = "publication-artifacts/a-unknown",
     free = "publication-artifacts/z-free";
-  const cleanupAt = await abandonedStaging("staging_independent", blocked, free);
-  const begin = await request("/v1/reconciliation-operations/staging_independent/evidence-cleanup", cleanupAt(), {
-    idempotency_key: "staging_independent",
-  });
+  await abandonedStaging("staging_independent", blocked, free);
+  const begin = await request(
+    "/v1/reconciliation-operations/staging_independent/evidence-cleanup",
+    await stagingCleanupAt("staging_independent", 0),
+    { idempotency_key: "staging_independent" },
+  );
   const intent = (await begin.json()) as { id: string };
   const { advanceStagingCleanup } = await import("../../../src/catalogue/source-evidence");
   const { catalogueStore } = await import("../../../src/catalogue/shared");
@@ -583,7 +603,7 @@ test("an unrelated staging key progresses while a prior delete outcome remains u
     catalogueStore(env.CATALOGUE_DB),
     { PRINTING_IMAGES: env.PRINTING_IMAGES, CATALOGUE_EXPORTS: bucket },
     intent.id,
-    cleanupAt(1000),
+    await stagingCleanupAt("staging_independent", 1),
   );
   expect(progress).toMatchObject({ state: "paused", deleted_objects: 1 });
   expect(await env.CATALOGUE_EXPORTS.head(free)).toBeNull();
@@ -660,18 +680,17 @@ test("the production system clock ignores an owner supplied future deletion time
 test.each(["capture", "staging"] as const)(
   "concurrent conflicting %s starts cannot silently share an idempotency key",
   async (scope) => {
-    let cleanupAt = "2026-10-09T00:00:00.000Z";
     for (const owner of ["cleanup_race_one", "cleanup_race_two"]) {
       if (scope === "capture") await terminalRun(owner);
-      else cleanupAt = (await abandonedStaging(owner, `publication-artifacts/${owner}`))();
+      else await abandonedStaging(owner, `publication-artifacts/${owner}`);
     }
     const replies = await Promise.all(
-      ["cleanup_race_one", "cleanup_race_two"].map((owner) =>
+      ["cleanup_race_one", "cleanup_race_two"].map(async (owner) =>
         request(
           scope === "capture"
             ? `/v1/ingestion-runs/${owner}/evidence-cleanup`
             : `/v1/reconciliation-operations/${owner}/evidence-cleanup`,
-          cleanupAt,
+          scope === "staging" ? await stagingCleanupAt(owner) : "2026-08-31T00:00:00.000Z",
           { idempotency_key: "cleanup_race" },
         ),
       ),

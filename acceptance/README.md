@@ -1,95 +1,87 @@
-# Acceptance tiers
+# Acceptance tests
 
-`npm run test:acceptance` runs both tiers. CI retains the three existing
-`acceptance` shards; `npm run test:acceptance:shard -- --shard=1/3` runs one locally.
-Tests use retained source bytes and local services. Ordinary acceptance does not
-fetch live publisher pages.
+`npm test` runs two smoke files. `npm run test:full` and the three CI acceptance
+shards run all routine acceptance, including the small publisher journeys and
+mixed-game recovery. See [the testing guide](../docs/testing.md) for CI policy.
 
-## Wrangler smoke
-
-`npm run test:acceptance:smoke` runs the five flows listed in
-`helpers/smoke-tier.mjs`. They retain real Wrangler subprocess startup, bindings,
-D1 migrations, Workflow execution, public HTTP and CLI behavior:
-
-| File | Coverage |
+| Command | Scope |
 | --- | --- |
-| `one-piece-catalogue.test.mjs` | `one-piece-en` collection, approval, publication and consumer reads |
-| `fusion-world-catalogue.test.mjs` | `fusion-world-en` collection, approval, publication and consumer reads |
-| `digimon-catalogue.test.mjs` | `digimon-en` collection, approval, publication and consumer reads |
-| `gundam-catalogue.test.mjs` | `gundam-en-asia` and `gundam-en-us`, including shared Card/Printing provenance across the two lineages |
-| `source-evidence-cli.test.mjs` | The external CLI's retained-evidence audit contract against an ingestion Worker |
+| `npm run test:acceptance` | All routine acceptance; at most two files at once |
+| `npm run test:acceptance:smoke` | External evidence CLI and two-record native publication/SQL restore |
+| `npm run test:acceptance:runtime` | Routine acceptance excluding those two smoke files |
+| `npm run test:acceptance:shard -- --shard=1/3` | One routine CI shard |
+| `npm run test:acceptance:extended -- composed-recovery` | One explicit extended scenario |
+| `npm run test:benchmark -- native-sqlite-export` | One explicit capacity/profiling regression |
+| `npm run test:stress` | Bounded production-pacing Worker checks used by weekly CI |
+| `npm run test:stress:full` | All Worker capacity experiments; explicit opt-in |
 
-There are **five flows covering five official Source Lineages plus the CLI**.
-Gundam deliberately remains a joint regional flow. The coverage test compares
-this list with the shipped authority registry, so adding a lineage requires an
-explicit smoke decision. Smoke source providers return retained official bytes. These publication flows
-explicitly use the test-owned compatibility parent in
-`fixtures/compatibility-evidence-workflow.ts`: it reuses production capture and
-barrier execution, then selects the retained run-level reconciliation contract.
-The real CLI approval, publication and authenticated consumer assertions remain
-in place. This is compatibility publication evidence, not production-native
-publication evidence. Production native dispatch, per-game inspection and parent
-restart are independently exercised in the ingestion Worker tests. Native
-inspection and publication integration belong to #226–#228; composed recovery is
-#229.
+Append `-- --list` to an acceptance/benchmark command to inspect selection without
+starting a Worker. Extended and benchmark commands require a scenario name
+(with or without `.test.mjs`); `--all` explicitly selects every scenario in that
+tier. Omitting a scenario fails before allocating resources.
 
-## In-process runtime and contract tests
+## Routine coverage
 
-`npm run test:acceptance:runtime` runs everything outside that explicit smoke list.
-Eight Worker-backed files now use a programmatic Miniflare combined runtime:
-`catalogue-publication`, `curated-revision-source-changes`,
-`errata-runtime`, `official-source-adapter-cli-failures`,
-`operational-diagnostics-leak`, `product-catalogue`, and `runtime-health`.
-The remaining contract tests retain their existing Node/SQLite/provider seams.
+Routine acceptance retains real SQL export/import, native publication and restore
+of two Riftbound records with actual image bytes, publisher-specific data and
+rejection cases, public HTTP and external CLI, migration constraints and provider
+failures. Tests use retained or synthetic bytes and local services, never live
+publisher pages or production credentials.
 
-The runtime helper reads the checked-in or test-specific Wrangler configuration,
-bundles its entrypoint once per test process, and composes the API, ingestion and
-source services in one Miniflare instance per test directory. Workerd supplies
-real D1, R2, Workflow, rate-limit and service bindings. A local HTTP bridge lets
-the unchanged CLI subprocesses and HTTP assertions exercise those Workers.
-The bridge forwards request headers inside a service call so malformed browser
-origins reach the application's CORS validation. It preserves the local origin,
-which the readiness assertions check explicitly.
+Publisher journeys for One Piece, Digimon, Fusion World and Gundam use small
+fixtures and the same Miniflare HTTP bridge as other routine tests. Only the
+external evidence CLI smoke starts Wrangler. That keeps a real Wrangler wiring
+check without starting a Wrangler process for every publisher case. The
+`helpers/smoke-tier.mjs` registry also verifies publisher lineage coverage.
 
-Migrations and SQL seeding use the D1 binding directly. State identities include
-the supplied `statePath`: equal paths share D1/R2, distinct paths remain isolated,
-and a restart reopens persisted data. Provider services may start after their
-consumers; calls before the provider starts fail with HTTP 503. The final handle
-closes the whole runtime. Operational logs remain available to leak/correlation
-assertions. Polling reserves 20% of the actual configured administration budget;
-fixture configs already allowing 300 requests/minute use 250ms while smoke and
-production 30/minute bindings retain 2500ms. Test fixture composition lives in
-test-owned entrypoints and harnesses.
+`mixed-game-recovery.test.mjs` uses two games, then three further publications to
+cross the current-plus-two retention boundary. It verifies unchanged sibling
+components, retained revision reads, expiry of the older revision, and actual
+SQL restore. It replaces the five-game version, removes its borrowed 6 GiB
+preflight, and deletes temporary state on both success and failure.
 
-## Measured wall time
+Routine files time out after two minutes. That catches a stuck test; it is not a
+target duration or a RAM/disk quota. Domain and Worker tests retain the lower
+layer's parsing, transactions, concurrency, corruption and recovery coverage.
 
-The comparison uses the same three CI-shard commands, run sequentially on the
-same local macOS arm64 host (Node 26.3.0) on 2026-09-04, with dependencies installed and the existing
-Wrangler migration-template cache. Each shard still runs its files concurrently.
-Times exclude installation and GitHub runner provisioning; these are local
-measurements, not claimed CI timings. The baseline is commit `7b5f959c`.
+## Extended journeys and benchmarks
 
-| CI shard command | Before (seconds) | After (seconds) |
-| --- | ---: | ---: |
-| `--shard=1/3` | 38.942 | 38.567 |
-| `--shard=2/3` | 104.156 | 44.691 |
-| `--shard=3/3` | 41.775 | 25.281 |
-| Sum | 184.873 | 108.539 |
-| Slowest shard | 104.156 | 44.691 |
+`helpers/test-tiers.mjs` defines three separately selected extended journeys:
 
-The sum fell **41.3%**; the slowest shard fell **57.1%**. Every shard passed:
-174 tests before, 179 after (three offline recapture cases, smoke coverage, and
-fixture polling added). No existing flow was removed. Polling time includes real
-Workflow completion and respects each fixture's configured request budget.
-The [measurement record](timings/2026-09-04.json) contains commits, commands,
-counts, environment and methodology. Workerd startup and timing-window-dependent
-rate-limit probes can vary between runs; these are one complete before/after pair.
+- `composed-recovery`: the longer recovery/fresh-baseline fault and history scenarios;
+- `one-piece-two-source`: the retained Bandai evidence replay;
+- `riftbound-catalogue`: the retained Riot inventory/Errata/Product replay.
 
-## Live-source freshness
+They retain their assertions and remain available for changes to those specific
+paths. Their workload is excluded from the everyday and full routine commands.
+
+Benchmarks are separate: `native-sqlite-export` deliberately crosses 64 MiB,
+`native-isolate-metrics` calibrates large-heap profiling, and
+`reconciliation-capacity-probe` measures the synthetic 1,001-Product fixture.
+The latter requires a report destination and never silently skips:
+
+```sh
+KEEPR_CAPACITY_OUTPUT_PREFIX=/tmp/keepr-capacity npm run test:benchmark -- reconciliation-capacity-probe
+```
+
+The probe retains its temporary state on failure and reports the location for
+inspection; remove that reported directory after investigating. Other optional
+probe settings are documented in its source. Running `benchmark --all` also
+requires the report prefix because it includes this probe.
+
+The full Riftbound journey alone retains the 6 GiB free-space preflight. Its
+historical run took about 21 minutes and sampled 3.94 GB of local logical
+occupancy across source, staging, export and restore copies. It makes no complete
+image or production-capacity claim. See [the measurement record](../docs/validation/issue-233-capacity.md).
+The bounded routine restore is the normal correctness check.
+
+## Historical measurements and source freshness
+
+The [2026-09-04 measurements](timings/2026-09-04.json) describe an earlier suite
+and dependency set; use the current testing guide for recent local measurements.
+Hosted timings must be measured on the exact changed commit.
 
 The independent weekly [recapture workflow](../.github/workflows/official-source-recapture.yml)
-checks retained digests against current publisher responses and fails on drift.
-It retains the changed bytes/report and opens or updates a GitHub issue; it never
-automatically replaces goldens. See the [retained-byte procedure](fixtures/retained-official-source/README.md)
-for review, manual dispatch, cadence, and the monthly liveness check required by
-GitHub's 60-day scheduled-workflow inactivity rule.
+checks retained digests against current publisher responses and reports drift.
+It preserves changed bytes for review and never automatically replaces goldens.
+See the [retained-byte procedure](fixtures/retained-official-source/README.md).

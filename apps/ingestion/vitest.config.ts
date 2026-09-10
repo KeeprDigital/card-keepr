@@ -1,6 +1,5 @@
 import { resolve } from "node:path";
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin";
-import type { Miniflare } from "miniflare";
 import { configDefaults, defineConfig } from "vitest/config";
 import {
   cloudflareApiMock,
@@ -28,8 +27,8 @@ const d1VerificationToken = "vitest-d1-verification-token-active";
 // the shared fake publisher's workers-pool scenario catalogue.
 // The installed Miniflare V4FetchHandler supplies the owning runtime as its
 // second argument. Keep each runtime's REST fixture and restore database isolated.
-const publishers = new WeakMap<Miniflare, ReturnType<typeof createFakePublisher>>();
-function publisherFor(miniflare: Miniflare) {
+const publishers = new WeakMap<object, ReturnType<typeof createFakePublisher>>();
+function publisherFor(miniflare: object, exportSql: () => Promise<string>) {
   const existing = publishers.get(miniflare);
   if (existing !== undefined) return existing;
   const publisher = createFakePublisher({
@@ -39,15 +38,7 @@ function publisherFor(miniflare: Miniflare) {
         disposableDatabaseId: disposableD1DatabaseId,
         verificationToken: d1VerificationToken,
         restore: new SqliteRestore(),
-        async exportSql() {
-          const database = await miniflare.getD1Database("CATALOGUE_DB");
-          // This is Wrangler's installed local D1 export seam: actual schema and
-          // rows, including its fail-closed rejection of remaining virtual tables.
-          const rows = await database.prepare("PRAGMA miniflare_d1_export(?,?,?);").bind(0, 0).raw<string[]>();
-          const statements = rows[0];
-          if (statements === undefined) throw new Error("Local D1 export returned no SQL.");
-          return statements.join("\n");
-        },
+        exportSql,
       }),
       ...workersPoolScenarios,
     ],
@@ -82,15 +73,21 @@ export default defineConfig({
         },
         // Miniflare hands over undici's Request; the publisher speaks the
         // Workers Request the scenarios were written against.
-        outboundService: (request, miniflare) => publisherFor(miniflare).fetch(request as unknown as Request),
+        outboundService: (request, miniflare) =>
+          publisherFor(miniflare, async () => {
+            const database = await miniflare.getD1Database("CATALOGUE_DB");
+            // Use the plugin's owning runtime rather than the separate acceptance
+            // Miniflare instance. This is Wrangler's installed local SQL export seam.
+            const rows = await database.prepare("PRAGMA miniflare_d1_export(?,?,?);").bind(0, 0).raw<string[]>();
+            const statements = rows[0];
+            if (statements === undefined) throw new Error("Local D1 export returned no SQL.");
+            return statements.join("\n");
+          }).fetch(request as unknown as Request),
       },
     }),
   ],
   test: {
-    // Each file boots a complete Workers runtime. Concurrent runtimes starve
-    // Workflow polling on supported hosts and can leave timed-out test work
-    // racing the next fixture. Keep per-file storage isolation and timeouts.
-    maxWorkers: 1,
+    maxWorkers: stressSuite ? 1 : 2,
     include: stressSuite ? ["apps/ingestion/test/**/*.stress.spec.ts"] : ["apps/ingestion/test/**/*.spec.ts"],
     exclude: stressSuite ? [...configDefaults.exclude] : [...configDefaults.exclude, "**/*.stress.spec.ts"],
     hookTimeout: 30_000,

@@ -53,10 +53,11 @@ and administration boot from the actual verification import must preserve Card
 and Printing IDs, image bytes, and both runs' Snapshot and Observation Set IDs.
 These are assertions awaiting execution, not demonstrated outcomes.
 
-`acceptance/five-game-recovery.test.mjs` separately uses small synthetic source
-documents, eight native publications and real SQL verification imports to check
-five-game sibling components and the current-plus-two query window. It makes no
-real publisher coverage or production throughput claim and is also unexecuted.
+`acceptance/mixed-game-recovery.test.mjs` now uses two games with small synthetic source
+documents, five native publications and real SQL verification imports to check
+sibling components and the current-plus-two query window. The smaller replacement
+passed locally on 10 September 2026 in 34 seconds. It makes no real publisher
+coverage or production throughput claim.
 
 The branch includes the Limitless registration migration 0025 from `38fa7a82`
 because the shared adapter code is installed. After integrating main
