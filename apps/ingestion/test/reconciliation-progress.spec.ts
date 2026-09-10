@@ -1,6 +1,9 @@
 import { expect, test } from "vitest";
 import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
-import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import {
+  approveNativeCandidate,
+  prepareNativeCandidateDirect as prepareNativeCandidate,
+} from "./native-publication-helpers";
 import {
   collect,
   get,

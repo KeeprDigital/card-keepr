@@ -4,7 +4,10 @@ import { canonicalJson, sha256Text } from "../../../src/catalogue/shared";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import worker from "../src/index";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
-import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import {
+  approveNativeCandidate,
+  prepareNativeCandidateDirect as prepareNativeCandidate,
+} from "./native-publication-helpers";
 import {
   collect,
   get,

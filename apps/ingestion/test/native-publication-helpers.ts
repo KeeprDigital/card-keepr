@@ -1,5 +1,5 @@
 import { expect } from "vitest";
-import { get, post, requiredString } from "./reconciliation-helpers";
+import { get, post, postWithControlledPreparation, requiredString } from "./reconciliation-helpers";
 
 /** A native fixture starts from retained collection, never a legacy aggregate candidate. */
 export async function prepareNativeCandidate(
@@ -9,8 +9,9 @@ export async function prepareNativeCandidate(
   key: string,
   timeoutMs = 15_000,
   extraHeaders: Record<string, string> = {},
+  scheduling: "binding" | "direct" = "binding",
 ) {
-  const created = await post(
+  const created = await (scheduling === "direct" ? postWithControlledPreparation : post)(
     "/v1/game-candidates",
     {
       ingestion_run_id: runId,
@@ -25,6 +26,18 @@ export async function prepareNativeCandidate(
   const observed = await observeUntil(`/v1/game-candidates/${id}`, (state) => state !== "preparing", timeoutMs);
   expect(observed.document.state, JSON.stringify(observed.document)).toBe("sealed");
   return observed.document;
+}
+
+/** Completed seed for fault/semantic tests; subsequent operations retain their own bindings or injected drivers. */
+export function prepareNativeCandidateDirect(
+  runId: string,
+  game: string,
+  expectedGameRevision: string,
+  key: string,
+  timeoutMs = 15_000,
+  extraHeaders: Record<string, string> = {},
+) {
+  return prepareNativeCandidate(runId, game, expectedGameRevision, key, timeoutMs, extraHeaders, "direct");
 }
 
 /** Exercise the owner protocol; return its actual publication result, not legacy run aliases. */

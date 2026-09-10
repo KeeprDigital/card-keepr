@@ -886,25 +886,26 @@ test("Gundam EN-ASIA Printing facts become canonical when formatting-equivalent 
   );
 });
 
-test("Gundam substantive Printing fact conflicts outside the identity tuple block in both locale orders", async () => {
-  for (const sequence of [
-    {
-      firstScenario: "gundam-printing-conflict-asia-first",
-      firstLineage: "gundam-en-asia",
-      firstAdapter: "fixture-gundam-en-asia-json@2",
-      secondScenario: "gundam-printing-conflict-us-second",
-      secondLineage: "gundam-en-us",
-      secondAdapter: "fixture-gundam-en-us-json@2",
-    },
-    {
-      firstScenario: "gundam-printing-conflict-us-first",
-      firstLineage: "gundam-en-us",
-      firstAdapter: "fixture-gundam-en-us-json@2",
-      secondScenario: "gundam-printing-conflict-asia-second",
-      secondLineage: "gundam-en-asia",
-      secondAdapter: "fixture-gundam-en-asia-json@2",
-    },
-  ] as const) {
+test.each([
+  {
+    firstScenario: "gundam-printing-conflict-asia-first",
+    firstLineage: "gundam-en-asia",
+    firstAdapter: "fixture-gundam-en-asia-json@2",
+    secondScenario: "gundam-printing-conflict-us-second",
+    secondLineage: "gundam-en-us",
+    secondAdapter: "fixture-gundam-en-us-json@2",
+  },
+  {
+    firstScenario: "gundam-printing-conflict-us-first",
+    firstLineage: "gundam-en-us",
+    firstAdapter: "fixture-gundam-en-us-json@2",
+    secondScenario: "gundam-printing-conflict-asia-second",
+    secondLineage: "gundam-en-asia",
+    secondAdapter: "fixture-gundam-en-asia-json@2",
+  },
+] as const)(
+  "Gundam substantive Printing fact conflicts outside the identity tuple ($firstLineage first)",
+  async (sequence) => {
     const firstRun = await collect(`/reconciliation/${sequence.firstScenario}`, sequence.firstScenario, {
       game: "gundam",
       lineage: sequence.firstLineage,
@@ -933,8 +934,9 @@ test("Gundam substantive Printing fact conflicts outside the identity tuple bloc
         }),
       ],
     });
-  }
-}, 15_000);
+  },
+  15_000,
+);
 
 test("Gundam cross-locale formatting normalizes while substantive shared-fact conflicts block in both orders", async () => {
   const usRun = await collect("/reconciliation/gundam-authority-us", "reconcile-gundam-authority-us-first", {
