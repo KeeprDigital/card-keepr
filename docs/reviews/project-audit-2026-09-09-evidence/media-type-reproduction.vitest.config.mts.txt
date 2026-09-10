@@ -1,0 +1,2 @@
+import original from '/Users/marcus/Developer/card-keepr-worktrees/project-audit-20260909/apps/ingestion/vitest.config.ts';
+export default {...original, root: '/Users/marcus/Developer/card-keepr-worktrees/project-audit-20260909', test: {...original.test, include: ["/Users/marcus/Developer/card-keepr-worktrees/project-audit-20260909/docs/reviews/project-audit-2026-09-09-evidence/media-type-reproduction.spec.ts"]}};

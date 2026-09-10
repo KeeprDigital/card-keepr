@@ -1,6 +1,17 @@
 import { type CatalogueStore, repositoryStatements } from "../shared";
 // Prepared statements only; callers own execution and atomic batch composition.
 
+export function sourceSnapshotForParsingStatement(database: CatalogueStore, snapshotId: string): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare(`SELECT snapshots.*, requests.request_role
+      FROM source_snapshots AS snapshots
+      JOIN source_requests AS requests
+        ON requests.ingestion_run_id = snapshots.ingestion_run_id
+       AND requests.request_id = snapshots.request_id
+      WHERE snapshots.id = ?`)
+    .bind(snapshotId);
+}
+
 export function uploadedParseStatement(
   database: CatalogueStore,
   input: Readonly<{ digest: string; byteLength: number; observationCount: number; operationId: string }>,

@@ -192,7 +192,7 @@ export async function readSourceDocument<T extends SourceRow>(database: Catalogu
     observations: {
       async *[Symbol.asyncIterator]() {
         for (let index = 0; index < header.observationCount; index++)
-          yield await readSourceObservation(database, runId, row.observation_set_id, index);
+          yield await readSourceObservation(database, row.observation_set_id, index);
       },
     },
   };

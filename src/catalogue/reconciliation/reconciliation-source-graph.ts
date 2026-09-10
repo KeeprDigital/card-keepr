@@ -166,7 +166,7 @@ export async function assertClosedRequestGraph<T extends Evidence, R extends Req
       if (adapterForVersion(row.adapter_version).listingReconciliation?.groupsPublisherPages === true) {
         const document = await loadDocument(row);
         while (cursor.observation < document.observationCount) {
-          const wrapped = await readSourceObservation(database, runId, row.observation_set_id, cursor.observation);
+          const wrapped = await readSourceObservation(database, row.observation_set_id, cursor.observation);
           await before(wrapped);
           const compact = gundamProof(wrapped, row.source_lineage);
           if (compact) {
@@ -271,7 +271,7 @@ export async function assertClosedRequestGraph<T extends Evidence, R extends Req
       }
       if (request.request_role === "listing") {
         while (cursor.observation < document.observationCount) {
-          const observation = await readSourceObservation(database, runId, row.observation_set_id, cursor.observation);
+          const observation = await readSourceObservation(database, row.observation_set_id, cursor.observation);
           await before(observation);
           if (isRecord(observation) && isRecord(observation.value)) {
             const identity =

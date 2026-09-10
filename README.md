@@ -1,9 +1,18 @@
 # Card Keepr
 
-The planned pre-Go-Live scope excludes tournament eligibility, ban lists, FAQs and rulings, while retaining printed card text and publisher corrections; see [ADR 0014](docs/adr/0014-card-content-without-tournament-eligibility.md). Legality behavior and tests described below still exist in the current implementation and are scheduled for removal through the specification handoff.
+Card Keepr is a private, single-owner catalogue for English-language Cards and
+Printings across publishers. It serves accepted card facts, printed text and
+publisher corrections; tournament eligibility, ban lists, FAQs and rulings are
+outside the catalogue ([ADR 0014](docs/adr/0014-card-content-without-tournament-eligibility.md)).
+Paid third-party access is deferred until after the private first release.
 
-Card Keepr is a private catalogue service for Bandai Catalogue Data. This first
-production spine runs two separately configured Cloudflare Workers:
+The implementation includes One Piece, Digimon, Fusion World, Gundam and
+Riftbound source adapters, with supplemental One Piece evidence from Limitless.
+A game should be enabled for consumers only after its own real-source,
+publication and recovery gates pass. Capacity validation and the full isolated
+release rollout remain in the [launch backlog](https://github.com/KeeprDigital/card-keepr/issues/216).
+
+Two separately configured Cloudflare Workers serve the catalogue:
 
 - `card-keepr-api` is the authenticated read boundary for Catalogue Consumers,
   served at `https://card.keepr.digital/api`.
@@ -98,41 +107,30 @@ runtimes. Both are base URLs that include the mount path
 (`https://card.keepr.digital/api` and `https://card.keepr.digital/ingest`);
 the CLI appends route paths to them.
 
-Catalogue Candidates come from retained Official Source evidence. Tests install
-synthetic Source Adapter Versions and seed controlled candidates through
-`test/support`; those capabilities are absent from the shipped Workers.
-Approval binds the run identity, candidate digest, and current Catalogue Revision.
-Publication verifies the deterministic Catalogue Export before atomically
-advancing the D1 current-revision pointer.
+Catalogue Candidates are prepared independently per Supported Game from retained
+Source evidence and recorded owner decisions. Inspection covers the complete
+candidate. Publication approval binds its manifest, expected Game Catalogue
+Revision and generation; durable preparation and a verified backup checkpoint
+precede the atomic composition switch. Test-only synthetic adapters remain in
+`test/support` and are absent from shipped Workers.
 
-An Ingestion Run persists its Official Source evidence plan before any network
-access, then starts its durable collection phase explicitly. Production JSON
-Card adapters remain unavailable until an exact Bandai Card-list surface is
-implemented. The installed production Errata adapter is fixed to Bandai's
-exact English Errata URL:
+Start with the installed source registry and the documented owner journeys:
 
 ```sh
-npm run keepr -- source collect \
-  --game one-piece \
-  --lineage one-piece-en \
-  --adapter one-piece-official-errata-html@1 \
-  --request-id errata \
-  --url https://en.onepiece-cardgame.com/rules/errata_card/ \
-  --idempotency-key source_collection_001 \
-  --json
-
-npm run keepr -- source resume --run-id RUN_ID --json
-npm run keepr -- source show --run-id RUN_ID
-PRODUCTION_TARGET="$(npm run --silent keepr -- status --json | jq -c .production_target)"
-npm run keepr -- run reconcile \
-  --run-id RUN_ID \
-  --expected-current-revision CATREV_ID \
-  --idempotency-key reconcile_RUN_ID \
-  --environment production \
-  --confirm "$PRODUCTION_TARGET" \
-  --yes \
-  --json
+npm run keepr -- source registry --json
+npm run keepr -- game-candidate list --run-id RUN_ID --json
+npm run keepr -- game-candidate inspect --candidate-id CANDIDATE_ID --json
 ```
+
+The [One Piece two-source runbook](docs/runbooks/one-piece-two-source.md) explains
+source scopes and explicit admission decisions. Follow
+[bounded reconciliation](docs/runbooks/bounded-reconciliation.md),
+[publication preparation](docs/runbooks/publication-preparation.md), and
+[atomic game publication](docs/runbooks/atomic-game-publication.md) to inspect,
+approve and observe a native publication. Collection, candidate, publication and
+backup IDs identify different operations. The legacy run-approval route still
+exists for its remaining callers; their migration is tracked in
+[#274](https://github.com/KeeprDigital/card-keepr/issues/274).
 
 An interrupted collection phase resumes against its persisted request plan.
 A run that reaches its Source Adapter Version's request capacity, exhausts

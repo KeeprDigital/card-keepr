@@ -167,9 +167,7 @@ test("unknown controlled vocabulary remains retained evidence, warns, and stays 
   const retained = await get(`/v1/source-observation-sets/${observationSetId}/content`);
   expect(retained.response.status).toBe(200);
   expect(
-    JSON.stringify(
-      await readSourceObservation(catalogueStore(testEnv.CATALOGUE_DB), "retained-vocabulary", observationSetId, 0),
-    ),
+    JSON.stringify(await readSourceObservation(catalogueStore(testEnv.CATALOGUE_DB), observationSetId, 0)),
   ).toContain("etched-future");
   const rejected = await post(`/v1/ingestion-runs/${run.id}/rejection`, {
     candidate_digest: requiredString(reconciled.document, "candidate_digest"),

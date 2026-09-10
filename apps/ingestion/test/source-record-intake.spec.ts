@@ -137,7 +137,7 @@ test("Riot record batches recover a committed write with a lost response and fin
   expect(
     requests.every((request) => request.role === "image" && new URL(request.url).hostname === "cmsassets.rgpub.io"),
   ).toBe(true);
-  expect(await readSourceObservation(catalogueStore(database), "no-staged-copy", first.id, 0)).toMatchObject({
+  expect(await readSourceObservation(catalogueStore(database), first.id, 0)).toMatchObject({
     ordinal: 1,
     value: { card: { game: "riftbound" } },
   });
@@ -170,7 +170,7 @@ test("evidence cleanup drains record payloads in bounded units and retains seale
     next_ordinal: 17,
     sealed: 1,
   });
-  await expect(readSourceObservation(db, "cleanup", set.id, 0)).rejects.toThrow("not sealed");
+  await expect(readSourceObservation(db, set.id, 0)).rejects.toThrow("not sealed");
   expect(await env.EVIDENCE_OBJECTS.head(set.content_object_key)).toBeNull();
 });
 
@@ -332,10 +332,8 @@ test("temporary progress-query failure remains a storage retry and resumes intac
     },
   });
   const db = catalogueStore(database);
-  await expect(readSourceObservation(db, "retry", set.id, 0)).rejects.toBeInstanceOf(
-    ReconciliationDocumentStorageError,
-  );
-  await expect(readSourceObservation(db, "retry", set.id, 0)).resolves.toMatchObject({ ordinal: 1 });
+  await expect(readSourceObservation(db, set.id, 0)).rejects.toBeInstanceOf(ReconciliationDocumentStorageError);
+  await expect(readSourceObservation(db, set.id, 0)).resolves.toMatchObject({ ordinal: 1 });
 });
 
 test("concurrent retries converge on exact record receipts and one sealed set", async () => {
@@ -476,7 +474,7 @@ test("large text and more than 32 KiB of requests recover lost writes and cleanu
       .bind(set.id)
       .first<string>("content");
     expect(stored!.length).toBeLessThan(16000);
-    expect(await readSourceObservation(db, "no-copy", set.id, 0)).toMatchObject({ value: { text } });
+    expect(await readSourceObservation(db, set.id, 0)).toMatchObject({ value: { text } });
     const discovered: unknown[] = [];
     for await (const batch of discoveredSourceRecordRequests(db, set.id)) {
       expect(batch.length).toBeLessThanOrEqual(8);
@@ -494,7 +492,7 @@ test("large text and more than 32 KiB of requests recover lost writes and cleanu
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
-    await expect(readSourceObservation(catalogueStore(outage), "read-outage", set.id, 0)).rejects.toBeInstanceOf(
+    await expect(readSourceObservation(catalogueStore(outage), set.id, 0)).rejects.toBeInstanceOf(
       ReconciliationDocumentStorageError,
     );
     const cleanup = await beginEvidenceCleanup(db, id, id, 30, "2026-09-08T00:00:00.000Z");
@@ -577,7 +575,7 @@ test("historical observation import is explicit, preserves original bytes and id
     finalizeParseStatement(db, operation),
   ]);
   await env.EVIDENCE_OBJECTS.put(key, bytes);
-  await expect(readSourceObservation(db, "before-import", set, 0)).rejects.toThrow("source_record_migration_required");
+  await expect(readSourceObservation(db, set, 0)).rejects.toThrow("source_record_migration_required");
   const { importRetainedSourceRecords } = await import(
     "../../../src/catalogue/source-evidence/source-record-migration"
   );
@@ -613,7 +611,7 @@ test("historical observation import is explicit, preserves original bytes and id
   expect(await importRetainedSourceRecords(db, env.EVIDENCE_OBJECTS, set)).toMatchObject({ state: "sealed" });
   expect(await (await env.EVIDENCE_OBJECTS.get(key))!.text()).toBe(original);
   for (let ordinal = 0; ordinal < observations.length; ordinal++)
-    expect(await readSourceObservation(db, "after-import", set, ordinal)).toEqual(observations[ordinal]);
+    expect(await readSourceObservation(db, set, ordinal)).toEqual(observations[ordinal]);
 });
 
 test("explicit migration imports schema-29 inline requests into the uniform indexed contract", async () => {

@@ -10,6 +10,10 @@ full nine-file capacity suite is manual only: choose `suite: full` in the
 workflow or run `npm run test:stress:full` locally; its job cap is 45 minutes.
 Manual and scheduled runs have separate cancellation groups.
 
+The API currently has no separate stress files; its functional checks run in
+the normal API suite. Missing expected ingestion tests remain an error. Add
+API performance coverage explicitly before extending the stress selection.
+
 ## Failure reporting
 
 When the `stress` job fails, the `report-failure` job opens a GitHub issue

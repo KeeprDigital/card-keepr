@@ -243,9 +243,7 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
     record_storage: { contract: "card-keepr-source-records@1", count: 1 },
   });
   expect({
-    observations: [
-      await readSourceObservation(catalogueStore(env.CATALOGUE_DB), "discovery-test", discoveryObservation!.id, 0),
-    ],
+    observations: [await readSourceObservation(catalogueStore(env.CATALOGUE_DB), discoveryObservation!.id, 0)],
   }).toMatchObject({
     observations: [
       {
