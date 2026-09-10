@@ -52,3 +52,7 @@ application package versions, and the three existing acceptance files passed
 all four tests afterwards. This finding is resolved. Validation on the newly
 selected versions is tracked in the evidence record, separately from the
 superseded Node 22 runs.
+
+The Standards follow-up review of `08e121fc...982af78f` found zero new hard
+violations or smells. The previously acknowledged optional CI declaration
+duplication remains the only maintenance suggestion.

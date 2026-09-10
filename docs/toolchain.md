@@ -71,7 +71,7 @@ pnpm run test:acceptance --shard=1/3 --list
 pnpm run test:acceptance:extended --list
 pnpm run test:benchmark --list
 pnpm run format:check --since=origin/main
-pnpm --silent run keepr --help
+pnpm --silent run keepr health --json
 ```
 
 Use `pnpm exec <binary>` for direct installed tools. Shell scripts and subprocesses

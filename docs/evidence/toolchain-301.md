@@ -177,3 +177,26 @@ the baseline versions; the package-manager metadata adds only pnpm and its
 platform distributions. Actionlint 1.7.12 passes all six updated workflows.
 The follow-up Spec review confirms the Vite reference is fixed and reports no
 remaining implementation findings.
+
+## Hosted full validation
+
+[Ready-PR CI 34471921819](https://github.com/KeeprDigital/card-keepr/actions/runs/34471921819)
+passed every required job on `982af78f9789f2160d6b6767f1c73ef7d75c3aee`, using
+Linux x64, Node 26.8.2, Corepack 0.36.0 and pnpm 12.3.4. Lint, five-project
+compiler/generated/import/build checks, domain/API, all three ingestion shards
+and all three acceptance shards succeeded. Acceptance passed 353 tests
+(80/137/136 by shard). Ingestion results were uploaded under the existing
+seven-day artifact policy. No test deadlines, retries or coverage were changed.
+
+The lint job log records a pnpm-store cache miss, all four native install hooks
+successfully executing, frozen installation completing in 2.6 seconds, and the
+store saved under the key containing Linux/X64/Node26.8.2/pnpm12.3.4 plus the
+manifest/lock/settings/setup hash. These are measurements from this run, not
+performance guarantees. A following documentation-only update exercises the
+same hosted cache key; its final result is maintained in
+[PR #302](https://github.com/KeeprDigital/card-keepr/pull/302).
+
+The exact-main release contract remains intact. After merge, record successful
+`ci` for the resulting main commit in issue #301 before treating that commit as
+release evidence. The PR run and installer diagnostics cannot replace that
+post-merge gate. No merge or deployment is performed by this implementation task.
