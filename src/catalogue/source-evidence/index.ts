@@ -121,3 +121,5 @@ export { sourceRecordAt, sourceRecordPage, type SourceRecordRow } from "./source
 export { restoreSourceRecordText, type SourceRecordEnvelope } from "./source-record-text";
 
 export { readSourceRecordManifest } from "./source-record-manifest";
+
+export { retainedSourceObservationExists } from "./retained-source-observation";

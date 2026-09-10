@@ -21,6 +21,7 @@ import {
   sharedCuratableFieldSchemas,
   validCuratedField,
 } from "../shared";
+import { retainedSourceObservationExists } from "../source-evidence";
 import {
   CuratedConflictPreparation,
   type PendingConflict,
@@ -2236,6 +2237,9 @@ async function assertRetainedCuratedEvidence(
       source_observation_id: string;
     }>();
   const retainedIds = new Set(retained.results.map(({ source_observation_id }) => source_observation_id));
+  for (const id of new Set(sourceObservationIds)) {
+    if (!retainedIds.has(id) && (await retainedSourceObservationExists(database, id))) retainedIds.add(id);
+  }
   const missing = sourceObservationIds.find((id) => !retainedIds.has(id));
   if (missing !== undefined) {
     throw new AdministrationProblem(
