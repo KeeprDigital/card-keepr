@@ -1,0 +1,25 @@
+name: test-suite-diagnostics
+on:
+  push:
+    branches: [codex/streamline-testing-ci]
+    paths:
+      - .github/workflows/test-suite-diagnostics.yml
+      - apps/ingestion/test/runtime-collection-termination.spec.ts
+permissions:
+  contents: read
+jobs:
+  lifecycle-race:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: |
+          for attempt in {1..10}; do
+            echo "Lifecycle race ${attempt}/10"
+            bash scripts/ci-test.sh npm run test:workers:ingestion -- apps/ingestion/test/runtime-collection-termination.spec.ts -t 'concurrent lifecycle requests'
+          done

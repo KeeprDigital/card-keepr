@@ -402,7 +402,7 @@ test("termination problems fail closed with explicit documents", async () => {
   expect(await ingestionQueries.readIngestionRunsState(env.CATALOGUE_DB).bind(second.id).first("state")).toBe("paused");
 });
 
-test("concurrent terminate, resume, and extension requests resolve to exactly one outcome", async () => {
+test("concurrent lifecycle requests preserve one durable termination and never revive it", async () => {
   // Two terminations under different keys: one applies, one conflicts.
   const first = await createCollection("termination_race_terminate_001", "https://official-source.invalid/cards");
   await pauseForWorkflowRecovery(first.id, "source_workflow_stalled");
@@ -419,8 +419,9 @@ test("concurrent terminate, resume, and extension requests resolve to exactly on
   ).toBe(1);
   await clearActiveRunForNextScenario();
 
-  // Terminate racing resume: whichever wins, the run has exactly one
-  // outcome and the loser reports a state conflict.
+  // Resume acknowledges dispatch with 202. Termination can still observe the
+  // new attempt before it exists, pause it, and commit a terminal fence. Assert
+  // the durable outcome rather than treating both HTTP successes as impossible.
   const second = await createCollection("termination_race_resume_001", "https://official-source.invalid/cards");
   await pauseEvidenceRunForWorkflowRecovery(catalogueStore(env.CATALOGUE_DB), second.id, {
     workflow_instance_id: `evidence-${second.id}`,
@@ -435,20 +436,44 @@ test("concurrent terminate, resume, and extension requests resolve to exactly on
     administrationRequest(`/v1/ingestion-runs/${second.id}/collection/resume`, "POST"),
   ]);
   const state = await ingestionQueries.readIngestionRunsState(env.CATALOGUE_DB).bind(second.id).first("state");
+  const terminationCount = await sourceEvidenceQueries
+    .countIngestionRunTerminationsCount(env.CATALOGUE_DB)
+    .bind(second.id)
+    .first("count");
+  console.info(
+    `[DEBUG-termination] terminate=${terminateOutcome.status} resume=${resumeOutcome.status} state=${state}`,
+  );
   if (terminateOutcome.status === 200) {
     expect(state).toBe("failed");
-    expect(resumeOutcome.status).toBe(409);
-    await expect(resumeOutcome.json()).resolves.toMatchObject({
-      code: "ingestion_run_not_collecting",
+    expect(terminationCount).toBe(1);
+    expect([202, 409]).toContain(resumeOutcome.status);
+    if (resumeOutcome.status === 409) {
+      await expect(resumeOutcome.json()).resolves.toMatchObject({ code: "ingestion_run_not_collecting" });
+    } else {
+      await expect(resumeOutcome.json()).resolves.toMatchObject({ ingestion_run_id: second.id });
+    }
+    const laterResume = await administrationRequest(`/v1/ingestion-runs/${second.id}/collection/resume`, "POST");
+    expect(laterResume.status).toBe(409);
+    await expect(laterResume.json()).resolves.toMatchObject({ code: "ingestion_run_not_collecting" });
+    expect(await ingestionQueries.readIngestionRunsStateFailureCode(env.CATALOGUE_DB).bind(second.id).first()).toEqual({
+      state: "failed",
+      failure_code: "ingestion_run_terminated",
     });
   } else {
     expect(resumeOutcome.status).toBe(202);
-    expect(state).toBe("collecting");
+    expect(terminationCount).toBe(0);
     expect(terminateOutcome.status).toBe(409);
     await expect(terminateOutcome.json()).resolves.toMatchObject({
       code: "ingestion_run_not_paused",
     });
     await waitForCollectionCompletion(second.id, 20_000);
+    // Collection may advance or fail independently after a successful resume;
+    // the rejected termination must not record an owner termination.
+    const completed = await ingestionQueries
+      .readIngestionRunsStateFailureCode(env.CATALOGUE_DB)
+      .bind(second.id)
+      .first();
+    expect(completed?.failure_code).not.toBe("ingestion_run_terminated");
   }
   await clearActiveRunForNextScenario();
 
@@ -504,7 +529,7 @@ test("concurrent terminate, resume, and extension requests resolve to exactly on
     state: "failed",
     failure_code: "ingestion_run_terminated",
   });
-}, 60_000);
+});
 
 test("terminating a transport-paused run fences its collection Workflows", async () => {
   const run = await createCollection(
