@@ -8,8 +8,7 @@ mixed-game recovery. See [the testing guide](../docs/testing.md) for CI policy.
 | --- | --- |
 | `npm run test:acceptance` | All routine acceptance; at most two files at once |
 | `npm run test:acceptance:smoke` | External evidence CLI and two-record native publication/SQL restore |
-| `npm run test:acceptance:runtime` | Routine acceptance excluding those two smoke files |
-| `npm run test:acceptance:shard -- --shard=1/3` | One routine CI shard |
+| `npm run test:acceptance -- --shard=1/3` | One routine CI shard |
 | `npm run test:acceptance:extended -- composed-recovery` | One explicit extended scenario |
 | `npm run test:benchmark -- native-sqlite-export` | One explicit capacity/profiling regression |
 | `npm run test:stress` | Bounded production-pacing Worker checks used by weekly CI |

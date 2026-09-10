@@ -18,7 +18,7 @@ Cloudflare, call GitHub Actions, or assert facts about real cards.
 Run it from the repository root:
 
 ```sh
-npm run prototype:lifecycle-evidence-export-deletion
+node prototype/formalize-implementation-contracts/cli.mjs
 ```
 
 Choose a scenario, advance it one event at a time, and inspect the complete

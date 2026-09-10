@@ -71,11 +71,10 @@ jobs:
       - if: steps.node-modules.outputs.cache-hit != 'true'
         run: npm ci
       - run: npm run typecheck
-      - run: npm run types:check
-      - run: npm run check:catalogue-cycles
-      - run: npm run check:catalogue-boundary
-      - run: npm run deploy:dry-run
-      - run: npm run test:workers:api
+      - run: npm run check:generated
+      - run: npm run check:imports
+      - run: npm run build
+      - run: npm run test:api
 
   # The local quick check is split across checks (API) and this job (domain
   # plus bounded publication/restore and external CLI smoke). Both run on drafts.
@@ -126,7 +125,7 @@ jobs:
           key: node-modules-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.node.outputs.node-version }}-${{ hashFiles('package-lock.json', 'package.json', '.npmrc') }}
       - if: steps.node-modules.outputs.cache-hit != 'true'
         run: npm ci
-      - run: bash scripts/ci-test.sh npm run test:workers:ingestion -- --shard=${{ matrix.shard }}/3 --silent=passed-only --reporter=default --reporter=json --outputFile.json=test-results/ingestion.json
+      - run: bash scripts/ci-test.sh npm run test:ingestion -- --shard=${{ matrix.shard }}/3 --silent=passed-only --reporter=default --reporter=json --outputFile.json=test-results/ingestion.json
       # Preserve per-test timings and failure details from this exact shard. A
       # failed run should be diagnosable without creating a diagnostic workflow.
       - if: always()
@@ -160,4 +159,4 @@ jobs:
           key: node-modules-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.node.outputs.node-version }}-${{ hashFiles('package-lock.json', 'package.json', '.npmrc') }}
       - if: steps.node-modules.outputs.cache-hit != 'true'
         run: npm ci
-      - run: bash scripts/ci-test.sh npm run test:acceptance:shard -- --shard=${{ matrix.shard }}/3
+      - run: bash scripts/ci-test.sh npm run test:acceptance -- --shard=${{ matrix.shard }}/3

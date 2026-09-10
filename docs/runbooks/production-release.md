@@ -24,8 +24,7 @@ deployment credentials. Catalogue backup and recovery use the separate
    `production` environment secret `API_BASE_URL` must be the public API
    base, `https://card.keepr.digital/api`, because the smoke checks append
    route paths to it.
-3. Run `npm run test:full`, `npm run typecheck`, `npm run types:check`, and
-   `npm run deploy:dry-run` at the exact Production Release SHA.
+3. Run `npm run check` and `npm run test:full` at the exact Production Release SHA.
 4. Run `keepr status --json`. Production Release preflight must report the expected
    schema level, idle mutation state, a verified current-revision backup and
    usable bookmark, complete current-plus-two export/recovery evidence, exact

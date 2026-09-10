@@ -52,11 +52,11 @@ test("CI shards run every routine file exactly once without reintroducing expens
   assert.deepEqual(sharded.sort(), list("default"));
 });
 
-test("smoke and runtime partition the routine tier and unknown tiers fail", () => {
+test("smoke retains the two everyday paths within routine coverage and unknown tiers fail", () => {
   const smoke = selectAcceptanceFiles(files, "smoke");
-  const runtime = selectAcceptanceFiles(files, "runtime");
-  assert.deepEqual([...smoke, ...runtime].sort(), selectAcceptanceFiles(files));
-  assert.equal(new Set([...smoke, ...runtime]).size, smoke.length + runtime.length);
+  assert.deepEqual(smoke, ["riftbound-bounded-intake.test.mjs", "source-evidence-cli.test.mjs"]);
+  const routine = selectAcceptanceFiles(files);
+  assert.ok(smoke.every((file) => routine.includes(file)));
   assert.throws(() => selectAcceptanceFiles(files, "typo"), /Unknown acceptance tier/u);
   const invalid = ["--shard=0/3", "--shard=4/3", "--shard=1/0", "--shard=invalid", "--shard=1/1000000000"];
   for (const shard of invalid) {

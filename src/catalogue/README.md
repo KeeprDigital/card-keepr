@@ -14,12 +14,12 @@ expand-contract series:
 
 ## The contract, and how it is enforced
 
-Two scripts run in the `checks` job of `.github/workflows/ci.yml`:
+`npm run check:imports` runs both scripts below locally and in the `checks`
+job of `.github/workflows/ci.yml`:
 
-- `npm run check:catalogue-cycles` (`scripts/catalogue-import-cycles.mjs`)
+- `scripts/catalogue-import-cycles.mjs`
   walks every module under `src/catalogue` and fails on any import cycle.
-- `npm run check:catalogue-boundary`
-  (`scripts/catalogue-import-boundary.mjs`) walks the worker entrypoints,
+- `scripts/catalogue-import-boundary.mjs` walks the worker entrypoints,
   `src/http`, and every module under `src/catalogue`, resolves each
   relative import, and fails on any edge that breaks a rule below. A
   violation names the importing file, the import specifier, and the rule.

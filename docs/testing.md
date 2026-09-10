@@ -7,12 +7,12 @@ domain rules, API Worker tests and two small offline CLI/publication/SQL-restore
 smoke tests. For ingestion changes, also run the affected file:
 
 ```sh
-npm run test:workers:ingestion -- apps/ingestion/test/evidence-cleanup.spec.ts
-npm run test:workers:api -- apps/api/test/health.spec.ts
+npm run test:ingestion -- apps/ingestion/test/evidence-cleanup.spec.ts
+npm run test:api -- apps/api/test/health.spec.ts
 npm run test:domain -- source-host-pacing-mode
 ```
 
-Before review, run lint, type checking and `npm run test:full`, or use the full
+Before review, run `npm run check` and `npm run test:full`, or use the full
 ready-PR CI result. A quick pass is iteration feedback; full CI is the merge and
 release standard. No production credentials or live publisher access are needed.
 
@@ -87,13 +87,17 @@ run a small hosted selection before full CI for a shared helper change.
 
 ## Commands
 
+`npm run check` runs all non-test validation, including build dry runs. The
+[command reference](commands.md) also covers development, formatting, generated
+files and the renamed commands.
+
 | Command | Coverage / use |
 | --- | --- |
 | `npm test` | Everyday domain, API and two acceptance smoke paths |
 | `npm run test:full` | All routine domain, API, ingestion and acceptance |
 | `npm run test:domain` | Runtime-free rules and contracts |
-| `npm run test:workers:api` | API routes, authentication, reads and bindings |
-| `npm run test:workers:ingestion` | D1/R2/Workflow transitions, concurrency and recovery |
+| `npm run test:api` | API routes, authentication, reads and bindings |
+| `npm run test:ingestion` | D1/R2/Workflow transitions, concurrency and recovery |
 | `npm run test:acceptance` | Routine HTTP/CLI, migrations, provider failures and SQL restore |
 | `npm run test:acceptance:smoke` | Small CLI and publication/restore paths |
 | `npm run test:acceptance:extended -- <scenario>` | Explicit long recovery or retained-data journey |
@@ -115,7 +119,7 @@ are deliberately separate. Weekly source recapture checks publisher freshness.
 
 | Event | Checks |
 | --- | --- |
-| Draft PR opened, updated, reopened or converted to draft | Lint/format, types, generated types, boundaries/cycles, build dry run, domain, API and smoke |
+| Draft PR opened, updated, reopened or converted to draft | Lint/format, types, generated files, boundaries/cycles, build dry run, domain, API and smoke |
 | Ready PR opened, updated, reopened or marked ready | Full checks, even if marking ready adds no commit |
 | Push to `main` or manual `ci` dispatch | Full checks on the resulting or selected commit |
 | Weekly/default manual `stress` | Two bounded pacing tests; five-minute job cap |

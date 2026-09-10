@@ -247,11 +247,14 @@ objects at `/v1/source-snapshots/{id}/content` and
 ## Testing and verification
 
 ```sh
-npm run types:check
-npm run typecheck
+npm run check
 npm test
-npm run deploy:dry-run
 ```
+
+`npm run check` runs lint, changed-file formatting checks, TypeScript checks,
+generated-file checks, import rules and both Worker build dry runs. It leaves
+tests to `npm test`. See the [command reference](docs/commands.md) for every
+command, its scope and the renamed commands.
 
 `npm test` is the fast everyday check: domain tests, API Worker tests, and small
 external CLI / native publication-and-restore smoke tests. Use
@@ -282,7 +285,7 @@ restore proof, backup retries, and owner-accepted Catalogue Recovery.
 
 Binding declarations live in each runtime's `wrangler.jsonc`; generated
 `worker-configuration.d.ts` files are checked in and must be regenerated after
-binding changes with `npm run types:generate`.
+binding changes with `npm run generate:worker-types`.
 
 The API Worker has catalogue, Printing Image, and Catalogue Export read
 responsibilities and no evidence, export-mutation, or backup binding. The

@@ -13,7 +13,7 @@ not mutate Cloudflare, persist state, or assert facts about real cards.
 Run it from the repository root:
 
 ```sh
-npm run prototype:curated-revisions
+node prototype/curated-revision-administration/cli.mjs
 ```
 
 Choose a scenario, advance one event at a time, and inspect the complete

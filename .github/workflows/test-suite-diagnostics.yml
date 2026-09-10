@@ -50,7 +50,7 @@ jobs:
           mkdir -p test-results
           status=0
           for ((run=1; run<=TEST_REPEATS; run++)); do
-            bash scripts/ci-test.sh npm run "test:workers:$TEST_WORKER" -- "${files[@]}" \
+            bash scripts/ci-test.sh npm run "test:$TEST_WORKER" -- "${files[@]}" \
               --silent=passed-only --reporter=default --reporter=json \
               --outputFile.json="test-results/run-$run.json" || status=1
           done
