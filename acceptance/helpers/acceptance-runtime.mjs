@@ -411,9 +411,7 @@ export async function administrationDocument(pathname, environment, { pollCount 
     return null;
   }
   if (response.status === 429) {
-    throw new Error(
-      `ADMINISTRATION_RATE_LIMIT (30 requests per 60 seconds) returned HTTP 429 on poll ${pollCount} for ${pathname}.`,
-    );
+    throw new Error(`ADMINISTRATION_RATE_LIMIT returned HTTP 429 on poll ${pollCount} for ${pathname}.`);
   }
   if (!response.ok) return null;
   try {

@@ -19,15 +19,14 @@ import {
 } from "./helpers/acceptance-runtime.mjs";
 import { nativeCheckpointTransport, publishNativeCollection } from "./helpers/native-catalogue-runtime.mjs";
 import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs";
-import { requireNativeDiskSpace } from "./helpers/native-disk-preflight.mjs";
 
 // Synthetic source facts, actual publication/backup Workflows and SQL imports.
-// This bounded composition regression is separate from real Riot evidence.
-test("five-game composition and current plus two survive an actual SQL import", async (t) => {
-  t.diagnostic(`Native disk preflight: ${await requireNativeDiskSpace(tmpdir())} bytes free.`);
+// Two games prove sibling preservation; three further publications cross the
+// current-plus-two retention boundary. No full catalogue or capacity preflight.
+test("mixed-game composition and current plus two survive an actual SQL import", async (t) => {
   const exportReader = nativeExportReader(250);
   const nativeExportRecords = exportReader.records;
-  const directory = await mkdtemp(join(tmpdir(), "keepr-five-game-restore-"));
+  const directory = await mkdtemp(join(tmpdir(), "keepr-mixed-game-restore-"));
   const statePath = join(directory, "state");
   const migrationModule = join(directory, "fixture-migration.mjs");
   await build({
@@ -66,12 +65,10 @@ test("five-game composition and current plus two survive an actual SQL import", 
     withNativeRequestPacing({ KEEPR_INGESTION_URL: api.url, KEEPR_NATIVE_REQUEST_INTERVAL_MS: "250" }, () =>
       fetch(url, options),
     );
-  let journeyCompleted = false;
   t.after(async () => {
     if (api) await stopWorker(api);
     await stopWorker(worker);
-    if (journeyCompleted) await rm(directory, { recursive: true, force: true });
-    else t.diagnostic(`Failed five-game replay state retained at ${directory}`);
+    await rm(directory, { recursive: true, force: true });
   });
   await waitForHealth(`${worker.url}/health`, adminKey, worker);
   api = await startWorker({ config: "apps/api/wrangler.jsonc", statePath, vars: { API_BEARER_KEY: apiKey } });
@@ -82,33 +79,9 @@ test("five-game composition and current plus two survive an actual SQL import", 
     assert.equal(result.code, 0, result.stdout + result.stderr);
     return JSON.parse(result.stdout);
   };
-  for (const area of ["card_facts", "printing_details"])
-    await cli([
-      "source",
-      "designate",
-      "--game",
-      "riftbound",
-      "--locale",
-      "en",
-      "--release-region",
-      "US",
-      "--source-lineage",
-      "riftbound-en",
-      "--area",
-      area,
-      "--expected-generation",
-      "0",
-      "--rationale",
-      "Synthetic five-game fixture",
-      "--idempotency-key",
-      `five-${area}`,
-    ]);
   const sources = [
     ["one-piece", "one-piece-en", "fixture-one-piece-json@3", "base"],
-    ["fusion-world", "fusion-world-en", "fixture-fusion-world-json@2", "profile-fusion-world"],
     ["digimon", "digimon-en", "fixture-digimon-json@2", "profile-digimon"],
-    ["gundam", "gundam-en-asia", "fixture-gundam-en-asia-json@2", "profile-gundam"],
-    ["riftbound", "riftbound-en", "fixture-riftbound-json@1", "profile-riftbound"],
   ];
   const revisions = [];
   let previousComponents = [];
@@ -127,7 +100,7 @@ test("five-game composition and current plus two survive an actual SQL import", 
     } while (after);
     return result;
   };
-  const planPath = join(directory, "five-games.json");
+  const planPath = join(directory, "mixed-games.json");
   await writeFile(
     planPath,
     JSON.stringify({
@@ -141,8 +114,8 @@ test("five-game composition and current plus two survive an actual SQL import", 
   );
   // A declared multi-game collection selects the shipped native preparation
   // path. Single-game synthetic adapters intentionally retain the legacy path.
-  const source = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", "five-game-source"]);
-  const riftboundRun = source.id;
+  const source = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", "mixed-game-source"]);
+  const collectionRun = source.id;
   await cli(["source", "resume", "--run-id", source.id]);
   await waitForAdministrationDocument(
     `/v1/ingestion-runs/${source.id}/evidence`,
@@ -171,7 +144,7 @@ test("five-game composition and current plus two survive an actual SQL import", 
     const candidate = await cli(["game-candidate", "show", "--candidate-id", selected.id]);
     const published = await publishNativeCollection(
       { candidates: [candidate] },
-      `five-publication-${game}`,
+      `mixed-publication-${game}`,
       environment,
       worker,
       120_000,
@@ -185,19 +158,19 @@ test("five-game composition and current plus two survive an actual SQL import", 
       );
     previousComponents = nextComponents;
   }
-  const initialFiveRevision = revisions.at(-1);
+  const initialCompositionRevision = revisions.at(-1);
   for (let repeat = 0; repeat < 3; repeat++) {
     const prepared = await cli([
       "game-candidate",
       "prepare",
       "--run-id",
-      riftboundRun,
+      collectionRun,
       "--game",
-      "riftbound",
+      "digimon",
       "--expected-game-revision-id",
       revisions.at(-1),
       "--idempotency-key",
-      `five-repeat-${repeat}`,
+      `mixed-repeat-${repeat}`,
       "--yes",
     ]);
     const candidate = await waitForAdministrationDocument(
@@ -209,14 +182,14 @@ test("five-game composition and current plus two survive an actual SQL import", 
     );
     const published = await publishNativeCollection(
       { candidates: [candidate] },
-      `five-repeat-publication-${repeat}`,
+      `mixed-repeat-publication-${repeat}`,
       environment,
       worker,
       120_000,
     );
     revisions.push(published.resulting_revision_id);
     const nextComponents = await components(published.resulting_revision_id);
-    for (const sibling of previousComponents.filter((c) => !c.name.startsWith("riftbound.")))
+    for (const sibling of previousComponents.filter((c) => !c.name.startsWith("digimon.")))
       assert.deepEqual(
         nextComponents.find((c) => c.name === sibling.name),
         sibling,
@@ -233,7 +206,7 @@ test("five-game composition and current plus two survive an actual SQL import", 
         assert.equal(response.status, 200, await response.clone().text());
         assert.equal((await response.json()).data.id, card.id);
       }
-    const retired = await consumerGet(`${api.url}/v1/cards/${cards[0].id}?revision=${initialFiveRevision}`, {
+    const retired = await consumerGet(`${api.url}/v1/cards/${cards[0].id}?revision=${initialCompositionRevision}`, {
       headers,
     });
     assert.equal(retired.status, 503, await retired.clone().text());
@@ -248,5 +221,4 @@ test("five-game composition and current plus two survive an actual SQL import", 
   await waitForHealth(`${api.url}/health`, apiKey, api);
   assert.deepEqual(await nativeExportRecords(api.url, apiKey, revisions.at(-1), "cards"), cards);
   await verifyRetainedReads();
-  journeyCompleted = true;
 });

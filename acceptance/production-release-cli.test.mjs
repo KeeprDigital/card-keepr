@@ -3,6 +3,28 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import { createServer } from "./helpers/cli-http.mjs";
+import { dispatchProductionRelease } from "../cli/provider-github-release.mjs";
+
+test("release dispatch refuses unsupported operations before making an HTTP request", async (t) => {
+  const requests = [];
+  const server = createServer((request, response) => {
+    requests.push(request.url);
+    response.writeHead(204).end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
+  for (const inputs of [undefined, {}, { operation: "deploy" }, { operation: "recovery_accept" }]) {
+    assert.equal(
+      await dispatchProductionRelease({
+        credential: "local-dispatch-test-credential",
+        inputs,
+        apiUrl: `http://127.0.0.1:${server.address().port}`,
+      }),
+      false,
+    );
+  }
+  assert.deepEqual(requests, []);
+});
 
 const target = {
   cloudflare_account_id: "0123456789abcdef0123456789abcdef",

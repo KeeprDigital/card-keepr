@@ -8,9 +8,19 @@ name: stress
 # re-enable command are in docs/runbooks/scheduled-stress.md.
 on:
   workflow_dispatch:
+    inputs:
+      suite:
+        description: "Bounded weekly pacing checks or all capacity experiments"
+        type: choice
+        options: [bounded, full]
+        default: bounded
   schedule:
     # Weekly, Monday 03:17 UTC — off the busy top-of-hour cron window.
     - cron: "17 3 * * 1"
+
+concurrency:
+  group: stress-${{ github.event_name }}-${{ github.ref }}-${{ inputs.suite || 'bounded' }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -18,7 +28,7 @@ permissions:
 jobs:
   stress:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: ${{ inputs.suite == 'full' && 45 || 5 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -26,7 +36,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run test:stress
+      - if: inputs.suite != 'full'
+        run: npm run test:stress
+      - if: inputs.suite == 'full'
+        run: npm run test:stress:full
 
   # Nobody watches a scheduled run, so a failure opens one `bug` issue (or
   # comments on the open one) with the run link. The issue is the only place

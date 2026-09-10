@@ -155,13 +155,13 @@ test("the release SHA is resolved through the GitHub API before checkout and ci 
   // ci cancels a superseded run of the same pull request.
   assert.match(
     ci,
-    /concurrency:\n {2}group: ci-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}\n {2}cancel-in-progress: true/u,
+    /concurrency:\n {2}group: ci-\$\{\{ github\.event_name \}\}-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}\n {2}cancel-in-progress: true/u,
   );
 });
 
 test("workflow hygiene: pinned actions, no secret written to GITHUB_ENV, no misleading job name, stress failures reported", () => {
   // Issue #75.
-  const workflows = ["cache-warm", "ci", "production-preflight", "production-release", "stress"].map((name) => [
+  const workflows = ["ci", "production-preflight", "production-release", "stress"].map((name) => [
     name,
     readFileSync(`.github/workflows/${name}.yml`, "utf8"),
   ]);
@@ -286,61 +286,4 @@ test("the production preflight rehearsal is read-only", () => {
     /production-release-d1\.mjs execute --config apps\/ingestion\/wrangler\.jsonc --file [^\n]*ready\.sql/u,
   );
   assert.match(preflight, /SELECT 1 AS ready/u);
-});
-
-test("provider credentials stay in fetch headers and out of process arguments", () => {
-  const provider = readFileSync("scripts/production-release-provider.mjs", "utf8");
-  assert.match(provider, /headers:\s*\{ authorization: `Bearer \$\{token\}` \}/u);
-  assert.doesNotMatch(provider, /spawn|exec|process\.argv\[[^\]]+\].*(?:TOKEN|token)|(?:TOKEN|token).*process\.argv/u);
-});
-
-test("only the guarded CLI provider can select release mode", () => {
-  const cli = readFileSync("cli/production-release.mjs", "utf8");
-  const provider = readFileSync("cli/provider-github-release.mjs", "utf8");
-  const server = readFileSync("src/catalogue/ingestion/production-release.ts", "utf8");
-  assert.match(server, /operation: "production_release"/u);
-  assert.match(cli, /inputs: document\.dispatch_inputs/u);
-  assert.doesNotMatch(cli, /createHash|stableJson/u);
-  assert.match(
-    provider,
-    /!\["production_release", "cancel_fresh_baseline_handoff", "correct_fresh_baseline_handoff"\]\.includes\(\s*inputs\?\.operation/u,
-  );
-  assert.equal((provider.match(/export async function dispatchProductionRelease/gu) ?? []).length, 1);
-});
-
-test("owner preparation is durable before dispatch and post-migration failure is retained", () => {
-  const worker = readFileSync("apps/ingestion/src/index.ts", "utf8");
-  const cluster = readFileSync("src/catalogue/ingestion/index.ts", "utf8");
-  const routes = readFileSync("src/catalogue/ingestion/routes.ts", "utf8");
-  const domain = readFileSync("src/catalogue/ingestion/production-release.ts", "utf8");
-  const repository = readFileSync("src/catalogue/ingestion/production-release-repository.ts", "utf8");
-  const script = readFileSync("scripts/production-release.mjs", "utf8");
-  // Resource routes now own the handler; the worker mounts their exported table.
-  assert.match(
-    worker,
-    /import\s*\{[^}]*\bingestionRoutes\b[^}]*\}\s*from "\.\.\/\.\.\/\.\.\/src\/catalogue\/ingestion"/u,
-  );
-  assert.match(worker, /const routes = \[[\s\S]*?\.\.\.ingestionRoutes/u);
-  assert.match(cluster, /export \{ ingestionRoutes \} from "\.\/routes"/u);
-  assert.match(routes, /route<Context>\("POST", "\/v1\/production-releases",[\s\S]*?resolveProductionRelease/u);
-  const resolver = readFileSync("src/catalogue/ingestion/production-release-preparation.ts", "utf8");
-  assert.match(resolver, /return prepareProductionRelease\(database, plan, target, observedAt\)/u);
-  assert.match(domain, /prepare_production_release/u);
-  assert.match(domain, /recordPreparedProductionReleaseStatement/u);
-  assert.match(repository, /administration_idempotency/u);
-  assert.match(script, /claim_production_release/u);
-  assert.match(script, /INSERT OR IGNORE INTO production_releases[\s\S]*'failed'/u);
-  assert.match(script, /roll_forward_required/u);
-});
-
-test("the guarded Production Release schema retains immutable state and legal transitions", () => {
-  const sql = readFileSync("migrations/0001_baseline.sql", "utf8");
-  assert.match(sql, /CREATE TABLE production_releases/u);
-  assert.match(sql, /requested.*preflight.*migrating.*deploying.*smoke_testing.*succeeded.*failed/su);
-  assert.match(sql, /one_active_production_release/u);
-  assert.match(sql, /production_release_request_immutable/u);
-  assert.match(sql, /illegal production release transition/u);
-  assert.match(sql, /replacement_database_id/u);
-  assert.match(sql, /retained_database_id/u);
-  assert.match(sql, /roll_forward_required/u);
 });

@@ -1,12 +1,9 @@
 import { resolve } from "node:path";
-import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-pool-workers";
+import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin";
 import { configDefaults, defineConfig } from "vitest/config";
 import { syntheticSourceAdapterMigration } from "../../test/support/source-adapters/migration";
 
 const migrations = await readD1Migrations(resolve(import.meta.dirname, "../../migrations"));
-// KEEPR_TEST_SUITE=stress selects the *.stress.spec.ts latency-budget suite
-// run by the scheduled / manually dispatched stress workflow.
-const stressSuite = process.env.KEEPR_TEST_SUITE === "stress";
 
 export default defineConfig({
   plugins: [
@@ -28,8 +25,9 @@ export default defineConfig({
     }),
   ],
   test: {
-    include: stressSuite ? ["apps/api/test/**/*.stress.spec.ts"] : ["apps/api/test/**/*.spec.ts"],
-    exclude: stressSuite ? [...configDefaults.exclude] : [...configDefaults.exclude, "**/*.stress.spec.ts"],
+    include: ["apps/api/test/**/*.spec.ts"],
+    exclude: [...configDefaults.exclude, "**/*.stress.spec.ts"],
+    maxWorkers: 2,
     hookTimeout: 30_000,
   },
 });

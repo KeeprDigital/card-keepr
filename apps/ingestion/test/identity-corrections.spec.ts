@@ -566,7 +566,7 @@ test.each(["associations", "application", "lookup"])(
   "reviewed identity %s prepare through durable bounded groups",
   async (failurePhase) => {
     const prior = await reconcile(
-      (await collect("/reconciliation/curated-conflict-fanout-base", "association-seed")).id,
+      (await collect("/reconciliation/curated-conflict-fanout-base", `association-${failurePhase}-seed`)).id,
     );
     const published = await approve(prior.document);
     expect(published.response.status).toBe(200);
@@ -599,7 +599,7 @@ test.each(["associations", "application", "lookup"])(
       failurePhase === "application"
         ? "/reconciliation/identity-chain-card-surface"
         : "/reconciliation/curated-conflict-fanout-base",
-      "association-refresh",
+      `association-${failurePhase}-refresh`,
     );
     let calls = 0;
     const associationCalls: number[] = [];

@@ -1,5 +1,7 @@
 import { exports, env } from "cloudflare:workers";
 import { expect, test } from "vitest";
+import { catalogueStore } from "../../../src/catalogue/shared";
+import { stagingPreparation } from "../../../src/catalogue/source-evidence/staging-cleanup-repository";
 import { installRuntimeSuite } from "./runtime-helpers";
 
 import { seedRunFixtureStatement } from "./query-helpers/run-events";
@@ -322,16 +324,36 @@ async function abandonedStaging(preparation: string, key: string, extraKey?: str
   await env.CATALOGUE_EXPORTS.put(key, "orphan");
 }
 
+// The database records abandonment using its own clock. Base eligibility on
+// that retained timestamp so this fixture cannot expire as calendar time passes.
+async function stagingCleanupAt(preparation: string, seconds = 0): Promise<string> {
+  const terminalAt = await stagingPreparation(catalogueStore(env.CATALOGUE_DB), preparation).first<string>(
+    "terminal_at",
+  );
+  if (terminalAt === null) throw new Error("The staging fixture has no terminal timestamp.");
+  return new Date(Date.parse(terminalAt) + 30 * 86_400_000 + seconds * 1000).toISOString();
+}
+
 test("owner reclaims a positively inventoried abandoned preparation orphan without traversing shared roots", async () => {
   await abandonedStaging("staging_orphan", "publication-artifacts/orphan");
+  const early = await request(
+    "/v1/reconciliation-operations/staging_orphan/evidence-cleanup",
+    await stagingCleanupAt("staging_orphan", -0.001),
+    { idempotency_key: "staging_orphan" },
+  );
+  expect(early.status).toBe(409);
   const response = await request(
     "/v1/reconciliation-operations/staging_orphan/evidence-cleanup",
-    "2026-10-09T00:00:00.000Z",
+    await stagingCleanupAt("staging_orphan", 0),
     { idempotency_key: "staging_orphan" },
   );
   expect(response.status).toBe(202);
   const intent = (await response.json()) as { id: string };
-  const advance = await request(`/v1/evidence-cleanups/${intent.id}/advance`, "2026-10-09T00:00:01.000Z", {});
+  const advance = await request(
+    `/v1/evidence-cleanups/${intent.id}/advance`,
+    await stagingCleanupAt("staging_orphan", 1),
+    {},
+  );
   expect(await advance.json()).toMatchObject({ state: "completed", deleted_objects: 1, scope: "staging" });
   expect(await env.CATALOGUE_EXPORTS.head("publication-artifacts/orphan")).toBeNull();
 });
@@ -350,13 +372,13 @@ test("a conclusively deleted staging key can hold the same bytes for a new prepa
   await abandonedStaging("staging_old", key);
   const begin = await request(
     "/v1/reconciliation-operations/staging_old/evidence-cleanup",
-    "2026-10-09T00:00:00.000Z",
+    await stagingCleanupAt("staging_old", 0),
     { idempotency_key: "staging_old" },
   );
   const intent = (await begin.json()) as { id: string };
-  expect((await request(`/v1/evidence-cleanups/${intent.id}/advance`, "2026-10-09T00:00:01.000Z", {})).status).toBe(
-    200,
-  );
+  expect(
+    (await request(`/v1/evidence-cleanups/${intent.id}/advance`, await stagingCleanupAt("staging_old", 1), {})).status,
+  ).toBe(200);
   await activeStaging("staging_fresh");
   const { catalogueStore, trackedStagingBucket } = await import("../../../src/catalogue/shared");
   await trackedStagingBucket(
@@ -372,12 +394,12 @@ test("a conclusively deleted staging key can hold the same bytes for a new prepa
   ).toMatchObject({ incarnation: 1, state: "available" });
   await expect(
     env.CATALOGUE_DB.prepare(
-      `INSERT INTO staging_object_deletes VALUES ('stale-deleter','CATALOGUE_EXPORTS',?,0,?,'2026-10-09T00:00:02.000Z',NULL)`,
+      `INSERT INTO staging_object_deletes VALUES ('stale-deleter','CATALOGUE_EXPORTS',?,0,?,?,NULL)`,
     )
-      .bind(key, intent.id)
+      .bind(key, intent.id, await stagingCleanupAt("staging_old", 2))
       .run(),
   ).rejects.toThrow("staging_deleter_fenced");
-  await request(`/v1/evidence-cleanups/${intent.id}/advance`, "2026-10-09T00:00:03.000Z", {});
+  await request(`/v1/evidence-cleanups/${intent.id}/advance`, await stagingCleanupAt("staging_old", 3), {});
   expect(await (await env.CATALOGUE_EXPORTS.get(key))?.text()).toBe("orphan");
 });
 
@@ -386,7 +408,7 @@ test("an ambiguous staging deletion keeps its ticket open and prevents reuse des
   await abandonedStaging("staging_unknown", key);
   const begin = await request(
     "/v1/reconciliation-operations/staging_unknown/evidence-cleanup",
-    "2026-10-09T00:00:00.000Z",
+    await stagingCleanupAt("staging_unknown", 0),
     { idempotency_key: "staging_unknown" },
   );
   const intent = (await begin.json()) as { id: string };
@@ -408,7 +430,7 @@ test("an ambiguous staging deletion keeps its ticket open and prevents reuse des
       headers: {
         authorization: "Bearer vitest-administration-key",
         "content-type": "application/json",
-        "x-keepr-test-now": "2026-10-09T00:00:01.000Z",
+        "x-keepr-test-now": await stagingCleanupAt("staging_unknown", 1),
       },
       body: "{}",
     }),
@@ -559,7 +581,7 @@ test("an unrelated staging key progresses while a prior delete outcome remains u
   await abandonedStaging("staging_independent", blocked, free);
   const begin = await request(
     "/v1/reconciliation-operations/staging_independent/evidence-cleanup",
-    "2026-10-09T00:00:00.000Z",
+    await stagingCleanupAt("staging_independent", 0),
     { idempotency_key: "staging_independent" },
   );
   const intent = (await begin.json()) as { id: string };
@@ -580,7 +602,7 @@ test("an unrelated staging key progresses while a prior delete outcome remains u
     catalogueStore(env.CATALOGUE_DB),
     { PRINTING_IMAGES: env.PRINTING_IMAGES, CATALOGUE_EXPORTS: bucket },
     intent.id,
-    "2026-10-09T00:00:01.000Z",
+    await stagingCleanupAt("staging_independent", 1),
   );
   expect(progress).toMatchObject({ state: "paused", deleted_objects: 1 });
   expect(await env.CATALOGUE_EXPORTS.head(free)).toBeNull();
@@ -662,12 +684,12 @@ test.each(["capture", "staging"] as const)(
       else await abandonedStaging(owner, `publication-artifacts/${owner}`);
     }
     const replies = await Promise.all(
-      ["cleanup_race_one", "cleanup_race_two"].map((owner) =>
+      ["cleanup_race_one", "cleanup_race_two"].map(async (owner) =>
         request(
           scope === "capture"
             ? `/v1/ingestion-runs/${owner}/evidence-cleanup`
             : `/v1/reconciliation-operations/${owner}/evidence-cleanup`,
-          "2026-10-09T00:00:00.000Z",
+          scope === "staging" ? await stagingCleanupAt(owner) : "2026-08-31T00:00:00.000Z",
           { idempotency_key: "cleanup_race" },
         ),
       ),
