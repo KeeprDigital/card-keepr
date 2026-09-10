@@ -6,10 +6,12 @@ is not adopted; JSON/JSONC lint coverage blocks this release's trial.
 
 ## Versions and dependency preservation
 
-Registry metadata was rechecked on 10 September 2026. Local checks use Node
-22.23.2, Corepack 0.35.0 and pnpm 10.34.5. Corepack generated the committed
-package-manager integrity hash. The lockfile was imported from the baseline
-npm lock before removing it.
+Registry metadata was rechecked on 10 September 2026. The owner then requested
+the latest stable Node and pnpm, superseding the issue's original Node 22
+constraint, and explicitly selected pnpm 12.3.4 after checking the current tags.
+The final target is Node 26.8.2, Corepack 0.36.0 and pnpm 12.3.4. Corepack
+generated the committed package-manager integrity hash. The lockfile was
+imported from the baseline npm lock before removing it.
 
 | Component | Retained resolution |
 | --- | --- |
@@ -17,6 +19,7 @@ npm lock before removing it.
 | TypeScript | 7.0.2 |
 | Cloudflare Vitest plugin | 1.1.6 |
 | Vitest / runner / snapshot | 4.1.11 |
+| Vite (now declared directly for acceptance imports) | 8.2.2 |
 | Wrangler | 4.130.0 |
 | Direct acceptance Miniflare / workerd | 4.20260730.0 / 1.20260730.1 |
 | Plugin/Wrangler Miniflare / workerd | 5.20260908.0-alpha / 1.20260908.1 |
@@ -117,7 +120,7 @@ Sources: [Vite+ 0.3.1 metadata](https://registry.npmjs.org/vite-plus/0.3.1),
 [Oxlint supported inputs](https://oxc.rs/docs/guide/usage/linter.html),
 [JS plugin parser limitation](https://oxc.rs/docs/guide/usage/linter/js-plugins.html).
 
-Local results before full validation:
+Initial Node 22/pnpm 10 trial results (superseded as the target environment):
 
 - Fresh `corepack pnpm install --frozen-lockfile` passed on macOS ARM64/Node
   22.23.2, with esbuild and both workerd installs executed. A comparison of every
@@ -137,3 +140,40 @@ Local results before full validation:
 - The actual CI Corepack setup script was exercised in a temporary directory:
   Node remained the selected 22.23.2 binary; Corepack 0.35.0 and its pnpm 10.34.5
   shim resolved from that directory. Global developer tooling was unchanged.
+
+## Updated Node 26 / pnpm 12 target
+
+The initial Linux runs ([manual](https://github.com/KeeprDigital/card-keepr/actions/runs/34470715449),
+[ready PR](https://github.com/KeeprDigital/card-keepr/actions/runs/34470884601))
+were canceled when the owner requested the newer toolchain. Before cancellation,
+full acceptance exposed an undeclared direct dependency: three acceptance files
+import Vite, previously visible only through npm's transitive hoisting. The
+existing focused files reproduced `ERR_MODULE_NOT_FOUND` before the correction.
+The manifest now declares the already-locked Vite 8.2.2 directly. pnpm's
+`install --fix-lockfile --no-frozen-lockfile` repaired the new importer's peer
+reference; it did not update any application package versions. The three affected
+files then passed all four tests on Node 26.8.2. No new test seam or duplicate
+regression test was needed.
+
+pnpm 12 uses `pmOnFail: error`, `runtimeOnFail: error`, `allowBuilds`, and explicit
+`sideEffectsCache: false`. This keeps Corepack in control and ensures clean
+cache-hit installs execute the approved native hooks instead of reusing their
+previous output. Its first lockfile YAML document records pnpm itself and its
+platform executables; the second retains the complete application dependency
+graph. Comparison against the original npm graph still finds no application
+package additions, removals or version changes. The extra package-manager
+entries are pnpm 12's expected metadata, not an application dependency upgrade.
+
+The exact CI bootstrap script passes on Node 26.8.2 and resolves Corepack 0.36.0
+and pnpm 12.3.4 from its temporary directory. `pnpm exec node` reports the selected
+26.8.2 binary. The complete non-test check also passes on the updated versions;
+full and hosted evidence follows after final validation.
+
+The updated focused domain/API/ingestion selection passes (4/9/23 tests), as do
+both acceptance smoke files. A fresh frozen install and a second offline frozen
+install pass with pnpm 12.3.4; the latter reuses all 105 installed packages and
+reruns both esbuild and both workerd hooks. The full application lock retains
+the baseline versions; the package-manager metadata adds only pnpm and its
+platform distributions. Actionlint 1.7.12 passes all six updated workflows.
+The follow-up Spec review confirms the Vite reference is fixed and reports no
+remaining implementation findings.

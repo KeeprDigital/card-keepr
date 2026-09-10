@@ -7,16 +7,23 @@ explains the JSON/JSONC lint blocker and the limits of the compatibility evidenc
 
 ## Installation and ownership
 
-Follow [local setup](../README.md#local-development). CI uses Linux and Node 22;
-local validation used Node 22.23.2. Corepack 0.35.0 requires Node 22.22.2+ in that
-line, 24.15+ in the Node 24 line, or 26+. Node 25+ no longer includes Corepack,
-so install the documented version explicitly. npm is used only to bootstrap
-Corepack, not to install or execute project dependencies.
+Follow [local setup](../README.md#local-development). `.node-version` pins Node
+26.8.2 for local development and every Linux workflow. Corepack 0.36.0 is
+installed explicitly because Node 25+ no longer includes it. npm is used only
+to bootstrap Corepack, not to install or execute project dependencies.
 
-`package.json#packageManager` pins pnpm 10.34.5 with Corepack-generated SHA-512
-integrity metadata. `pnpm-workspace.yaml` disables pnpm's own package-manager
-version downloads and requires the declared version. No project tool manages
-Node; use the existing developer version manager or CI's setup-node action.
+During implementation the owner requested the latest stable Node and pnpm,
+superseding issue #301's original Node 22 baseline. Registry/release checks on
+10 September 2026 selected Node 26.8.2, pnpm 12.3.4 and Corepack 0.36.0. These
+exact versions are pinned for reproducibility; do not use a moving `latest`
+tag in CI. Node runs the local development/test tooling; the deployed Workers
+still run on Cloudflare's existing runtime and compatibility dates.
+
+`package.json#packageManager` pins pnpm 12.3.4 with Corepack-generated SHA-512
+integrity metadata. `pnpm-workspace.yaml` sets `pmOnFail: error` and
+`runtimeOnFail: error`, so pnpm cannot resolve mismatches by downloading another
+package manager or runtime. Use the existing developer version manager or CI's
+setup-node action to select Node.
 Check `node --version`, `corepack --version`, `pnpm --version`, and
 `command -v node corepack pnpm` when diagnosing an environment. If another pnpm
 shadows Corepack, `corepack pnpm <arguments>` selects the declared version.
@@ -27,11 +34,15 @@ lockfile change. To deliberately update dependencies, use `pnpm add` or
 an npm lockfile. The migration imported the existing npm resolution before
 removing it; it did not update the application or simulator dependencies.
 
+Vite 8.2.2 is now an explicit development dependency because three acceptance
+files import its server API directly. This is the same version previously
+available through npm's transitive dependency hoisting.
+
 The scoped `parse5>entities` override stays at 8.0.0, while the direct `entities`
 dependency stays at 8.1.0. Strict peer validation remains enabled. Only esbuild
 and workerd may run dependency build scripts, including both retained versions
 of each. A new unapproved build script fails installation through `strictDepBuilds`;
-review its purpose before changing `onlyBuiltDependencies`. Do not disable the
+review its purpose before changing `allowBuilds`. Do not disable the
 guard or silently skip a native dependency's required setup.
 
 CI's shared setup script installs Corepack into a temporary runner directory and
@@ -39,7 +50,8 @@ adds its pnpm shim to the job PATH. It does not replace the runner's global tool
 All six workflows cache the pnpm store, keyed by OS, architecture, exact Node and
 pnpm versions, lockfile, manifest, settings and the Corepack setup script. Every
 job still installs with `--frozen-lockfile`, rebuilding the project links and
-running approved native setup even on cache hits. No test, diagnostic, stress,
+running approved native setup even on cache hits (`sideEffectsCache: false`
+prevents reusing prior install-hook output). No test, diagnostic, stress,
 recapture, migration, preflight or release result is cached.
 
 ## Commands and arguments
@@ -100,7 +112,8 @@ metadata, not an old recommendation. At minimum:
    publisher content or mutate remote data solely for toolchain validation.
 
 Sources: [Corepack usage](https://github.com/nodejs/corepack#readme),
-[pnpm 10 settings](https://pnpm.io/10/settings),
+[pnpm CLI/runtime settings](https://pnpm.io/settings/cli),
+[pnpm build permissions and cache](https://pnpm.io/settings/build),
 [Vite+ 0.3.1 migration rules](https://github.com/voidzero-dev/vite-plus/blob/v0.3.1/docs/guide/migrate-rules.md),
 [Oxlint language support](https://oxc.rs/docs/guide/usage/linter.html),
 [Oxlint JS plugin limitations](https://oxc.rs/docs/guide/usage/linter/js-plugins.html).

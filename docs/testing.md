@@ -208,5 +208,5 @@ pnpm store cache includes OS, architecture, exact Node and pnpm versions,
 manifest, lockfile, pnpm settings and the Corepack setup script. Every job runs
 `pnpm install --frozen-lockfile`, including cache hits, to recreate links and
 run approved native builds. Test and operational results are never cached.
-Retain one Linux/Node 22 configuration and the existing three shards until
+Use the Node 26.8.2 version pinned in `.node-version` on Linux, and retain the existing three shards until
 hosted measurements justify changing them. See [toolchain policy](toolchain.md).

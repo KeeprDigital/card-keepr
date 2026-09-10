@@ -34,16 +34,15 @@ before selecting checks, adding tests, or changing CI. Start with the
 
 ## Local development
 
-Use Node 22.22.2 or newer in the Node 22 line (CI uses Node 22). Corepack
-0.35.0 also supports Node 24.15+ and 26+. Install that Corepack release and
-enable its pnpm shim; Node 25+ no longer bundles Corepack. The repository pins
-pnpm 10.34.5 with Corepack's integrity hash. If Corepack 0.35.0 is already
-installed, skip its installation step.
+Use Node 26.8.2, pinned in `.node-version` for local development and all CI
+workflows. Install Corepack 0.36.0 and enable its pnpm shim; Node 25+ no longer
+bundles Corepack. The repository pins pnpm 12.3.4 with Corepack's integrity
+hash. If Corepack 0.36.0 is already installed, skip its installation step.
 
 Install dependencies, create the two local secret files, and start both runtimes:
 
 ```sh
-npm install --global corepack@0.35.0
+npm install --global corepack@0.36.0
 corepack enable pnpm
 node --version
 corepack --version

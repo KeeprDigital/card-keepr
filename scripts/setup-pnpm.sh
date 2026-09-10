@@ -7,7 +7,7 @@ set -euo pipefail
 : "${GITHUB_OUTPUT:?GitHub Actions must provide GITHUB_OUTPUT}"
 
 corepack_directory="${RUNNER_TEMP}/card-keepr-corepack"
-npm install --prefix "${corepack_directory}" --no-audit --no-fund corepack@0.35.0
+npm install --prefix "${corepack_directory}" --no-audit --no-fund corepack@0.36.0
 export PATH="${corepack_directory}/node_modules/.bin:${PATH}"
 corepack enable --install-directory "${corepack_directory}/node_modules/.bin" pnpm
 echo "${corepack_directory}/node_modules/.bin" >> "${GITHUB_PATH}"
