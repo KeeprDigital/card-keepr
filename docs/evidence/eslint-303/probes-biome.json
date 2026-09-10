@@ -1,0 +1,110 @@
+{
+  "summary": {
+    "changed": 0,
+    "unchanged": 9,
+    "matches": 0,
+    "duration": 19676084,
+    "errors": 3,
+    "warnings": 1,
+    "infos": 0,
+    "skipped": 0,
+    "suggestedFixesSkipped": 0,
+    "diagnosticsNotPrinted": 0,
+    "scannerDuration": 3160833
+  },
+  "diagnostics": [
+    {
+      "severity": "warning",
+      "message": "Don't focus the test.",
+      "category": "lint/suspicious/noFocusedTests",
+      "location": {
+        "path": "lint-trial/probes/assertions.spec.ts",
+        "start": {
+          "line": 2,
+          "column": 6
+        },
+        "end": {
+          "line": 2,
+          "column": 10
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "error",
+      "message": "Do not export from a test file.",
+      "category": "lint/suspicious/noExportsInTest",
+      "location": {
+        "path": "lint-trial/probes/assertions.test.mjs",
+        "start": {
+          "line": 8,
+          "column": 1
+        },
+        "end": {
+          "line": 10,
+          "column": 2
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "error",
+      "message": "The key target was already declared.",
+      "category": "lint/suspicious/noDuplicateObjectKeys",
+      "location": {
+        "path": "lint-trial/probes/duplicate.json",
+        "start": {
+          "line": 1,
+          "column": 3
+        },
+        "end": {
+          "line": 1,
+          "column": 11
+        }
+      },
+      "advices": [
+        {
+          "start": {
+            "line": 1,
+            "column": 24
+          },
+          "end": {
+            "line": 1,
+            "column": 32
+          },
+          "text": "If a key is defined multiple times, only the last definition takes effect. Previous definitions are ignored."
+        }
+      ]
+    },
+    {
+      "severity": "error",
+      "message": "The key target was already declared.",
+      "category": "lint/suspicious/noDuplicateObjectKeys",
+      "location": {
+        "path": "lint-trial/probes/duplicate.jsonc",
+        "start": {
+          "line": 3,
+          "column": 3
+        },
+        "end": {
+          "line": 3,
+          "column": 11
+        }
+      },
+      "advices": [
+        {
+          "start": {
+            "line": 4,
+            "column": 3
+          },
+          "end": {
+            "line": 4,
+            "column": 11
+          },
+          "text": "If a key is defined multiple times, only the last definition takes effect. Previous definitions are ignored."
+        }
+      ]
+    }
+  ],
+  "command": "lint"
+}

@@ -1,0 +1,70 @@
+[
+  {
+    "name": "frozen-install",
+    "command": ["pnpm", "install", "--frozen-lockfile"],
+    "exit": 0,
+    "seconds": 0.096
+  },
+  {
+    "name": "domain-focused",
+    "command": ["pnpm", "run", "test:domain", "source-host-pacing-mode"],
+    "exit": 0,
+    "seconds": 1.66
+  },
+  {
+    "name": "api-focused",
+    "command": ["pnpm", "run", "test:api", "apps/api/test/health.spec.ts"],
+    "exit": 0,
+    "seconds": 2.12
+  },
+  {
+    "name": "ingestion-focused",
+    "command": ["pnpm", "run", "test:ingestion", "apps/ingestion/test/evidence-cleanup.spec.ts"],
+    "exit": 0,
+    "seconds": 10.198
+  },
+  {
+    "name": "acceptance-smoke",
+    "command": ["pnpm", "run", "test:acceptance:smoke"],
+    "exit": 0,
+    "seconds": 23.314
+  },
+  {
+    "name": "check",
+    "command": ["pnpm", "run", "check"],
+    "exit": 0,
+    "seconds": 4.313
+  },
+  {
+    "name": "full",
+    "command": ["pnpm", "run", "test:full"],
+    "exit": 0,
+    "seconds": 1089.951,
+    "layers": [
+      {
+        "name": "domain",
+        "files": 51,
+        "tests": 298,
+        "seconds": 5.95
+      },
+      {
+        "name": "api",
+        "files": 13,
+        "tests": 95,
+        "seconds": 10.93
+      },
+      {
+        "name": "ingestion",
+        "files": 97,
+        "tests": 787,
+        "seconds": 785.74
+      },
+      {
+        "name": "acceptance",
+        "tests": 353,
+        "seconds": 285.504042833
+      }
+    ],
+    "totalTests": 1533
+  }
+]

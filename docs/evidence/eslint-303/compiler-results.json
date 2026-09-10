@@ -1,0 +1,158 @@
+[
+  {
+    "task": "tsc",
+    "sample": 0,
+    "seconds": 1.458,
+    "exits": [0, 0, 0, 0, 0]
+  },
+  {
+    "task": "tsc",
+    "sample": 1,
+    "seconds": 1.368,
+    "exits": [0, 0, 0, 0, 0]
+  },
+  {
+    "task": "tsc",
+    "sample": 2,
+    "seconds": 1.385,
+    "exits": [0, 0, 0, 0, 0]
+  },
+  {
+    "task": "tsc6",
+    "sample": 0,
+    "seconds": 8.978,
+    "exits": [0, 0, 0, 0, 0]
+  },
+  {
+    "task": "tsc6",
+    "sample": 1,
+    "seconds": 9.119,
+    "exits": [0, 0, 0, 0, 0]
+  },
+  {
+    "task": "tsc6",
+    "sample": 2,
+    "seconds": 8.991,
+    "exits": [0, 0, 0, 0, 0]
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps/api/tsconfig.json",
+    "exit": 1,
+    "diagnosticCount": 16
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps/api/test/tsconfig.json",
+    "exit": 1,
+    "diagnosticCount": 15
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps/ingestion/tsconfig.json",
+    "exit": 1,
+    "diagnosticCount": 19
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps/ingestion/test/tsconfig.json",
+    "exit": 1,
+    "diagnosticCount": 22
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "test/domain/tsconfig.json",
+    "exit": 1,
+    "diagnosticCount": 19
+  },
+  {
+    "flag": "noImplicitOverride",
+    "project": "apps/api/tsconfig.json",
+    "exit": 0,
+    "diagnosticCount": 0
+  },
+  {
+    "flag": "noImplicitOverride",
+    "project": "apps/api/test/tsconfig.json",
+    "exit": 0,
+    "diagnosticCount": 0
+  },
+  {
+    "flag": "noImplicitOverride",
+    "project": "apps/ingestion/tsconfig.json",
+    "exit": 0,
+    "diagnosticCount": 0
+  },
+  {
+    "flag": "noImplicitOverride",
+    "project": "apps/ingestion/test/tsconfig.json",
+    "exit": 0,
+    "diagnosticCount": 0
+  },
+  {
+    "flag": "noImplicitOverride",
+    "project": "test/domain/tsconfig.json",
+    "exit": 0,
+    "diagnosticCount": 0
+  },
+  {
+    "flag": "noImplicitReturns",
+    "project": "apps/api/tsconfig.json",
+    "exit": 0,
+    "diagnosticCount": 0
+  },
+  {
+    "flag": "noImplicitReturns",
+    "project": "apps/api/test/tsconfig.json",
+    "exit": 0,
+    "diagnosticCount": 0
+  },
+  {
+    "flag": "noImplicitReturns",
+    "project": "apps/ingestion/tsconfig.json",
+    "exit": 0,
+    "diagnosticCount": 0
+  },
+  {
+    "flag": "noImplicitReturns",
+    "project": "apps/ingestion/test/tsconfig.json",
+    "exit": 1,
+    "diagnosticCount": 1
+  },
+  {
+    "flag": "noImplicitReturns",
+    "project": "test/domain/tsconfig.json",
+    "exit": 0,
+    "diagnosticCount": 0
+  },
+  {
+    "flag": "noFallthroughCasesInSwitch",
+    "project": "apps/api/tsconfig.json",
+    "exit": 0,
+    "diagnosticCount": 0
+  },
+  {
+    "flag": "noFallthroughCasesInSwitch",
+    "project": "apps/api/test/tsconfig.json",
+    "exit": 0,
+    "diagnosticCount": 0
+  },
+  {
+    "flag": "noFallthroughCasesInSwitch",
+    "project": "apps/ingestion/tsconfig.json",
+    "exit": 0,
+    "diagnosticCount": 0
+  },
+  {
+    "flag": "noFallthroughCasesInSwitch",
+    "project": "apps/ingestion/test/tsconfig.json",
+    "exit": 0,
+    "diagnosticCount": 0
+  },
+  {
+    "flag": "noFallthroughCasesInSwitch",
+    "project": "test/domain/tsconfig.json",
+    "exit": 0,
+    "diagnosticCount": 0
+  }
+]

@@ -1,0 +1,830 @@
+[
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_test_tsconfig.json",
+    "file": "apps/api/test/runtime.spec.ts",
+    "line": 394,
+    "column": 52,
+    "code": "TS2379",
+    "message": "Argument of type '{ method: string | undefined; headers: { \"if-none-match\": string; }; }' is not assignable to parameter of type 'RequestInit<CfProperties<unknown>>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_test_tsconfig.json",
+    "file": "src/catalogue/adapters/gundam-adapter.ts",
+    "line": 180,
+    "column": 34,
+    "code": "TS2379",
+    "message": "Argument of type '{ path: string; number: string; title: string; rules: string; attributes: { card_type: unknown; colours: unknown; level: unknown; cost: unknown; block_icon: unknown; effect_text: unknown; zone: unknown; traits: unknown; link_condition: unknown; ap: unknown; hp: unknown; series_titles: unknown; }; imageFields: { role...' is not assignable to parameter of type '{ path: string; number: string; title: string; rules: string; attributes: Record<string, unknown>; printingAttributes?: Record<string, unknown>; normalizedRarity?: string | null; artworkFingerprint?: string; ... 4 more ...; allowEmptyRules?: boolean; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_test_tsconfig.json",
+    "file": "src/catalogue/adapters/one-piece-adapter.ts",
+    "line": 252,
+    "column": 34,
+    "code": "TS2379",
+    "message": "Argument of type '{ path: string; number: string; title: string; rules: string; attributes: Record<string, unknown>; printingAttributes: Record<string, unknown> | undefined; normalizedRarity: string | null; artworkFingerprint: string; printedFieldsDigest: string; imageFields: { ...; }[]; }' is not assignable to parameter of type '{ path: string; number: string; title: string; rules: string; attributes: Record<string, unknown>; printingAttributes?: Record<string, unknown>; normalizedRarity?: string | null; artworkFingerprint?: string; ... 4 more ...; allowEmptyRules?: boolean; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_test_tsconfig.json",
+    "file": "src/catalogue/adapters/one-piece-source-adapter.ts",
+    "line": 71,
+    "column": 3,
+    "code": "TS2375",
+    "message": "Type '{ normalizedRarity: string | null; attributes: { card_type: string; colours: string[]; cost: number | null; life: number | null; battle_attributes: string[]; power: number | null; counter: number | null; traits: string[]; block_icons: string[]; effect_text: string | null; trigger_text: string | null; }; printingAttr...' is not assignable to type '{ attributes: Record<string, unknown>; printingAttributes?: Record<string, unknown>; normalizedRarity: string | null; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_test_tsconfig.json",
+    "file": "src/catalogue/adapters/source-adapters.ts",
+    "line": 103,
+    "column": 14,
+    "code": "TS2322",
+    "message": "Type 'readonly Readonly<{ adapterVersion: string; sourceLineage: string; supportedGame: string; gameProfileVersion: string; parserContract: string; maximumSnapshotBytes: number; origin: \"production\"; requestSurface: Readonly<...> | Readonly<...>; ... 16 more ...; coverageLossThreshold: { ...; }; } | { ...; } | { ...; } | ...' is not assignable to type 'readonly Readonly<{ adapterVersion: string; sourceLineage: string; supportedGame: string; gameProfileVersion: string; parserContract: string; maximumSnapshotBytes: number; requestCapacity: number; coverageLossThreshold?: Readonly<...>; ... 16 more ...; officialSourceContract?: Readonly<...>; }>[]'."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_test_tsconfig.json",
+    "file": "src/catalogue/adapters/source-adapters.ts",
+    "line": 298,
+    "column": 3,
+    "code": "TS2375",
+    "message": "Type '{ adapterVersion: string; sourceLineage: string; supportedGame: string; gameProfileVersion: string; parserContract: string; maximumSnapshotBytes: number; requestCapacity: number; ... 17 more ...; reconciliationAreas: readonly (\"catalogue\" | \"errata\")[]; }' is not assignable to type 'Readonly<{ adapterVersion: string; sourceLineage: string; supportedGame: string; gameProfileVersion: string; parserContract: string; maximumSnapshotBytes: number; requestCapacity: number; coverageLossThreshold?: Readonly<...>; ... 16 more ...; officialSourceContract?: Readonly<...>; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_test_tsconfig.json",
+    "file": "src/catalogue/backup-recovery/backup-recovery.ts",
+    "line": 355,
+    "column": 80,
+    "code": "TS2379",
+    "message": "Argument of type '{ expectedCurrentRevisionId: string; idempotencyKey: string; failedAttemptId: string | undefined; failedAttemptDigest: string | undefined; }' is not assignable to parameter of type 'Readonly<{ expectedCurrentRevisionId: string; idempotencyKey: string; failedAttemptId?: string; failedAttemptDigest?: string; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_test_tsconfig.json",
+    "file": "src/catalogue/backup-recovery/backup-workflow.ts",
+    "line": 58,
+    "column": 82,
+    "code": "TS2379",
+    "message": "Argument of type '{ expectedCurrentRevisionId: string; idempotencyKey: string; failedAttemptId: string | undefined; failedAttemptDigest: string | undefined; }' is not assignable to parameter of type 'Readonly<{ expectedCurrentRevisionId: string; idempotencyKey: string; failedAttemptId?: string; failedAttemptDigest?: string; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_test_tsconfig.json",
+    "file": "src/catalogue/curated/curated-revisions.ts",
+    "line": 2066,
+    "column": 4,
+    "code": "TS2352",
+    "message": "Conversion of type 'CatalogueCandidate' to type '{ product_relationships?: ProductRelationship[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_test_tsconfig.json",
+    "file": "src/catalogue/ingestion/publication-commit-repository.ts",
+    "line": 49,
+    "column": 54,
+    "code": "TS2379",
+    "message": "Argument of type '{ runId: string; occurredAt: string | undefined; }' is not assignable to parameter of type '{ runId: string; occurredAt?: string; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_test_tsconfig.json",
+    "file": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+    "line": 473,
+    "column": 109,
+    "code": "TS2379",
+    "message": "Argument of type '{ cursor: { cards: number; printings: number; } | undefined; yieldAtCheckpoint: boolean; }' is not assignable to parameter of type '{ cursor?: { cards: number; printings: number; }; yieldAtCheckpoint: boolean; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_test_tsconfig.json",
+    "file": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+    "line": 1776,
+    "column": 13,
+    "code": "TS2375",
+    "message": "Type '{ value: unknown; sourceObservationId: string; sourceObservationSetId: string; sourceSnapshotId: string; sourceLineage: string; sourceSurface: string | undefined; requestRole: \"detail\" | \"image\" | \"listing\" | \"product_detail\" | \"surface\"; capturedAt: string; currentCardId: string | null; currentPrintingId: string | ...' is not assignable to type 'ProductReleaseEvidenceInput' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_test_tsconfig.json",
+    "file": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+    "line": 1900,
+    "column": 7,
+    "code": "TS2379",
+    "message": "Argument of type '{ plans: ReconciliationPlanState; history: NativeSourceHistory | undefined; cardScopes: { scopes: CheckedCardScope[]; priorCards: ReconciliationCardState; priorPrintings: ReconciliationReducerIndex<...>; }; ... 6 more ...; printingCompatibility: ReconciliationReducerIndex<...>; }' is not assignable to parameter of type '{ plans: ReconciliationPlanState; history?: NativeSourceHistory; cardScopes?: { scopes: readonly CheckedCardScope[]; priorCards: ReconciliationCardState; priorPrintings: ReconciliationReducerIndex<...>; }; ... 6 more ...; printingCompatibility: ReconciliationReducerIndex<...>; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_test_tsconfig.json",
+    "file": "src/catalogue/shared/ingestion-run-event-repository.ts",
+    "line": 162,
+    "column": 38,
+    "code": "TS2379",
+    "message": "Argument of type '{ event: Readonly<{ eventId: string; kind: RunEventKind; runId: string; occurredAt: string; }>; statement: D1PreparedStatement; before: D1PreparedStatement[]; ... 4 more ...; selectedGamesJson: string; }' is not assignable to parameter of type 'Readonly<{ event: Readonly<{ eventId: string; kind: \"approval_reserved\" | \"candidate_blocked\" | \"candidate_prepared\" | \"collection_paused\" | \"collection_resumed\" | \"collection_terminated\" | ... 5 more ... | \"stage_changed\"; runId: string; occurredAt: string; }>; ... 8 more ...; approvalIdempotencyKey?: string; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_test_tsconfig.json",
+    "file": "src/catalogue/shared/reconciliation-profile.ts",
+    "line": 492,
+    "column": 3,
+    "code": "TS2375",
+    "message": "Type '{ kind: \"array\"; items: Schema; unique: boolean; minimumItems: number | undefined; maximumItems: number | undefined; }' is not assignable to type '{ kind: \"array\"; items: Schema; unique?: boolean; minimumItems?: number; maximumItems?: number; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "apps/ingestion/src/backup-workflow.ts",
+    "line": 36,
+    "column": 9,
+    "code": "TS2379",
+    "message": "Argument of type '{ expectedCurrentRevisionId: string; idempotencyKey: string; observedAt: string; cloudflareAccountId: \"3ec389380c7b82e6a172e6f351d4aad9\"; catalogueDatabaseId: \"2469f888-1530-4bef-bc58-17dc298bb598\"; ... 4 more ...; failedAttemptDigest: string | undefined; }' is not assignable to parameter of type 'Readonly<{ expectedCurrentRevisionId: string; idempotencyKey: string; observedAt: string; cloudflareAccountId: string; catalogueDatabaseId: string; disposableDatabaseId: string; exportToken: string; verificationToken: string; failedAttemptId?: string; failedAttemptDigest?: string; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "apps/ingestion/src/index.ts",
+    "line": 102,
+    "column": 67,
+    "code": "TS2379",
+    "message": "Argument of type '{ request: Request<unknown, CfProperties<unknown>>; env: Omit<Env, \"CATALOGUE_DB\"> & { CATALOGUE_DB: CatalogueStore; }; context: ExecutionContext<unknown> | undefined; requestId: string; base: PublicBase; observedAt: string; publicationBackupWaiter: PublicationBackupWaiter; }' is not assignable to parameter of type 'RouteContext<Omit<Env, \"CATALOGUE_DB\"> & { CATALOGUE_DB: CatalogueStore; }> & { observedAt: string; publicationBackupWaiter: PublicationBackupWaiter; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "apps/ingestion/src/reconciliation-resource-budget.ts",
+    "line": 106,
+    "column": 63,
+    "code": "TS2379",
+    "message": "Argument of type '{ pull(controller: ReadableStreamDefaultController<Uint8Array<ArrayBufferLike>>): Promise<void>; cancel: (() => Promise<...>) | undefined; }' is not assignable to parameter of type 'UnderlyingSource<Uint8Array<ArrayBufferLike>>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "apps/ingestion/test/native-no-change-publication.spec.ts",
+    "line": 309,
+    "column": 7,
+    "code": "TS2379",
+    "message": "Argument of type '{ revision_id: string; composition_digest: string; publication_operation_id: string; ingestion_run_id: string; schema_migration_level: number; members: number; schema_sha256: string; tables: { table: string; rows: number; sha256: string; }[]; accepted_evidence_roots: undefined; }' is not assignable to parameter of type 'Pick<CompositionSnapshotEvidence, \"accepted_evidence_roots\" | \"schema_migration_level\">' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "src/catalogue/adapters/gundam-adapter.ts",
+    "line": 180,
+    "column": 34,
+    "code": "TS2379",
+    "message": "Argument of type '{ path: string; number: string; title: string; rules: string; attributes: { card_type: unknown; colours: unknown; level: unknown; cost: unknown; block_icon: unknown; effect_text: unknown; zone: unknown; traits: unknown; link_condition: unknown; ap: unknown; hp: unknown; series_titles: unknown; }; imageFields: { role...' is not assignable to parameter of type '{ path: string; number: string; title: string; rules: string; attributes: Record<string, unknown>; printingAttributes?: Record<string, unknown>; normalizedRarity?: string | null; artworkFingerprint?: string; ... 4 more ...; allowEmptyRules?: boolean; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "src/catalogue/adapters/one-piece-adapter.ts",
+    "line": 252,
+    "column": 34,
+    "code": "TS2379",
+    "message": "Argument of type '{ path: string; number: string; title: string; rules: string; attributes: Record<string, unknown>; printingAttributes: Record<string, unknown> | undefined; normalizedRarity: string | null; artworkFingerprint: string; printedFieldsDigest: string; imageFields: { ...; }[]; }' is not assignable to parameter of type '{ path: string; number: string; title: string; rules: string; attributes: Record<string, unknown>; printingAttributes?: Record<string, unknown>; normalizedRarity?: string | null; artworkFingerprint?: string; ... 4 more ...; allowEmptyRules?: boolean; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "src/catalogue/adapters/one-piece-source-adapter.ts",
+    "line": 71,
+    "column": 3,
+    "code": "TS2375",
+    "message": "Type '{ normalizedRarity: string | null; attributes: { card_type: string; colours: string[]; cost: number | null; life: number | null; battle_attributes: string[]; power: number | null; counter: number | null; traits: string[]; block_icons: string[]; effect_text: string | null; trigger_text: string | null; }; printingAttr...' is not assignable to type '{ attributes: Record<string, unknown>; printingAttributes?: Record<string, unknown>; normalizedRarity: string | null; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "src/catalogue/adapters/source-adapters.ts",
+    "line": 103,
+    "column": 14,
+    "code": "TS2322",
+    "message": "Type 'readonly Readonly<{ adapterVersion: string; sourceLineage: string; supportedGame: string; gameProfileVersion: string; parserContract: string; maximumSnapshotBytes: number; origin: \"production\"; requestSurface: Readonly<...> | Readonly<...>; ... 16 more ...; coverageLossThreshold: { ...; }; } | { ...; } | { ...; } | ...' is not assignable to type 'readonly Readonly<{ adapterVersion: string; sourceLineage: string; supportedGame: string; gameProfileVersion: string; parserContract: string; maximumSnapshotBytes: number; requestCapacity: number; coverageLossThreshold?: Readonly<...>; ... 16 more ...; officialSourceContract?: Readonly<...>; }>[]'."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "src/catalogue/adapters/source-adapters.ts",
+    "line": 298,
+    "column": 3,
+    "code": "TS2375",
+    "message": "Type '{ adapterVersion: string; sourceLineage: string; supportedGame: string; gameProfileVersion: string; parserContract: string; maximumSnapshotBytes: number; requestCapacity: number; ... 17 more ...; reconciliationAreas: readonly (\"catalogue\" | \"errata\")[]; }' is not assignable to type 'Readonly<{ adapterVersion: string; sourceLineage: string; supportedGame: string; gameProfileVersion: string; parserContract: string; maximumSnapshotBytes: number; requestCapacity: number; coverageLossThreshold?: Readonly<...>; ... 16 more ...; officialSourceContract?: Readonly<...>; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "src/catalogue/backup-recovery/backup-recovery.ts",
+    "line": 355,
+    "column": 80,
+    "code": "TS2379",
+    "message": "Argument of type '{ expectedCurrentRevisionId: string; idempotencyKey: string; failedAttemptId: string | undefined; failedAttemptDigest: string | undefined; }' is not assignable to parameter of type 'Readonly<{ expectedCurrentRevisionId: string; idempotencyKey: string; failedAttemptId?: string; failedAttemptDigest?: string; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "src/catalogue/backup-recovery/backup-workflow.ts",
+    "line": 58,
+    "column": 82,
+    "code": "TS2379",
+    "message": "Argument of type '{ expectedCurrentRevisionId: string; idempotencyKey: string; failedAttemptId: string | undefined; failedAttemptDigest: string | undefined; }' is not assignable to parameter of type 'Readonly<{ expectedCurrentRevisionId: string; idempotencyKey: string; failedAttemptId?: string; failedAttemptDigest?: string; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "src/catalogue/curated/curated-revisions.ts",
+    "line": 2066,
+    "column": 4,
+    "code": "TS2352",
+    "message": "Conversion of type 'CatalogueCandidate' to type '{ product_relationships?: ProductRelationship[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "src/catalogue/ingestion/administration-inspection.ts",
+    "line": 407,
+    "column": 22,
+    "code": "TS2379",
+    "message": "Argument of type '{ official_identity: { value: string | null; }; name: string; effective_rules_text: string | null | undefined; }' is not assignable to parameter of type 'Readonly<{ official_identity: Readonly<{ value: string | null; }>; name: string; effective_rules_text?: string | null; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "src/catalogue/ingestion/card-search-materialization.ts",
+    "line": 80,
+    "column": 66,
+    "code": "TS2379",
+    "message": "Argument of type '{ maximumBoundParameterBytes: number; targetRevisionId: string | undefined; }' is not assignable to parameter of type '{ maximumBoundParameterBytes: number; targetRevisionId?: string; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "src/catalogue/ingestion/publication-commit-repository.ts",
+    "line": 49,
+    "column": 54,
+    "code": "TS2379",
+    "message": "Argument of type '{ runId: string; occurredAt: string | undefined; }' is not assignable to parameter of type '{ runId: string; occurredAt?: string; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+    "line": 473,
+    "column": 109,
+    "code": "TS2379",
+    "message": "Argument of type '{ cursor: { cards: number; printings: number; } | undefined; yieldAtCheckpoint: boolean; }' is not assignable to parameter of type '{ cursor?: { cards: number; printings: number; }; yieldAtCheckpoint: boolean; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+    "line": 1776,
+    "column": 13,
+    "code": "TS2375",
+    "message": "Type '{ value: unknown; sourceObservationId: string; sourceObservationSetId: string; sourceSnapshotId: string; sourceLineage: string; sourceSurface: string | undefined; requestRole: \"detail\" | \"image\" | \"listing\" | \"product_detail\" | \"surface\"; capturedAt: string; currentCardId: string | null; currentPrintingId: string | ...' is not assignable to type 'ProductReleaseEvidenceInput' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+    "line": 1900,
+    "column": 7,
+    "code": "TS2379",
+    "message": "Argument of type '{ plans: ReconciliationPlanState; history: NativeSourceHistory | undefined; cardScopes: { scopes: CheckedCardScope[]; priorCards: ReconciliationCardState; priorPrintings: ReconciliationReducerIndex<...>; }; ... 6 more ...; printingCompatibility: ReconciliationReducerIndex<...>; }' is not assignable to parameter of type '{ plans: ReconciliationPlanState; history?: NativeSourceHistory; cardScopes?: { scopes: readonly CheckedCardScope[]; priorCards: ReconciliationCardState; priorPrintings: ReconciliationReducerIndex<...>; }; ... 6 more ...; printingCompatibility: ReconciliationReducerIndex<...>; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "src/catalogue/shared/ingestion-run-event-repository.ts",
+    "line": 162,
+    "column": 38,
+    "code": "TS2379",
+    "message": "Argument of type '{ event: Readonly<{ eventId: string; kind: RunEventKind; runId: string; occurredAt: string; }>; statement: D1PreparedStatement; before: D1PreparedStatement[]; ... 4 more ...; selectedGamesJson: string; }' is not assignable to parameter of type 'Readonly<{ event: Readonly<{ eventId: string; kind: \"approval_reserved\" | \"candidate_blocked\" | \"candidate_prepared\" | \"collection_paused\" | \"collection_resumed\" | \"collection_terminated\" | ... 5 more ... | \"stage_changed\"; runId: string; occurredAt: string; }>; ... 8 more ...; approvalIdempotencyKey?: string; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "src/catalogue/shared/reconciliation-profile.ts",
+    "line": 492,
+    "column": 3,
+    "code": "TS2375",
+    "message": "Type '{ kind: \"array\"; items: Schema; unique: boolean; minimumItems: number | undefined; maximumItems: number | undefined; }' is not assignable to type '{ kind: \"array\"; items: Schema; unique?: boolean; minimumItems?: number; maximumItems?: number; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "test/support/fake-publisher/reconciliation-documents.ts",
+    "line": 2454,
+    "column": 29,
+    "code": "TS2379",
+    "message": "Argument of type '{ game: string; profile: string; cardNumber: string; name: string; cardAttributes: { card_type: string; colours: string[]; cost: null; life: number; battle_attributes: string[]; power: number; counter: null; traits: string[]; block_icons: string[]; effect_text: string; trigger_text: null; }; ... 4 more ...; membersh...' is not assignable to parameter of type '{ game: string; profile: string; cardNumber: string; name: string; cardAttributes: Record<string, unknown>; printingAttributes: Record<string, unknown>; locator: string; lineageMarker: string; ... 7 more ...; memberships?: { ...; }; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "test/support/fake-publisher/reconciliation-documents.ts",
+    "line": 2532,
+    "column": 32,
+    "code": "TS2379",
+    "message": "Argument of type '{ game: string; profile: string; cardNumber: string; name: string; cardAttributes: { card_type: string; colours: string[]; cost: null; life: number; battle_attributes: string[]; power: number; counter: null; traits: string[]; block_icons: string[]; effect_text: string; trigger_text: null; }; ... 6 more ...; membersh...' is not assignable to parameter of type '{ game: string; profile: string; cardNumber: string; name: string; cardAttributes: Record<string, unknown>; printingAttributes: Record<string, unknown>; locator: string; lineageMarker: string; ... 7 more ...; memberships?: { ...; }; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_tsconfig.json",
+    "file": "apps/ingestion/src/backup-workflow.ts",
+    "line": 36,
+    "column": 9,
+    "code": "TS2379",
+    "message": "Argument of type '{ expectedCurrentRevisionId: string; idempotencyKey: string; observedAt: string; cloudflareAccountId: \"3ec389380c7b82e6a172e6f351d4aad9\"; catalogueDatabaseId: \"2469f888-1530-4bef-bc58-17dc298bb598\"; ... 4 more ...; failedAttemptDigest: string | undefined; }' is not assignable to parameter of type 'Readonly<{ expectedCurrentRevisionId: string; idempotencyKey: string; observedAt: string; cloudflareAccountId: string; catalogueDatabaseId: string; disposableDatabaseId: string; exportToken: string; verificationToken: string; failedAttemptId?: string; failedAttemptDigest?: string; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_tsconfig.json",
+    "file": "apps/ingestion/src/index.ts",
+    "line": 102,
+    "column": 67,
+    "code": "TS2379",
+    "message": "Argument of type '{ request: Request<unknown, CfProperties<unknown>>; env: Omit<Env, \"CATALOGUE_DB\"> & { CATALOGUE_DB: CatalogueStore; }; context: ExecutionContext<unknown> | undefined; requestId: string; base: PublicBase; observedAt: string; publicationBackupWaiter: PublicationBackupWaiter; }' is not assignable to parameter of type 'RouteContext<Omit<Env, \"CATALOGUE_DB\"> & { CATALOGUE_DB: CatalogueStore; }> & { observedAt: string; publicationBackupWaiter: PublicationBackupWaiter; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_tsconfig.json",
+    "file": "apps/ingestion/src/reconciliation-resource-budget.ts",
+    "line": 106,
+    "column": 63,
+    "code": "TS2379",
+    "message": "Argument of type '{ pull(controller: ReadableStreamDefaultController<Uint8Array<ArrayBufferLike>>): Promise<void>; cancel: (() => Promise<...>) | undefined; }' is not assignable to parameter of type 'UnderlyingSource<Uint8Array<ArrayBufferLike>>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_tsconfig.json",
+    "file": "src/catalogue/adapters/gundam-adapter.ts",
+    "line": 180,
+    "column": 34,
+    "code": "TS2379",
+    "message": "Argument of type '{ path: string; number: string; title: string; rules: string; attributes: { card_type: unknown; colours: unknown; level: unknown; cost: unknown; block_icon: unknown; effect_text: unknown; zone: unknown; traits: unknown; link_condition: unknown; ap: unknown; hp: unknown; series_titles: unknown; }; imageFields: { role...' is not assignable to parameter of type '{ path: string; number: string; title: string; rules: string; attributes: Record<string, unknown>; printingAttributes?: Record<string, unknown>; normalizedRarity?: string | null; artworkFingerprint?: string; ... 4 more ...; allowEmptyRules?: boolean; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_tsconfig.json",
+    "file": "src/catalogue/adapters/one-piece-adapter.ts",
+    "line": 252,
+    "column": 34,
+    "code": "TS2379",
+    "message": "Argument of type '{ path: string; number: string; title: string; rules: string; attributes: Record<string, unknown>; printingAttributes: Record<string, unknown> | undefined; normalizedRarity: string | null; artworkFingerprint: string; printedFieldsDigest: string; imageFields: { ...; }[]; }' is not assignable to parameter of type '{ path: string; number: string; title: string; rules: string; attributes: Record<string, unknown>; printingAttributes?: Record<string, unknown>; normalizedRarity?: string | null; artworkFingerprint?: string; ... 4 more ...; allowEmptyRules?: boolean; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_tsconfig.json",
+    "file": "src/catalogue/adapters/one-piece-source-adapter.ts",
+    "line": 71,
+    "column": 3,
+    "code": "TS2375",
+    "message": "Type '{ normalizedRarity: string | null; attributes: { card_type: string; colours: string[]; cost: number | null; life: number | null; battle_attributes: string[]; power: number | null; counter: number | null; traits: string[]; block_icons: string[]; effect_text: string | null; trigger_text: string | null; }; printingAttr...' is not assignable to type '{ attributes: Record<string, unknown>; printingAttributes?: Record<string, unknown>; normalizedRarity: string | null; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_tsconfig.json",
+    "file": "src/catalogue/adapters/source-adapters.ts",
+    "line": 103,
+    "column": 14,
+    "code": "TS2322",
+    "message": "Type 'readonly Readonly<{ adapterVersion: string; sourceLineage: string; supportedGame: string; gameProfileVersion: string; parserContract: string; maximumSnapshotBytes: number; origin: \"production\"; requestSurface: Readonly<...> | Readonly<...>; ... 16 more ...; coverageLossThreshold: { ...; }; } | { ...; } | { ...; } | ...' is not assignable to type 'readonly Readonly<{ adapterVersion: string; sourceLineage: string; supportedGame: string; gameProfileVersion: string; parserContract: string; maximumSnapshotBytes: number; requestCapacity: number; coverageLossThreshold?: Readonly<...>; ... 16 more ...; officialSourceContract?: Readonly<...>; }>[]'."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_tsconfig.json",
+    "file": "src/catalogue/adapters/source-adapters.ts",
+    "line": 298,
+    "column": 3,
+    "code": "TS2375",
+    "message": "Type '{ adapterVersion: string; sourceLineage: string; supportedGame: string; gameProfileVersion: string; parserContract: string; maximumSnapshotBytes: number; requestCapacity: number; ... 17 more ...; reconciliationAreas: readonly (\"catalogue\" | \"errata\")[]; }' is not assignable to type 'Readonly<{ adapterVersion: string; sourceLineage: string; supportedGame: string; gameProfileVersion: string; parserContract: string; maximumSnapshotBytes: number; requestCapacity: number; coverageLossThreshold?: Readonly<...>; ... 16 more ...; officialSourceContract?: Readonly<...>; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_tsconfig.json",
+    "file": "src/catalogue/backup-recovery/backup-recovery.ts",
+    "line": 355,
+    "column": 80,
+    "code": "TS2379",
+    "message": "Argument of type '{ expectedCurrentRevisionId: string; idempotencyKey: string; failedAttemptId: string | undefined; failedAttemptDigest: string | undefined; }' is not assignable to parameter of type 'Readonly<{ expectedCurrentRevisionId: string; idempotencyKey: string; failedAttemptId?: string; failedAttemptDigest?: string; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_tsconfig.json",
+    "file": "src/catalogue/backup-recovery/backup-workflow.ts",
+    "line": 58,
+    "column": 82,
+    "code": "TS2379",
+    "message": "Argument of type '{ expectedCurrentRevisionId: string; idempotencyKey: string; failedAttemptId: string | undefined; failedAttemptDigest: string | undefined; }' is not assignable to parameter of type 'Readonly<{ expectedCurrentRevisionId: string; idempotencyKey: string; failedAttemptId?: string; failedAttemptDigest?: string; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_tsconfig.json",
+    "file": "src/catalogue/curated/curated-revisions.ts",
+    "line": 2066,
+    "column": 4,
+    "code": "TS2352",
+    "message": "Conversion of type 'CatalogueCandidate' to type '{ product_relationships?: ProductRelationship[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_tsconfig.json",
+    "file": "src/catalogue/ingestion/administration-inspection.ts",
+    "line": 407,
+    "column": 22,
+    "code": "TS2379",
+    "message": "Argument of type '{ official_identity: { value: string | null; }; name: string; effective_rules_text: string | null | undefined; }' is not assignable to parameter of type 'Readonly<{ official_identity: Readonly<{ value: string | null; }>; name: string; effective_rules_text?: string | null; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_tsconfig.json",
+    "file": "src/catalogue/ingestion/card-search-materialization.ts",
+    "line": 80,
+    "column": 66,
+    "code": "TS2379",
+    "message": "Argument of type '{ maximumBoundParameterBytes: number; targetRevisionId: string | undefined; }' is not assignable to parameter of type '{ maximumBoundParameterBytes: number; targetRevisionId?: string; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_tsconfig.json",
+    "file": "src/catalogue/ingestion/publication-commit-repository.ts",
+    "line": 49,
+    "column": 54,
+    "code": "TS2379",
+    "message": "Argument of type '{ runId: string; occurredAt: string | undefined; }' is not assignable to parameter of type '{ runId: string; occurredAt?: string; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_tsconfig.json",
+    "file": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+    "line": 473,
+    "column": 109,
+    "code": "TS2379",
+    "message": "Argument of type '{ cursor: { cards: number; printings: number; } | undefined; yieldAtCheckpoint: boolean; }' is not assignable to parameter of type '{ cursor?: { cards: number; printings: number; }; yieldAtCheckpoint: boolean; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_tsconfig.json",
+    "file": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+    "line": 1776,
+    "column": 13,
+    "code": "TS2375",
+    "message": "Type '{ value: unknown; sourceObservationId: string; sourceObservationSetId: string; sourceSnapshotId: string; sourceLineage: string; sourceSurface: string | undefined; requestRole: \"detail\" | \"image\" | \"listing\" | \"product_detail\" | \"surface\"; capturedAt: string; currentCardId: string | null; currentPrintingId: string | ...' is not assignable to type 'ProductReleaseEvidenceInput' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_tsconfig.json",
+    "file": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+    "line": 1900,
+    "column": 7,
+    "code": "TS2379",
+    "message": "Argument of type '{ plans: ReconciliationPlanState; history: NativeSourceHistory | undefined; cardScopes: { scopes: CheckedCardScope[]; priorCards: ReconciliationCardState; priorPrintings: ReconciliationReducerIndex<...>; }; ... 6 more ...; printingCompatibility: ReconciliationReducerIndex<...>; }' is not assignable to parameter of type '{ plans: ReconciliationPlanState; history?: NativeSourceHistory; cardScopes?: { scopes: readonly CheckedCardScope[]; priorCards: ReconciliationCardState; priorPrintings: ReconciliationReducerIndex<...>; }; ... 6 more ...; printingCompatibility: ReconciliationReducerIndex<...>; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_tsconfig.json",
+    "file": "src/catalogue/shared/ingestion-run-event-repository.ts",
+    "line": 162,
+    "column": 38,
+    "code": "TS2379",
+    "message": "Argument of type '{ event: Readonly<{ eventId: string; kind: RunEventKind; runId: string; occurredAt: string; }>; statement: D1PreparedStatement; before: D1PreparedStatement[]; ... 4 more ...; selectedGamesJson: string; }' is not assignable to parameter of type 'Readonly<{ event: Readonly<{ eventId: string; kind: \"approval_reserved\" | \"candidate_blocked\" | \"candidate_prepared\" | \"collection_paused\" | \"collection_resumed\" | \"collection_terminated\" | ... 5 more ... | \"stage_changed\"; runId: string; occurredAt: string; }>; ... 8 more ...; approvalIdempotencyKey?: string; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_ingestion_tsconfig.json",
+    "file": "src/catalogue/shared/reconciliation-profile.ts",
+    "line": 492,
+    "column": 3,
+    "code": "TS2375",
+    "message": "Type '{ kind: \"array\"; items: Schema; unique: boolean; minimumItems: number | undefined; maximumItems: number | undefined; }' is not assignable to type '{ kind: \"array\"; items: Schema; unique?: boolean; minimumItems?: number; maximumItems?: number; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_tsconfig.json",
+    "file": "src/catalogue/adapters/gundam-adapter.ts",
+    "line": 180,
+    "column": 34,
+    "code": "TS2379",
+    "message": "Argument of type '{ path: string; number: string; title: string; rules: string; attributes: { card_type: unknown; colours: unknown; level: unknown; cost: unknown; block_icon: unknown; effect_text: unknown; zone: unknown; traits: unknown; link_condition: unknown; ap: unknown; hp: unknown; series_titles: unknown; }; imageFields: { role...' is not assignable to parameter of type '{ path: string; number: string; title: string; rules: string; attributes: Record<string, unknown>; printingAttributes?: Record<string, unknown>; normalizedRarity?: string | null; artworkFingerprint?: string; ... 4 more ...; allowEmptyRules?: boolean; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_tsconfig.json",
+    "file": "src/catalogue/adapters/one-piece-adapter.ts",
+    "line": 252,
+    "column": 34,
+    "code": "TS2379",
+    "message": "Argument of type '{ path: string; number: string; title: string; rules: string; attributes: Record<string, unknown>; printingAttributes: Record<string, unknown> | undefined; normalizedRarity: string | null; artworkFingerprint: string; printedFieldsDigest: string; imageFields: { ...; }[]; }' is not assignable to parameter of type '{ path: string; number: string; title: string; rules: string; attributes: Record<string, unknown>; printingAttributes?: Record<string, unknown>; normalizedRarity?: string | null; artworkFingerprint?: string; ... 4 more ...; allowEmptyRules?: boolean; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_tsconfig.json",
+    "file": "src/catalogue/adapters/one-piece-source-adapter.ts",
+    "line": 71,
+    "column": 3,
+    "code": "TS2375",
+    "message": "Type '{ normalizedRarity: string | null; attributes: { card_type: string; colours: string[]; cost: number | null; life: number | null; battle_attributes: string[]; power: number | null; counter: number | null; traits: string[]; block_icons: string[]; effect_text: string | null; trigger_text: string | null; }; printingAttr...' is not assignable to type '{ attributes: Record<string, unknown>; printingAttributes?: Record<string, unknown>; normalizedRarity: string | null; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_tsconfig.json",
+    "file": "src/catalogue/adapters/source-adapters.ts",
+    "line": 103,
+    "column": 14,
+    "code": "TS2322",
+    "message": "Type 'readonly Readonly<{ adapterVersion: string; sourceLineage: string; supportedGame: string; gameProfileVersion: string; parserContract: string; maximumSnapshotBytes: number; origin: \"production\"; requestSurface: Readonly<...> | Readonly<...>; ... 16 more ...; coverageLossThreshold: { ...; }; } | { ...; } | { ...; } | ...' is not assignable to type 'readonly Readonly<{ adapterVersion: string; sourceLineage: string; supportedGame: string; gameProfileVersion: string; parserContract: string; maximumSnapshotBytes: number; requestCapacity: number; coverageLossThreshold?: Readonly<...>; ... 16 more ...; officialSourceContract?: Readonly<...>; }>[]'."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_tsconfig.json",
+    "file": "src/catalogue/adapters/source-adapters.ts",
+    "line": 298,
+    "column": 3,
+    "code": "TS2375",
+    "message": "Type '{ adapterVersion: string; sourceLineage: string; supportedGame: string; gameProfileVersion: string; parserContract: string; maximumSnapshotBytes: number; requestCapacity: number; ... 17 more ...; reconciliationAreas: readonly (\"catalogue\" | \"errata\")[]; }' is not assignable to type 'Readonly<{ adapterVersion: string; sourceLineage: string; supportedGame: string; gameProfileVersion: string; parserContract: string; maximumSnapshotBytes: number; requestCapacity: number; coverageLossThreshold?: Readonly<...>; ... 16 more ...; officialSourceContract?: Readonly<...>; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_tsconfig.json",
+    "file": "src/catalogue/backup-recovery/backup-recovery.ts",
+    "line": 355,
+    "column": 80,
+    "code": "TS2379",
+    "message": "Argument of type '{ expectedCurrentRevisionId: string; idempotencyKey: string; failedAttemptId: string | undefined; failedAttemptDigest: string | undefined; }' is not assignable to parameter of type 'Readonly<{ expectedCurrentRevisionId: string; idempotencyKey: string; failedAttemptId?: string; failedAttemptDigest?: string; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_tsconfig.json",
+    "file": "src/catalogue/backup-recovery/backup-workflow.ts",
+    "line": 58,
+    "column": 82,
+    "code": "TS2379",
+    "message": "Argument of type '{ expectedCurrentRevisionId: string; idempotencyKey: string; failedAttemptId: string | undefined; failedAttemptDigest: string | undefined; }' is not assignable to parameter of type 'Readonly<{ expectedCurrentRevisionId: string; idempotencyKey: string; failedAttemptId?: string; failedAttemptDigest?: string; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_tsconfig.json",
+    "file": "src/catalogue/curated/curated-revisions.ts",
+    "line": 2066,
+    "column": 4,
+    "code": "TS2352",
+    "message": "Conversion of type 'CatalogueCandidate' to type '{ product_relationships?: ProductRelationship[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_tsconfig.json",
+    "file": "src/catalogue/ingestion/administration-inspection.ts",
+    "line": 407,
+    "column": 22,
+    "code": "TS2379",
+    "message": "Argument of type '{ official_identity: { value: string | null; }; name: string; effective_rules_text: string | null | undefined; }' is not assignable to parameter of type 'Readonly<{ official_identity: Readonly<{ value: string | null; }>; name: string; effective_rules_text?: string | null; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_tsconfig.json",
+    "file": "src/catalogue/ingestion/card-search-materialization.ts",
+    "line": 80,
+    "column": 66,
+    "code": "TS2379",
+    "message": "Argument of type '{ maximumBoundParameterBytes: number; targetRevisionId: string | undefined; }' is not assignable to parameter of type '{ maximumBoundParameterBytes: number; targetRevisionId?: string; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_tsconfig.json",
+    "file": "src/catalogue/ingestion/publication-commit-repository.ts",
+    "line": 49,
+    "column": 54,
+    "code": "TS2379",
+    "message": "Argument of type '{ runId: string; occurredAt: string | undefined; }' is not assignable to parameter of type '{ runId: string; occurredAt?: string; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_tsconfig.json",
+    "file": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+    "line": 473,
+    "column": 109,
+    "code": "TS2379",
+    "message": "Argument of type '{ cursor: { cards: number; printings: number; } | undefined; yieldAtCheckpoint: boolean; }' is not assignable to parameter of type '{ cursor?: { cards: number; printings: number; }; yieldAtCheckpoint: boolean; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_tsconfig.json",
+    "file": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+    "line": 1776,
+    "column": 13,
+    "code": "TS2375",
+    "message": "Type '{ value: unknown; sourceObservationId: string; sourceObservationSetId: string; sourceSnapshotId: string; sourceLineage: string; sourceSurface: string | undefined; requestRole: \"detail\" | \"image\" | \"listing\" | \"product_detail\" | \"surface\"; capturedAt: string; currentCardId: string | null; currentPrintingId: string | ...' is not assignable to type 'ProductReleaseEvidenceInput' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_tsconfig.json",
+    "file": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+    "line": 1900,
+    "column": 7,
+    "code": "TS2379",
+    "message": "Argument of type '{ plans: ReconciliationPlanState; history: NativeSourceHistory | undefined; cardScopes: { scopes: CheckedCardScope[]; priorCards: ReconciliationCardState; priorPrintings: ReconciliationReducerIndex<...>; }; ... 6 more ...; printingCompatibility: ReconciliationReducerIndex<...>; }' is not assignable to parameter of type '{ plans: ReconciliationPlanState; history?: NativeSourceHistory; cardScopes?: { scopes: readonly CheckedCardScope[]; priorCards: ReconciliationCardState; priorPrintings: ReconciliationReducerIndex<...>; }; ... 6 more ...; printingCompatibility: ReconciliationReducerIndex<...>; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_tsconfig.json",
+    "file": "src/catalogue/shared/ingestion-run-event-repository.ts",
+    "line": 162,
+    "column": 38,
+    "code": "TS2379",
+    "message": "Argument of type '{ event: Readonly<{ eventId: string; kind: RunEventKind; runId: string; occurredAt: string; }>; statement: D1PreparedStatement; before: D1PreparedStatement[]; ... 4 more ...; selectedGamesJson: string; }' is not assignable to parameter of type 'Readonly<{ event: Readonly<{ eventId: string; kind: \"approval_reserved\" | \"candidate_blocked\" | \"candidate_prepared\" | \"collection_paused\" | \"collection_resumed\" | \"collection_terminated\" | ... 5 more ... | \"stage_changed\"; runId: string; occurredAt: string; }>; ... 8 more ...; approvalIdempotencyKey?: string; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "apps_api_tsconfig.json",
+    "file": "src/catalogue/shared/reconciliation-profile.ts",
+    "line": 492,
+    "column": 3,
+    "code": "TS2375",
+    "message": "Type '{ kind: \"array\"; items: Schema; unique: boolean; minimumItems: number | undefined; maximumItems: number | undefined; }' is not assignable to type '{ kind: \"array\"; items: Schema; unique?: boolean; minimumItems?: number; maximumItems?: number; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "test_domain_tsconfig.json",
+    "file": "apps/ingestion/src/backup-workflow.ts",
+    "line": 36,
+    "column": 9,
+    "code": "TS2379",
+    "message": "Argument of type '{ expectedCurrentRevisionId: string; idempotencyKey: string; observedAt: string; cloudflareAccountId: \"3ec389380c7b82e6a172e6f351d4aad9\"; catalogueDatabaseId: \"2469f888-1530-4bef-bc58-17dc298bb598\"; ... 4 more ...; failedAttemptDigest: string | undefined; }' is not assignable to parameter of type 'Readonly<{ expectedCurrentRevisionId: string; idempotencyKey: string; observedAt: string; cloudflareAccountId: string; catalogueDatabaseId: string; disposableDatabaseId: string; exportToken: string; verificationToken: string; failedAttemptId?: string; failedAttemptDigest?: string; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "test_domain_tsconfig.json",
+    "file": "apps/ingestion/src/index.ts",
+    "line": 102,
+    "column": 67,
+    "code": "TS2379",
+    "message": "Argument of type '{ request: Request<unknown, CfProperties<unknown>>; env: Omit<Env, \"CATALOGUE_DB\"> & { CATALOGUE_DB: CatalogueStore; }; context: ExecutionContext<unknown> | undefined; requestId: string; base: PublicBase; observedAt: string; publicationBackupWaiter: PublicationBackupWaiter; }' is not assignable to parameter of type 'RouteContext<Omit<Env, \"CATALOGUE_DB\"> & { CATALOGUE_DB: CatalogueStore; }> & { observedAt: string; publicationBackupWaiter: PublicationBackupWaiter; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "test_domain_tsconfig.json",
+    "file": "apps/ingestion/src/reconciliation-resource-budget.ts",
+    "line": 106,
+    "column": 63,
+    "code": "TS2379",
+    "message": "Argument of type '{ pull(controller: ReadableStreamDefaultController<Uint8Array<ArrayBufferLike>>): Promise<void>; cancel: (() => Promise<...>) | undefined; }' is not assignable to parameter of type 'UnderlyingSource<Uint8Array<ArrayBufferLike>>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "test_domain_tsconfig.json",
+    "file": "src/catalogue/adapters/gundam-adapter.ts",
+    "line": 180,
+    "column": 34,
+    "code": "TS2379",
+    "message": "Argument of type '{ path: string; number: string; title: string; rules: string; attributes: { card_type: unknown; colours: unknown; level: unknown; cost: unknown; block_icon: unknown; effect_text: unknown; zone: unknown; traits: unknown; link_condition: unknown; ap: unknown; hp: unknown; series_titles: unknown; }; imageFields: { role...' is not assignable to parameter of type '{ path: string; number: string; title: string; rules: string; attributes: Record<string, unknown>; printingAttributes?: Record<string, unknown>; normalizedRarity?: string | null; artworkFingerprint?: string; ... 4 more ...; allowEmptyRules?: boolean; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "test_domain_tsconfig.json",
+    "file": "src/catalogue/adapters/one-piece-adapter.ts",
+    "line": 252,
+    "column": 34,
+    "code": "TS2379",
+    "message": "Argument of type '{ path: string; number: string; title: string; rules: string; attributes: Record<string, unknown>; printingAttributes: Record<string, unknown> | undefined; normalizedRarity: string | null; artworkFingerprint: string; printedFieldsDigest: string; imageFields: { ...; }[]; }' is not assignable to parameter of type '{ path: string; number: string; title: string; rules: string; attributes: Record<string, unknown>; printingAttributes?: Record<string, unknown>; normalizedRarity?: string | null; artworkFingerprint?: string; ... 4 more ...; allowEmptyRules?: boolean; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "test_domain_tsconfig.json",
+    "file": "src/catalogue/adapters/one-piece-source-adapter.ts",
+    "line": 71,
+    "column": 3,
+    "code": "TS2375",
+    "message": "Type '{ normalizedRarity: string | null; attributes: { card_type: string; colours: string[]; cost: number | null; life: number | null; battle_attributes: string[]; power: number | null; counter: number | null; traits: string[]; block_icons: string[]; effect_text: string | null; trigger_text: string | null; }; printingAttr...' is not assignable to type '{ attributes: Record<string, unknown>; printingAttributes?: Record<string, unknown>; normalizedRarity: string | null; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "test_domain_tsconfig.json",
+    "file": "src/catalogue/adapters/source-adapters.ts",
+    "line": 103,
+    "column": 14,
+    "code": "TS2322",
+    "message": "Type 'readonly Readonly<{ adapterVersion: string; sourceLineage: string; supportedGame: string; gameProfileVersion: string; parserContract: string; maximumSnapshotBytes: number; origin: \"production\"; requestSurface: Readonly<...> | Readonly<...>; ... 16 more ...; coverageLossThreshold: { ...; }; } | { ...; } | { ...; } | ...' is not assignable to type 'readonly Readonly<{ adapterVersion: string; sourceLineage: string; supportedGame: string; gameProfileVersion: string; parserContract: string; maximumSnapshotBytes: number; requestCapacity: number; coverageLossThreshold?: Readonly<...>; ... 16 more ...; officialSourceContract?: Readonly<...>; }>[]'."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "test_domain_tsconfig.json",
+    "file": "src/catalogue/adapters/source-adapters.ts",
+    "line": 298,
+    "column": 3,
+    "code": "TS2375",
+    "message": "Type '{ adapterVersion: string; sourceLineage: string; supportedGame: string; gameProfileVersion: string; parserContract: string; maximumSnapshotBytes: number; requestCapacity: number; ... 17 more ...; reconciliationAreas: readonly (\"catalogue\" | \"errata\")[]; }' is not assignable to type 'Readonly<{ adapterVersion: string; sourceLineage: string; supportedGame: string; gameProfileVersion: string; parserContract: string; maximumSnapshotBytes: number; requestCapacity: number; coverageLossThreshold?: Readonly<...>; ... 16 more ...; officialSourceContract?: Readonly<...>; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "test_domain_tsconfig.json",
+    "file": "src/catalogue/backup-recovery/backup-recovery.ts",
+    "line": 355,
+    "column": 80,
+    "code": "TS2379",
+    "message": "Argument of type '{ expectedCurrentRevisionId: string; idempotencyKey: string; failedAttemptId: string | undefined; failedAttemptDigest: string | undefined; }' is not assignable to parameter of type 'Readonly<{ expectedCurrentRevisionId: string; idempotencyKey: string; failedAttemptId?: string; failedAttemptDigest?: string; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "test_domain_tsconfig.json",
+    "file": "src/catalogue/backup-recovery/backup-workflow.ts",
+    "line": 58,
+    "column": 82,
+    "code": "TS2379",
+    "message": "Argument of type '{ expectedCurrentRevisionId: string; idempotencyKey: string; failedAttemptId: string | undefined; failedAttemptDigest: string | undefined; }' is not assignable to parameter of type 'Readonly<{ expectedCurrentRevisionId: string; idempotencyKey: string; failedAttemptId?: string; failedAttemptDigest?: string; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "test_domain_tsconfig.json",
+    "file": "src/catalogue/curated/curated-revisions.ts",
+    "line": 2066,
+    "column": 4,
+    "code": "TS2352",
+    "message": "Conversion of type 'CatalogueCandidate' to type '{ product_relationships?: ProductRelationship[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "test_domain_tsconfig.json",
+    "file": "src/catalogue/ingestion/administration-inspection.ts",
+    "line": 407,
+    "column": 22,
+    "code": "TS2379",
+    "message": "Argument of type '{ official_identity: { value: string | null; }; name: string; effective_rules_text: string | null | undefined; }' is not assignable to parameter of type 'Readonly<{ official_identity: Readonly<{ value: string | null; }>; name: string; effective_rules_text?: string | null; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "test_domain_tsconfig.json",
+    "file": "src/catalogue/ingestion/card-search-materialization.ts",
+    "line": 80,
+    "column": 66,
+    "code": "TS2379",
+    "message": "Argument of type '{ maximumBoundParameterBytes: number; targetRevisionId: string | undefined; }' is not assignable to parameter of type '{ maximumBoundParameterBytes: number; targetRevisionId?: string; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "test_domain_tsconfig.json",
+    "file": "src/catalogue/ingestion/publication-commit-repository.ts",
+    "line": 49,
+    "column": 54,
+    "code": "TS2379",
+    "message": "Argument of type '{ runId: string; occurredAt: string | undefined; }' is not assignable to parameter of type '{ runId: string; occurredAt?: string; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "test_domain_tsconfig.json",
+    "file": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+    "line": 473,
+    "column": 109,
+    "code": "TS2379",
+    "message": "Argument of type '{ cursor: { cards: number; printings: number; } | undefined; yieldAtCheckpoint: boolean; }' is not assignable to parameter of type '{ cursor?: { cards: number; printings: number; }; yieldAtCheckpoint: boolean; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "test_domain_tsconfig.json",
+    "file": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+    "line": 1776,
+    "column": 13,
+    "code": "TS2375",
+    "message": "Type '{ value: unknown; sourceObservationId: string; sourceObservationSetId: string; sourceSnapshotId: string; sourceLineage: string; sourceSurface: string | undefined; requestRole: \"detail\" | \"image\" | \"listing\" | \"product_detail\" | \"surface\"; capturedAt: string; currentCardId: string | null; currentPrintingId: string | ...' is not assignable to type 'ProductReleaseEvidenceInput' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "test_domain_tsconfig.json",
+    "file": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+    "line": 1900,
+    "column": 7,
+    "code": "TS2379",
+    "message": "Argument of type '{ plans: ReconciliationPlanState; history: NativeSourceHistory | undefined; cardScopes: { scopes: CheckedCardScope[]; priorCards: ReconciliationCardState; priorPrintings: ReconciliationReducerIndex<...>; }; ... 6 more ...; printingCompatibility: ReconciliationReducerIndex<...>; }' is not assignable to parameter of type '{ plans: ReconciliationPlanState; history?: NativeSourceHistory; cardScopes?: { scopes: readonly CheckedCardScope[]; priorCards: ReconciliationCardState; priorPrintings: ReconciliationReducerIndex<...>; }; ... 6 more ...; printingCompatibility: ReconciliationReducerIndex<...>; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "test_domain_tsconfig.json",
+    "file": "src/catalogue/shared/ingestion-run-event-repository.ts",
+    "line": 162,
+    "column": 38,
+    "code": "TS2379",
+    "message": "Argument of type '{ event: Readonly<{ eventId: string; kind: RunEventKind; runId: string; occurredAt: string; }>; statement: D1PreparedStatement; before: D1PreparedStatement[]; ... 4 more ...; selectedGamesJson: string; }' is not assignable to parameter of type 'Readonly<{ event: Readonly<{ eventId: string; kind: \"approval_reserved\" | \"candidate_blocked\" | \"candidate_prepared\" | \"collection_paused\" | \"collection_resumed\" | \"collection_terminated\" | ... 5 more ... | \"stage_changed\"; runId: string; occurredAt: string; }>; ... 8 more ...; approvalIdempotencyKey?: string; }>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "exactOptionalPropertyTypes",
+    "project": "test_domain_tsconfig.json",
+    "file": "src/catalogue/shared/reconciliation-profile.ts",
+    "line": 492,
+    "column": 3,
+    "code": "TS2375",
+    "message": "Type '{ kind: \"array\"; items: Schema; unique: boolean; minimumItems: number | undefined; maximumItems: number | undefined; }' is not assignable to type '{ kind: \"array\"; items: Schema; unique?: boolean; minimumItems?: number; maximumItems?: number; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties."
+  },
+  {
+    "flag": "noImplicitReturns",
+    "project": "apps_ingestion_test_tsconfig.json",
+    "file": "apps/ingestion/vitest.config.ts",
+    "line": 99,
+    "column": 5,
+    "code": "TS7030",
+    "message": "Not all code paths return a value."
+  }
+]

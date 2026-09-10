@@ -1,0 +1,16 @@
+{
+  "nodeInvalid": [
+    {
+      "ruleId": "no-undef",
+      "severity": 2,
+      "message": "'self' is not defined.",
+      "line": 1,
+      "column": 35,
+      "messageId": "undef",
+      "endLine": 1,
+      "endColumn": 39
+    }
+  ],
+  "nodeValid": [],
+  "workerValid": []
+}

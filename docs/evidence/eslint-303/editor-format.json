@@ -1,0 +1,176 @@
+{
+  "formatting": [
+    {
+      "file": "src/catalogue/source-evidence/collection-recovery.ts",
+      "changed": true,
+      "diff": "2\t7\tsrc/catalogue/source-evidence/collection-recovery.ts => lint-trial/results/formatted-src_catalogue_source-evidence_collection-recovery.ts.txt",
+      "stable": true
+    },
+    {
+      "file": "cli/lib/config.mjs",
+      "changed": false,
+      "diff": "",
+      "stable": true
+    },
+    {
+      "file": "apps/ingestion/wrangler.jsonc",
+      "changed": true,
+      "diff": "27\t27\tapps/ingestion/wrangler.jsonc => lint-trial/results/formatted-apps_ingestion_wrangler.jsonc.txt",
+      "stable": true
+    },
+    {
+      "file": "apps/ingestion/tsconfig.json",
+      "changed": true,
+      "diff": "2\t7\tapps/ingestion/tsconfig.json => lint-trial/results/formatted-apps_ingestion_tsconfig.json.txt",
+      "stable": true
+    },
+    {
+      "file": "README.md",
+      "changed": false,
+      "diff": "",
+      "stable": true
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "changed": false,
+      "diff": "",
+      "stable": true
+    }
+  ],
+  "timings": [
+    {
+      "sample": 0,
+      "seconds": 1.163138917,
+      "diagnostics": 17,
+      "suggestions": [
+        {
+          "rule": "@typescript-eslint/no-floating-promises",
+          "messages": ["Add await operator."]
+        },
+        {
+          "rule": "@typescript-eslint/no-floating-promises",
+          "messages": ["Add await operator."]
+        },
+        {
+          "rule": "@typescript-eslint/no-floating-promises",
+          "messages": ["Add await operator."]
+        },
+        {
+          "rule": "@typescript-eslint/no-floating-promises",
+          "messages": ["Add await operator."]
+        },
+        {
+          "rule": "@typescript-eslint/no-floating-promises",
+          "messages": ["Add await operator."]
+        },
+        {
+          "rule": "@typescript-eslint/no-floating-promises",
+          "messages": ["Add await operator."]
+        },
+        {
+          "rule": "@typescript-eslint/await-thenable",
+          "messages": ["Remove unnecessary `await`."]
+        },
+        {
+          "rule": "@typescript-eslint/switch-exhaustiveness-check",
+          "messages": ["Add branches for missing cases."]
+        },
+        {
+          "rule": "@typescript-eslint/return-await",
+          "messages": ["Add `await` before the expression. Use caution as this may impact control flow."]
+        }
+      ]
+    },
+    {
+      "sample": 1,
+      "seconds": 0.011021792000000004,
+      "diagnostics": 17,
+      "suggestions": [
+        {
+          "rule": "@typescript-eslint/no-floating-promises",
+          "messages": ["Add await operator."]
+        },
+        {
+          "rule": "@typescript-eslint/no-floating-promises",
+          "messages": ["Add await operator."]
+        },
+        {
+          "rule": "@typescript-eslint/no-floating-promises",
+          "messages": ["Add await operator."]
+        },
+        {
+          "rule": "@typescript-eslint/no-floating-promises",
+          "messages": ["Add await operator."]
+        },
+        {
+          "rule": "@typescript-eslint/no-floating-promises",
+          "messages": ["Add await operator."]
+        },
+        {
+          "rule": "@typescript-eslint/no-floating-promises",
+          "messages": ["Add await operator."]
+        },
+        {
+          "rule": "@typescript-eslint/await-thenable",
+          "messages": ["Remove unnecessary `await`."]
+        },
+        {
+          "rule": "@typescript-eslint/switch-exhaustiveness-check",
+          "messages": ["Add branches for missing cases."]
+        },
+        {
+          "rule": "@typescript-eslint/return-await",
+          "messages": ["Add `await` before the expression. Use caution as this may impact control flow."]
+        }
+      ]
+    },
+    {
+      "sample": 2,
+      "seconds": 0.005825125000000071,
+      "diagnostics": 17,
+      "suggestions": [
+        {
+          "rule": "@typescript-eslint/no-floating-promises",
+          "messages": ["Add await operator."]
+        },
+        {
+          "rule": "@typescript-eslint/no-floating-promises",
+          "messages": ["Add await operator."]
+        },
+        {
+          "rule": "@typescript-eslint/no-floating-promises",
+          "messages": ["Add await operator."]
+        },
+        {
+          "rule": "@typescript-eslint/no-floating-promises",
+          "messages": ["Add await operator."]
+        },
+        {
+          "rule": "@typescript-eslint/no-floating-promises",
+          "messages": ["Add await operator."]
+        },
+        {
+          "rule": "@typescript-eslint/no-floating-promises",
+          "messages": ["Add await operator."]
+        },
+        {
+          "rule": "@typescript-eslint/await-thenable",
+          "messages": ["Remove unnecessary `await`."]
+        },
+        {
+          "rule": "@typescript-eslint/switch-exhaustiveness-check",
+          "messages": ["Add branches for missing cases."]
+        },
+        {
+          "rule": "@typescript-eslint/return-await",
+          "messages": ["Add `await` before the expression. Use caution as this may impact control flow."]
+        }
+      ]
+    }
+  ],
+  "problemFixChanged": false,
+  "remainingDiagnostics": 17,
+  "safeFixFile": "cli/lib/secret-input.mjs",
+  "safeFixChanged": true,
+  "actualEditorVerified": false
+}

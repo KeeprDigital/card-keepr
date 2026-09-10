@@ -4,6 +4,9 @@ The supported interface is Corepack-managed pnpm. Biome remains the formatter
 and linter after the conditional Vite+ trial in [issue #301](https://github.com/KeeprDigital/card-keepr/issues/301).
 Vite+ is not an installed dependency. The [trial record](evidence/toolchain-301.md)
 explains the JSON/JSONC lint blocker and the limits of the compatibility evidence.
+The [typed ESLint/Prettier evaluation](evidence/eslint-303.md) records additional
+error-prevention evidence and a proposed follow-up; it does not change the
+working toolchain.
 
 ## Installation and ownership
 

@@ -1,0 +1,496 @@
+[
+  {
+    "file": "lint-trial/probes/assertions.spec.ts",
+    "messages": [
+      {
+        "ruleId": "vitest/no-focused-tests",
+        "severity": 2,
+        "message": "Focused tests are not allowed",
+        "line": 2,
+        "column": 6,
+        "messageId": "noFocusedTests",
+        "endLine": 2,
+        "endColumn": 10,
+        "fix": {
+          "range": [43, 48],
+          "text": ""
+        }
+      },
+      {
+        "ruleId": "@typescript-eslint/no-floating-promises",
+        "severity": 2,
+        "message": "Promises must be awaited, end with a call to .catch, or end with a call to .then with a rejection handler.",
+        "line": 5,
+        "column": 3,
+        "messageId": "floating",
+        "endLine": 5,
+        "endColumn": 47,
+        "suggestions": [
+          {
+            "messageId": "floatingFixAwait",
+            "fix": {
+              "range": [202, 202],
+              "text": "await "
+            },
+            "desc": "Add await operator."
+          }
+        ]
+      },
+      {
+        "ruleId": "vitest/valid-expect",
+        "severity": 2,
+        "message": "Async assertions must be awaited or returned",
+        "line": 5,
+        "column": 3,
+        "messageId": "asyncMustBeAwaited",
+        "endLine": 5,
+        "endColumn": 46,
+        "fix": {
+          "range": [192, 202],
+          "text": "async () => {\n  await "
+        }
+      },
+      {
+        "ruleId": "vitest/valid-expect",
+        "severity": 2,
+        "message": "Expect must have a corresponding matcher call",
+        "line": 8,
+        "column": 3,
+        "messageId": "matcherNotFound",
+        "endLine": 8,
+        "endColumn": 12
+      }
+    ]
+  },
+  {
+    "file": "lint-trial/probes/assertions.test.mjs",
+    "messages": [
+      {
+        "ruleId": "@typescript-eslint/no-floating-promises",
+        "severity": 2,
+        "message": "Promises must be awaited, end with a call to .catch, or end with a call to .then with a rejection handler.",
+        "line": 5,
+        "column": 3,
+        "messageId": "floating",
+        "endLine": 5,
+        "endColumn": 54,
+        "suggestions": [
+          {
+            "messageId": "floatingFixAwait",
+            "fix": {
+              "range": [158, 158],
+              "text": "await "
+            },
+            "desc": "Add await operator."
+          }
+        ]
+      },
+      {
+        "ruleId": "@typescript-eslint/no-floating-promises",
+        "severity": 2,
+        "message": "Promises must be awaited, end with a call to .catch, or end with a call to .then with a rejection handler.",
+        "line": 9,
+        "column": 3,
+        "messageId": "floating",
+        "endLine": 9,
+        "endColumn": 31,
+        "suggestions": [
+          {
+            "messageId": "floatingFixAwait",
+            "fix": {
+              "range": [376, 376],
+              "text": "await "
+            },
+            "desc": "Add await operator."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "lint-trial/probes/duplicate.json",
+    "messages": [
+      {
+        "ruleId": "json/no-duplicate-keys",
+        "severity": 2,
+        "message": "Duplicate key \"target\" found.",
+        "line": 1,
+        "column": 24,
+        "messageId": "duplicateKey",
+        "endLine": 1,
+        "endColumn": 32
+      }
+    ]
+  },
+  {
+    "file": "lint-trial/probes/duplicate.jsonc",
+    "messages": [
+      {
+        "ruleId": "json/no-duplicate-keys",
+        "severity": 2,
+        "message": "Duplicate key \"target\" found.",
+        "line": 4,
+        "column": 3,
+        "messageId": "duplicateKey",
+        "endLine": 4,
+        "endColumn": 11
+      }
+    ]
+  },
+  {
+    "file": "lint-trial/probes/plugins.mjs",
+    "messages": [
+      {
+        "ruleId": "import-x/no-unresolved",
+        "severity": 2,
+        "message": "Unable to resolve path to module './missing-diagnostic-module.mjs'.",
+        "line": 2,
+        "column": 8,
+        "messageId": "unresolved",
+        "endLine": 2,
+        "endColumn": 41
+      },
+      {
+        "ruleId": "sonarjs/no-ignored-return",
+        "severity": 2,
+        "message": "The return value of \"trim\" must be used.",
+        "line": 4,
+        "column": 3,
+        "messageId": "returnValueMustBeUsed",
+        "endLine": 4,
+        "endColumn": 19
+      },
+      {
+        "ruleId": "unicorn/no-invalid-fetch-options",
+        "severity": 2,
+        "message": "\"body\" is not allowed when method is \"GET\".",
+        "line": 8,
+        "column": 62,
+        "messageId": "no-invalid-fetch-options",
+        "endLine": 8,
+        "endColumn": 66
+      },
+      {
+        "ruleId": "regexp/no-useless-assertions",
+        "severity": 2,
+        "message": "'^' will always reject because it is preceded by a character.",
+        "line": 11,
+        "column": 12,
+        "messageId": "alwaysRejectByChar",
+        "endLine": 11,
+        "endColumn": 13,
+        "suggestions": [
+          {
+            "messageId": "rejectSuggestion",
+            "fix": {
+              "range": [413, 415],
+              "text": "[]"
+            },
+            "desc": "Remove branch of the assertion. (Replace with empty set.)"
+          }
+        ]
+      },
+      {
+        "ruleId": "@typescript-eslint/no-floating-promises",
+        "severity": 2,
+        "message": "Promises must be awaited, end with a call to .catch, or end with a call to .then with a rejection handler.",
+        "line": 14,
+        "column": 3,
+        "messageId": "floating",
+        "endLine": 14,
+        "endColumn": 31,
+        "suggestions": [
+          {
+            "messageId": "floatingFixAwait",
+            "fix": {
+              "range": [489, 489],
+              "text": "await "
+            },
+            "desc": "Add await operator."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "file": "lint-trial/probes/service.ts",
+    "messages": []
+  },
+  {
+    "file": "lint-trial/probes/valid.jsonc",
+    "messages": []
+  },
+  {
+    "file": "lint-trial/probes/valid.ts",
+    "messages": []
+  },
+  {
+    "file": "lint-trial/probes/worker.ts",
+    "messages": [
+      {
+        "ruleId": "@typescript-eslint/no-floating-promises",
+        "severity": 2,
+        "message": "Promises must be awaited, end with a call to .catch, or end with a call to .then with a rejection handler.",
+        "line": 4,
+        "column": 3,
+        "messageId": "floating",
+        "endLine": 4,
+        "endColumn": 16,
+        "suggestions": [
+          {
+            "messageId": "floatingFixAwait",
+            "fix": {
+              "range": [182, 182],
+              "text": "await "
+            },
+            "desc": "Add await operator."
+          }
+        ]
+      },
+      {
+        "ruleId": "@typescript-eslint/no-floating-promises",
+        "severity": 2,
+        "message": "Promises must be awaited, end with a call to .catch, or end with a call to .then with a rejection handler.",
+        "line": 5,
+        "column": 3,
+        "messageId": "floating",
+        "endLine": 5,
+        "endColumn": 19,
+        "suggestions": [
+          {
+            "messageId": "floatingFixAwait",
+            "fix": {
+              "range": [213, 213],
+              "text": "await "
+            },
+            "desc": "Add await operator."
+          }
+        ]
+      },
+      {
+        "ruleId": "@typescript-eslint/no-floating-promises",
+        "severity": 2,
+        "message": "Promises must be awaited, end with a call to .catch, or end with a call to .then with a rejection handler.",
+        "line": 6,
+        "column": 3,
+        "messageId": "floating",
+        "endLine": 6,
+        "endColumn": 62,
+        "suggestions": [
+          {
+            "messageId": "floatingFixAwait",
+            "fix": {
+              "range": [250, 250],
+              "text": "await "
+            },
+            "desc": "Add await operator."
+          }
+        ]
+      },
+      {
+        "ruleId": "@typescript-eslint/no-floating-promises",
+        "severity": 2,
+        "message": "Promises must be awaited, end with a call to .catch, or end with a call to .then with a rejection handler.",
+        "line": 7,
+        "column": 3,
+        "messageId": "floating",
+        "endLine": 7,
+        "endColumn": 42,
+        "suggestions": [
+          {
+            "messageId": "floatingFixAwait",
+            "fix": {
+              "range": [324, 324],
+              "text": "await "
+            },
+            "desc": "Add await operator."
+          }
+        ]
+      },
+      {
+        "ruleId": "@typescript-eslint/no-floating-promises",
+        "severity": 2,
+        "message": "Promises must be awaited, end with a call to .catch, or end with a call to .then with a rejection handler.",
+        "line": 8,
+        "column": 3,
+        "messageId": "floating",
+        "endLine": 8,
+        "endColumn": 36,
+        "suggestions": [
+          {
+            "messageId": "floatingFixAwait",
+            "fix": {
+              "range": [382, 382],
+              "text": "await "
+            },
+            "desc": "Add await operator."
+          }
+        ]
+      },
+      {
+        "ruleId": "@typescript-eslint/no-floating-promises",
+        "severity": 2,
+        "message": "Promises must be awaited, end with a call to .catch, or end with a call to .then with a rejection handler.",
+        "line": 9,
+        "column": 3,
+        "messageId": "floating",
+        "endLine": 9,
+        "endColumn": 47,
+        "suggestions": [
+          {
+            "messageId": "floatingFixAwait",
+            "fix": {
+              "range": [437, 441],
+              "text": "await"
+            },
+            "desc": "Add await operator."
+          }
+        ]
+      },
+      {
+        "ruleId": "@typescript-eslint/no-misused-promises",
+        "severity": 2,
+        "message": "Promise returned in function argument where a void return was expected.",
+        "line": 12,
+        "column": 16,
+        "messageId": "voidReturnArgument",
+        "endLine": 12,
+        "endColumn": 66
+      },
+      {
+        "ruleId": "@typescript-eslint/no-misused-promises",
+        "severity": 2,
+        "message": "Expected non-Promise value in a boolean conditional.",
+        "line": 13,
+        "column": 7,
+        "messageId": "conditional",
+        "endLine": 13,
+        "endColumn": 36
+      },
+      {
+        "ruleId": "@typescript-eslint/no-unnecessary-condition",
+        "severity": 2,
+        "message": "Unnecessary conditional, value is always truthy.",
+        "line": 13,
+        "column": 7,
+        "messageId": "alwaysTruthy",
+        "endLine": 13,
+        "endColumn": 36
+      },
+      {
+        "ruleId": "@typescript-eslint/await-thenable",
+        "severity": 2,
+        "message": "Unexpected `await` of a non-Promise (non-\"Thenable\") value.",
+        "line": 17,
+        "column": 3,
+        "messageId": "await",
+        "endLine": 17,
+        "endColumn": 11,
+        "suggestions": [
+          {
+            "messageId": "removeAwait",
+            "fix": {
+              "range": [777, 782],
+              "text": ""
+            },
+            "desc": "Remove unnecessary `await`."
+          }
+        ]
+      },
+      {
+        "ruleId": "unicorn/no-unnecessary-await",
+        "severity": 2,
+        "message": "Do not `await` non-promise value.",
+        "line": 17,
+        "column": 3,
+        "messageId": "no-unnecessary-await",
+        "endLine": 17,
+        "endColumn": 8,
+        "fix": {
+          "range": [777, 783],
+          "text": ""
+        }
+      },
+      {
+        "ruleId": "@typescript-eslint/switch-exhaustiveness-check",
+        "severity": 2,
+        "message": "Switch is not exhaustive. Cases not matched: \"rejected\"",
+        "line": 20,
+        "column": 11,
+        "messageId": "switchIsNotExhaustive",
+        "endLine": 20,
+        "endColumn": 16,
+        "suggestions": [
+          {
+            "messageId": "addMissingCases",
+            "fix": {
+              "range": [990, 990],
+              "text": "\n    case \"rejected\": { throw new Error('Not implemented yet: \"rejected\" case') }"
+            },
+            "desc": "Add branches for missing cases."
+          }
+        ]
+      },
+      {
+        "ruleId": "@typescript-eslint/no-unsafe-assignment",
+        "severity": 2,
+        "message": "Unsafe assignment of an `any` value.",
+        "line": 27,
+        "column": 9,
+        "messageId": "anyAssignment",
+        "endLine": 27,
+        "endColumn": 34
+      },
+      {
+        "ruleId": "@typescript-eslint/no-unsafe-return",
+        "severity": 2,
+        "message": "Unsafe return of a value of type `any`.",
+        "line": 28,
+        "column": 3,
+        "messageId": "unsafeReturn",
+        "endLine": 28,
+        "endColumn": 23
+      },
+      {
+        "ruleId": "@typescript-eslint/no-unsafe-member-access",
+        "severity": 2,
+        "message": "Unsafe member access .title on an `any` value.",
+        "line": 28,
+        "column": 17,
+        "messageId": "unsafeMemberExpression",
+        "endLine": 28,
+        "endColumn": 22
+      },
+      {
+        "ruleId": "@typescript-eslint/no-unnecessary-condition",
+        "severity": 2,
+        "message": "Unnecessary conditional, the types have no overlap.",
+        "line": 31,
+        "column": 7,
+        "messageId": "noOverlapBooleanExpression",
+        "endLine": 31,
+        "endColumn": 20
+      },
+      {
+        "ruleId": "@typescript-eslint/return-await",
+        "severity": 2,
+        "message": "Returning an awaited promise is required in this context.",
+        "line": 36,
+        "column": 12,
+        "messageId": "requiredPromiseAwait",
+        "endLine": 36,
+        "endColumn": 50,
+        "suggestions": [
+          {
+            "messageId": "requiredPromiseAwaitSuggestion",
+            "fix": {
+              "range": [1372, 1372],
+              "text": "await "
+            },
+            "desc": "Add `await` before the expression. Use caution as this may impact control flow."
+          }
+        ]
+      }
+    ]
+  }
+]

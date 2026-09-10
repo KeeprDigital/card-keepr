@@ -1,0 +1,74 @@
+[
+  {
+    "task": "biome",
+    "sample": 0,
+    "seconds": 0.538680416,
+    "exit": 0
+  },
+  {
+    "task": "biome",
+    "sample": 1,
+    "seconds": 0.41415908300000015,
+    "exit": 0
+  },
+  {
+    "task": "biome",
+    "sample": 2,
+    "seconds": 0.415929292,
+    "exit": 0
+  },
+  {
+    "task": "biome-improved",
+    "sample": 0,
+    "seconds": 0.8169877090000002,
+    "exit": 0
+  },
+  {
+    "task": "biome-improved",
+    "sample": 1,
+    "seconds": 0.7784344169999999,
+    "exit": 0
+  },
+  {
+    "task": "biome-improved",
+    "sample": 2,
+    "seconds": 0.7910077920000004,
+    "exit": 0
+  },
+  {
+    "task": "eslint",
+    "sample": 0,
+    "seconds": 19.670597374999996,
+    "exit": 1
+  },
+  {
+    "task": "eslint",
+    "sample": 1,
+    "seconds": 19.997692666999995,
+    "exit": 1
+  },
+  {
+    "task": "eslint",
+    "sample": 2,
+    "seconds": 19.817618334,
+    "exit": 1
+  },
+  {
+    "task": "eslint-cache",
+    "sample": 0,
+    "seconds": 19.999334208,
+    "exit": 1
+  },
+  {
+    "task": "eslint-cache",
+    "sample": 1,
+    "seconds": 1.6020073330000013,
+    "exit": 1
+  },
+  {
+    "task": "eslint-cache",
+    "sample": 2,
+    "seconds": 0.8979719160000095,
+    "exit": 1
+  }
+]
