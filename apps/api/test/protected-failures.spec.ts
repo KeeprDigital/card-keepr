@@ -101,6 +101,7 @@ test("an injected undefined throw still retains an unexpected failure classifica
     get(target, property, receiver) {
       if (property === "prepare")
         return () => {
+          // eslint-disable-next-line @typescript-eslint/only-throw-error -- Prove arbitrary thrown values are sanitized.
           throw undefined;
         };
       return Reflect.get(target, property, receiver);

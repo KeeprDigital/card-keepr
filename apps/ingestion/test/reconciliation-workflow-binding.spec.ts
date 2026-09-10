@@ -1123,7 +1123,7 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
 
 test("reserved recovery never adopts or cleans an existing published export prefix", async () => {
   const firstRun = await collect("/reconciliation/new-locator", "reservation-owner-existing-export");
-  const firstReconciled = await reconcile(firstRun.id);
+  await reconcile(firstRun.id);
   const firstPublished = await recoverHistoricalPublication(firstRun.id, "historical-reservation-owner");
   expect(firstPublished.response.status).toBe(200);
   const existingRevision = requiredString(firstPublished.document, "resulting_revision_id");

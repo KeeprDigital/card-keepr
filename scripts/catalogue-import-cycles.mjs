@@ -46,6 +46,7 @@ function moduleName(filePath) {
 
 const moduleNames = new Set(moduleFiles.map(moduleName));
 
+// eslint-disable-next-line regexp/no-super-linear-backtracking -- Scans maintained repository imports only, never publisher or request input.
 const importPattern = /^\s*(import|export)\s+(type\s+)?(?:[^'";]*?\s+from\s+)?["'](\.\.?\/[^"']+)["']/gm;
 
 const graph = new Map();

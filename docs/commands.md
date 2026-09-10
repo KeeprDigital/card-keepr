@@ -13,11 +13,17 @@ the old npm examples, do not insert an extra `--`. Start with these:
 | Run all routine tests before review | `pnpm run test:full` |
 | Fix formatting in changed files | `pnpm run format` |
 
-`check` and `test:full` together cover local review validation. `check` contains
-no tests. `test:full` already includes everything in `pnpm test`, so there is no
-need to run both for the same change. Stress tests, extended journeys and
-benchmarks are separate opt-in workloads. See [testing](testing.md) for coverage
-and CI policy.
+`check` and `test:full` together cover local review validation. `check` includes
+tooling contract probes but no application test suites. `test:full` already
+includes everything in `pnpm test`, so there is no need to run both for the same
+change. Stress tests, extended journeys and benchmarks are separate opt-in
+workloads. See [testing](testing.md) for coverage and CI policy.
+
+The staged ESLint migration adds `pnpm run lint:eslint` and
+`pnpm run check:lint-tooling` to `check` and the existing CI lint job. To evaluate
+Prettier on the same changed files, use `pnpm run format:prettier` or
+`pnpm run format:prettier:check`, optionally with `--since=REF`. Ordinary `format`
+and `format:check` still use Biome until the [migration gates](evidence/eslint-migration.md) pass.
 
 ## Local development and operator CLI
 
@@ -65,7 +71,7 @@ for available scenarios and benchmark report settings.
 
 | Command | What it does |
 | --- | --- |
-| `pnpm run check` | Runs lint, format check, typecheck, generated-file checks, import checks and builds, in that order; stops on the first failure |
+| `pnpm run check` | Runs both lint gates, tooling probes, format check, typecheck, generated-file checks, import checks and builds, in that order; stops on the first failure |
 | `pnpm run lint` | Checks maintained code with Biome; does not rewrite files |
 | `pnpm run format` | Rewrites formatting in branch changes since `main`, staged/unstaged edits and new untracked files |
 | `pnpm run format:check` | Checks the same formatting without rewriting; CI passes `--since=origin/<base>` |

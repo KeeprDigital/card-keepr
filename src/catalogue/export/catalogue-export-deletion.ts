@@ -476,15 +476,15 @@ async function executeDeletion(
   const staleOwnerResponse = () => waitForDeletionResponse(database, deletionId, retryIdempotencyKey);
   try {
     for (const key of ordered) {
-      if ((await renewLease()) === null) return staleOwnerResponse();
+      if ((await renewLease()) === null) throw new DeletionExecutionLeaseLost();
       if ((await bucket.head(key)) !== null) {
-        if ((await renewLease()) === null) return staleOwnerResponse();
+        if ((await renewLease()) === null) throw new DeletionExecutionLeaseLost();
         await bucket.delete(key);
       }
     }
     const remaining: (R2Object | null)[] = [];
     for (const key of objectKeys) {
-      if ((await renewLease()) === null) return staleOwnerResponse();
+      if ((await renewLease()) === null) throw new DeletionExecutionLeaseLost();
       remaining.push(await bucket.head(key));
     }
     const remainingPrefix = isNativeExportPackage(manifestKey)
@@ -498,7 +498,7 @@ async function executeDeletion(
       throw new Error("A bound Catalogue Export object remains present.");
     }
     const terminalLeaseObservedAt = await renewLease();
-    if (terminalLeaseObservedAt === null) return staleOwnerResponse();
+    if (terminalLeaseObservedAt === null) throw new DeletionExecutionLeaseLost();
     const snapshot = deletionDocument({
       ...operation,
       state: "deleted",

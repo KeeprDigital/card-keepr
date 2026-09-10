@@ -96,7 +96,7 @@ export async function resumeEvidenceRun(
     // place.
     acquired.status = safeWorkflowStatus((await workflowDriver(workflow).resume(workflowId)).status);
   } else if (classification.kind === "recover") {
-    ({ run, workflowId, acquired, recovery } = await recoverParentWorkflow(
+    ({ workflowId, acquired, recovery } = await recoverParentWorkflow(
       database,
       workflow,
       hostWorkflow,

@@ -89,7 +89,10 @@ export function classifyCollectionWorkflow(facts: CollectionWorkflowFacts): Coll
       // A paused Workflow instance is the platform's own condition, distinct
       // from a paused Ingestion Run: the instance resumes in place.
       return { kind: "instance_paused" };
-    default: {
+    case "queued":
+    case "running":
+    case "waiting":
+    case "waiting_for_pause": {
       const waitUntil = Math.max(
         facts.last_progress_ms ?? Number.NEGATIVE_INFINITY,
         facts.pacing_deadline_ms ?? Number.NEGATIVE_INFINITY,

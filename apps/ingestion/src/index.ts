@@ -74,7 +74,7 @@ async function handleIngestionRequest(
 
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") {
-      return readinessResponse("ingestion", ingestionCapabilities, {
+      return await readinessResponse("ingestion", ingestionCapabilities, {
         database: env.CATALOGUE_DB,
         configuredDatabaseId: env.CATALOGUE_D1_DATABASE_ID,
         buckets: {

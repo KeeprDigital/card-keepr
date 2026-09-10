@@ -16,7 +16,7 @@ test("production release is manual, serialized, versioned, and owns all producti
   assert.match(release, /retained_database_id/u);
   assert.match(failure, /failed\.sql/u);
   assert.match(failure, /set \+e[\s\S]*failed_command_status[\s\S]*cleanup_result/u);
-  assert.match(release, /guarded-release:\s*\n\s*if: inputs\.operation == 'production_release'/u);
+  assert.match(release, /guarded-release:[^\S\n]*\n\s*if: inputs\.operation == 'production_release'/u);
   assert.match(release, /Observe the binding while recovery remains blocked/u);
   assert.doesNotMatch(release, /\/acceptance|ADMINISTRATION_TOKEN/u);
   assert.doesNotMatch(release, /curl|Authorization:\s*Bearer|--header|-H\s/u);
@@ -138,7 +138,7 @@ test("the release SHA is resolved through the GitHub API before checkout and ci 
   const required = JSON.parse(gate.match(/REQUIRED_CI_CHECKS: '([^\n]+)'/u)[1]).sort();
   const jobs = ci.split("\njobs:\n")[1];
   const ciChecks = [];
-  for (const match of jobs.matchAll(/^ {2}([\w-]+):\n([\s\S]*?)(?=^ {2}[\w-]+:|$(?![\s\S]))/gmu)) {
+  for (const match of jobs.matchAll(/^ {2}([\w-]+):\n([\s\S]*?)(?=^ {2}[\w-]+:|(?![\s\S]))/gmu)) {
     const [, name, body] = match;
     if (body.includes("matrix:")) {
       const matrix = body.split("      matrix:\n")[1].split(/\n {4}\S/u)[0];

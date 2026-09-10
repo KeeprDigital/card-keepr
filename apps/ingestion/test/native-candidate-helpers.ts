@@ -4,7 +4,7 @@ import { get, requiredString, testEnv } from "./reconciliation-helpers";
 /** Observe the operation returned by creation, never whichever candidate happens to share its collection. */
 export async function waitForNativeCandidate(id: string, expectedState = "sealed", timeoutMs = 8_000) {
   const deadline = Date.now() + timeoutMs;
-  let observed: Record<string, unknown> = {};
+  let observed: Record<string, unknown>;
   do {
     const header = await get(`/v1/game-candidates/${id}`);
     expect(header.response.status, JSON.stringify(header.document)).toBe(200);

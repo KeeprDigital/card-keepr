@@ -239,7 +239,6 @@ export async function advanceGamePublication(
           backup: `backup_${id.slice("publication_".length)}`,
         }),
       );
-      return inspectPublication(db, id);
     } catch (error) {
       const current = await inspectPublication(db, id);
       if (current.state === "published") return current;
@@ -262,6 +261,7 @@ export async function advanceGamePublication(
       }
       throw error;
     }
+    return inspectPublication(db, id);
   }
   await updatePublicationState(db, id, generation, "retry_paused", "publication_composition_contention").run();
   return inspectPublication(db, id);

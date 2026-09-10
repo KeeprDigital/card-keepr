@@ -1,0 +1,4 @@
+{
+  // Trailing commas are supported for Worker configuration.
+  "target": "staging",
+}

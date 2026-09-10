@@ -3,18 +3,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { requiredSourceAdapter, sourceAdapterRegistrations } from "../../src/catalogue/adapters/source-adapters.ts";
 import {
-  adapterReconciliationAreas,
-  assertAdapterBinding,
-  installedSourceAdapterRegistrations,
-  requiredActiveSourceAdapter,
-  requiredSourceAdapter,
-  sourceAdapterRegistrations,
-} from "../../src/catalogue/adapters/source-adapters.ts";
-import syntheticOfficialSource, {
-  officialBandaiNavigationHeader,
-  officialDiscoveryDefinitions,
-  officialDiscoveryDocument,
   officialPublisherPayloadScript,
   officialRawSurfacePayload,
 } from "../../acceptance/fixtures/synthetic-official-source.mjs";

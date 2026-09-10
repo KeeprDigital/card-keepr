@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
-import { createServer } from "node:http";
+import { createFixtureServer } from "./http-fixture.mjs";
 import { dirname, join, resolve } from "node:path";
 import { after } from "node:test";
 import { inspect, parseEnv } from "node:util";
@@ -56,7 +56,7 @@ export function inprocessDatabaseDirectory(statePath) {
 async function configuration(config, statePath) {
   const path = resolve(root, config);
   const raw = JSON.parse(await readFile(path, "utf8"));
-  const converted = await unstable_getMiniflareWorkerOptions(path);
+  const converted = unstable_getMiniflareWorkerOptions(path);
   const options = converted.workerOptions;
   for (const kind of ["d1Databases", "r2Buckets"]) {
     options[kind] = Object.fromEntries(
@@ -148,7 +148,7 @@ export async function startInprocessWorker({
       ...vars,
     },
   };
-  const server = createServer(async (request, response) => {
+  const server = createFixtureServer(async (request, response) => {
     try {
       await group.serial;
       // Carry original headers as data past Miniflare's localhost CSRF filter.

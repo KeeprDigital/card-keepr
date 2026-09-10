@@ -188,7 +188,7 @@ test("the authenticated parent Workflow reconciles a complete production Evidenc
     game_preparations: [{ id: expect.any(String), supported_game: "fusion-world" }],
   });
   const candidateId = output.game_preparations[0]!.id;
-  let prepared: Record<string, unknown> = {};
+  let prepared: Record<string, unknown>;
   const preparationDeadline = Date.now() + 15000;
   do {
     const response = await administrationRequest(`/v1/game-candidates/${candidateId}`, "GET");

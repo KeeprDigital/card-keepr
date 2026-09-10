@@ -104,6 +104,7 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
   } catch (error) {
     throw new Error(
       `${error instanceof Error ? error.message : String(error)}\nAPI:\n${api.getOutput()}\nIngestion:\n${ingestion.getOutput()}`,
+      { cause: error },
     );
   }
 

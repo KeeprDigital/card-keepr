@@ -43,7 +43,7 @@ function seedRun(database) {
  * synthetic registration so the migration must guard every retained surface.
  */
 export async function seedEvidence(database, overrides = {}) {
-  await seedRun(database);
+  seedRun(database);
   const adapter = "one-piece-en@6";
   const identity = ["one-piece-en", "one-piece", "one-piece@1"];
   database

@@ -27,9 +27,7 @@ test("Riot English pagination retains every returned record and literal token an
   for (let offset = 0; offset < 1200; offset += 200) {
     const bytes = readFileSync(new URL(`cards-${offset}.json`, fixture));
     const url = `https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards?locale=en_US&from=${offset}&limit=200`;
-    observations.push(
-      ...(await riftboundSourceAdapterRegistration.parseBytes!(bytes, { url, mediaType: "application/json" })),
-    );
+    observations.push(...riftboundSourceAdapterRegistration.parseBytes!(bytes, { url, mediaType: "application/json" }));
   }
   expect(() => canonicalJson(observations)).not.toThrow();
   const cards = observations.filter((o) => "card" in o);

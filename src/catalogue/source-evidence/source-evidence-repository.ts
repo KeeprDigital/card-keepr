@@ -1769,7 +1769,7 @@ export async function extendRunRequestCapacity(
     capacity_generation: capacityGeneration,
     extended_at: new Date().toISOString(),
   };
-  let outcome: D1Result | null = null;
+  let outcome: D1Result | null;
   try {
     outcome = await repositoryStatements(database)
       .prepare(
@@ -2048,7 +2048,7 @@ export async function terminateEvidenceRun(
     paused_at: pause.paused_at,
     terminated_at: terminatedAt,
   };
-  let transitioned = false;
+  let transitioned: boolean;
   try {
     const outcome = await database.batch([
       repositoryStatements(database)

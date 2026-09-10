@@ -603,7 +603,7 @@ function parsedEntry(entry: EntryDraft): OnePieceOfficialErratumObservation {
     (entry.sectionPublishedOn === null
       ? parseFailure("An Official Erratum has no published date.")
       : publishedDate(entry.sectionPublishedOn));
-  const identity = /^([A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6})\s+(.+)$/.exec(displayName);
+  const identity = /^([A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6})\s+(\S.*)$/.exec(displayName);
   if (identity === null) {
     return parseFailure("An Official Erratum Card heading is invalid.");
   }

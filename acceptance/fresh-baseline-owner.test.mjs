@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { createServer } from "node:http";
+import { createFixtureServer } from "./helpers/http-fixture.mjs";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -35,7 +35,7 @@ for (const action of ["cancel", "correct"])
     workers.push(api);
     await waitForHealth(`${ingestion.url}/health`, adminKey, ingestion);
     const dispatches = [];
-    const github = createServer(async (request, response) => {
+    const github = createFixtureServer(async (request, response) => {
       let bytes = "";
       for await (const chunk of request) bytes += chunk;
       dispatches.push(JSON.parse(bytes));

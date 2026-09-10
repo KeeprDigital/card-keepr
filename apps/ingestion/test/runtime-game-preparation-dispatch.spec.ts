@@ -56,7 +56,7 @@ test.each([2, 5])(
     const evidence = await evidenceResponse.json<{ collection_completed_at: string }>();
     const originalDeadlines = new Map<string, { created_at: unknown; deadline: unknown }>();
     for (const candidate of output.game_preparations) {
-      let document: Record<string, unknown> = {};
+      let document: Record<string, unknown>;
       const deadline = Date.now() + 15000;
       do {
         const inspected = await administrationRequest(`/v1/game-candidates/${candidate.id}`, "GET");
@@ -130,7 +130,7 @@ test("an occupied game slot does not prevent the collection parent from dispatch
     { supported_game: "one-piece", id: expect.any(String) },
   ]);
   expect(output.game_preparations[1]!.id).not.toBe(original.id);
-  let candidate: Record<string, unknown> = {};
+  let candidate: Record<string, unknown>;
   const deadline = Date.now() + 15000;
   do {
     const inspected = await administrationRequest(`/v1/game-candidates/${output.game_preparations[1]!.id}`, "GET");
@@ -228,7 +228,7 @@ test("pending reconfirmation in the first game does not prevent the collection p
     { supported_game: "fusion-world", state: "blocked", code: "curated_revision_reconfirmation_required" },
     { supported_game: "one-piece", id: expect.any(String) },
   ]);
-  let candidate: Record<string, unknown> = {};
+  let candidate: Record<string, unknown>;
   const deadline = Date.now() + 15000;
   do {
     candidate = (await get(`/v1/game-candidates/${output.game_preparations[1]!.id}`)).document;

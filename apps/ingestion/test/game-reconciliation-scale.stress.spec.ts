@@ -45,7 +45,7 @@ test("a 1001-Product native candidate stays within the D1/R2 callback budget", a
     succeeded: boolean;
   })[] = [];
   const started = Date.now();
-  let elapsed = 0;
+  let elapsed: number;
   const phases = new Map<string, { callbacks: number; milliseconds: number; maximumCalls: number }>();
   try {
     await runReconciliationWorkflow(

@@ -40,7 +40,7 @@ test("capacity collection discovers every separate image and the next bounded pa
   );
   expect(extracted.count).toBe(16);
   const requests = [];
-  for await (const request of extracted.requests) requests.push(request);
+  for (const request of extracted.requests) requests.push(request);
   expect(requests.filter((request) => request.role === "image")).toHaveLength(16);
   expect(requests.filter((request) => request.role === "listing")).toEqual([
     {

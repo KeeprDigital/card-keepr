@@ -82,7 +82,6 @@ import {
   type CataloguePrintingImage,
   type CatalogueStore,
   canonicalJson,
-  sha256Text,
   catalogueCandidateContract,
   type IngestionRunState,
   type SupportedGame,

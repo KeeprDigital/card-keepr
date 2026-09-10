@@ -1,0 +1,21 @@
+{
+  "extends": "../apps/ingestion/tsconfig.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false
+  },
+  "include": [
+    "../apps/ingestion/worker-configuration.d.ts",
+    "../cli/**/*.mjs",
+    "../scripts/**/*.mjs",
+    "../acceptance/**/*.mjs",
+    "../acceptance/**/*.ts",
+    "../test/domain/**/*.ts",
+    "../test/domain/**/*.mjs",
+    "../apps/*/vitest.config.ts",
+    "../test/support/fake-publisher/sqlite-restore.test.ts",
+    "../*.mjs",
+    "./fixtures/**/*.mjs"
+  ],
+  "exclude": ["../acceptance/fixtures"]
+}

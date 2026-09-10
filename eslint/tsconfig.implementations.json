@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.shared.json",
+  "files": [
+    "../src/catalogue/shared/release-input-shapes.mjs",
+    "../src/catalogue/shared/spine-revision.mjs",
+    "../src/http/administration-presentation.mjs",
+    "../src/http/diagnostic-display.mjs",
+    "../src/http/production-target.mjs",
+    "../src/runtime-capabilities.mjs"
+  ],
+  "include": ["../apps/ingestion/worker-configuration.d.ts"],
+  "exclude": ["../src/**/*.d.mts"]
+}

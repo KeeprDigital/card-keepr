@@ -4,9 +4,12 @@ The supported interface is Corepack-managed pnpm. Biome remains the formatter
 and linter after the conditional Vite+ trial in [issue #301](https://github.com/KeeprDigital/card-keepr/issues/301).
 Vite+ is not an installed dependency. The [trial record](evidence/toolchain-301.md)
 explains the JSON/JSONC lint blocker and the limits of the compatibility evidence.
-The [typed ESLint/Prettier evaluation](evidence/eslint-303.md) records additional
-error-prevention evidence and a proposed follow-up; it does not change the
-working toolchain.
+The [typed ESLint/Prettier evaluation](evidence/eslint-303.md) now has a
+[staged implementation](evidence/eslint-migration.md). `check` and the existing
+CI lint job also enforce focused ESLint correctness and its diagnostic corpus.
+Biome remains the ordinary formatter and baseline linter until the editor and
+hosted ready-PR/main gates in that evaluation pass. Prettier is available through
+`format:prettier` and `format:prettier:check`, with the same changed-file selection.
 
 ## Installation and ownership
 
@@ -43,8 +46,9 @@ available through npm's transitive dependency hoisting.
 
 The scoped `parse5>entities` override stays at 8.0.0, while the direct `entities`
 dependency stays at 8.1.0. Strict peer validation remains enabled. Only esbuild
-and workerd may run dependency build scripts, including both retained versions
-of each. A new unapproved build script fails installation through `strictDepBuilds`;
+and workerd, plus the reviewed `unrs-resolver` binding preparation hook, may run
+dependency build scripts. Both retained esbuild/workerd versions remain pinned.
+A new unapproved build script fails installation through `strictDepBuilds`;
 review its purpose before changing `allowBuilds`. Do not disable the
 guard or silently skip a native dependency's required setup.
 
@@ -82,6 +86,35 @@ inherit the selected Node, pnpm PATH and environment, including `TMPDIR`,
 `WRANGLER_LOG_PATH`, `KEEPR_TEST_SUITE` and benchmark inputs. `scripts/ci-test.sh`
 still owns the disposable tmpfs and its exit cleanup. No environment filtering
 or task scheduler has been introduced.
+
+## Typed lint and editor setup
+
+`tsc` remains TypeScript 7.0.2 through `@typescript/native`. The `typescript`
+package aliases the supported TS6 compatibility API used by typescript-eslint;
+`pnpm exec tsc6 --version` reports 6.0.3. All five ordinary compiler projects are unchanged.
+Supplemental projects under `eslint/` explicitly own shared Worker source, Node
+JavaScript, API support, and six implementations with adjacent declarations.
+
+Install the workspace's recommended ESLint, Prettier and TypeScript native VS Code
+extensions. Run **TypeScript: Select TypeScript Version**, then **Use Custom
+Version** for the listed TS7 7.0.2 package. The extension requires this one-time
+selection before honoring workspace SDK settings. Its current resolver does not
+follow the scoped alias correctly, so the configured additional location names
+pnpm's exact pinned package directory; update it when upgrading TS7. The workspace also
+configures per-language Prettier formatting and explicit ESLint problem fixes. Deliberately choose Format
+Document while this migration is staged; ordinary `pnpm run format` still applies
+the Biome baseline before committing. Do not enable both formatters on save.
+
+`pnpm run lint:eslint` performs an uncached whole-tree scan. Typed diagnostic caches
+must not be treated as proof that changed imported declarations were rechecked.
+VS Code reproduced stale typed diagnostics after an imported function changed its
+return type; even Revalidate All Open Files retained the old result. Use **ESLint:
+Restart ESLint Server** after such changes and run the uncached CLI check before
+review. This is a [documented upstream limitation](https://typescript-eslint.io/troubleshooting/typed-linting/#editor-eslint-reports-become-out-of-date-after-file-changes).
+`pnpm run check:lint-tooling` parses faulty examples without executing them and
+checks changed-file formatting in a disposable repository. Unsafe-flow rules apply
+first to bounded JSON input and the annotated shared CLI/release HTTP transport.
+The broad unannotated-JavaScript backlog remains outside this correctness gate.
 
 ## Before another Vite+ trial
 

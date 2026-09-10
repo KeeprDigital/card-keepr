@@ -1,0 +1,5 @@
+{
+  // Diagnostic only.
+  "target": "staging",
+  "target": "production",
+}

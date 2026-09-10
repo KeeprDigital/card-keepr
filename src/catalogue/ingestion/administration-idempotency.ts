@@ -317,7 +317,7 @@ async function claimAdministration(
             owner: null,
           };
         }
-        throw new Error("The administration idempotency claim changed without an outcome.");
+        throw new Error("The administration idempotency claim changed without an outcome.", { cause: error });
       }
       if (prior.operation !== context.operation || prior.request_json !== context.requestJson) {
         throw new AdministrationProblem(
@@ -350,7 +350,7 @@ async function claimAdministration(
           if (replay !== null) {
             return { claim: prior, owner: null };
           }
-          throw new Error("The administration claim takeover changed without an outcome.");
+          throw new Error("The administration claim takeover changed without an outcome.", { cause: error });
         }
         return { claim: winner, owner: null };
       }
