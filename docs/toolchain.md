@@ -1,15 +1,17 @@
 # Toolchain
 
-The supported interface is Corepack-managed pnpm. Biome remains the formatter
-and linter after the conditional Vite+ trial in [issue #301](https://github.com/KeeprDigital/card-keepr/issues/301).
-Vite+ is not an installed dependency. The [trial record](evidence/toolchain-301.md)
-explains the JSON/JSONC lint blocker and the limits of the compatibility evidence.
-The [typed ESLint/Prettier evaluation](evidence/eslint-303.md) now has a
-[staged implementation](evidence/eslint-migration.md). `check` and the existing
-CI lint job also enforce focused ESLint correctness and its diagnostic corpus.
-Biome remains the ordinary formatter and baseline linter until the editor and
-hosted ready-PR/main gates in that evaluation pass. Prettier is available through
-`format:prettier` and `format:prettier:check`, with the same changed-file selection.
+The supported interface is Corepack-managed pnpm. ESLint owns `lint`; Prettier
+owns `format` and `format:check`. `check` and the existing CI lint job enforce the
+focused correctness rules, diagnostic corpus and changed-file formatting policy.
+Biome and Vite+ are not installed dependencies. The
+[removal record](evidence/biome-removal.md) follows the
+[typed ESLint/Prettier evaluation](evidence/eslint-303.md) and its
+[staged implementation](evidence/eslint-migration.md).
+
+Formatting is incremental: a file adopts Prettier when changed on the branch,
+staged, edited or newly created. Do not run a repository-wide reformat.
+`.prettierignore` preserves generated output, retained fixtures and prototypes;
+ESLint independently excludes those files from its whole-tree scan.
 
 ## Installation and ownership
 
@@ -101,11 +103,10 @@ Version** for the listed TS7 7.0.2 package. The extension requires this one-time
 selection before honoring workspace SDK settings. Its current resolver does not
 follow the scoped alias correctly, so the configured additional location names
 pnpm's exact pinned package directory; update it when upgrading TS7. The workspace also
-configures per-language Prettier formatting and explicit ESLint problem fixes. Deliberately choose Format
-Document while this migration is staged; ordinary `pnpm run format` still applies
-the Biome baseline before committing. Do not enable both formatters on save.
+configures per-language Prettier formatting and explicit ESLint problem fixes.
+Format Document and ordinary `pnpm run format` now use the same Prettier settings.
 
-`pnpm run lint:eslint` performs an uncached whole-tree scan. Typed diagnostic caches
+`pnpm run lint` performs an uncached whole-tree scan. Typed diagnostic caches
 must not be treated as proof that changed imported declarations were rechecked.
 VS Code reproduced stale typed diagnostics after an imported function changed its
 return type; even Revalidate All Open Files retained the old result. Use **ESLint:
@@ -127,10 +128,10 @@ metadata, not an old recommendation. At minimum:
    Follow the documented Vite core alias rules for pnpm and inspect any peer
    exception; never disable peer validation to hide an incompatible graph.
 2. Reproduce the JSON and JSONC duplicate-key failures in the trial record.
-   Account for lint semantics independently of formatting and map the complete
-   Biome recommended preset, severity overrides, two suppressions and exclusions
-   before removing Biome. Avoid a permanent hybrid or a bespoke replacement
-   JSON linter merely to make the migration pass.
+   Account for lint semantics independently of formatting and map the maintained
+   ESLint rules, reviewed exceptions and exclusions before replacing ESLint.
+   Avoid a permanent hybrid or a bespoke replacement JSON linter merely to make
+   the migration pass.
 3. Verify typed lint with both valid and invalid imported, D1 and R2 promises.
    Resolve real diagnostics deliberately. Keep TypeScript 7 and prove all five
    existing compiler projects and options, retaining the explicit compiler task

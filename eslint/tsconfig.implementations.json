@@ -6,8 +6,8 @@
     "../src/http/administration-presentation.mjs",
     "../src/http/diagnostic-display.mjs",
     "../src/http/production-target.mjs",
-    "../src/runtime-capabilities.mjs"
+    "../src/runtime-capabilities.mjs",
   ],
   "include": ["../apps/ingestion/worker-configuration.d.ts"],
-  "exclude": ["../src/**/*.d.mts"]
+  "exclude": ["../src/**/*.d.mts"],
 }

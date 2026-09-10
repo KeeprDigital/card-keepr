@@ -48,7 +48,7 @@ try {
     write(file);
   }
   const run = (...args) =>
-    spawnSync(process.execPath, ["scripts/format.mjs", "--prettier", ...args, "--since=main"], {
+    spawnSync(process.execPath, ["scripts/format.mjs", ...args, "--since=main"], {
       cwd: root,
       encoding: "utf8",
     });

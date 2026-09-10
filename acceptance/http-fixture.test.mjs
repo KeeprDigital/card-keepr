@@ -16,23 +16,27 @@ async function listen(t, handle) {
   return `http://127.0.0.1:${server.address().port}`;
 }
 
-test("a rejected HTTP fixture request returns a failure and leaves later requests usable", {
-  timeout: 5000,
-}, async (t) => {
-  const received = [];
-  const url = await listen(t, async (incoming, outgoing) => {
-    let text = "";
-    for await (const chunk of incoming) text += chunk;
-    received.push(JSON.parse(text));
-    outgoing.writeHead(204).end();
-  });
-  const failed = await fetch(url, { method: "POST", body: "{invalid" });
-  assert.equal(failed.status, 500);
-  assert.equal(await failed.text(), "HTTP fixture failed");
-  const valid = await fetch(url, { method: "POST", body: '{"inputs":{}}' });
-  assert.equal(valid.status, 204);
-  assert.deepEqual(received, [{ inputs: {} }]);
-});
+test(
+  "a rejected HTTP fixture request returns a failure and leaves later requests usable",
+  {
+    timeout: 5000,
+  },
+  async (t) => {
+    const received = [];
+    const url = await listen(t, async (incoming, outgoing) => {
+      let text = "";
+      for await (const chunk of incoming) text += chunk;
+      received.push(JSON.parse(text));
+      outgoing.writeHead(204).end();
+    });
+    const failed = await fetch(url, { method: "POST", body: "{invalid" });
+    assert.equal(failed.status, 500);
+    assert.equal(await failed.text(), "HTTP fixture failed");
+    const valid = await fetch(url, { method: "POST", body: '{"inputs":{}}' });
+    assert.equal(valid.status, 204);
+    assert.deepEqual(received, [{ inputs: {} }]);
+  },
+);
 
 test("an interrupted request stream is contained by its HTTP fixture", { timeout: 5000 }, async (t) => {
   const started = Promise.withResolvers();

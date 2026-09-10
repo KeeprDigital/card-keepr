@@ -1,5 +1,9 @@
 # Focused ESLint migration: staged implementation
 
+Historical record: the owner's subsequent request to remove Biome is implemented
+in the [removal follow-up](biome-removal.md). The results below describe the
+earlier staged migration.
+
 This implements the concrete follow-up in [the #303 evaluation](eslint-303.md)
 from `5fd7308c640b742459975e19596b55ffaf48606c` on 11 September 2026.
 The focused ESLint gate is clean and runs in `check` and the existing CI `lint`

@@ -35,8 +35,7 @@ export async function waitForDispatchedNativeCandidates(
     const status = await parent.status();
     if (status.status === "complete") {
       const output = status.output as
-        | { ingestion_run_id?: string; game_preparations?: Record<string, unknown>[] }
-        | undefined;
+        { ingestion_run_id?: string; game_preparations?: Record<string, unknown>[] } | undefined;
       if (!Array.isArray(output?.game_preparations))
         throw new Error(
           `Collection ${runId} completed without native dispatch; request native preparation explicitly.`,

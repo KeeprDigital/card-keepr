@@ -26,9 +26,8 @@ concurrency:
 # (production-release.yml resolves the dispatched SHA's ci check runs), and
 # acceptance/production-release-contract.test.mjs keeps the two lists equal.
 jobs:
-  # Biome lints the whole tree and formats only the files a pull request
-  # changes (biome.jsonc explains the ratchet). fetch-depth 0 makes the base
-  # branch reachable for the changed-file diff.
+  # ESLint checks the whole tree; Prettier formats only changed files.
+  # fetch-depth 0 makes the base branch reachable for the changed-file diff.
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -54,7 +53,6 @@ jobs:
       # Always recreate node_modules and run approved native builds, even on a store hit.
       - run: pnpm install --frozen-lockfile
       - run: pnpm run lint
-      - run: pnpm run lint:eslint
       - run: pnpm run check:lint-tooling
       - run: pnpm run format:check --since="origin/${BASE_REF}"
 

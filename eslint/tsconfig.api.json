@@ -4,6 +4,6 @@
     "../apps/api/worker-configuration.d.ts",
     "../apps/api/src/**/*.ts",
     "../apps/api/test/**/*.ts",
-    "../test/support/api-worker.ts"
-  ]
+    "../test/support/api-worker.ts",
+  ],
 }

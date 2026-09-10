@@ -330,9 +330,10 @@ export async function pauseGamePublication(
   code: string,
   successor?: { shard: number; sequence: number },
 ) {
-  await (successor
-    ? pausePublicationSuccessor(db, id, generation, successor.shard, successor.sequence)
-    : updatePublicationState(db, id, generation, "retry_paused", code)
+  await (
+    successor
+      ? pausePublicationSuccessor(db, id, generation, successor.shard, successor.sequence)
+      : updatePublicationState(db, id, generation, "retry_paused", code)
   ).run();
   return inspectPublication(db, id);
 }

@@ -68,17 +68,17 @@ code. No deployment or live publisher recapture is part of these commands.
 [Registry metadata](eslint-303/registry.json) records versions, peers and
 engines checked at trial start; the patch pins every new direct dependency.
 
-| Package | Candidate version |
-| --- | --- |
-| ESLint / `@eslint/js` | 10.10.0 / 10.0.1 |
-| `typescript-eslint` | 8.70.0 |
+| Package                                         | Candidate version                 |
+| ----------------------------------------------- | --------------------------------- |
+| ESLint / `@eslint/js`                           | 10.10.0 / 10.0.1                  |
+| `typescript-eslint`                             | 8.70.0                            |
 | `typescript` alias to `@typescript/typescript6` | 6.0.2 package; **6.0.3 API/tsc6** |
-| `@typescript/native` alias to `typescript` | 7.0.2 |
-| Prettier / `eslint-config-prettier` | 3.9.6 / 10.1.8 |
-| SonarJS / Unicorn / Regexp | 4.2.0 / 74.0.0 / 3.3.0 |
-| import-x / TypeScript import resolver | 4.17.1 / 4.4.5 |
-| Vitest ESLint plugin / Node plugin | 1.6.27 / 18.3.0 |
-| `@eslint/json` / globals | 2.1.0 / 17.12.0 |
+| `@typescript/native` alias to `typescript`      | 7.0.2                             |
+| Prettier / `eslint-config-prettier`             | 3.9.6 / 10.1.8                    |
+| SonarJS / Unicorn / Regexp                      | 4.2.0 / 74.0.0 / 3.3.0            |
+| import-x / TypeScript import resolver           | 4.17.1 / 4.4.5                    |
+| Vitest ESLint plugin / Node plugin              | 1.6.27 / 18.3.0                   |
+| `@eslint/json` / globals                        | 2.1.0 / 17.12.0                   |
 
 The compatibility package's published version and embedded compiler version
 are different; [actual resolution](eslint-303/compiler-resolution.json) verifies
@@ -131,13 +131,13 @@ produce the same real-code findings.
 [Coverage by file](eslint-303/coverage.json) records effective project ownership
 and promise/Vitest rule activation for all **792 code/declaration files**:
 
-| Ownership | Files | Type environment |
-| --- | ---: | --- |
-| Shared source/support | 377 | Explicit lint project extending ingestion; real generated Worker types; `allowJs` |
-| Node scripts/configs/domain/acceptance | 219 | Explicit Node lint project; `allowJs`; Worker declarations for imported shared domain types |
-| Ingestion tests / source | 156 / 14 | Existing respective compiler projects |
-| API source/tests and API support entry | 20 | Supplemental project extending API test config and its Worker declarations |
-| Six `.mjs` implementations with adjacent `.d.mts` | 6 | Explicit implementation-only file ownership |
+| Ownership                                         |    Files | Type environment                                                                            |
+| ------------------------------------------------- | -------: | ------------------------------------------------------------------------------------------- |
+| Shared source/support                             |      377 | Explicit lint project extending ingestion; real generated Worker types; `allowJs`           |
+| Node scripts/configs/domain/acceptance            |      219 | Explicit Node lint project; `allowJs`; Worker declarations for imported shared domain types |
+| Ingestion tests / source                          | 156 / 14 | Existing respective compiler projects                                                       |
+| API source/tests and API support entry            |       20 | Supplemental project extending API test config and its Worker declarations                  |
+| Six `.mjs` implementations with adjacent `.d.mts` |        6 | Explicit implementation-only file ownership                                                 |
 
 Simply using `projectService: true` would not establish shared-source ownership:
 there is no ancestor tsconfig. The initial explicit shared project also exposed
@@ -169,23 +169,23 @@ The [probe results](eslint-303/probes-eslint.json) retain file, line, rule and
 message. The runner verifies 26 invalid-case rule expectations plus valid
 controls. These demonstrate prevention, not existing production defects.
 
-| Deliberate mistake | Baseline Biome | Biome + three typed rules | Candidate ESLint |
-| --- | --- | --- | --- |
-| Discard local/imported Promise | Miss | Detect | Detect |
-| Discard actual D1 write / R2 put/delete | Miss | Miss | Detect |
-| Bare `void` on an R2 write | Miss | Miss | Detect |
-| Async callback to synchronous `forEach` | Miss | Detect | Detect |
-| Actual R2 Promise used as condition | Miss | Miss | Detect |
-| Await a number | Miss | Miss | Detect; typed + Unicorn duplicate |
-| Omitted union state with a fallback return | Miss | Detect | Detect |
-| Unsafe JSON assignment/member/return | Miss | Miss | Detect |
-| Redundant nullable check on a string | Miss | Miss | Detect |
-| Return unawaited operation inside `try/catch` | Miss | Miss | Detect |
-| Floating Vitest async assertion / missing matcher | Miss | Miss | Detect |
-| Floating Node `assert.rejects` / imported `readFile` | Miss | Miss | Detect |
-| Focused test | Warn | Warn | Error |
-| Duplicate JSON / JSONC keys | Detect | Detect | Detect |
-| Ignored string transform / GET fetch body / impossible regex / missing `.mjs` import | Miss | Miss | Detect |
+| Deliberate mistake                                                                   | Baseline Biome | Biome + three typed rules | Candidate ESLint                  |
+| ------------------------------------------------------------------------------------ | -------------- | ------------------------- | --------------------------------- |
+| Discard local/imported Promise                                                       | Miss           | Detect                    | Detect                            |
+| Discard actual D1 write / R2 put/delete                                              | Miss           | Miss                      | Detect                            |
+| Bare `void` on an R2 write                                                           | Miss           | Miss                      | Detect                            |
+| Async callback to synchronous `forEach`                                              | Miss           | Detect                    | Detect                            |
+| Actual R2 Promise used as condition                                                  | Miss           | Miss                      | Detect                            |
+| Await a number                                                                       | Miss           | Miss                      | Detect; typed + Unicorn duplicate |
+| Omitted union state with a fallback return                                           | Miss           | Detect                    | Detect                            |
+| Unsafe JSON assignment/member/return                                                 | Miss           | Miss                      | Detect                            |
+| Redundant nullable check on a string                                                 | Miss           | Miss                      | Detect                            |
+| Return unawaited operation inside `try/catch`                                        | Miss           | Miss                      | Detect                            |
+| Floating Vitest async assertion / missing matcher                                    | Miss           | Miss                      | Detect                            |
+| Floating Node `assert.rejects` / imported `readFile`                                 | Miss           | Miss                      | Detect                            |
+| Focused test                                                                         | Warn           | Warn                      | Error                             |
+| Duplicate JSON / JSONC keys                                                          | Detect         | Detect                    | Detect                            |
+| Ignored string transform / GET fetch body / impossible regex / missing `.mjs` import | Miss           | Miss                      | Detect                            |
 
 Correctly awaited D1/R2 writes, returned promises, awaited `Promise.all`, narrowed
 JSON, exhaustive switches, and `ctx.waitUntil(operation.catch(handler))` pass.
@@ -232,16 +232,16 @@ No application suppressions, automated `void` insertions or application fixes
 were committed. Further exclusions need case-specific review, particularly
 compiler-only negative contracts and intentional rejection propagation.
 
-| Inspected finding | Disposition / focused follow-up |
-| --- | --- |
-| Async HTTP listeners, `acceptance/fresh-baseline-owner.test.mjs:38`, `acceptance/helpers/native-fresh-baseline.mjs:75` | Actionable fixture error path: request-stream rejection escapes the returned async listener. Add a bounded fault-injection test and response/error handling. Static finding; no live fault injection claimed. |
-| Same rule in `acceptance/helpers/inprocess-runtime.mjs:151` and `native-cloudflare-http.mjs:5` | Existing explicit try/catch handles request work and writes failure responses; reviewed false-positive burden. |
+| Inspected finding                                                                                                                                          | Disposition / focused follow-up                                                                                                                                                                                     |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Async HTTP listeners, `acceptance/fresh-baseline-owner.test.mjs:38`, `acceptance/helpers/native-fresh-baseline.mjs:75`                                     | Actionable fixture error path: request-stream rejection escapes the returned async listener. Add a bounded fault-injection test and response/error handling. Static finding; no live fault injection claimed.       |
+| Same rule in `acceptance/helpers/inprocess-runtime.mjs:151` and `native-cloudflare-http.mjs:5`                                                             | Existing explicit try/catch handles request work and writes failure responses; reviewed false-positive burden.                                                                                                      |
 | Seven `return-await` reports, including `apps/ingestion/src/index.ts:77`, `game-publication.ts:242`, `source-evidence-capture.ts:323`, four deletion paths | Credible error-handling review targets: rejection bypasses that local catch. Verify whether catch/recovery should own that operation; do not mechanically await stale-owner paths. No production incident asserted. |
-| `collection-recovery.ts:76` non-exhaustive switch | Current default deliberately covers active states. Explicit grouped cases would guard future additions; no current missing state behavior. |
-| Two floating promises in `test/domain/catalogue-store.types.ts:6,8` | False positives for never-executed compiler contracts, not abandoned production work. |
-| 19 regex backtracking reports | Credible bounded-input/performance review candidates; no exploit or latency regression proven. |
-| Unsafe data, unnecessary conditions and object coercion | Useful review surfaces, including external parsed values; most not individually verified. Guarded runtime defenses and library `any` need careful triage. |
-| 79 duplicate-import reports, 127 regex quantifier/assertion reports, regex spelling preferences | Mostly optional cleanup; insufficient justification for migration by themselves. |
+| `collection-recovery.ts:76` non-exhaustive switch                                                                                                          | Current default deliberately covers active states. Explicit grouped cases would guard future additions; no current missing state behavior.                                                                          |
+| Two floating promises in `test/domain/catalogue-store.types.ts:6,8`                                                                                        | False positives for never-executed compiler contracts, not abandoned production work.                                                                                                                               |
+| 19 regex backtracking reports                                                                                                                              | Credible bounded-input/performance review candidates; no exploit or latency regression proven.                                                                                                                      |
+| Unsafe data, unnecessary conditions and object coercion                                                                                                    | Useful review surfaces, including external parsed values; most not individually verified. Guarded runtime defenses and library `any` need careful triage.                                                           |
+| 79 duplicate-import reports, 127 regex quantifier/assertion reports, regex spelling preferences                                                            | Mostly optional cleanup; insufficient justification for migration by themselves.                                                                                                                                    |
 
 There are only **19 reports across the five directly relevant typed families**:
 floating promises (2), misused promises (4), invalid awaits (5), return-await (7)
@@ -258,14 +258,14 @@ baseline passes were 0.40/0.40 seconds. These are local observations, not CI SLA
 while the full suite was running took 25.5 seconds; it is excluded from the
 comparison below.
 
-| Operation | Samples |
-| --- | --- |
-| Biome, equivalent target list | 0.539 / 0.414 / 0.416 |
-| Biome with additional promise/union rules | 0.817 / 0.778 / 0.791 |
-| ESLint, fresh process, no result cache | 19.671 / 19.998 / 19.818 |
-| ESLint cache: initial population, then unchanged | 19.999 / 1.602 / 0.898 |
-| TS7, all five projects, sequential | 1.458 / 1.368 / 1.385 |
-| TS6 compatibility compiler, same five projects | 8.978 / 9.119 / 8.991 |
+| Operation                                        | Samples                  |
+| ------------------------------------------------ | ------------------------ |
+| Biome, equivalent target list                    | 0.539 / 0.414 / 0.416    |
+| Biome with additional promise/union rules        | 0.817 / 0.778 / 0.791    |
+| ESLint, fresh process, no result cache           | 19.671 / 19.998 / 19.818 |
+| ESLint cache: initial population, then unchanged | 19.999 / 1.602 / 0.898   |
+| TS7, all five projects, sequential               | 1.458 / 1.368 / 1.385    |
+| TS6 compatibility compiler, same five projects   | 8.978 / 9.119 / 8.991    |
 
 All five projects pass both compilers. TS6-only offers a simpler compiler/API
 ownership model but costs roughly 7.6 additional seconds here and gives up the
@@ -309,12 +309,12 @@ costs remain unmeasured. See [timings](eslint-303/time-timings.json) and
 
 Each compiler flag was enabled independently across all five existing projects:
 
-| TS7 option | Result |
-| --- | --- |
-| `noImplicitOverride` | All pass unchanged |
-| `noFallthroughCasesInSwitch` | All pass unchanged |
-| `noImplicitReturns` | One report: `apps/ingestion/vitest.config.ts:99`; intentional undefined return from its error hook |
-| `exactOptionalPropertyTypes` | 91 project reports, **23 unique locations** across 19 files |
+| TS7 option                   | Result                                                                                             |
+| ---------------------------- | -------------------------------------------------------------------------------------------------- |
+| `noImplicitOverride`         | All pass unchanged                                                                                 |
+| `noFallthroughCasesInSwitch` | All pass unchanged                                                                                 |
+| `noImplicitReturns`          | One report: `apps/ingestion/vitest.config.ts:99`; intentional undefined return from its error hook |
+| `exactOptionalPropertyTypes` | 91 project reports, **23 unique locations** across 19 files                                        |
 
 Explicit override/fallthrough enforcement is a low-cost follow-up for either
 toolchain. Review the Vitest hook's return policy and optional-property

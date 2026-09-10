@@ -43,10 +43,7 @@ const dispatch = routeTable<
 const logOptions = { routeSegments: routeSegments(routes, ["/health", "/healthz"]) };
 
 export { CatalogueBackupWorkflow } from "./backup-workflow";
-export {
-  EvidenceHostWorkflow,
-  EvidenceIngestionWorkflow,
-} from "./evidence-workflows";
+export { EvidenceHostWorkflow, EvidenceIngestionWorkflow } from "./evidence-workflows";
 export { OfficialSourceTransport } from "./official-source-transport";
 export { ReconciliationWorkflow } from "./reconciliation-workflow";
 

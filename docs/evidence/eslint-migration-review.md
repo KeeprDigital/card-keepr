@@ -1,5 +1,8 @@
 # Implementation review
 
+This reviews the staged implementation before the owner's subsequent
+[Biome removal request](biome-removal.md).
+
 Fixed point: `5fd7308c640b742459975e19596b55ffaf48606c`. The reviewers inspected
 the staged implementation with `git diff --cached` against that commit before
 the implementation commit. Unrelated untracked research files were excluded.

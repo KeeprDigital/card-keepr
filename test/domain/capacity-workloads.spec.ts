@@ -73,7 +73,7 @@ test("small separately streamed images are complete decodable PNGs with unique d
     total += bytes.length;
     expect(bytes.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
     const chunks = [];
-    for (let offset = 8; offset < bytes.length; ) {
+    for (let offset = 8; offset < bytes.length;) {
       const length = bytes.readUInt32BE(offset);
       const type = bytes.toString("ascii", offset + 4, offset + 8);
       expect(crc32(bytes.subarray(offset + 4, offset + 8 + length))).toBe(bytes.readUInt32BE(offset + 8 + length));

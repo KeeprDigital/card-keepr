@@ -2,7 +2,7 @@
   "extends": "../apps/ingestion/tsconfig.json",
   "compilerOptions": {
     "allowJs": true,
-    "checkJs": false
+    "checkJs": false,
   },
   "include": [
     "../apps/ingestion/worker-configuration.d.ts",
@@ -15,7 +15,7 @@
     "../apps/*/vitest.config.ts",
     "../test/support/fake-publisher/sqlite-restore.test.ts",
     "../*.mjs",
-    "./fixtures/**/*.mjs"
+    "./fixtures/**/*.mjs",
   ],
-  "exclude": ["../acceptance/fixtures"]
+  "exclude": ["../acceptance/fixtures"],
 }
