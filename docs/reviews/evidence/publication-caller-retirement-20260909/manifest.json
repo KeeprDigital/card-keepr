@@ -128,6 +128,124 @@
       "duration_seconds": 5.66,
       "interrupted": false,
       "notes": "Actual historical exports, expired reservation observer, exact replay and restored SQLite backup. Raw background cancellation diagnostics retained; no synthetic checkpoint or native capacity claim."
+    },
+    {
+      "file": "native-identity-cd0fc2d0-runtime.log.gz",
+      "uncompressed_sha256": "4a913c630d7dd010e4da3c76db41f55c0647d34b5d7a86868adbc3f6c53c5a8b",
+      "commit": "cd0fc2d0baaee613f46deccd158422db865a2844",
+      "node": "22.23.2",
+      "result": "9 passed; 2 failed across 11 identity cases. Known-number merge creates extra Printing; subsequent preparation after Card split rejects changed Card compatibility.",
+      "duration_seconds": 111.39,
+      "interrupted": false,
+      "notes": "Native caller migration includes reviewed9a43 compatibility and c455 idle-R2 reset providers. Original identity keys retained; all5 controlled interruption cases pass, no immutable collision observed. All workerd cancellation/RPC-stub warnings retained. No assertion weakened."
+    },
+    {
+      "file": "entity-admission-bounded-adda135b.log.gz",
+      "uncompressed_sha256": "9f13cd65b34321080b49056b6f49eeb65ebe68d9400baea95dd193159113397e",
+      "commit": "adda135b0aeca2d3035f506ed32f04a27b78acbf",
+      "node": "22.23.2",
+      "result": "2 passed; 20 unselected. Exact 32-admission and interrupted64-warning native preparation/publication/backup proof.",
+      "duration_seconds": 9.72,
+      "interrupted": false,
+      "notes": "Natural completion. Original deadlines and identity assertions retained; actual restored SQLite backups. Raw workerd cancellation diagnostics included; no isolated-capacity claim."
+    },
+    {
+      "file": "entity-admission-full-adda135b.log.gz",
+      "uncompressed_sha256": "e8357339baf1d223412904f889ddba4b1adafbe8648ffff9d3dd2226db591e60",
+      "commit": "adda135b0aeca2d3035f506ed32f04a27b78acbf",
+      "node": "22.23.2",
+      "result": "21 passed; 1 failed. Unknown-number supplemental Card cannot use retained native prior Printing compatibility during publisher confirmation; known-number companion and all other owner/fault cases pass.",
+      "duration_seconds": 42.53,
+      "interrupted": false,
+      "notes": "Natural completion. Original deadlines and identity assertions retained; actual restored SQLite backups. Raw workerd cancellation diagnostics included; no isolated-capacity claim."
+    },
+    {
+      "file": "entity-admission-confirmation-focus-44f68629.log.gz",
+      "uncompressed_sha256": "438581a6f9fae9ac66aec4442741d4313926a1bf42451c9b6a5b2454a55f05ea",
+      "commit": "44f68629ebc3e00af21aecc4baa0bf4f8c2cdd25",
+      "node": "22.23.2",
+      "result": "2 passed; 20 unselected. Known and previously failing unknown publisher confirmation retain exact Card/Printing IDs, native source mappings and authority.",
+      "duration_seconds": 8.78,
+      "interrupted": false,
+      "notes": "Natural completion with unchanged deadlines and original assertions. Actual independently restored SQLite backup verification; all runtime cancellation diagnostics retained. Production fix36c8883d independently Standards/Spec reviewed with0 findings."
+    },
+    {
+      "file": "entity-admission-full-44f68629.log.gz",
+      "uncompressed_sha256": "3c87879efe619897c2932e780306a232fd3371c34ead641d8e082704e64ac9e5",
+      "commit": "44f68629ebc3e00af21aecc4baa0bf4f8c2cdd25",
+      "node": "22.23.2",
+      "result": "22 passed. Entire native admission file including owner rejection/reconsideration, unknown identity confirmation, historical pins and bounded interruption cases.",
+      "duration_seconds": 42.26,
+      "interrupted": false,
+      "notes": "Natural completion with unchanged deadlines and original assertions. Actual independently restored SQLite backup verification; all runtime cancellation diagnostics retained. Production fix36c8883d independently Standards/Spec reviewed with0 findings."
+    },
+    {
+      "file": "errata-full-0988e2bd.log.gz",
+      "uncompressed_sha256": "b9785c8c988acd1bb62dfaac2e3fec26ead041cc0426d7c39ceabe6296105a44",
+      "commit": "0988e2bdb1ab108c126553278e2bcf1d30fba49d",
+      "result": "21 passed; 4 failed; full 25 cases",
+      "duration_seconds": 54.0,
+      "interrupted": false,
+      "notes": "Node 22.23.2; all processes exited naturally. Original individual test deadlines preserved; raw workerd canceled/hung request diagnostics retained. This is functional proof, not isolate capacity evidence."
+    },
+    {
+      "file": "card-identity-native-18-0988e2bd.log.gz",
+      "uncompressed_sha256": "9ecf14a5815169f02e5c6b2b1e1a3761922b4a0559e9b50fbf279f054e46dda4",
+      "commit": "0988e2bdb1ab108c126553278e2bcf1d30fba49d",
+      "result": "15 passed; 3 failed; 5 explicitly unselected legacy cases",
+      "duration_seconds": 56.39,
+      "interrupted": false,
+      "notes": "Node 22.23.2; all processes exited naturally. Original individual test deadlines preserved; raw workerd canceled/hung request diagnostics retained. This is functional proof, not isolate capacity evidence."
+    },
+    {
+      "file": "native-owner-insert-cause-5d551412.log.gz",
+      "uncompressed_sha256": "170dfff455ce12415f1dd031bf41f1649cf691b526762f6754159077fc43f3d8",
+      "commit": "5d55141231727ac1f400be8280c219575897d3e1 plus temporary exact-insert diagnostic",
+      "node": "22.23.2",
+      "result": "1 expected failure; 22 unselected. Native owner route returns409; exact repository insert proves SQLITE_CONSTRAINT_FOREIGNKEY.",
+      "duration_seconds": 6.57,
+      "interrupted": false,
+      "notes": "Actual original route oracle retained. Temporary diagnostic restored byte-for-byte after natural completion. No application guard changed; raw background diagnostics retained."
+    },
+    {
+      "file": "native-owner-routes-6e0339c3.log.gz",
+      "uncompressed_sha256": "77512bf958609e11372742fd51235e6026e7e6f98e22de789919084b73c3dbf2",
+      "commit": "6e0339c32d132d7e5f5983a7255096289dd16b43",
+      "node": "22.23.2",
+      "result": "2 passed;21 unselected",
+      "duration_seconds": 17.62,
+      "interrupted": false,
+      "notes": "Original native owner identity reviews, no duplicate Card/Printing, exact replay, changed key/intent409 and invalid target422. Actual source/publication/backup provider. Natural18.825s harness; unchanged30s cases/120s outer; background diagnostics retained."
+    },
+    {
+      "file": "native-owner-schema32-green.log.gz",
+      "uncompressed_sha256": "ec108a3ca9a8f5e8e80cf5c247c5797f35292b92285a1ed9642144637826db2c",
+      "commit": "6e0339c32d132d7e5f5983a7255096289dd16b43",
+      "node": "22.23.2",
+      "result": "9 passed",
+      "duration_seconds": 2.39,
+      "interrupted": false,
+      "notes": "Real SQLite schema/repository integrity proof; synthetic retained relational facts are not actual owner publication or restore."
+    },
+    {
+      "file": "native-owner-schema32-migrations.log.gz",
+      "uncompressed_sha256": "1d6cb464b72cff93029898266d79557e38afce7a9bcbdfe0c8b3aa5dd1b4276e",
+      "commit": "6e0339c32d132d7e5f5983a7255096289dd16b43",
+      "node": "22.23.2",
+      "result": "10 passed",
+      "duration_seconds": 3.765,
+      "interrupted": false,
+      "notes": "Existing schema hygiene and populated no-change migration proof through schema32; no live database mutation."
+    },
+    {
+      "file": "native-gundam-history-d66710e5.log.gz",
+      "uncompressed_sha256": "1a836974cea34e7c7d27a846042f5dbcaa7f89fed69588554ec14506c6f5ab8d",
+      "commit": "d66710e5bcccb83c3d54d963c80ae89d9fc971d1",
+      "node": "22.23.2",
+      "result": "1 failed;22 unselected. Original native historical Gundam oracle reaches actual Printing administration404 after two publications and verified backups.",
+      "duration_seconds": 7.78,
+      "interrupted": false,
+      "notes": "Natural8.849s harness; unchanged45s case/90s outer. Original current/historical locator and separate withdrawal assertions retained; no history producer implementation yet."
     }
   ]
 }

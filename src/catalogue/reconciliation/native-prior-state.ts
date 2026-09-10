@@ -25,7 +25,7 @@ export async function nativeCandidateAtRevision(
   continuation: PriorStateContinuation,
 ) {
   if (games.length !== 1) return undefined;
-  const candidate = await nativePredecessorGameCandidateStatement(db, revision, games[0]!).first<{
+  const candidate = await nativePredecessorGameCandidateStatement(db, revision, games[0]!, continuation.runId).first<{
     id: string;
     preparation_id: string;
     partition_count: number;

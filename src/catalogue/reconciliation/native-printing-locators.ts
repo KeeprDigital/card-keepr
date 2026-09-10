@@ -45,7 +45,9 @@ export async function nativePrintingsAtLocator(
   locator: string,
 ): Promise<{ id: string }[] | undefined> {
   const candidate = await documentStorage(() =>
-    nativePredecessorGameCandidateStatement(db, prior.revision, prior.game).first<{ id: string }>(),
+    nativePredecessorGameCandidateStatement(db, prior.revision, prior.game, prior.preparationId).first<{
+      id: string;
+    }>(),
   );
   if (!candidate) return undefined;
   // Prior-state seeding verifies the exact member's manifest partitions before
@@ -156,7 +158,11 @@ export async function nativePrintingMatches(
   compatibility: PrintingCompatibility,
   locator: { locator: string; variantKey: string | null; reviewed: boolean },
 ): Promise<[PrintingMatch | null, PrintingMatch[], PrintingMatch[], PrintingMatch[]] | undefined> {
-  if (!(await documentStorage(() => nativePredecessorGameCandidateStatement(db, prior.revision, prior.game).first())))
+  if (
+    !(await documentStorage(() =>
+      nativePredecessorGameCandidateStatement(db, prior.revision, prior.game, prior.preparationId).first(),
+    ))
+  )
     return undefined;
   const group = await sha256Text(compatibility.card_id);
   const read = async (kind: NativePrintingMatchKind): Promise<PrintingMatch[]> => {

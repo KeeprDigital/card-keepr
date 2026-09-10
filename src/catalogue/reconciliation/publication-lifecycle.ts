@@ -13,7 +13,8 @@ export async function preparePublicLifecycle(
   kind: string,
   value: Record<string, unknown>,
 ): Promise<PublicLifecycleFact | null> {
-  if (!["cards", "printings", "products", "product_relationships", "relationships"].includes(kind)) return null;
+  if (!["cards", "printings", "products", "errata", "product_relationships", "relationships"].includes(kind))
+    return null;
   const id = String(value.id);
   const prior = await priorPublicLifecycle(
     db,
@@ -21,6 +22,7 @@ export async function preparePublicLifecycle(
     candidate.supported_game,
     kind,
     id,
+    candidate.preparation_id,
   ).first<PublicLifecycleFact>();
   let observed = false;
   let withdrawal: Record<string, unknown> | null = null;
@@ -50,7 +52,9 @@ export async function preparePublicLifecycle(
     observationDigest = await sha256Text(
       canonicalJson(value.source_observations ?? value.source_observation_ids ?? value.provenance ?? []),
     );
-    observed = value.observed === true && observationDigest !== prior?.observation_digest;
+    // Errata retain cumulative immutable provenance; only newly retained evidence
+    // advances observation history, so carrying a missing Erratum preserves it.
+    observed = (kind === "errata" || value.observed === true) && observationDigest !== prior?.observation_digest;
     if (value.withdrawal && typeof value.withdrawal === "object")
       withdrawal = value.withdrawal as Record<string, unknown>;
   }

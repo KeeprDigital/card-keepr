@@ -724,10 +724,29 @@ export async function reconcileRetainedCardPrintingEvidence(
             }
           const provenCards: typeof exactUnnumberedCards = [];
           if (printing !== null) {
+            const locator = observation.locator;
+            if (locator === null) throw new Error("A Printing observation has no locator.");
             for (const card of exactUnnumberedCards) {
               consumeIdentityMatch();
               const expected = compatibilityFor(card.id, observation.sourceLineage, observation);
-              const compatible = await compatiblePrintings(database, expected);
+              const nativeMatches = await nativePrintingMatches(
+                database,
+                {
+                  preparationId: runId,
+                  revision: run.expected_current_revision_id,
+                  game: observation.supportedGame,
+                  through: priorPrintingIdentities.position,
+                  locatorThrough: priorPrintingLocators.position,
+                },
+                expected,
+                { locator, variantKey: observation.variantKey, reviewed: false },
+              );
+              const [located, compatible] =
+                nativeMatches ??
+                (await Promise.all([
+                  printingAtLocatorVariant(database, observation.sourceLineage, locator, observation.variantKey),
+                  compatiblePrintings(database, expected),
+                ]));
               const local: PrintingCompatibility[] = [];
               for await (const match of localPrintingCompatibility.matchingBeforeObservation(
                 compatibilityGroup(expected),
@@ -736,15 +755,6 @@ export async function reconcileRetainedCardPrintingEvidence(
                 consumeIdentityMatch();
                 if (isCompatible(match.compatibility, expected)) local.push(match.compatibility);
               }
-              const located =
-                observation.locator === null
-                  ? null
-                  : await printingAtLocatorVariant(
-                      database,
-                      observation.sourceLineage,
-                      observation.locator,
-                      observation.variantKey,
-                    );
               const mapped = located !== null && isCompatible(located, expected);
               if (
                 mapped ||
@@ -2192,6 +2202,16 @@ async function semanticDraftDocument(draft: ReconciliationCandidateState, metada
     "identity_corrections",
   ] as const) {
     if (!(kind in document)) continue;
+    if (kind === "identity_corrections") {
+      // Native predecessors retain an empty collection. Its absence and []
+      // express the same facts; keep the historical empty canonical form.
+      const corrections = draft.values(kind);
+      try {
+        if ((await corrections.next()).done) continue;
+      } finally {
+        await corrections.return(undefined);
+      }
+    }
     result[kind] = canonicalRecordSource(async function* (after) {
       for await (const entity of draft.values(kind, after)) {
         const value = semanticCatalogueCandidate({ ...shell, [kind]: [entity] });
@@ -2206,9 +2226,9 @@ function semanticCatalogueCandidate(candidate: CatalogueCandidate): Record<strin
   return {
     contract: candidate.contract,
     selected_games: candidate.selected_games,
-    ...(candidate.identity_corrections ? { identity_corrections: candidate.identity_corrections } : {}),
+    ...(candidate.identity_corrections?.length ? { identity_corrections: candidate.identity_corrections } : {}),
     cards: candidate.cards,
-    printings: candidate.printings,
+    printings: candidate.printings.map(({ locator_evidence: _locators, ...printing }) => printing),
     printing_images: (candidate.printing_images ?? []).map((image) => ({
       id: image.id,
       printing_id: image.printing_id,

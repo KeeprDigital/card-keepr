@@ -333,3 +333,119 @@ independent Errata scope, and revalidated/reverted provenance dates. Failed
 collection remains a failed collection rather than a fabricated candidate.
 Typecheck passes; the five-case runtime is pending, including the separately
 diagnosed native no-change contract gap. No global timeout changed.
+
+The reviewed native prior-identity provider `9a43a400` is incorporated as
+`43c80966`. Its production files are byte-identical; the sole test conflict was
+resolved to the exact reviewed operations file, including its earlier native
+fixture migration. The independent provider family passed 58/58 separately.
+
+The normative observation-count test now prepares native 100/124/149-record
+candidates with exact predecessor revisions, preserving the absent warning at
+24 and exact warning at 25. Historical search-repair projection tests explicitly
+seed real retained reservations through the proven recovery helper. The obsolete
+new aggregate over-budget approval now asserts the documented 410 retirement,
+unchanged run/failure state, catalogue head and immutable objects. Its former
+new-writer capacity error is intentionally retired; no limit was increased.
+Focused formatting and typecheck pass; these changed selections await runtime.
+
+The exact `cd0fc2d0baaee613f46deccd158422db865a2844` identity file ran all
+11 cases naturally in 111.39 seconds on Node22.23.2: nine passed and two failed.
+All five controlled interruption/cursor cases pass with original collection and
+identity keys; no immutable-object collision occurred. The failures preserve
+meaningful semantics: a reviewed known-number merge exports two Printings instead
+of the exact one retained identity, and the next candidate after a reviewed Card
+split pauses because prior compatibility still names the former Card. The native
+identity provider owner is diagnosing both at those exact existing tests.
+No fixture oracle is weakened; neither failure is called a harmless flake. Full
+raw log and SHA-256 remain alongside the background cancellation/RPC-stub warnings.
+The runtime lease was returned to the coordinator with no Workers process left.
+
+The mixed-game empty-plan case now prepares and inspects each native game
+candidate independently, checks actual retained disappearance warnings in both
+plan orders, preserves the original decision to decline the first pair, and
+approves the second pair with their exact game predecessors. Fusion World
+locator history remains bound to its actual publication. Historical export
+repair assertions and explicit retired approval remain separate. Typecheck and
+focused formatting pass; the export/repair runtime selection remains queued.
+
+The reviewed owner-identity provider `4705f498` is incorporated byte-identically
+as `adda135b`. Independent Standards and Spec reviews found no actionable
+findings, and its entire identity file passed 11/11 in 117.94 seconds on the
+provider branch with the actual native mapping and assignment-evidence assertions.
+The native preparation helper now accepts optional request headers only on the
+actual preparation POST; ordinary callers retain their existing behavior.
+
+Exact clean `adda135b0aeca2d3035f506ed32f04a27b78acbf` admission verification on
+Node22.23.2 completed naturally. The bounded pair passed 2/2 in 9.72 seconds;
+the complete file passed 21/22 in 42.53 seconds. Both interruption cases retained
+the original four failures, cursor bounds and deadline, then published through
+actual verified backups. The sole failure is unknown-number supplemental Card
+confirmation: the early equivalence proof still queried legacy Printing
+compatibility and locator rows, so it could not see its native predecessor's
+retained evidence. The known-number companion and all other admission, owner
+rejection/reconsideration and identity guards passed. Raw logs and SHA-256 are
+retained, including background runtime cancellation diagnostics.
+
+The narrow correction reuses the existing bounded native prior-identity lookup
+in that early branch, before the equivalence decision. Only a legacy predecessor
+falls back to the old queries. The same compatibility, explicit artwork,
+cross-source evidence, exactly-one candidate and owner-review conditions remain
+in force. The original 21/22 result is its TDD baseline; focused and full green
+proof remain pending at this checkpoint.
+
+Errata migration follows the accepted [#214 publication decision](https://github.com/KeeprDigital/card-keepr/issues/214#issuecomment-5558801899)
+and ADR0015: approval "preserves collected/reviewed facts without
+applicability-date activation" and replaces date-crossing invalidation.
+The obsolete `candidate_errata_stale` expectation is therefore intentionally
+replaced with proof that the reviewed wording survives a date crossing and an
+unselected game's publication. The existing synthetic 2099 Erratum supplies a
+real boundary that stays within the candidate's original seven-day deadline
+while export preparation still checks its actual wall clock. No production
+clock, deadline or effective-date activation rule is added. Historical D1
+Erratum immutability and typed-target guards remain actual retained-reservation
+recovery tests; native consumer cases read verified native records and exports.
+
+The unknown Card fix `36c8883d` now has both independent review axes clear:
+coordinator Spec and toolchain Standards found zero actionable findings against
+`adda135b`. At exact clean `44f68629ebc3e00af21aecc4baa0bf4f8c2cdd25`, the original
+known/unknown confirmation pair passed 2/2 in 8.78 seconds, then the full admission
+file passed 22/22 in 42.26 seconds. Both runs ended naturally, with no request or
+test deadline increased and no original identity/authority/owner decision
+assertion weakened. The host lease was returned after verifying no runtime
+process remained. Logs and hashes retain all background cancellation diagnostics.
+This closes the specific admission regression; other caller families and the
+full combined validation remain pending.
+
+
+## Native Errata and Card identity proof at 0988e2bd
+
+The complete Errata file ran on Node 22.23.2 at clean
+`0988e2bdb1ab108c126553278e2bcf1d30fba49d`: 21 passed and 4 failed,
+54.00s Vitest / 55.031s harness. The accepted ADR 0015 date-crossing and
+other-game publication case passed in 7.368s. Two failures expose the native
+Printing administration lookup returning 404. The other two were initially
+attributed to missing public Erratum lifecycle fields, but independent Spec
+review found a test migration error: the accepted ErratumRecord/exportErratum
+contract never exposes these private history fields. The original private
+Erratum and per-provenance first/last-observed assertions must be restored at an
+exact native retained-evidence seam. Retained Erratum facts and original/current
+record equality pass. The coordinator owns that fixture/private lifecycle
+correction and this lane owns the native Printing administration read. No public
+Erratum schema expansion is authorized by the mistaken test projection.
+
+At the same clean commit, the eighteen migrated Card identity cases ran:
+15 passed and 3 failed, 56.39s Vitest / 57.376s harness; five longitudinal
+legacy-origin cases were explicitly filtered and remain migration work.
+Passing cases include all seven Card/DON/number guards, moved unknown-number
+identity, paginated mappings, explicit source-authority change and the opposite
+Gundam locale order. The remaining actual failures are Asia-first Gundam raw
+Printing precedence (US whitespace replaces the original Asia wording) and two
+native owner identity-review resolutions returning 409. Their original identity,
+canonical-fact and owner-decision assertions remain in place for diagnosis.
+
+Both commands completed naturally with no interruption. Existing per-case
+bounds were unchanged; finite outer bounds derived from their summed repository
+limits were 900s and 600s. Full raw logs and SHA-256 digests are retained in the
+evidence manifest, including canceled/hung background request diagnostics.
+No remaining caller family or full integrated suite is claimed green. After a
+clean process check, the exclusive runtime lease passed to the no-change lane.

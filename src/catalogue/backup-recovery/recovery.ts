@@ -399,7 +399,13 @@ export async function verifyCatalogueRecovery(
     const expected = JSON.parse(row.expected_verification_json) as CatalogueVerificationEvidence;
     if (expected.composition_snapshot) {
       if (!artifacts) throw new Error("Private composition artifacts are required for Catalogue Recovery.");
-      await verifyCompositionArtifacts(database, artifacts.catalogue, artifacts.images, row.target_revision_id);
+      await verifyCompositionArtifacts(
+        database,
+        artifacts.catalogue,
+        artifacts.images,
+        row.target_revision_id,
+        expected.composition_snapshot,
+      );
     }
     const verification = await provider.reconstructAndVerify({
       accountId: input.cloudflareAccountId,

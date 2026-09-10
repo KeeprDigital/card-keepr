@@ -1,29 +1,44 @@
-import { catalogueStore } from "../../../src/catalogue/shared";
-import { assessSourceAdmission } from "../../../src/catalogue/reconciliation/entity-admission-source";
+import { expect, test } from "vitest";
 import {
   insertAdmissionDecisionStatement,
   proposalHistoryStatement,
 } from "../../../src/catalogue/reconciliation/entity-admission-repository";
-import { initializeReconciliationProgress } from "../../../src/catalogue/reconciliation/reconciliation-progress";
+import { assessSourceAdmission } from "../../../src/catalogue/reconciliation/entity-admission-source";
+import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
 import { parseReconciliationObservation } from "../../../src/catalogue/reconciliation/reconciliation-observation";
+import { initializeReconciliationProgress } from "../../../src/catalogue/reconciliation/reconciliation-progress";
+import { catalogueStore } from "../../../src/catalogue/shared";
 import { reconciliationSourceDocument } from "../../../test/support/fake-publisher/reconciliation-documents";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
-import { expect, test } from "vitest";
+import { recoverHistoricalPublication } from "./historical-publication-fixture";
+import { nativeCandidateRecords } from "./native-candidate-helpers";
+import { retainNativePreparation } from "./native-preparation-fixture";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import { retainLegacyAdmissionPin, retainLegacyAdmissionSelection } from "./query-helpers/legacy-decision-pins";
-import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 import {
+  collect,
+  exportComponentRecords,
+  get,
   installReconciliationSuite,
   post,
-  get,
-  collect,
-  reconcile,
-  approve,
-  exportComponentRecords,
   postFixtureEvidence,
+  reconcile,
   testEnv,
 } from "./reconciliation-helpers";
+import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 
 installReconciliationSuite();
+
+async function prepareAdmissionSource(
+  path: string,
+  key: string,
+  predecessor: string,
+  source?: Parameters<typeof collect>[2],
+) {
+  const run = await collect(path, key, source);
+  const candidate = await prepareNativeCandidate(run.id, "one-piece", predecessor, `${key}-candidate`);
+  return { candidate, records: await nativeCandidateRecords(String(candidate.id)) };
+}
 
 // Synthetic owner intake, not retained evidence that this Card exists in the world.
 test("owner retains incomplete intake, rejects and explicitly reconsiders without erasing history", async () => {
@@ -116,7 +131,7 @@ test.each([false, true])(
     expect(result.response.status, JSON.stringify(result.document)).toBe(200);
     const status = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
     expect(status.document.admission_decision_count).toBe(selected ? 1 : 0);
-    const published = await approve(result.document);
+    const published = await recoverHistoricalPublication(run.id, "legacy-admission-publication");
     expect(published.response.status).toBe(200);
     const cards = await exportComponentRecords(String(published.document.resulting_revision_id), "cards");
     expect(cards).not.toEqual(expect.arrayContaining([expect.objectContaining({ name: "Synthetic owner card" })]));
@@ -185,12 +200,17 @@ test("owner admission enters the next candidate and consumer catalogue only afte
   const history = admitted.document.history as { decision: { card: { id: string } } }[];
   const cardId = history[0]!.decision.card.id;
   const run = await collect("/reconciliation/card-without-printing", "admission-publish");
-  const candidate = await reconcile(run.id);
-  expect(candidate.response.status, JSON.stringify(candidate.document)).toBe(200);
-  expect(candidate.document.warnings).toEqual(
+  const candidate = await prepareNativeCandidate(
+    run.id,
+    "one-piece",
+    "catrev_spine_000",
+    "admission-publish-candidate",
+  );
+  const records = await nativeCandidateRecords(String(candidate.id));
+  expect([...(records.warnings ?? []), ...(records.shared_warnings ?? [])]).toEqual(
     expect.arrayContaining([expect.objectContaining({ code: "entity_admission" })]),
   );
-  const published = await approve(candidate.document);
+  const published = await approveNativeCandidate(candidate, "admission-publish-publication");
   expect(published.response.status, JSON.stringify(published.document)).toBe(200);
   const cards = await exportComponentRecords(String(published.document.resulting_revision_id), "cards");
   expect(cards).toEqual(
@@ -246,6 +266,7 @@ test.each([
       ).toBe(200);
     }
     const run = await collect("/reconciliation/card-without-printing", "bounded-admission-publish");
+    const preparation = await retainNativePreparation(run.id, "catrev_spine_000", "bounded-admission-native");
     let calls = 0;
     let armed = false,
       resumed = false,
@@ -288,15 +309,7 @@ test.each([
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
-    const event = {
-      payload: {
-        ingestion_run_id: run.id,
-        expected_current_revision_id: String(run.document.expected_current_revision_id),
-        idempotency_key: `reconcile-${run.id}`,
-        observed_at: new Date().toISOString(),
-        generation: 0,
-      },
-    } as import("cloudflare:workers").WorkflowEvent<
+    const event = { payload: preparation.params } as import("cloudflare:workers").WorkflowEvent<
       import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
     >;
     const step = {
@@ -314,10 +327,12 @@ test.each([
         if (JSON.parse(result).continuation?.phase === "entity_admissions") {
           admissionCalls.push(calls);
           if (warningCount && !armed) {
-            const progress = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
-            const cursor = (
-              progress.checkpoints as { phase: string; cursor: { pendingWarning: number | null } }[]
-            ).find((item) => item.phase === "entity_admissions")!.cursor;
+            const checkpoint = await reconciliationCheckpoint<{ pendingWarning: number | null }>(
+              catalogueStore(testEnv.CATALOGUE_DB),
+              preparation.candidateId,
+              "entity_admissions",
+            );
+            const cursor = checkpoint!.value;
             if (cursor.pendingWarning !== null && cursor.pendingWarning > 0) armed = true;
           }
         }
@@ -327,53 +342,40 @@ test.each([
     await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, event, step);
     if (warningCount) {
       expect(failures).toBe(4);
-      const paused = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
+      const paused = (await get(`/v1/game-candidates/${preparation.candidateId}`)).document;
       expect(paused).toMatchObject({ state: "paused", generation: 1 });
-      expect(
-        (
-          await post(`/v1/ingestion-runs/${run.id}/reconciliation/resume`, {
-            generation: 1,
-            idempotency_key: "resume-admission-warnings",
-          })
-        ).response.status,
-      ).toBe(200);
+      expect((await preparation.resume(1, "resume-admission-warnings")).status).toBe(200);
       resumed = true;
       await runReconciliationWorkflow(
         { ...testEnv, CATALOGUE_DB: database },
         { payload: { ...event.payload, generation: 1 } } as typeof event,
         step,
       );
-      expect((await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document).toMatchObject({
+      expect((await get(`/v1/game-candidates/${preparation.candidateId}`)).document).toMatchObject({
         state: "sealed",
         deadline: paused.deadline,
       });
     }
     expect(admissionCalls.length).toBeGreaterThanOrEqual(Math.max(Math.ceil(count / 4), Math.ceil(warningCount / 4)));
     expect(Math.max(...admissionCalls)).toBeLessThanOrEqual(100);
-    const candidate = await get(`/v1/ingestion-runs/${run.id}/candidate`);
+    const candidate = await get(`/v1/game-candidates/${preparation.candidateId}`);
     expect(candidate.response.status, JSON.stringify(candidate.document)).toBe(200);
-    const partitions = (await get(`/v1/ingestion-runs/${run.id}/reconciliation/partitions`)).document.partitions as {
-      kind: string;
-      record_count: number;
-    }[];
-    expect(partitions.filter(({ kind }) => kind === "cards").reduce((sum, part) => sum + part.record_count, 0)).toBe(
-      count + 1,
-    );
-    const status = (await get(`/v1/ingestion-runs/${run.id}/reconciliation`)).document;
-    const checkpoint = (status.checkpoints as { phase: string; ordinal: number; cursor: unknown }[]).find(
-      ({ phase }) => phase === "entity_admissions",
+    const records = await nativeCandidateRecords(preparation.candidateId);
+    expect(records.cards).toHaveLength(count + 1);
+    const checkpoint = await reconciliationCheckpoint(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      preparation.candidateId,
+      "entity_admissions",
     );
     expect(checkpoint).toMatchObject({
-      cursor: { complete: true, processedDecisions: count, cards: count, pendingWarning: null },
+      value: { complete: true, processedDecisions: count, cards: count, pendingWarning: null },
     });
     expect(checkpoint!.ordinal).toBeGreaterThanOrEqual(Math.max(Math.ceil(count / 4), Math.ceil(warningCount / 4)) - 1);
     if (warningCount) {
-      const warnings = partitions
-        .filter((partition) => partition.kind === "warnings")
-        .reduce((sum, part) => sum + part.record_count, 0);
+      const warnings = (records.warnings ?? []).length + (records.shared_warnings ?? []).length;
       expect(warnings).toBeGreaterThanOrEqual(warningCount + 1);
     }
-    const published = await approve(candidate.document);
+    const published = await approveNativeCandidate(candidate.document, "bounded-admission-publication");
     expect(published.response.status).toBe(200);
     const cards = await exportComponentRecords(String(published.document.resulting_revision_id), "cards");
     expect(cards).toHaveLength(count + 1);
@@ -414,9 +416,9 @@ test("manual Printing admission identifies its Card and retains a scoped attesta
     admitted.document.history as { decision: { card: { id: string }; printing: { card_id: string } } }[]
   )[0]!.decision;
   expect(decision.printing.card_id).toBe(decision.card.id);
-  const candidate = await reconcile((await collect("/reconciliation/card-without-printing", "printing-publish")).id);
-  expect(candidate.response.status, JSON.stringify(candidate.document)).toBe(200);
-  const published = await approve(candidate.document);
+  const run = await collect("/reconciliation/card-without-printing", "printing-publish");
+  const candidate = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", "printing-publish-candidate");
+  const published = await approveNativeCandidate(candidate, "printing-publish-publication");
   expect(published.response.status, JSON.stringify(published.document)).toBe(200);
 });
 
@@ -438,10 +440,7 @@ async function designateSupplemental() {
 const supplemental = { game: "one-piece", lineage: "limitless-one-piece-en", adapter: "fixture-one-piece-tabular@1" };
 test("permitted supplemental authority automatically admits through a retained proposal", async () => {
   await designateSupplemental();
-  const candidate = await reconcile(
-    (await collect("/reconciliation/canonical-tabular", "auto-admit", supplemental)).id,
-  );
-  expect(candidate.response.status, JSON.stringify(candidate.document)).toBe(200);
+  await prepareAdmissionSource("/reconciliation/canonical-tabular", "auto-admit", "catrev_spine_000", supplemental);
   const proposals = await get("/v1/entity-proposals?game=one-piece");
   expect(proposals.response.status).toBe(200);
   expect(proposals.document.proposals).toEqual([
@@ -450,20 +449,27 @@ test("permitted supplemental authority automatically admits through a retained p
 });
 
 test("automation retains explicit owner rejection when later evidence satisfies automatic rules", async () => {
-  await approve(
-    (await reconcile((await collect("/reconciliation/card-without-printing", "unrelated-established-card")).id))
-      .document,
+  const established = await prepareAdmissionSource(
+    "/reconciliation/card-without-printing",
+    "unrelated-established-card",
+    "catrev_spine_000",
+  );
+  const establishedPublication = await approveNativeCandidate(
+    established.candidate,
+    "unrelated-established-publication",
   );
   await designateSupplemental();
-  const unresolved = await reconcile(
-    (await collect("/reconciliation/canonical-tabular-unresolved", "auto-unresolved", supplemental)).id,
+  const unresolved = await prepareAdmissionSource(
+    "/reconciliation/canonical-tabular-unresolved",
+    "auto-unresolved",
+    String(establishedPublication.document.resulting_revision_id),
+    supplemental,
   );
-  expect(unresolved.response.status, JSON.stringify(unresolved.document)).toBe(200);
-  expect(unresolved.document.cards).toEqual([]);
-  expect(unresolved.document.warnings).toEqual(
+  expect(unresolved.records.cards!.map(({ id }) => id)).toEqual(established.records.cards!.map(({ id }) => id));
+  expect([...(unresolved.records.warnings ?? []), ...(unresolved.records.shared_warnings ?? [])]).toEqual(
     expect.arrayContaining([expect.objectContaining({ code: "entity_proposal_excluded" })]),
   );
-  await approve(unresolved.document);
+  const unresolvedPublication = await approveNativeCandidate(unresolved.candidate, "unresolved-publication");
   const list = await get("/v1/entity-proposals?game=one-piece");
   const proposal = (list.document.proposals as { id: string }[])[0]!;
   const rejected = await post(`/v1/entity-proposals/${proposal.id}/decisions`, {
@@ -473,15 +479,17 @@ test("automation retains explicit owner rejection when later evidence satisfies 
     idempotency_key: "explicit-source-reject",
   });
   expect(rejected.response.status).toBe(200);
-  const replay = await reconcile(
-    (await collect("/reconciliation/canonical-tabular", "later-qualified-evidence", supplemental)).id,
+  const replay = await prepareAdmissionSource(
+    "/reconciliation/canonical-tabular",
+    "later-qualified-evidence",
+    String(unresolvedPublication.document.resulting_revision_id),
+    supplemental,
   );
-  expect(replay.response.status, JSON.stringify(replay.document)).toBe(200);
-  expect(replay.document.cards).toEqual([]);
+  expect(replay.records.cards!.map(({ id }) => id)).toEqual(established.records.cards!.map(({ id }) => id));
   const inspected = await get(`/v1/entity-proposals/${proposal.id}`);
   expect(inspected.document).toMatchObject({ status: "rejected", generation: 1 });
   expect(inspected.document.history).toHaveLength(1);
-  await approve(replay.document);
+  const replayPublication = await approveNativeCandidate(replay.candidate, "rejected-evidence-publication");
   expect(
     (
       await post(`/v1/entity-proposals/${proposal.id}/decisions`, {
@@ -492,11 +500,13 @@ test("automation retains explicit owner rejection when later evidence satisfies 
       })
     ).response.status,
   ).toBe(200);
-  const reconsidered = await reconcile(
-    (await collect("/reconciliation/canonical-tabular", "owner-reconsidered", supplemental)).id,
+  const reconsidered = await prepareAdmissionSource(
+    "/reconciliation/canonical-tabular",
+    "owner-reconsidered",
+    String(replayPublication.document.resulting_revision_id),
+    supplemental,
   );
-  expect(reconsidered.response.status, JSON.stringify(reconsidered.document)).toBe(200);
-  expect(reconsidered.document.printings).toHaveLength(1);
+  expect(reconsidered.records.printings).toHaveLength(1);
   expect((await get(`/v1/entity-proposals/${proposal.id}`)).document.history).toHaveLength(3);
 });
 
@@ -504,16 +514,18 @@ test.each(["canonical-tabular", "canonical-tabular-missing-number"])(
   "later publisher confirmation keeps supplemental IDs and authority: %s",
   async (scenario) => {
     await designateSupplemental();
-    const initial = await reconcile(
-      (await collect(`/reconciliation/${scenario}`, "supplemental-first", supplemental)).id,
+    const initial = await prepareAdmissionSource(
+      `/reconciliation/${scenario}`,
+      "supplemental-first",
+      "catrev_spine_000",
+      supplemental,
     );
-    expect(initial.response.status).toBe(200);
     if (scenario.endsWith("missing-number")) {
-      expect(initial.document.cards).toEqual([
+      expect(initial.records.cards).toEqual([
         expect.objectContaining({ official_identity: { kind: "unknown", value: null } }),
       ]);
     }
-    await approve(initial.document);
+    const initialPublication = await approveNativeCandidate(initial.candidate, "supplemental-first-publication");
     const started = await postFixtureEvidence({
       plans: [
         {
@@ -538,17 +550,22 @@ test.each(["canonical-tabular", "canonical-tabular-missing-number"])(
       testEnv.OFFICIAL_SOURCE_TRANSPORT,
       String(started.document.id),
     );
-    const confirmed = await reconcile(String(started.document.id));
-    expect(confirmed.response.status, JSON.stringify(confirmed.document)).toBe(200);
-    expect(confirmed.document.cards).toEqual([
+    const confirmed = await prepareNativeCandidate(
+      String(started.document.id),
+      "one-piece",
+      String(initialPublication.document.resulting_revision_id),
+      "publisher-confirmation-candidate",
+    );
+    const confirmedRecords = await nativeCandidateRecords(String(confirmed.id));
+    expect(confirmedRecords.cards).toEqual([
       expect.objectContaining({
-        id: (initial.document.cards as { id: string }[])[0]!.id,
+        id: (initial.records.cards as { id: string }[])[0]!.id,
         official_identity: { kind: "card_number", value: "OP96-001" },
       }),
     ]);
-    const beforePrinting = (initial.document.printings as { id: string }[])[0]!;
-    expect(confirmed.document.printings).toEqual([expect.objectContaining({ id: beforePrinting.id })]);
-    const mapping = await get(`/v1/reconciliation/identities/${beforePrinting.id}`);
+    const beforePrinting = (initial.records.printings as { id: string }[])[0]!;
+    expect(confirmedRecords.printings).toEqual([expect.objectContaining({ id: beforePrinting.id })]);
+    const mapping = await get(`/v1/reconciliation/identities/${beforePrinting.id}?preparation_id=${confirmed.id}`);
     expect(mapping.document.mappings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -569,9 +586,13 @@ test.each(["canonical-tabular", "canonical-tabular-missing-number"])(
 );
 
 test("owner cannot allocate a second numbered Card and can link evidence without changing accepted facts", async () => {
-  const initial = await reconcile((await collect("/reconciliation/card-without-printing", "link-target")).id);
-  await approve(initial.document);
-  const card = (initial.document.cards as { id: string; [key: string]: unknown }[])[0]!;
+  const initial = await prepareAdmissionSource(
+    "/reconciliation/card-without-printing",
+    "link-target",
+    "catrev_spine_000",
+  );
+  await approveNativeCandidate(initial.candidate, "link-target-publication");
+  const card = (initial.records.cards as { id: string; [key: string]: unknown }[])[0]!;
   const { id, ...content } = card;
   const created = await post("/v1/entity-proposals", {
     game: "one-piece",
@@ -632,10 +653,13 @@ test("owner appends corrected intake on reconsideration while retaining the orig
 
 test("owner reaffirms admission without ID churn and unrelated Printing metadata does not invalidate the attestation", async () => {
   await designateSupplemental();
-  const initial = await reconcile(
-    (await collect("/reconciliation/canonical-tabular", "reaffirm-initial", supplemental)).id,
+  const initial = await prepareAdmissionSource(
+    "/reconciliation/canonical-tabular",
+    "reaffirm-initial",
+    "catrev_spine_000",
+    supplemental,
   );
-  await approve(initial.document);
+  const publication = await approveNativeCandidate(initial.candidate, "reaffirm-initial-publication");
   const proposals = await get("/v1/entity-proposals?game=one-piece");
   const id = (proposals.document.proposals as { id: string }[])[0]!.id;
   expect(
@@ -657,15 +681,17 @@ test("owner reaffirms admission without ID churn and unrelated Printing metadata
     idempotency_key: "reaffirm-admit",
   });
   expect(reaffirmed.response.status, JSON.stringify(reaffirmed.document)).toBe(200);
-  const printing = (initial.document.printings as { id: string }[])[0]!;
+  const printing = (initial.records.printings as { id: string }[])[0]!;
   expect((reaffirmed.document.history as { decision: unknown }[])[2]!.decision).toMatchObject({
     printing: { id: printing.id },
   });
-  const updated = await reconcile(
-    (await collect("/reconciliation/canonical-tabular-unrelated", "unrelated-metadata", supplemental)).id,
+  const updated = await prepareAdmissionSource(
+    "/reconciliation/canonical-tabular-unrelated",
+    "unrelated-metadata",
+    String(publication.document.resulting_revision_id),
+    supplemental,
   );
-  expect(updated.response.status, JSON.stringify(updated.document)).toBe(200);
-  expect(updated.document.printings).toEqual([
+  expect(updated.records.printings).toEqual([
     expect.objectContaining({
       id: printing.id,
       game_data: { profile: "one-piece@1", attributes: { illustration_types: ["original"] } },
@@ -701,11 +727,12 @@ test("manual Printing unknown fields retain actionable raw-value warnings throug
     idempotency_key: "unknown-printing-admit",
   });
   expect(admitted.response.status).toBe(200);
-  const candidate = await reconcile(
-    (await collect("/reconciliation/card-without-printing", "unknown-printing-candidate")).id,
+  const candidate = await prepareAdmissionSource(
+    "/reconciliation/card-without-printing",
+    "unknown-printing-candidate",
+    "catrev_spine_000",
   );
-  expect(candidate.response.status).toBe(200);
-  expect(candidate.document.warnings).toEqual(
+  expect([...(candidate.records.warnings ?? []), ...(candidate.records.shared_warnings ?? [])]).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ code: "unknown_source_field", raw_value: "unmapped finish" }),
       expect.objectContaining({ code: "unknown_source_field", raw_value: "unmapped mechanic" }),
@@ -748,9 +775,12 @@ test("admission reconsideration cannot reassign an established Printing to anoth
       card: (admitted.document.history as { decision: { card: { id: string } } }[])[0]!.decision.card.id,
     });
   }
-  await approve(
-    (await reconcile((await collect("/reconciliation/card-without-printing", "identity-publish")).id)).document,
+  const candidate = await prepareAdmissionSource(
+    "/reconciliation/card-without-printing",
+    "identity-publish",
+    "catrev_spine_000",
   );
+  await approveNativeCandidate(candidate.candidate, "identity-publication");
   expect(
     (
       await post(`/v1/entity-proposals/${accepted[0]!.proposal}/decisions`, {

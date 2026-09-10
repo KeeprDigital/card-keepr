@@ -584,6 +584,7 @@ export async function createVerifiedCatalogueBackup(
               options.publicationArtifacts,
               options.printingImages,
               input.expectedCurrentRevisionId,
+              snapshot,
             );
             expectedVerification.composition_snapshot = snapshot;
             const content = canonicalJson(snapshot);

@@ -3,6 +3,9 @@ import { buildCatalogueExport } from "../../../src/catalogue/export";
 import { canonicalJson, catalogueCandidateContract, catalogueStore, sha256 } from "../../../src/catalogue/shared";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { EMPTY_CATALOGUE_GZIP_HEX, GZIP_PROFILE_GOLDENS } from "./deterministic-gzip-golden";
+import { recoverHistoricalPublication } from "./historical-publication-fixture";
+import { nativeCandidateRecords } from "./native-candidate-helpers";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import * as cardSearchQueries from "./query-helpers/card-search";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import {
@@ -13,7 +16,6 @@ import {
   post,
   postFixtureEvidence,
   reconcile,
-  requiredFirst,
   requiredString,
   testEnv,
   waitForRunState,
@@ -197,10 +199,17 @@ test("heterogeneous empty plans inspect and publish every lineage independently 
     lineage: "fusion-world-en",
     adapter: "fixture-fusion-world-json@2",
   });
-  const seeded = await reconcile(seededRun.id);
-  const cardId = requiredString(requiredFirst(seeded.document, "cards"), "id");
-  const printingId = requiredString(requiredFirst(seeded.document, "printings"), "id");
-  expect((await approve(seeded.document)).response.status).toBe(200);
+  const seeded = await prepareNativeCandidate(
+    seededRun.id,
+    "fusion-world",
+    "catrev_spine_000",
+    "mixed-plan-empty-native-seed",
+  );
+  const seededRecords = await nativeCandidateRecords(String(seeded.id));
+  const cardId = String(seededRecords.cards![0]!.id);
+  const printingId = String(seededRecords.printings![0]!.id);
+  const seedPublication = await approveNativeCandidate(seeded, "mixed-plan-empty-seed-publication");
+  expect(seedPublication.response.status).toBe(200);
 
   const inspectOrder = async (lineages: readonly ("one-piece" | "fusion-world")[], suffix: string, publish = false) => {
     const started = await postFixtureEvidence({
@@ -228,47 +237,58 @@ test("heterogeneous empty plans inspect and publish every lineage independently 
       runId,
     );
     await waitForRunState(runId, "parsing");
-    const candidate = await reconcile(runId);
-    expect(candidate.response.status).toBe(200);
-    const inspected = await get(`/v1/ingestion-runs/${runId}/candidate`);
-    const result = {
-      cards: (
-        inspected.document.diff as {
-          cards: { missing_observations: string[] };
+    const result: { cards: string[]; printings: string[] } = { cards: [], printings: [] };
+    for (const game of lineages) {
+      const candidate = await prepareNativeCandidate(
+        runId,
+        game,
+        game === "fusion-world" ? String(seedPublication.document.resulting_revision_id) : "catrev_spine_000",
+        `mixed-plan-${suffix}-${game}-candidate`,
+      );
+      const inspected = await get(
+        `/v1/game-candidates/${candidate.id}/inspection?manifest=${candidate.manifest_digest}`,
+      );
+      expect(inspected.response.status).toBe(200);
+      expect(inspected.document).toMatchObject({ ready: true, approval_scope: "whole_candidate" });
+      const records = await nativeCandidateRecords(String(candidate.id));
+      for (const warning of [...(records.warnings ?? []), ...(records.shared_warnings ?? [])]) {
+        if (warning.code !== "record_not_observed") continue;
+        if (typeof warning.card_id === "string") result.cards.push(warning.card_id);
+        if (typeof warning.printing_id === "string") result.printings.push(warning.printing_id);
+      }
+      if (publish) {
+        const published = await approveNativeCandidate(candidate, `mixed-plan-${suffix}-${game}-publication`);
+        expect(published.response.status).toBe(200);
+        if (game === "fusion-world") {
+          const revisionId = requiredString(published.document, "resulting_revision_id");
+          const lifecycle = await get(`/v1/reconciliation/printings/${printingId}`);
+          expect(lifecycle.document).toMatchObject({
+            locators: {
+              current: [],
+              historical: [
+                expect.objectContaining({
+                  source_lineage: "fusion-world-en",
+                  current: false,
+                  last_missing_revision_id: revisionId,
+                }),
+              ],
+            },
+          });
         }
-      ).cards.missing_observations,
-      printings: (
-        inspected.document.diff as {
-          printings: { missing_observations: string[] };
-        }
-      ).printings.missing_observations,
-    };
-    if (publish) {
-      const published = await approve(candidate.document);
-      expect(published.response.status).toBe(200);
-      const revisionId = requiredString(published.document, "resulting_revision_id");
-      const lifecycle = await get(`/v1/reconciliation/printings/${printingId}`);
-      expect(lifecycle.document).toMatchObject({
-        locators: {
-          current: [],
-          historical: [
-            expect.objectContaining({
-              source_lineage: "fusion-world-en",
-              current: false,
-              last_missing_revision_id: revisionId,
-            }),
-          ],
-        },
-      });
-    } else
-      expect(
-        (
-          await post(`/v1/ingestion-runs/${runId}/rejection`, {
-            candidate_digest: requiredString(candidate.document, "candidate_digest"),
-            idempotency_key: `reject-mixed-plan-empty-lineage-${suffix}`,
-          })
-        ).response.status,
-      ).toBe(200);
+      } else {
+        // The original owner rejection declines both independently reviewed games.
+        expect(
+          (
+            await post(`/v1/game-candidates/${candidate.id}/abandon`, {
+              generation: candidate.generation,
+              idempotency_key: `reject-mixed-plan-empty-lineage-${suffix}-${game}`,
+            })
+          ).response.status,
+        ).toBe(200);
+      }
+    }
+    result.cards.sort();
+    result.printings.sort();
     return result;
   };
 
@@ -279,12 +299,12 @@ test("heterogeneous empty plans inspect and publish every lineage independently 
   expect(forward.printings).toContain(printingId);
 }, 45_000);
 
-test("Card search repair permits only retained revisions and revalidates unfinished replay claims", async () => {
+test("historical Card search repair permits only retained revisions and revalidates unfinished replay claims", async () => {
   const publishScenario = async (sequence: number) => {
     const run = await collect(`/reconciliation/search-repair-retention-${sequence}`, `repair-retention-${sequence}`);
     const reconciled = await reconcile(run.id);
     expect(reconciled.response.status).toBe(200);
-    const published = await approve(reconciled.document);
+    const published = await recoverHistoricalPublication(run.id, `retained-search-repair-${run.id}`);
     expect(published.response.status).toBe(200);
     return requiredString(published.document, "resulting_revision_id");
   };
@@ -343,11 +363,11 @@ test("Card search repair permits only retained revisions and revalidates unfinis
   });
 }, 60_000);
 
-test("Card search repair binds exact target/current/idempotency and fails stale or conflicting requests closed", async () => {
+test("historical Card search repair binds exact target/current/idempotency and fails stale or conflicting requests closed", async () => {
   const run = await collect("/reconciliation/complete-empty-lineage", "guarded-search-repair-published-target");
   const reconciled = await reconcile(run.id);
   expect(reconciled.response.status).toBe(200);
-  const published = await approve(reconciled.document);
+  const published = await recoverHistoricalPublication(run.id, `retained-search-repair-${run.id}`);
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const request = {
@@ -381,12 +401,12 @@ test("Card search repair binds exact target/current/idempotency and fails stale 
   expect(stale.document).toMatchObject({ code: "current_revision_mismatch" });
 }, 60_000);
 
-test("publication and bounded Card search repair need no obsolete gram table and replay only their completed result", async () => {
+test("retained publication and bounded Card search repair need no obsolete gram table and replay only their completed result", async () => {
   await cardSearchQueries.dropObsoleteCardSearchTerms(testEnv.CATALOGUE_DB).run();
   const run = await collect("/reconciliation/complete-empty-lineage", "bounded-25-card-search-repair");
   const reconciled = await reconcile(run.id);
   expect(reconciled.response.status).toBe(200);
-  const published = await approve(reconciled.document);
+  const published = await recoverHistoricalPublication(run.id, `retained-search-repair-${run.id}`);
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const cards = Array.from({ length: 30 }, (_, index) => {
@@ -461,7 +481,7 @@ test("Card search repair rejects an oversized legacy Card before materializing i
   const run = await collect("/reconciliation/base", "oversized-legacy-search-repair");
   const reconciled = await reconcile(run.id);
   expect(reconciled.response.status).toBe(200);
-  const published = await approve(reconciled.document);
+  const published = await recoverHistoricalPublication(run.id, `retained-search-repair-${run.id}`);
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const oversizedCardId = "card_oversized_legacy_search_repair";
@@ -503,7 +523,7 @@ test("Card search repair rejects an oversized legacy Card before materializing i
   });
 }, 60_000);
 
-test("publication rejects an over-budget candidate before writing any immutable object", async () => {
+test("retired aggregate approval cannot start an over-budget publication or write immutable objects", async () => {
   const run = await collect("/reconciliation/export-component-over-budget", "reconcile-export-component-over-budget");
   const reconciled = await reconcile(run.id);
   if (reconciled.response.status !== 200) {
@@ -520,13 +540,11 @@ test("publication rejects an over-budget candidate before writing any immutable 
     .readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB)
     .first<{ current_revision_id: string }>();
 
-  expect(blocked.response.status).toBe(422);
-  expect(blocked.document).toMatchObject({
-    code: "publication_aggregate_too_large",
-  });
+  expect(blocked.response.status).toBe(410);
+  expect(blocked.document).toMatchObject({ code: "run_approval_retired" });
   expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({
-    state: "failed",
-    failure_code: "publication_aggregate_too_large",
+    state: "awaiting_approval",
+    failure_code: null,
   });
   expect(objectsAfter).toEqual(objectsBefore);
   expect(currentAfter).toEqual(currentBefore);

@@ -1,48 +1,58 @@
-import * as reconciliationQueries from "./query-helpers/reconciliation";
 import { expect, test } from "vitest";
+import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import { nativeDiagnosticRecords } from "./query-helpers/native-diagnostic-records";
+import * as reconciliationQueries from "./query-helpers/reconciliation";
 import {
-  installReconciliationSuite,
-  testEnv,
   approve,
   collect,
   exportComponentRecords,
   get,
+  installReconciliationSuite,
   post,
   reconcile,
   requiredFirst,
   requiredString,
+  testEnv,
 } from "./reconciliation-helpers";
 
 installReconciliationSuite();
 
 test("a structurally complete non-DON Card may have zero catalogued Printings", async () => {
   const run = await collect("/reconciliation/card-without-printing", "reconcile-card-without-printing");
-  const reconciled = await reconcile(run.id);
-  expect(reconciled.response.status).toBe(200);
-  expect(reconciled.document.cards).toHaveLength(1);
-  expect(reconciled.document.printings).toEqual([]);
-  const published = await approve(reconciled.document);
+  const candidate = await prepareNativeCandidate(
+    run.id,
+    "one-piece",
+    "catrev_spine_000",
+    "card-without-printing-candidate",
+  );
+  const records = await nativeCandidateRecords(String(candidate.id));
+  expect(records.cards).toHaveLength(1);
+  expect(records.printings ?? []).toEqual([]);
+  const published = await approveNativeCandidate(candidate, "card-without-printing-publication");
   expect(published.response.status).toBe(200);
 });
 
 test("DON!! accepts explicit known Printing evidence while retaining incomplete-coverage warning semantics", async () => {
   const run = await collect("/reconciliation/profile-don-printing", "reconcile-don-known-printing");
-  const reconciled = await reconcile(run.id);
-  if (reconciled.response.status !== 200) {
-    throw new Error(JSON.stringify(reconciled.document));
-  }
-  expect(reconciled.response.status).toBe(200);
-  expect(reconciled.document.cards).toHaveLength(1);
-  expect(reconciled.document.printings).toHaveLength(1);
-  expect(reconciled.document.warnings).toEqual(
+  const candidate = await prepareNativeCandidate(
+    run.id,
+    "one-piece",
+    "catrev_spine_000",
+    "don-known-printing-candidate",
+  );
+  const records = await nativeCandidateRecords(String(candidate.id));
+  expect(records.cards).toHaveLength(1);
+  expect(records.printings).toHaveLength(1);
+  expect([...(records.warnings ?? []), ...(records.shared_warnings ?? [])]).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
         code: "printing_coverage_incomplete",
-        card_id: requiredString(requiredFirst(reconciled.document, "cards"), "id"),
+        card_id: requiredString(requiredFirst(records, "cards"), "id"),
       }),
     ]),
   );
-  await approve(reconciled.document);
+  await approveNativeCandidate(candidate, "don-known-printing-publication");
 });
 
 test("unnumbered DON!! card content survives collection and publication", async () => {
@@ -51,11 +61,9 @@ test("unnumbered DON!! card content survives collection and publication", async 
     lineage: "one-piece-en",
     adapter: "fixture-one-piece-json@3",
   });
-  const reconciled = await reconcile(run.id);
-  if (reconciled.response.status !== 200) {
-    throw new Error(JSON.stringify(reconciled.document));
-  }
-  const cards = reconciled.document.cards as Array<Record<string, unknown>>;
+  const candidate = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", "don-card-candidate");
+  const records = await nativeCandidateRecords(String(candidate.id));
+  const cards = records.cards!;
   const don = cards.find(
     (card) => (card.official_identity as Record<string, unknown>).kind === "functional_designation",
   );
@@ -64,17 +72,24 @@ test("unnumbered DON!! card content survives collection and publication", async 
     throw new Error("DON!! card fixture cards are absent");
   }
   expect(don.official_identity).toEqual({ kind: "functional_designation", value: "DON!!" });
-  expect(reconciled.document).not.toHaveProperty("legality_rules");
+  expect(records).not.toHaveProperty("legality_rules");
 
-  const published = await approve(reconciled.document);
+  const published = await approveNativeCandidate(candidate, "don-card-publication");
   expect(published.response.status).toBe(200);
+  expect(await exportComponentRecords(String(published.document.resulting_revision_id), "cards")).toContainEqual(
+    expect.objectContaining({ id: don.id, official_identity: don.official_identity }),
+  );
 });
 
 test("functional DON!! identity rejects a non-don Card shape even when Printing evidence exists", async () => {
   const run = await collect("/reconciliation/profile-don-invalid-printing", "reconcile-invalid-don-printing");
-  const blocked = await reconcile(run.id);
-  expect(blocked.response.status).toBe(409);
-  expect(blocked.document).toMatchObject({
+  const blocked = await prepareFailedNativeIdentity(
+    run.id,
+    "one-piece",
+    "catrev_spine_000",
+    "invalid-don-printing-candidate",
+  );
+  expect(blocked.outcome).toMatchObject({
     diagnostics: [
       {
         code: "retained_evidence_invalid",
@@ -86,9 +101,13 @@ test("functional DON!! identity rejects a non-don Card shape even when Printing 
 
 test("numbered One Piece identities cannot claim the functional DON card type", async () => {
   const run = await collect("/reconciliation/profile-numbered-don-invalid", "reconcile-invalid-numbered-don");
-  const blocked = await reconcile(run.id);
-  expect(blocked.response.status).toBe(409);
-  expect(blocked.document).toMatchObject({
+  const blocked = await prepareFailedNativeIdentity(
+    run.id,
+    "one-piece",
+    "catrev_spine_000",
+    "invalid-numbered-don-candidate",
+  );
+  expect(blocked.outcome).toMatchObject({
     diagnostics: [
       {
         code: "retained_evidence_invalid",
@@ -100,28 +119,36 @@ test("numbered One Piece identities cannot claim the functional DON card type", 
 
 test("official numbered identities canonicalize permitted case and reject whitespace or malformed variants", async () => {
   const lowerRun = await collect("/reconciliation/identity-lower", "reconcile-identity-lower");
-  const lower = await reconcile(lowerRun.id);
-  expect(lower.response.status).toBe(200);
-  const cardId = requiredString(requiredFirst(lower.document, "cards"), "id");
-  expect(requiredFirst(lower.document, "cards")).toMatchObject({
+  const lower = await prepareNativeCandidate(lowerRun.id, "one-piece", "catrev_spine_000", "identity-lower-candidate");
+  const lowerRecords = await nativeCandidateRecords(String(lower.id));
+  const cardId = requiredString(requiredFirst(lowerRecords, "cards"), "id");
+  expect(requiredFirst(lowerRecords, "cards")).toMatchObject({
     official_identity: { kind: "card_number", value: "OP06-006" },
   });
-  await approve(lower.document);
+  const lowerPublication = await approveNativeCandidate(lower, "identity-lower-publication");
 
   const upperRun = await collect("/reconciliation/identity-upper", "reconcile-identity-upper");
-  const upper = await reconcile(upperRun.id);
-  expect(upper.response.status).toBe(200);
-  expect(requiredFirst(upper.document, "cards")).toMatchObject({
+  const upper = await prepareNativeCandidate(
+    upperRun.id,
+    "one-piece",
+    String(lowerPublication.document.resulting_revision_id),
+    "identity-upper-candidate",
+  );
+  expect(requiredFirst(await nativeCandidateRecords(String(upper.id)), "cards")).toMatchObject({
     id: cardId,
     official_identity: { kind: "card_number", value: "OP06-006" },
   });
-  await approve(upper.document);
+  const upperPublication = await approveNativeCandidate(upper, "identity-upper-publication");
 
   for (const scenario of ["identity-whitespace", "identity-malformed"]) {
     const run = await collect(`/reconciliation/${scenario}`, `reconcile-${scenario}`);
-    const blocked = await reconcile(run.id);
-    expect(blocked.response.status).toBe(409);
-    expect(blocked.document).toMatchObject({
+    const blocked = await prepareFailedNativeIdentity(
+      run.id,
+      "one-piece",
+      String(upperPublication.document.resulting_revision_id),
+      `${scenario}-candidate`,
+    );
+    expect(blocked.outcome).toMatchObject({
       diagnostics: [
         {
           code: "retained_evidence_invalid",
@@ -134,10 +161,14 @@ test("official numbered identities canonicalize permitted case and reject whites
 
 test("conflicting explicit withdrawal assertions fail during reconciliation with stable diagnostics", async () => {
   const run = await collect("/reconciliation/withdrawal-conflict", "reconcile-withdrawal-conflict");
-  const blocked = await reconcile(run.id);
-  expect(blocked.response.status).toBe(409);
-  expect(blocked.document).toMatchObject({
-    state: "failed",
+  const blocked = await prepareFailedNativeIdentity(
+    run.id,
+    "one-piece",
+    "catrev_spine_000",
+    "withdrawal-conflict-candidate",
+  );
+  expect(blocked).toMatchObject({ state: "failed" });
+  expect(blocked.outcome).toMatchObject({
     publishable: false,
     diagnostics: [
       expect.objectContaining({
@@ -397,21 +428,28 @@ test("Gundam Printing identity is independent of locale observation order when E
     lineage: "gundam-en-us",
     adapter: "fixture-gundam-en-us-json@2",
   });
-  const us = await reconcile(usRun.id);
-  const printingId = requiredString(requiredFirst(us.document, "printings"), "id");
+  const us = await prepareNativeCandidate(usRun.id, "gundam", "catrev_spine_000", "gundam-canonical-0-first");
+  const usRecords = await nativeCandidateRecords(String(us.id));
+  const printingId = requiredString(requiredFirst(usRecords, "printings"), "id");
   expect(printingId).toMatch(/^printing_[a-f0-9]{32}$/);
-  await approve(us.document);
+  const firstPublished = await approveNativeCandidate(us, "gundam-canonical-0-first-publication");
 
   const asiaRun = await collect("/reconciliation/gundam-mirror-asia", "stable-id-en-asia-second", {
     game: "gundam",
     lineage: "gundam-en-asia",
     adapter: "fixture-gundam-en-asia-json@2",
   });
-  const asia = await reconcile(asiaRun.id);
-  expect(requiredFirst(asia.document, "printings")).toMatchObject({
+  const asia = await prepareNativeCandidate(
+    asiaRun.id,
+    "gundam",
+    String(firstPublished.document.resulting_revision_id),
+    "gundam-canonical-0-second",
+  );
+  const asiaRecords = await nativeCandidateRecords(String(asia.id));
+  expect(requiredFirst(asiaRecords, "printings")).toMatchObject({
     id: printingId,
   });
-  await approve(asia.document);
+  await approveNativeCandidate(asia, "gundam-canonical-0-second-publication");
 }, 20_000);
 
 test("Gundam EN-ASIA Printing facts remain canonical when formatting-equivalent EN-US evidence arrives later", async () => {
@@ -424,9 +462,10 @@ test("Gundam EN-ASIA Printing facts remain canonical when formatting-equivalent 
       adapter: "fixture-gundam-en-asia-json@2",
     },
   );
-  const asia = await reconcile(asiaRun.id);
-  const printingId = requiredString(requiredFirst(asia.document, "printings"), "id");
-  const firstPublished = await approve(asia.document);
+  const asia = await prepareNativeCandidate(asiaRun.id, "gundam", "catrev_spine_000", "gundam-canonical-1-first");
+  const asiaRecords = await nativeCandidateRecords(String(asia.id));
+  const printingId = requiredString(requiredFirst(asiaRecords, "printings"), "id");
+  const firstPublished = await approveNativeCandidate(asia, "gundam-canonical-1-first-publication");
   expect(firstPublished.response.status).toBe(200);
 
   const usRun = await collect("/reconciliation/gundam-printing-format-us-second", "gundam-printing-format-us-second", {
@@ -434,8 +473,14 @@ test("Gundam EN-ASIA Printing facts remain canonical when formatting-equivalent 
     lineage: "gundam-en-us",
     adapter: "fixture-gundam-en-us-json@2",
   });
-  const us = await reconcile(usRun.id);
-  expect(requiredFirst(us.document, "printings")).toMatchObject({
+  const us = await prepareNativeCandidate(
+    usRun.id,
+    "gundam",
+    String(firstPublished.document.resulting_revision_id),
+    "gundam-canonical-1-second",
+  );
+  const usRecords = await nativeCandidateRecords(String(us.id));
+  expect(requiredFirst(usRecords, "printings")).toMatchObject({
     id: printingId,
     rarity: { raw: "L", normalized: "leader" },
     printed_rules_text: "Official printed rules",
@@ -444,7 +489,7 @@ test("Gundam EN-ASIA Printing facts remain canonical when formatting-equivalent 
       attributes: { alternate_art: false },
     },
   });
-  const published = await approve(us.document);
+  const published = await approveNativeCandidate(us, "gundam-canonical-1-second-publication");
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const exported = await exportComponentRecords(revisionId, "printings");
   expect(exported).toContainEqual(
@@ -461,6 +506,13 @@ test("Gundam EN-ASIA Printing facts remain canonical when formatting-equivalent 
 });
 
 test("historical Gundam locators survive disappearance without retaining stale Card authority", async () => {
+  let predecessor = "catrev_spine_000";
+  const publish = async (candidate: Record<string, unknown>, key: string) => {
+    const published = await approveNativeCandidate(candidate, key);
+    expect(published.response.status, JSON.stringify(published.document)).toBe(200);
+    predecessor = requiredString(published.document, "resulting_revision_id");
+    return published;
+  };
   const asiaOptions = {
     game: "gundam",
     lineage: "gundam-en-asia",
@@ -477,18 +529,24 @@ test("historical Gundam locators survive disappearance without retaining stale C
     "historical-authority-asia-first",
     asiaOptions,
   );
-  const asia = await reconcile(asiaRun.id);
-  const cardId = requiredString(requiredFirst(asia.document, "cards"), "id");
-  const printingId = requiredString(requiredFirst(asia.document, "printings"), "id");
-  await approve(asia.document);
+  const asia = await prepareNativeCandidate(asiaRun.id, "gundam", predecessor, "historical-native-asia");
+  const asiaRecords = await nativeCandidateRecords(String(asia.id));
+  const cardId = requiredString(requiredFirst(asiaRecords, "cards"), "id");
+  const printingId = requiredString(requiredFirst(asiaRecords, "printings"), "id");
+  await publish(asia, "historical-native-asia-publication");
 
   const asiaMissingRun = await collect(
     "/reconciliation/complete-empty-lineage",
     "historical-authority-asia-missing",
     asiaOptions,
   );
-  const asiaMissing = await reconcile(asiaMissingRun.id);
-  await approve(asiaMissing.document);
+  const asiaMissing = await prepareNativeCandidate(
+    asiaMissingRun.id,
+    "gundam",
+    predecessor,
+    "historical-native-asiaMissing",
+  );
+  await publish(asiaMissing, "historical-native-asiaMissing-publication");
   const missingPrinting = await get(`/v1/reconciliation/printings/${printingId}`);
   expect(missingPrinting.document).toMatchObject({
     lifecycle: { withdrawn: false },
@@ -507,9 +565,13 @@ test("historical Gundam locators survive disappearance without retaining stale C
     "historical-provenance-us-product-conflict",
     usOptions,
   );
-  const historicalProductConflict = await reconcile(historicalProductConflictRun.id);
-  expect(historicalProductConflict.response.status).toBe(409);
-  expect(historicalProductConflict.document.diagnostics).toEqual(
+  const historicalProductConflict = await prepareFailedNativeIdentity(
+    historicalProductConflictRun.id,
+    "gundam",
+    predecessor,
+    "historical-native-product-conflict",
+  );
+  expect(await nativeDiagnosticRecords(testEnv.CATALOGUE_DB, String(historicalProductConflict.id))).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
         code: "printing_match_insufficient_evidence",
@@ -524,8 +586,14 @@ test("historical Gundam locators survive disappearance without retaining stale C
     "historical-authority-us-equivalent",
     usOptions,
   );
-  const usEquivalent = await reconcile(usEquivalentRun.id);
-  expect(requiredFirst(usEquivalent.document, "cards")).toMatchObject({
+  const usEquivalent = await prepareNativeCandidate(
+    usEquivalentRun.id,
+    "gundam",
+    predecessor,
+    "historical-native-usEquivalent",
+  );
+  const usEquivalentRecords = await nativeCandidateRecords(String(usEquivalent.id));
+  expect(requiredFirst(usEquivalentRecords, "cards")).toMatchObject({
     id: cardId,
     name: "  Printing   authority  ",
     effective_rules_text: "Official effective rules",
@@ -534,7 +602,7 @@ test("historical Gundam locators survive disappearance without retaining stale C
       attributes: { effect_text: "  Official   effect  " },
     },
   });
-  expect(requiredFirst(usEquivalent.document, "printings")).toMatchObject({
+  expect(requiredFirst(usEquivalentRecords, "printings")).toMatchObject({
     id: printingId,
     rarity: { raw: "  L  ", normalized: "leader" },
     printed_rules_text: "  Official   printed rules  ",
@@ -543,7 +611,7 @@ test("historical Gundam locators survive disappearance without retaining stale C
       attributes: { alternate_art: false },
     },
   });
-  const usEquivalentPublished = await approve(usEquivalent.document);
+  const usEquivalentPublished = await publish(usEquivalent, "historical-native-usEquivalent-publication");
   const usEquivalentRevision = requiredString(usEquivalentPublished.document, "resulting_revision_id");
   expect(await exportComponentRecords(usEquivalentRevision, "cards")).toContainEqual(
     expect.objectContaining({
@@ -570,9 +638,14 @@ test("historical Gundam locators survive disappearance without retaining stale C
     "historical-authority-us-conflict",
     usOptions,
   );
-  const usConflict = await reconcile(usConflictRun.id);
-  expect(usConflict.response.status).toBe(200);
-  expect(requiredFirst(usConflict.document, "cards")).toMatchObject({
+  const usConflict = await prepareNativeCandidate(
+    usConflictRun.id,
+    "gundam",
+    predecessor,
+    "historical-native-usConflict",
+  );
+  const usConflictRecords = await nativeCandidateRecords(String(usConflict.id));
+  expect(requiredFirst(usConflictRecords, "cards")).toMatchObject({
     id: cardId,
     name: "Contradictory historical-authority Card",
     game_data: {
@@ -581,18 +654,25 @@ test("historical Gundam locators survive disappearance without retaining stale C
       },
     },
   });
-  await post(`/v1/ingestion-runs/${usConflictRun.id}/rejection`, {
-    candidate_digest: requiredString(usConflict.document, "candidate_digest"),
+  const usConflictAbandoned = await post(`/v1/game-candidates/${usConflict.id}/abandon`, {
+    generation: usConflict.generation,
     idempotency_key: "reject-absent-asia-card-authority",
   });
+  expect(usConflictAbandoned.response.status).toBe(200);
+  expect(usConflictAbandoned.document.state).toBe("abandoned");
   const usPrintingConflictRun = await collect(
     "/reconciliation/gundam-printing-lifecycle-primary-disappearance-us-printing-conflict",
     "historical-authority-us-printing-conflict",
     usOptions,
   );
-  const usPrintingConflict = await reconcile(usPrintingConflictRun.id);
-  expect(usPrintingConflict.response.status).toBe(200);
-  expect(requiredFirst(usPrintingConflict.document, "printings")).toMatchObject({
+  const usPrintingConflict = await prepareNativeCandidate(
+    usPrintingConflictRun.id,
+    "gundam",
+    predecessor,
+    "historical-native-usPrintingConflict",
+  );
+  const usPrintingConflictRecords = await nativeCandidateRecords(String(usPrintingConflict.id));
+  expect(requiredFirst(usPrintingConflictRecords, "printings")).toMatchObject({
     id: printingId,
     rarity: { raw: "Leader Rare", normalized: "leader" },
     printed_rules_text: "Substantively different printed rules",
@@ -600,34 +680,43 @@ test("historical Gundam locators survive disappearance without retaining stale C
       attributes: { alternate_art: true },
     },
   });
-  await post(`/v1/ingestion-runs/${usPrintingConflictRun.id}/rejection`, {
-    candidate_digest: requiredString(usPrintingConflict.document, "candidate_digest"),
+  const usPrintingConflictAbandoned = await post(`/v1/game-candidates/${usPrintingConflict.id}/abandon`, {
+    generation: usPrintingConflict.generation,
     idempotency_key: "reject-current-us-printing-evolution",
   });
+  expect(usPrintingConflictAbandoned.response.status).toBe(200);
+  expect(usPrintingConflictAbandoned.document.state).toBe("abandoned");
 
   const usFirstRun = await collect(
     "/reconciliation/gundam-printing-lifecycle-reverse-format-us-first",
     "historical-authority-us-first",
     usOptions,
   );
-  const usFirst = await reconcile(usFirstRun.id);
-  const reverseCardId = requiredString(requiredFirst(usFirst.document, "cards"), "id");
-  const reversePrintingId = requiredString(requiredFirst(usFirst.document, "printings"), "id");
-  await approve(usFirst.document);
+  const usFirst = await prepareNativeCandidate(usFirstRun.id, "gundam", predecessor, "historical-native-usFirst");
+  const usFirstRecords = await nativeCandidateRecords(String(usFirst.id));
+  const reverseCardId = requiredString(requiredFirst(usFirstRecords, "cards"), "id");
+  const reversePrintingId = requiredString(requiredFirst(usFirstRecords, "printings"), "id");
+  await publish(usFirst, "historical-native-usFirst-publication");
   const usMissingRun = await collect(
     "/reconciliation/complete-empty-lineage",
     "historical-authority-us-missing",
     usOptions,
   );
-  const usMissing = await reconcile(usMissingRun.id);
-  await approve(usMissing.document);
+  const usMissing = await prepareNativeCandidate(usMissingRun.id, "gundam", predecessor, "historical-native-usMissing");
+  await publish(usMissing, "historical-native-usMissing-publication");
   const asiaEquivalentRun = await collect(
     "/reconciliation/gundam-printing-lifecycle-reverse-format-asia-second",
     "historical-authority-asia-equivalent",
     asiaOptions,
   );
-  const asiaEquivalent = await reconcile(asiaEquivalentRun.id);
-  expect(requiredFirst(asiaEquivalent.document, "cards")).toMatchObject({
+  const asiaEquivalent = await prepareNativeCandidate(
+    asiaEquivalentRun.id,
+    "gundam",
+    predecessor,
+    "historical-native-asiaEquivalent",
+  );
+  const asiaEquivalentRecords = await nativeCandidateRecords(String(asiaEquivalent.id));
+  expect(requiredFirst(asiaEquivalentRecords, "cards")).toMatchObject({
     id: reverseCardId,
     name: "Printing authority",
     effective_rules_text: "Official effective rules",
@@ -636,50 +725,68 @@ test("historical Gundam locators survive disappearance without retaining stale C
       attributes: { effect_text: "Official effect" },
     },
   });
-  expect(requiredFirst(asiaEquivalent.document, "printings")).toMatchObject({
+  expect(requiredFirst(asiaEquivalentRecords, "printings")).toMatchObject({
     id: reversePrintingId,
     rarity: { raw: "L", normalized: "leader" },
     printed_rules_text: "Official printed rules",
   });
-  await approve(asiaEquivalent.document);
+  await publish(asiaEquivalent, "historical-native-asiaEquivalent-publication");
 
   const reverseConflictUsRun = await collect(
     "/reconciliation/gundam-printing-lifecycle-reverse-conflict-us-first",
     "historical-authority-conflict-us-first",
     usOptions,
   );
-  const reverseConflictUs = await reconcile(reverseConflictUsRun.id);
-  const reverseConflictCardId = requiredString(requiredFirst(reverseConflictUs.document, "cards"), "id");
-  const reverseConflictPrintingId = requiredString(requiredFirst(reverseConflictUs.document, "printings"), "id");
-  await approve(reverseConflictUs.document);
+  const reverseConflictUs = await prepareNativeCandidate(
+    reverseConflictUsRun.id,
+    "gundam",
+    predecessor,
+    "historical-native-reverseConflictUs",
+  );
+  const reverseConflictUsRecords = await nativeCandidateRecords(String(reverseConflictUs.id));
+  const reverseConflictCardId = requiredString(requiredFirst(reverseConflictUsRecords, "cards"), "id");
+  const reverseConflictPrintingId = requiredString(requiredFirst(reverseConflictUsRecords, "printings"), "id");
+  await publish(reverseConflictUs, "historical-native-reverseConflictUs-publication");
   const reverseConflictMissingRun = await collect(
     "/reconciliation/complete-empty-lineage",
     "historical-authority-conflict-us-missing",
     usOptions,
   );
-  const reverseConflictMissing = await reconcile(reverseConflictMissingRun.id);
-  await approve(reverseConflictMissing.document);
+  const reverseConflictMissing = await prepareNativeCandidate(
+    reverseConflictMissingRun.id,
+    "gundam",
+    predecessor,
+    "historical-native-reverseConflictMissing",
+  );
+  await publish(reverseConflictMissing, "historical-native-reverseConflictMissing-publication");
   const reverseConflictAsiaRun = await collect(
     "/reconciliation/gundam-printing-lifecycle-reverse-disappearance-asia-conflict",
     "historical-authority-conflict-asia-second",
     asiaOptions,
   );
-  const reverseConflictAsia = await reconcile(reverseConflictAsiaRun.id);
-  expect(reverseConflictAsia.response.status).toBe(200);
-  expect(requiredFirst(reverseConflictAsia.document, "cards")).toMatchObject({
+  const reverseConflictAsia = await prepareNativeCandidate(
+    reverseConflictAsiaRun.id,
+    "gundam",
+    predecessor,
+    "historical-native-reverseConflictAsia",
+  );
+  const reverseConflictAsiaRecords = await nativeCandidateRecords(String(reverseConflictAsia.id));
+  expect(requiredFirst(reverseConflictAsiaRecords, "cards")).toMatchObject({
     id: reverseConflictCardId,
     name: "Contradictory historical-authority Card",
   });
-  expect(requiredFirst(reverseConflictAsia.document, "printings")).toMatchObject({
+  expect(requiredFirst(reverseConflictAsiaRecords, "printings")).toMatchObject({
     id: reverseConflictPrintingId,
     rarity: { raw: "Leader Rare", normalized: "leader" },
     printed_rules_text: "Different substantive Asia printed rules",
     game_data: { attributes: { alternate_art: true } },
   });
-  await post(`/v1/ingestion-runs/${reverseConflictAsiaRun.id}/rejection`, {
-    candidate_digest: requiredString(reverseConflictAsia.document, "candidate_digest"),
+  const reverseConflictAsiaAbandoned = await post(`/v1/game-candidates/${reverseConflictAsia.id}/abandon`, {
+    generation: reverseConflictAsia.generation,
     idempotency_key: "reject-current-asia-printing-evolution",
   });
+  expect(reverseConflictAsiaAbandoned.response.status).toBe(200);
+  expect(reverseConflictAsiaAbandoned.document.state).toBe("abandoned");
 }, 45_000);
 
 test("Gundam EN-ASIA Printing facts become canonical when formatting-equivalent EN-US evidence arrived first", async () => {
@@ -688,9 +795,10 @@ test("Gundam EN-ASIA Printing facts become canonical when formatting-equivalent 
     lineage: "gundam-en-us",
     adapter: "fixture-gundam-en-us-json@2",
   });
-  const us = await reconcile(usRun.id);
-  const printingId = requiredString(requiredFirst(us.document, "printings"), "id");
-  await approve(us.document);
+  const us = await prepareNativeCandidate(usRun.id, "gundam", "catrev_spine_000", "gundam-canonical-2-first");
+  const usRecords = await nativeCandidateRecords(String(us.id));
+  const printingId = requiredString(requiredFirst(usRecords, "printings"), "id");
+  const firstPublished = await approveNativeCandidate(us, "gundam-canonical-2-first-publication");
 
   const asiaRun = await collect(
     "/reconciliation/gundam-printing-format-asia-second",
@@ -701,8 +809,14 @@ test("Gundam EN-ASIA Printing facts become canonical when formatting-equivalent 
       adapter: "fixture-gundam-en-asia-json@2",
     },
   );
-  const asia = await reconcile(asiaRun.id);
-  expect(requiredFirst(asia.document, "printings")).toMatchObject({
+  const asia = await prepareNativeCandidate(
+    asiaRun.id,
+    "gundam",
+    String(firstPublished.document.resulting_revision_id),
+    "gundam-canonical-2-second",
+  );
+  const asiaRecords = await nativeCandidateRecords(String(asia.id));
+  expect(requiredFirst(asiaRecords, "printings")).toMatchObject({
     id: printingId,
     rarity: { raw: "L", normalized: "leader" },
     printed_rules_text: "Official printed rules",
@@ -711,7 +825,7 @@ test("Gundam EN-ASIA Printing facts become canonical when formatting-equivalent 
       attributes: { alternate_art: false },
     },
   });
-  const published = await approve(asia.document);
+  const published = await approveNativeCandidate(asia, "gundam-canonical-2-second-publication");
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const exported = await exportComponentRecords(revisionId, "printings");
   expect(exported).toContainEqual(
@@ -858,10 +972,9 @@ test("Gundam cross-locale formatting normalizes while substantive shared-fact co
 // Synthetic source fixture exercises the authenticated administration boundary.
 test("opaque identities retain inspectable source mappings before and after publication", async () => {
   const run = await collect("/reconciliation/base", "opaque-mapping");
-  const candidate = await reconcile(run.id);
-  expect(candidate.response.status).toBe(200);
-  const printing = requiredFirst(candidate.document, "printings");
-  const mapped = await get(`/v1/reconciliation/identities/${printing.id}`);
+  const candidate = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", "opaque-mapping-candidate");
+  const printing = requiredFirst(await nativeCandidateRecords(String(candidate.id)), "printings");
+  const mapped = await get(`/v1/reconciliation/identities/${printing.id}?preparation_id=${candidate.id}`);
   expect(mapped.response.status).toBe(200);
   expect(mapped.document).toMatchObject({
     id: printing.id,
@@ -869,21 +982,37 @@ test("opaque identities retain inspectable source mappings before and after publ
     allocation: "opaque",
     mappings: [expect.objectContaining({ source_lineage: "one-piece-en", ingestion_run_id: run.id })],
   });
-  await approve(candidate.document);
+  const published = await approveNativeCandidate(candidate, "opaque-mapping-publication");
+  const publishedMappings = await get(`/v1/reconciliation/identities/${printing.id}?preparation_id=${candidate.id}`);
+  expect(publishedMappings.response.status).toBe(200);
   const refreshedRun = await collect("/reconciliation/new-locator", "opaque-mapping-refresh");
-  const refreshed = await reconcile(refreshedRun.id);
-  expect(refreshed.response.status).toBe(200);
-  expect(requiredFirst(refreshed.document, "printings").id).toBe(printing.id);
-  const history = await get(`/v1/reconciliation/identities/${printing.id}`);
+  const refreshed = await prepareNativeCandidate(
+    refreshedRun.id,
+    "one-piece",
+    String(published.document.resulting_revision_id),
+    "opaque-mapping-refresh-candidate",
+  );
+  expect(requiredFirst(await nativeCandidateRecords(String(refreshed.id)), "printings").id).toBe(printing.id);
+  const history = await get(`/v1/reconciliation/identities/${printing.id}?preparation_id=${refreshed.id}`);
   expect(history.response.status).toBe(200);
-  expect((history.document.mappings as unknown[]).length).toBeGreaterThan(1);
+  expect(history.document.mappings).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ preparation_id: refreshed.id, ingestion_run_id: refreshedRun.id }),
+    ]),
+  );
+  expect(
+    (mapped.document.mappings as unknown[]).length + (history.document.mappings as unknown[]).length,
+  ).toBeGreaterThan(1);
+  expect((await get(`/v1/reconciliation/identities/${printing.id}?preparation_id=${candidate.id}`)).document).toEqual(
+    publishedMappings.document,
+  );
 });
 
 test("synthetic exact cross-source evidence retains one consumer Printing after an explicit authority change", async () => {
-  const initial = await reconcile((await collect("/reconciliation/canonical-official", "cross-official")).id);
-  expect(initial.response.status).toBe(200);
-  const printing = requiredFirst(initial.document, "printings");
-  await approve(initial.document);
+  const run = await collect("/reconciliation/canonical-official", "cross-official");
+  const initial = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", "cross-official-candidate");
+  const printing = requiredFirst(await nativeCandidateRecords(String(initial.id)), "printings");
+  const seedPublished = await approveNativeCandidate(initial, "cross-official-publication");
   for (const area of ["card_facts", "printing_details"]) {
     const designated = await post("/v1/source-authorities", {
       game: "one-piece",
@@ -902,11 +1031,16 @@ test("synthetic exact cross-source evidence retains one consumer Printing after 
     lineage: "limitless-one-piece-en",
     adapter: "fixture-one-piece-tabular@1",
   });
-  const matched = await reconcile(other.id);
-  expect(matched.response.status).toBe(200);
-  expect(matched.document.printings).toHaveLength(1);
-  expect(requiredFirst(matched.document, "printings").id).toBe(printing.id);
-  const published = await approve(matched.document);
+  const matched = await prepareNativeCandidate(
+    other.id,
+    "one-piece",
+    String(seedPublished.document.resulting_revision_id),
+    "cross-tabular-candidate",
+  );
+  const records = await nativeCandidateRecords(String(matched.id));
+  expect(records.printings).toHaveLength(1);
+  expect(requiredFirst(records, "printings").id).toBe(printing.id);
+  const published = await approveNativeCandidate(matched, "cross-tabular-publication");
   expect(published.response.status).toBe(200);
   const exported = await exportComponentRecords(
     requiredString(published.document, "resulting_revision_id"),
@@ -918,20 +1052,21 @@ test("synthetic exact cross-source evidence retains one consumer Printing after 
 
 test("synthetic missing publisher number stays unknown through candidate and consumer export", async () => {
   const run = await collect("/reconciliation/identity-missing-number", "missing-number");
-  const candidate = await reconcile(run.id);
-  expect(candidate.response.status).toBe(200);
-  expect(requiredFirst(candidate.document, "cards").official_identity).toEqual({ kind: "unknown", value: null });
-  const published = await approve(candidate.document);
+  const candidate = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", "missing-number-candidate");
+  const records = await nativeCandidateRecords(String(candidate.id));
+  expect(requiredFirst(records, "cards").official_identity).toEqual({ kind: "unknown", value: null });
+  const published = await approveNativeCandidate(candidate, "missing-number-publication");
   expect(published.response.status, JSON.stringify(published.document)).toBe(200);
   const cards = await exportComponentRecords(requiredString(published.document, "resulting_revision_id"), "cards");
   expect(cards[0]).toMatchObject({ official_identity: { kind: "unknown", value: null } });
 });
 
 test("equal source-local artwork labels require owner evidence review across sources", async () => {
-  const first = await reconcile((await collect("/reconciliation/canonical-official-ambiguous", "review-official")).id);
-  expect(first.response.status).toBe(200);
-  const printingId = requiredString(requiredFirst(first.document, "printings"), "id");
-  await approve(first.document);
+  const firstRun = await collect("/reconciliation/canonical-official-ambiguous", "review-official");
+  const first = await prepareNativeCandidate(firstRun.id, "one-piece", "catrev_spine_000", "review-official-candidate");
+  const printingId = requiredString(requiredFirst(await nativeCandidateRecords(String(first.id)), "printings"), "id");
+  const publication = await approveNativeCandidate(first, "review-official-publication");
+  const predecessor = String(publication.document.resulting_revision_id);
   for (const area of ["card_facts", "printing_details"]) {
     expect(
       (
@@ -950,63 +1085,105 @@ test("equal source-local artwork labels require owner evidence review across sou
   }
   const source = { game: "one-piece", lineage: "limitless-one-piece-en", adapter: "fixture-one-piece-tabular@1" };
   const run = await collect("/reconciliation/canonical-tabular-ambiguous", "review-ambiguous", source);
-  const blocked = await reconcile(run.id);
-  expect(blocked.response.status).toBe(409);
-  const reviews = await get(`/v1/reconciliation/identity-reviews?run_id=${run.id}`);
+  const blocked = await prepareFailedNativeIdentity(run.id, "one-piece", predecessor, "review-ambiguous-candidate");
+  const reviews = await get(`/v1/reconciliation/identity-reviews?run_id=${run.id}&preparation_id=${blocked.id}`);
   expect(reviews.response.status).toBe(200);
   const review = requiredFirst(reviews.document, "reviews");
   expect(review).toMatchObject({ candidate_printing_ids: [printingId], source_lineage: "limitless-one-piece-en" });
   expect(review.evidence).toBeDefined();
   const repeatedRun = await collect("/reconciliation/canonical-tabular-ambiguous", "review-unresolved-retry", source);
-  expect((await reconcile(repeatedRun.id)).response.status).toBe(409);
-  const repeatedReviews = await get(`/v1/reconciliation/identity-reviews?run_id=${repeatedRun.id}`);
+  const repeated = await prepareFailedNativeIdentity(
+    repeatedRun.id,
+    "one-piece",
+    predecessor,
+    "review-unresolved-candidate",
+  );
+  const repeatedReviews = await get(
+    `/v1/reconciliation/identity-reviews?run_id=${repeatedRun.id}&preparation_id=${repeated.id}`,
+  );
   expect(repeatedReviews.document.reviews).toHaveLength(1);
   const request = {
     printing_id: printingId,
     rationale: "Owner inspected both retained depictions and established the same issued Printing",
     idempotency_key: "resolve-identity",
   };
+  const invalidTarget = await post(`/v1/reconciliation/identity-reviews/${review.id}/resolve`, {
+    ...request,
+    printing_id: "unreviewed-printing",
+  });
+  expect(invalidTarget.response.status).toBe(422);
+  expect(invalidTarget.document.code).toBe("identity_review_target_invalid");
   const resolved = await post(`/v1/reconciliation/identity-reviews/${review.id}/resolve`, request);
-  expect(resolved.response.status).toBe(200);
+  expect(resolved.response.status, JSON.stringify(resolved.document)).toBe(200);
+  expect(resolved.document).not.toHaveProperty("native_candidate_id");
+  expect(resolved.document).not.toHaveProperty("historical_printing_id");
   expect((await post(`/v1/reconciliation/identity-reviews/${review.id}/resolve`, request)).document).toEqual(
     resolved.document,
   );
+  for (const changed of [
+    { ...request, rationale: "A different owner decision" },
+    { ...request, idempotency_key: "different-identity-decision" },
+  ]) {
+    const refused = await post(`/v1/reconciliation/identity-reviews/${review.id}/resolve`, changed);
+    expect(refused.response.status).toBe(409);
+    expect(refused.document.code).toBe("identity_review_already_resolved");
+  }
   const retry = await collect("/reconciliation/canonical-tabular-ambiguous", "review-retry", source);
-  const matched = await reconcile(retry.id);
-  expect(matched.response.status).toBe(200);
-  expect(requiredFirst(matched.document, "printings").id).toBe(printingId);
-  expect((await approve(matched.document)).response.status).toBe(200);
+  const matched = await prepareNativeCandidate(retry.id, "one-piece", predecessor, "review-retry-candidate");
+  expect(requiredFirst(await nativeCandidateRecords(String(matched.id)), "printings").id).toBe(printingId);
+  expect((await approveNativeCandidate(matched, "review-retry-publication")).response.status).toBe(200);
 });
 
 test("missing-number Printing keeps both opaque IDs when its source locator changes", async () => {
-  const original = await reconcile((await collect("/reconciliation/identity-missing-number", "unknown-original")).id);
-  expect(original.response.status).toBe(200);
-  await approve(original.document);
-  const moved = await reconcile((await collect("/reconciliation/identity-missing-number-moved", "unknown-moved")).id);
-  expect(moved.response.status).toBe(200);
-  expect(moved.document.cards).toHaveLength(1);
-  expect(moved.document.printings).toHaveLength(1);
-  expect(requiredFirst(moved.document, "cards").id).toBe(requiredFirst(original.document, "cards").id);
-  expect(requiredFirst(moved.document, "printings").id).toBe(requiredFirst(original.document, "printings").id);
+  const originalRun = await collect("/reconciliation/identity-missing-number", "unknown-original");
+  const original = await prepareNativeCandidate(
+    originalRun.id,
+    "one-piece",
+    "catrev_spine_000",
+    "unknown-original-candidate",
+  );
+  const originalRecords = await nativeCandidateRecords(String(original.id));
+  const published = await approveNativeCandidate(original, "unknown-original-publication");
+  const movedRun = await collect("/reconciliation/identity-missing-number-moved", "unknown-moved");
+  const moved = await prepareNativeCandidate(
+    movedRun.id,
+    "one-piece",
+    String(published.document.resulting_revision_id),
+    "unknown-moved-candidate",
+  );
+  const records = await nativeCandidateRecords(String(moved.id));
+  expect(records.cards).toHaveLength(1);
+  expect(records.printings).toHaveLength(1);
+  expect(requiredFirst(records, "cards").id).toBe(requiredFirst(originalRecords, "cards").id);
+  expect(requiredFirst(records, "printings").id).toBe(requiredFirst(originalRecords, "printings").id);
 });
 
 test("owner can traverse all retained source mappings without repeating pages", async () => {
-  const candidate = await reconcile((await collect("/reconciliation/identity-many-mappings", "mapping-pages")).id);
-  expect(candidate.response.status).toBe(200);
-  const id = requiredString(requiredFirst(candidate.document, "printings"), "id");
-  const first = await get(`/v1/reconciliation/identities/${id}`);
+  const run = await collect("/reconciliation/identity-many-mappings", "mapping-pages");
+  const candidate = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", "mapping-pages-candidate");
+  const id = requiredString(requiredFirst(await nativeCandidateRecords(String(candidate.id)), "printings"), "id");
+  const first = await get(`/v1/reconciliation/identities/${id}?preparation_id=${candidate.id}`);
   expect(first.document.mappings).toHaveLength(100);
-  const second = await get(`/v1/reconciliation/identities/${id}?after=${first.document.next_cursor}`);
+  const second = await get(
+    `/v1/reconciliation/identities/${id}?preparation_id=${candidate.id}&after=${first.document.next_cursor}`,
+  );
   expect(second.document.mappings).toHaveLength(1);
   expect(second.document.next_cursor).toBeNull();
 });
 
 test("missing-number cross-source evidence reviews the existing Card and Printing instead of creating duplicates", async () => {
-  const first = await reconcile((await collect("/reconciliation/identity-missing-number", "unknown-cross-first")).id);
-  expect(first.response.status).toBe(200);
-  const cardId = requiredString(requiredFirst(first.document, "cards"), "id");
-  const printingId = requiredString(requiredFirst(first.document, "printings"), "id");
-  await approve(first.document);
+  const firstRun = await collect("/reconciliation/identity-missing-number", "unknown-cross-first");
+  const first = await prepareNativeCandidate(
+    firstRun.id,
+    "one-piece",
+    "catrev_spine_000",
+    "unknown-cross-first-candidate",
+  );
+  const firstRecords = await nativeCandidateRecords(String(first.id));
+  const cardId = requiredString(requiredFirst(firstRecords, "cards"), "id");
+  const printingId = requiredString(requiredFirst(firstRecords, "printings"), "id");
+  const publication = await approveNativeCandidate(first, "unknown-cross-first-publication");
+  const predecessor = String(publication.document.resulting_revision_id);
   for (const area of ["card_facts", "printing_details"]) {
     expect(
       (
@@ -1025,8 +1202,11 @@ test("missing-number cross-source evidence reviews the existing Card and Printin
   }
   const source = { game: "one-piece", lineage: "limitless-one-piece-en", adapter: "fixture-one-piece-tabular@1" };
   const run = await collect("/reconciliation/identity-missing-number-tabular", "unknown-cross-review", source);
-  expect((await reconcile(run.id)).response.status).toBe(409);
-  const review = requiredFirst((await get(`/v1/reconciliation/identity-reviews?run_id=${run.id}`)).document, "reviews");
+  const failed = await prepareFailedNativeIdentity(run.id, "one-piece", predecessor, "unknown-cross-review-candidate");
+  const review = requiredFirst(
+    (await get(`/v1/reconciliation/identity-reviews?run_id=${run.id}&preparation_id=${failed.id}`)).document,
+    "reviews",
+  );
   expect(review.candidate_printing_ids).toEqual([printingId]);
   expect(
     (
@@ -1037,38 +1217,70 @@ test("missing-number cross-source evidence reviews the existing Card and Printin
       })
     ).response.status,
   ).toBe(200);
-  const changed = await reconcile(
-    (await collect("/reconciliation/identity-missing-number-tabular-changed", "unknown-cross-changed-artwork", source))
-      .id,
+  const changedRun = await collect(
+    "/reconciliation/identity-missing-number-tabular-changed",
+    "unknown-cross-changed-artwork",
+    source,
   );
-  expect(changed.response.status).toBe(409);
-  expect(changed.document.publishable).toBe(false);
-  const matched = await reconcile(
-    (await collect("/reconciliation/identity-missing-number-tabular", "unknown-cross-retry", source)).id,
+  const changed = await prepareFailedNativeIdentity(
+    changedRun.id,
+    "one-piece",
+    predecessor,
+    "unknown-cross-changed-candidate",
   );
-  expect(matched.response.status).toBe(200);
-  expect(matched.document.cards).toHaveLength(1);
-  expect(requiredFirst(matched.document, "cards").id).toBe(cardId);
-  expect(requiredFirst(matched.document, "printings").id).toBe(printingId);
-  expect((await approve(matched.document)).response.status).toBe(200);
-  const later = await reconcile(
-    (await collect("/reconciliation/identity-missing-number-tabular", "unknown-cross-later", source)).id,
+  expect(changed.outcome).toMatchObject({ publishable: false });
+  const matchedRun = await collect("/reconciliation/identity-missing-number-tabular", "unknown-cross-retry", source);
+  const matched = await prepareNativeCandidate(
+    matchedRun.id,
+    "one-piece",
+    predecessor,
+    "unknown-cross-retry-candidate",
   );
-  expect(later.response.status).toBe(200);
-  expect(requiredFirst(later.document, "printings").id).toBe(printingId);
+  const matchedRecords = await nativeCandidateRecords(String(matched.id));
+  expect(matchedRecords.cards).toHaveLength(1);
+  expect(requiredFirst(matchedRecords, "cards").id).toBe(cardId);
+  expect(requiredFirst(matchedRecords, "printings").id).toBe(printingId);
+  const matchedPublication = await approveNativeCandidate(matched, "unknown-cross-retry-publication");
+  const laterRun = await collect("/reconciliation/identity-missing-number-tabular", "unknown-cross-later", source);
+  const later = await prepareNativeCandidate(
+    laterRun.id,
+    "one-piece",
+    String(matchedPublication.document.resulting_revision_id),
+    "unknown-cross-later-candidate",
+  );
+  expect(requiredFirst(await nativeCandidateRecords(String(later.id)), "printings").id).toBe(printingId);
 });
 
 test("equal unknown Card facts and distinct artwork require identity review, not automatic Card equivalence", async () => {
-  const first = await reconcile(
-    (await collect("/reconciliation/identity-missing-number", "unknown-equivalence-first")).id,
+  const run = await collect("/reconciliation/identity-missing-number", "unknown-equivalence-first");
+  const first = await prepareNativeCandidate(
+    run.id,
+    "one-piece",
+    "catrev_spine_000",
+    "unknown-equivalence-first-candidate",
   );
-  await approve(first.document);
-  const distinct = await reconcile(
-    (await collect("/reconciliation/identity-missing-number-distinct", "unknown-equivalence-distinct")).id,
+  const published = await approveNativeCandidate(first, "unknown-equivalence-first-publication");
+  const distinctRun = await collect("/reconciliation/identity-missing-number-distinct", "unknown-equivalence-distinct");
+  const distinct = await prepareFailedNativeIdentity(
+    distinctRun.id,
+    "one-piece",
+    String(published.document.resulting_revision_id),
+    "unknown-equivalence-distinct-candidate",
   );
-  expect(distinct.response.status).toBe(409);
-  expect(distinct.document.publishable).toBe(false);
-  expect(distinct.document.diagnostics).toEqual(
-    expect.arrayContaining([expect.objectContaining({ code: "canonical_card_conflict" })]),
-  );
+  expect(distinct.outcome).toMatchObject({
+    publishable: false,
+    diagnostics: expect.arrayContaining([expect.objectContaining({ code: "canonical_card_conflict" })]),
+  });
 });
+
+async function prepareFailedNativeIdentity(runId: string, game: string, predecessor: string, key: string) {
+  const created = await post("/v1/game-candidates", {
+    ingestion_run_id: runId,
+    supported_game: game,
+    expected_game_revision_id: predecessor,
+    idempotency_key: key,
+  });
+  expect(created.response.status, JSON.stringify(created.document)).toBe(201);
+  const [candidate] = await waitForNativeCandidates(runId, 1, 15_000, { [game]: "failed" });
+  return candidate!;
+}

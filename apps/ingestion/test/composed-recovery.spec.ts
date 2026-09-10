@@ -1,3 +1,7 @@
+import {
+  verifyCompositionSnapshot,
+  type CompositionSnapshotEvidence,
+} from "../../../src/catalogue/backup-recovery/composition-verification";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import { verifyCompositionArtifacts } from "../../../src/catalogue/backup-recovery/composition-artifacts";
 import { retainedPublicComponent } from "./query-helpers/public-export-recovery";
@@ -122,8 +126,33 @@ test("native backup consumes its reservation and rejects legacy-only simulated r
     await new Promise((resolve) => setTimeout(resolve, 25));
     evidence = (await get(`/v1/backups/${switched.document.backup_attempt_id}`)).document;
   }
-  expect(evidence.state, JSON.stringify(evidence)).toBe("failed");
+  expect(evidence.state, JSON.stringify(evidence)).toBe("verified");
   expect(evidence.publication_operation_id).toBe(approved.document.id);
   expect(evidence.publication_ingestion_run_id).toBe(source.id);
-  expect(evidence.failure).toMatchObject({ code: "backup_failed", detail: "Restored composition snapshot differs." });
+  expect(evidence.failure).toBeNull();
+  const retained = await testEnv.BACKUPS.head(requiredString(evidence, "object_key"));
+  const captured = await testEnv.BACKUPS.get(retained!.customMetadata!.snapshot_key!);
+  const snapshot = await captured!.json<CompositionSnapshotEvidence>();
+  // The former fixture supplied only legacy summary rows. Keep that adversarial
+  // verification boundary explicit now that the default transport restores actual SQL.
+  await expect(
+    verifyCompositionSnapshot(
+      async (request) =>
+        request.kind === "foreign-keys"
+          ? []
+          : [
+              {
+                current_revision_id: switched.document.resulting_revision_id,
+                schema_migration_level: snapshot.schema_migration_level,
+                card_search_state: "ready",
+                card_search_fts_tables: 1,
+                missing_fts_rows: 0,
+                invalid_api_documents: 0,
+                invalid_curated_provenance: 0,
+                invalid_audit_rows: 0,
+              },
+            ],
+      snapshot,
+    ),
+  ).rejects.toThrow("Restored composition snapshot differs.");
 });

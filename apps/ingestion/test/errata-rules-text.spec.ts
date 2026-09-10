@@ -1,4 +1,3 @@
-import { readSourceObservation } from "../../../src/catalogue/reconciliation/reconciliation-source-observation";
 import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { beforeEach, describe, expect, test } from "vitest";
@@ -6,20 +5,30 @@ import { onePieceOfficialErrataHtml } from "../../../acceptance/fixtures/one-pie
 import { parseOnePieceOfficialErrataHtml } from "../../../src/catalogue/adapters";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import { publishReconciledErrataStatement } from "../../../src/catalogue/reconciliation/reconciliation-publication-repository";
+import { readSourceObservation } from "../../../src/catalogue/reconciliation/reconciliation-source-observation";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
 import { fixtureCandidate } from "../../../test/support/catalogue-fixture";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { injectFixtureEvidencePlan, injectFixturePublication } from "./fixture-plan-injection";
-import * as catalogueExportQueries from "./query-helpers/catalogue-export";
+import { recoverHistoricalPublication } from "./historical-publication-fixture";
+import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
+import {
+  approveNativeCandidate,
+  prepareNativeCandidate,
+  waitForVerifiedPublicationBackup,
+} from "./native-publication-helpers";
 import * as ingestionQueries from "./query-helpers/ingestion";
-import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import { nativeErratumHistory } from "./query-helpers/native-erratum-history";
 import * as reconciliationQueries from "./query-helpers/reconciliation";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
+import { exportComponentRecords } from "./reconciliation-helpers";
+import { installWorkflowIsolation } from "./workflow-isolation";
 
 const testEnv = env as Env & {
   TEST_MIGRATIONS: D1Migration[];
 };
+installWorkflowIsolation();
 let requestSequence = 0;
 const syntheticOfficialErrataSource = {
   game: "one-piece",
@@ -243,22 +252,25 @@ describe("Errata rules-text lifecycle", () => {
       lineage: "gundam-en-asia",
       adapter: "fixture-gundam-en-asia-json@2",
     });
-    const asia = await reconcile(asiaRun.id);
-    expect(asia.response.status).toBe(200);
-    expect((await approve(asia.document)).response.status).toBe(200);
+    const asia = await prepareNativeCandidate(asiaRun.id, "gundam", "catrev_spine_000", "errata-asia-candidate");
+    const asiaPublished = await approveNativeCandidate(asia, "errata-asia-publication");
 
     const usRun = await collect("/reconciliation/gundam-errata-cross-lineage-us", "reconcile-gundam-errata-us", {
       game: "gundam",
       lineage: "gundam-en-us",
       adapter: "fixture-gundam-en-us-json@2",
     });
-    const us = await reconcile(usRun.id);
-    expect(us.response.status).toBe(200);
-    expect(us.document).toMatchObject({
+    const us = await prepareNativeCandidate(
+      usRun.id,
+      "gundam",
+      String(asiaPublished.document.resulting_revision_id),
+      "errata-us-candidate",
+    );
+    const records = await nativeCandidateRecords(String(us.id));
+    expect(records).toMatchObject({
       cards: [{ effective_rules_text: "Corrected cross-lineage rules." }],
-      diagnostics: [],
     });
-    expect((await approve(us.document)).response.status).toBe(200);
+    expect((await approveNativeCandidate(us, "errata-us-publication")).response.status).toBe(200);
   });
 
   test("current-run Official Errata authority applies before cross-lineage Card comparison", async () => {
@@ -271,26 +283,29 @@ describe("Errata rules-text lifecycle", () => {
         adapter: "fixture-gundam-en-asia-json@2",
       },
     );
-    const asia = await reconcile(asiaRun.id);
-    expect(asia.response.status).toBe(200);
-    expect((await approve(asia.document)).response.status).toBe(200);
+    const asia = await prepareNativeCandidate(asiaRun.id, "gundam", "catrev_spine_000", "errata-asia-candidate");
+    const asiaPublished = await approveNativeCandidate(asia, "errata-asia-publication");
 
     const usRun = await collect("/reconciliation/gundam-current-run-errata-us", "reconcile-current-run-errata-us", {
       game: "gundam",
       lineage: "gundam-en-us",
       adapter: "fixture-gundam-en-us-json@2",
     });
-    const us = await reconcile(usRun.id);
-    expect(us.response.status).toBe(200);
-    expect(us.document).toMatchObject({
-      diagnostics: [],
+    const us = await prepareNativeCandidate(
+      usRun.id,
+      "gundam",
+      String(asiaPublished.document.resulting_revision_id),
+      "errata-us-candidate",
+    );
+    const records = await nativeCandidateRecords(String(us.id));
+    expect(records).toMatchObject({
       cards: [
         {
           effective_rules_text: "Authoritative current Card wording.",
         },
       ],
     });
-    expect((await approve(us.document)).response.status).toBe(200);
+    expect((await approveNativeCandidate(us, "errata-us-publication")).response.status).toBe(200);
   });
 
   test("legacy persisted candidates without Errata remain inspectable and retryable", async () => {
@@ -338,48 +353,57 @@ describe("Errata rules-text lifecycle", () => {
     expect(retriedRejected.response.status).toBe(200);
   });
 
-  test("a selected future Erratum cannot silently stale while awaiting approval", async () => {
-    const run = await collect("/reconciliation/errata-future-boundary", "reconcile-future-errata-before-boundary");
-    const reconciled = await reconcile(run.id, { "x-keepr-test-now": "2026-07-31T23:59:00.000Z" });
-    expect(reconciled.response.status).toBe(200);
-    expect(reconciled.document).toMatchObject({
-      cards: [{ effective_rules_text: "Rules before the future Erratum." }],
-    });
-    const approval = await post(
-      `/v1/ingestion-runs/${run.id}/approval`,
-      {
-        candidate_digest: requiredString(reconciled.document, "candidate_digest"),
-        expected_current_revision_id: requiredString(reconciled.document, "expected_current_revision_id"),
-        idempotency_key: "approve-future-errata-after-boundary",
-      },
-      { "x-keepr-test-now": "2026-08-01T00:01:00.000Z" },
+  test("publication preserves reviewed Erratum wording across dates and other-game publication", async () => {
+    const run = await collect("/reconciliation/errata-effective-scope", "reconcile-future-errata-before-boundary");
+    const candidate = await prepareNativeCandidate(
+      run.id,
+      "one-piece",
+      "catrev_spine_000",
+      "future-errata-candidate",
+      15_000,
+      { "x-keepr-test-now": "2098-12-31T23:59:00.000Z" },
     );
-    expect(approval.response.status).toBe(409);
-    expect(approval.document).toMatchObject({
-      code: "candidate_errata_stale",
+    const reviewedRecords = await nativeCandidateRecords(String(candidate.id));
+    expect(Date.parse(String(candidate.deadline)) - Date.parse(String(candidate.created_at))).toBe(604800000);
+    expect(reviewedRecords).toMatchObject({
+      cards: [{ effective_rules_text: "Observed Card Rules Text." }],
+      printings: [{ printed_rules_text: "Physical Printing Rules Text." }],
     });
-    const rejected = await post(
-      `/v1/ingestion-runs/${run.id}/rejection`,
-      {
-        candidate_digest: requiredString(reconciled.document, "candidate_digest"),
-        idempotency_key: "reject-stale-future-errata",
-      },
-      { "x-keepr-test-now": "2026-08-01T00:02:00.000Z" },
+    expect(reviewedRecords.errata).toContainEqual(
+      expect.objectContaining({
+        target_type: "card",
+        effective_from: "2099-01-01",
+        corrected_value: "Future Card Rules Text.",
+      }),
     );
-    expect(rejected.response.status).toBe(200);
+    // ADR0015 replaces applicability-date invalidation: dates remain evidence,
+    // and publication preserves the exact collected and reviewed facts. This
+    // retained 2099 fixture crosses its date within the original seven-day
+    // deadline while actual export preparation still uses its wall clock.
+    const crossed = await publishErrataAt(
+      candidate,
+      "approve-future-errata-after-boundary",
+      "2099-01-01T00:01:00.000Z",
+    );
+    expect(await nativeCandidateRecords(String(candidate.id))).toEqual(reviewedRecords);
+    const crossedCards = await exportComponentRecords(requiredString(crossed, "resulting_revision_id"), "cards");
+    expect(crossedCards).toContainEqual(
+      expect.objectContaining({
+        name: "Errata Scope Card",
+        effective_rules_text: "Observed Card Rules Text.",
+      }),
+    );
 
-    const carriedRun = await collect("/reconciliation/errata-future-boundary", "publish-future-errata-before-boundary");
-    const carried = await reconcile(carriedRun.id, { "x-keepr-test-now": "2026-07-31T23:50:00.000Z" });
-    const carriedPublished = await post(
-      `/v1/ingestion-runs/${carriedRun.id}/approval`,
-      {
-        candidate_digest: requiredString(carried.document, "candidate_digest"),
-        expected_current_revision_id: requiredString(carried.document, "expected_current_revision_id"),
-        idempotency_key: "approve-future-errata-before-boundary",
-      },
-      { "x-keepr-test-now": "2026-07-31T23:55:00.000Z" },
+    const carriedRun = await collect("/reconciliation/errata-effective-scope", "publish-future-errata-before-boundary");
+    const carried = await prepareNativeCandidate(
+      carriedRun.id,
+      "one-piece",
+      requiredString(crossed, "resulting_revision_id"),
+      "carried-future-errata-candidate",
+      15_000,
+      { "x-keepr-test-now": "2098-12-31T23:50:00.000Z" },
     );
-    expect(carriedPublished.response.status).toBe(200);
+    await publishErrataAt(carried, "approve-future-errata-before-boundary", "2098-12-31T23:55:00.000Z");
 
     const subsetRun = await collect(
       "/reconciliation/gundam-authority-us",
@@ -390,37 +414,34 @@ describe("Errata rules-text lifecycle", () => {
         adapter: "fixture-gundam-en-us-json@2",
       },
     );
-    const subset = await reconcile(subsetRun.id, { "x-keepr-test-now": "2026-08-01T00:05:00.000Z" });
-    const subsetPublished = await post(
-      `/v1/ingestion-runs/${subsetRun.id}/approval`,
-      {
-        candidate_digest: requiredString(subset.document, "candidate_digest"),
-        expected_current_revision_id: requiredString(subset.document, "expected_current_revision_id"),
-        idempotency_key: "approve-unselected-future-errata",
-      },
-      { "x-keepr-test-now": "2026-08-01T00:06:00.000Z" },
+    const subset = await prepareNativeCandidate(
+      subsetRun.id,
+      "gundam",
+      "catrev_spine_000",
+      "unselected-future-errata-candidate",
+      15_000,
+      { "x-keepr-test-now": "2099-01-01T00:05:00.000Z" },
     );
-    expect(subsetPublished.response.status).toBe(200);
-    const cards = await exportComponentRecords(
-      requiredString(subsetPublished.document, "resulting_revision_id"),
-      "cards",
-    );
+    const published = await publishErrataAt(subset, "approve-unselected-future-errata", "2099-01-01T00:06:00.000Z");
+    const cards = await exportComponentRecords(requiredString(published, "resulting_revision_id"), "cards");
     expect(cards).toContainEqual(
       expect.objectContaining({
-        name: "Future Errata Card",
-        effective_rules_text: "Rules before the future Erratum.",
+        name: "Errata Scope Card",
+        effective_rules_text: "Observed Card Rules Text.",
       }),
     );
   });
 
   test("an official Erratum preserves observed and Printed Rules Text while publishing corrected Effective Rules Text", async () => {
     const run = await collect("/reconciliation/errata-card-rules-text", "reconcile-errata-card-rules-text");
-    const reconciled = await reconcile(run.id);
-
-    expect(reconciled.response.status).toBe(200);
-    expect(reconciled.document).toMatchObject({
-      state: "awaiting_approval",
-      publishable: true,
+    const candidate = await prepareNativeCandidate(
+      run.id,
+      "one-piece",
+      "catrev_spine_000",
+      "official-erratum-candidate",
+    );
+    const records = await nativeCandidateRecords(String(candidate.id));
+    expect(records).toMatchObject({
       cards: [
         {
           effective_rules_text: "[On Play] Draw 2 cards, then discard 1 card.",
@@ -432,7 +453,7 @@ describe("Errata rules-text lifecycle", () => {
         },
       ],
     });
-    expect(reconciled.document.errata).toEqual(
+    expect(records.errata).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           target_type: "card",
@@ -443,7 +464,7 @@ describe("Errata rules-text lifecycle", () => {
       ]),
     );
 
-    const published = await approve(reconciled.document);
+    const published = await approveNativeCandidate(candidate, "official-erratum-publication");
     expect(published.response.status).toBe(200);
     const revisionId = requiredString(published.document, "resulting_revision_id");
     const [cards, printings, errata] = await Promise.all([
@@ -473,6 +494,41 @@ describe("Errata rules-text lifecycle", () => {
     if (erratum === undefined) {
       throw new Error("Expected the published Card Erratum in the export.");
     }
+    expect(records.errata).toContainEqual(
+      expect.objectContaining({
+        id: erratum.id,
+        provenance: expect.arrayContaining([
+          expect.objectContaining({
+            source_lineage: "one-piece-en",
+            source_observation_id: expect.stringMatching(/^srcobs_/),
+          }),
+        ]),
+      }),
+    );
+    const observationSet = await sourceEvidenceQueries
+      .readSourceObservationSetsContentObjectKeyForOfficialErratumPreservesObservedPrintedRulesTextWhilePublishing(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(run.id)
+      .first<{ content_object_key: string }>();
+    const retainedObservation = await testEnv.EVIDENCE_OBJECTS.get(observationSet?.content_object_key ?? "");
+    const manifest = await retainedObservation!.json<{ id: string; record_storage: { count: number } }>();
+    const retainedRecords: unknown[] = [];
+    for (let ordinal = 0; ordinal < manifest.record_storage.count; ordinal++)
+      retainedRecords.push(await readSourceObservation(catalogueStore(testEnv.CATALOGUE_DB), manifest.id, ordinal));
+    expect(JSON.stringify(retainedRecords)).toContain('"effective_rules_text":"[On Play] Draw 1 card."');
+  });
+
+  test("historical Erratum materialization retains source facts and rejects wording mutation", async () => {
+    const run = await collect("/reconciliation/errata-card-rules-text", "historical-erratum-immutability");
+    const candidate = await reconcile(run.id);
+    expect(candidate.response.status).toBe(200);
+    const published = await recoverHistoricalPublication(run.id, "historical-erratum-immutability-publication");
+    const revisionId = requiredString(published.document, "resulting_revision_id");
+    const erratum = (await exportComponentRecords(revisionId, "errata")).find(
+      ({ corrected_value }) => corrected_value === "[On Play] Draw 2 cards, then discard 1 card.",
+    )!;
+    expect(erratum).toBeDefined();
     const persisted = await reconciliationQueries
       .readReconciledErrataIdSourceLineage(testEnv.CATALOGUE_DB)
       .bind(revisionId, erratum.id)
@@ -496,28 +552,16 @@ describe("Errata rules-text lifecycle", () => {
     await expect(
       reconciliationQueries.setReconciledErrataCorrectedValueJson(testEnv.CATALOGUE_DB).bind(erratum.id).run(),
     ).rejects.toThrow(/reconciled_erratum_immutable/);
-    const observationSet = await sourceEvidenceQueries
-      .readSourceObservationSetsContentObjectKeyForOfficialErratumPreservesObservedPrintedRulesTextWhilePublishing(
-        testEnv.CATALOGUE_DB,
-      )
-      .bind(run.id)
-      .first<{ content_object_key: string }>();
-    const retainedObservation = await testEnv.EVIDENCE_OBJECTS.get(observationSet?.content_object_key ?? "");
-    const manifest = await retainedObservation!.json<{ id: string; record_storage: { count: number } }>();
-    const retainedRecords: unknown[] = [];
-    for (let ordinal = 0; ordinal < manifest.record_storage.count; ordinal++)
-      retainedRecords.push(await readSourceObservation(catalogueStore(testEnv.CATALOGUE_DB), manifest.id, ordinal));
-    expect(JSON.stringify(retainedRecords)).toContain('"effective_rules_text":"[On Play] Draw 1 card."');
   });
 
   test("a dedicated nullable-date Printing Erratum resolves one already-published Printing without rewriting physical text", async () => {
     const seedRun = await collect("/reconciliation/dedicated-printing-erratum-seed", "seed-dedicated-printing-erratum");
-    const seed = await reconcile(seedRun.id);
-    expect(seed.response.status).toBe(200);
-    const seedPublished = await approve(seed.document);
+    const seed = await prepareNativeCandidate(seedRun.id, "one-piece", "catrev_spine_000", "dedicated-erratum-seed");
+    const seedRecords = await nativeCandidateRecords(String(seed.id));
+    const seedPublished = await approveNativeCandidate(seed, "dedicated-erratum-seed-publication");
     expect(seedPublished.response.status).toBe(200);
     const seedRevisionId = requiredString(seedPublished.document, "resulting_revision_id");
-    const seedPrintings = Array.isArray(seed.document.printings) ? seed.document.printings : [];
+    const seedPrintings = Array.isArray(seedRecords.printings) ? seedRecords.printings : [];
     const inspected = await Promise.all(
       seedPrintings.map(async (printing) => {
         const id = requiredString(printing as Record<string, unknown>, "id");
@@ -537,20 +581,23 @@ describe("Errata rules-text lifecycle", () => {
       "dedicated-printing-erratum",
       syntheticOfficialErrataSource,
     );
-    const reconciled = await reconcile(run.id);
-    expect(reconciled.response.status).toBe(200);
-    expect(reconciled.document.cards).toEqual([
+    const candidate = await prepareNativeCandidate(run.id, "one-piece", seedRevisionId, "dedicated-erratum-candidate");
+    const records = await nativeCandidateRecords(String(candidate.id));
+    expect(records.cards).toEqual([
       expect.objectContaining({
         effective_rules_text: "Official effective rules",
       }),
     ]);
-    expect(reconciled.document.printings).toEqual([
-      expect.objectContaining({
-        id: basePrinting?.id,
-        printed_rules_text: "Official printed rules",
-      }),
-    ]);
-    expect(reconciled.document.errata).toEqual(
+    expect(records.printings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: basePrinting?.id,
+          printed_rules_text: "Official printed rules",
+        }),
+      ]),
+    );
+    expect(records.printings!.map(({ id }) => id).sort()).toEqual(seedPrintings.map((printing) => printing.id).sort());
+    expect(records.errata).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           target_type: "printing",
@@ -560,7 +607,7 @@ describe("Errata rules-text lifecycle", () => {
         }),
       ]),
     );
-    const published = await approve(reconciled.document);
+    const published = await approveNativeCandidate(candidate, "dedicated-erratum-publication");
     expect(published.response.status).toBe(200);
     const revisionId = requiredString(published.document, "resulting_revision_id");
     const [cards, printings, errata] = await Promise.all([
@@ -619,18 +666,16 @@ describe("Errata rules-text lifecycle", () => {
 
   test("a non-parallel Official Erratum fails closed unless it targets one exact Printing", async () => {
     const seedRun = await collect("/reconciliation/dedicated-printing-erratum-seed", "seed-nonparallel-card-erratum");
-    const seed = await reconcile(seedRun.id);
-    expect(seed.response.status).toBe(200);
-    expect((await approve(seed.document)).response.status).toBe(200);
+    const seed = await prepareNativeCandidate(seedRun.id, "one-piece", "catrev_spine_000", "nonparallel-erratum-seed");
+    const published = await approveNativeCandidate(seed, "nonparallel-erratum-seed-publication");
 
     const run = await collect(
       "/reconciliation/dedicated-card-nonparallel-erratum",
       "reject-nonparallel-card-erratum",
       syntheticOfficialErrataSource,
     );
-    const reconciled = await reconcile(run.id);
-    expect(reconciled.response.status).toBe(409);
-    expect(reconciled.document.diagnostics).toEqual(
+    const failed = await prepareFailedErrataCandidate(run.id, String(published.document.resulting_revision_id));
+    expect((failed.outcome as Record<string, unknown>).diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           code: "retained_evidence_invalid",
@@ -645,23 +690,26 @@ describe("Errata rules-text lifecycle", () => {
       "/reconciliation/dedicated-printing-erratum-seed",
       "seed-disappearing-official-erratum",
     );
-    const seed = await reconcile(seedRun.id);
-    expect(seed.response.status).toBe(200);
-    expect((await approve(seed.document)).response.status).toBe(200);
+    const seed = await prepareNativeCandidate(seedRun.id, "one-piece", "catrev_spine_000", "disappearing-erratum-seed");
+    const seedPublished = await approveNativeCandidate(seed, "disappearing-erratum-seed-publication");
 
     const observedRun = await collect(
       "/reconciliation/dedicated-printing-erratum",
       "observe-disappearing-official-erratum",
       syntheticOfficialErrataSource,
     );
-    const observed = await reconcile(observedRun.id);
-    expect(observed.response.status).toBe(200);
-    const targetPrinting = requiredFirst(observed.document, "printings");
-    const observedErratum = (observed.document.errata as Record<string, unknown>[]).find(
-      (erratum) => erratum.target_type === "printing" && erratum.target_id === targetPrinting.id,
+    const observed = await prepareNativeCandidate(
+      observedRun.id,
+      "one-piece",
+      String(seedPublished.document.resulting_revision_id),
+      "observed-erratum-candidate",
+    );
+    const observedRecords = await nativeCandidateRecords(String(observed.id));
+    const observedErratum = (observedRecords.errata as Record<string, unknown>[]).find(
+      (erratum) => erratum.target_type === "printing",
     )!;
     expect(observedErratum).toBeDefined();
-    const observedPublished = await approve(observed.document);
+    const observedPublished = await approveNativeCandidate(observed, "observed-erratum-publication");
     expect(observedPublished.response.status).toBe(200);
     const observedRevisionId = requiredString(observedPublished.document, "resulting_revision_id");
 
@@ -670,27 +718,34 @@ describe("Errata rules-text lifecycle", () => {
       "warn-disappearing-official-erratum",
       syntheticOfficialErrataSource,
     );
-    const missing = await reconcile(missingRun.id);
-
-    expect(missing.response.status).toBe(200);
-    expect(missing.document.warnings).toContainEqual({
+    const missing = await prepareNativeCandidate(
+      missingRun.id,
+      "one-piece",
+      observedRevisionId,
+      "missing-erratum-candidate",
+    );
+    const missingRecords = await nativeCandidateRecords(String(missing.id));
+    expect([...(missingRecords.warnings ?? []), ...(missingRecords.shared_warnings ?? [])]).toContainEqual({
       code: "erratum_not_observed",
       erratum_id: requiredString(observedErratum, "id"),
       source_lineage: "one-piece-en",
       detail: expect.stringContaining("retained without advancing its last-observed revision"),
     });
-    expect(missing.document.errata).toContainEqual(
+    expect(missingRecords.errata).toContainEqual(
       expect.objectContaining({ id: requiredString(observedErratum, "id") }),
     );
-    const missingPublished = await approve(missing.document);
+    const missingPublished = await approveNativeCandidate(missing, "missing-erratum-publication");
     expect(missingPublished.response.status).toBe(200);
-    const retained = await reconciliationQueries
-      .readReconciledErrataLastObservedRevisionId(testEnv.CATALOGUE_DB)
-      .bind(requiredString(observedErratum, "id"))
-      .first<{ last_observed_revision_id: string }>();
-    expect(retained).toEqual({
-      last_observed_revision_id: observedRevisionId,
-    });
+    const retained = (
+      await exportComponentRecords(String(missingPublished.document.resulting_revision_id), "errata")
+    ).find(({ id }) => id === observedErratum.id);
+    expect(retained).toBeDefined();
+    expect(retained).not.toHaveProperty("lifecycle");
+    const history = await nativeErratumHistory(testEnv.CATALOGUE_DB, String(missing.id), String(observedErratum.id));
+    expect(history.results).toEqual([
+      { kind: "erratum", first_revision_id: observedRevisionId, last_observed_revision_id: observedRevisionId },
+      { kind: "provenance", first_revision_id: observedRevisionId, last_observed_revision_id: observedRevisionId },
+    ]);
   });
 
   test("a dedicated Printing Erratum fails closed for ambiguous or unpublished locators", async () => {
@@ -698,27 +753,33 @@ describe("Errata rules-text lifecycle", () => {
       "/reconciliation/multi-printing-shared-locator",
       "seed-ambiguous-dedicated-printing-erratum",
     );
-    const seed = await reconcile(seedRun.id);
-    expect(seed.response.status).toBe(200);
-    const printingIds = (Array.isArray(seed.document.printings) ? seed.document.printings : [])
-      .map((printing) => requiredString(printing as Record<string, unknown>, "id"))
+    const seed = await prepareNativeCandidate(seedRun.id, "one-piece", "catrev_spine_000", "ambiguous-erratum-seed");
+    const records = await nativeCandidateRecords(String(seed.id));
+    const printingIds = records
+      .printings!.map((printing) => requiredString(printing as Record<string, unknown>, "id"))
       .sort();
     expect(printingIds).toHaveLength(2);
-    expect((await approve(seed.document)).response.status).toBe(200);
+    const published = await approveNativeCandidate(seed, "ambiguous-erratum-seed-publication");
+    for (const id of printingIds) {
+      const retained = await get(`/v1/reconciliation/printings/${id}`);
+      expect(retained.response.status).toBe(200);
+      expect(JSON.stringify(retained.document)).toContain("/official/multi/shared");
+      expect(JSON.stringify(retained.document)).not.toContain("/official/multi/missing");
+    }
 
     const ambiguousRun = await collect(
       "/reconciliation/dedicated-printing-erratum-ambiguous",
       "ambiguous-dedicated-printing-erratum",
       syntheticOfficialErrataSource,
     );
-    const ambiguous = await reconcile(ambiguousRun.id);
-    expect(ambiguous.response.status).toBe(409);
-    expect(ambiguous.document.diagnostics).toEqual(
+    const ambiguous = await prepareFailedErrataCandidate(
+      ambiguousRun.id,
+      String(published.document.resulting_revision_id),
+    );
+    expect((ambiguous.outcome as Record<string, unknown>).diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           code: "retained_evidence_invalid",
-          locator: "/official/multi/shared",
-          matched_printing_ids: printingIds,
           detail: expect.stringContaining("exactly one Printing"),
         }),
       ]),
@@ -729,14 +790,11 @@ describe("Errata rules-text lifecycle", () => {
       "missing-dedicated-printing-erratum",
       syntheticOfficialErrataSource,
     );
-    const missing = await reconcile(missingRun.id);
-    expect(missing.response.status).toBe(409);
-    expect(missing.document.diagnostics).toEqual(
+    const missing = await prepareFailedErrataCandidate(missingRun.id, String(published.document.resulting_revision_id));
+    expect((missing.outcome as Record<string, unknown>).diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           code: "retained_evidence_invalid",
-          locator: "/official/multi/missing",
-          matched_printing_ids: [],
           detail: expect.stringContaining("exactly one Printing"),
         }),
       ]),
@@ -745,12 +803,9 @@ describe("Errata rules-text lifecycle", () => {
 
   test("future and Printing-scoped Errata do not rewrite the Card or physical Printing history", async () => {
     const run = await collect("/reconciliation/errata-effective-scope", "reconcile-errata-effective-scope");
-    const reconciled = await reconcile(run.id);
-
-    expect(reconciled.response.status).toBe(200);
-    expect(reconciled.document).toMatchObject({
-      state: "awaiting_approval",
-      publishable: true,
+    const candidate = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", "scoped-errata-candidate");
+    const records = await nativeCandidateRecords(String(candidate.id));
+    expect(records).toMatchObject({
       cards: [
         {
           effective_rules_text: "Observed Card Rules Text.",
@@ -762,7 +817,7 @@ describe("Errata rules-text lifecycle", () => {
         },
       ],
     });
-    expect(reconciled.document.errata).toEqual(
+    expect(records.errata).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           target_type: "card",
@@ -776,8 +831,8 @@ describe("Errata rules-text lifecycle", () => {
         }),
       ]),
     );
-    const rejected = await post(`/v1/ingestion-runs/${run.id}/rejection`, {
-      candidate_digest: requiredString(reconciled.document, "candidate_digest"),
+    const rejected = await post(`/v1/game-candidates/${candidate.id}/abandon`, {
+      generation: candidate.generation,
       idempotency_key: "reject-errata-effective-scope",
     });
     expect(rejected.response.status).toBe(200);
@@ -785,10 +840,9 @@ describe("Errata rules-text lifecycle", () => {
 
   test("Erratum wording that requires invented precision hard-blocks publication", async () => {
     const run = await collect("/reconciliation/errata-unrepresentable", "reconcile-errata-unrepresentable");
-    const blocked = await reconcile(run.id);
+    const blocked = await prepareFailedErrataCandidate(run.id, "catrev_spine_000");
 
-    expect(blocked.response.status).toBe(409);
-    expect(blocked.document).toMatchObject({
+    expect(blocked.outcome).toMatchObject({
       state: "failed",
       publishable: false,
       diagnostics: [
@@ -802,9 +856,8 @@ describe("Errata rules-text lifecycle", () => {
 
   test("Official Errata evidence rejects undeclared fields", async () => {
     const run = await collect("/reconciliation/errata-extra-property", "reconcile-errata-extra-property");
-    const blocked = await reconcile(run.id);
-    expect(blocked.response.status).toBe(409);
-    expect(blocked.document).toMatchObject({
+    const blocked = await prepareFailedErrataCandidate(run.id, "catrev_spine_000");
+    expect(blocked.outcome).toMatchObject({
       diagnostics: [
         expect.objectContaining({
           code: "retained_evidence_invalid",
@@ -819,10 +872,9 @@ describe("Errata rules-text lifecycle", () => {
       "/reconciliation/errata-conflicting-effective-text",
       "reconcile-errata-conflicting-effective-text",
     );
-    const blocked = await reconcile(run.id);
+    const blocked = await prepareFailedErrataCandidate(run.id, "catrev_spine_000");
 
-    expect(blocked.response.status).toBe(409);
-    expect(blocked.document).toMatchObject({
+    expect(blocked.outcome).toMatchObject({
       state: "failed",
       publishable: false,
       diagnostics: [
@@ -836,19 +888,14 @@ describe("Errata rules-text lifecycle", () => {
 
   test("official Errata may remove Effective Rules Text without changing Printed Rules Text", async () => {
     const run = await collect("/reconciliation/errata-null-effective-text", "reconcile-errata-null-effective-text");
-    const reconciled = await reconcile(run.id);
-
-    expect(reconciled.response.status).toBe(200);
-    expect(reconciled.document).toMatchObject({
-      state: "awaiting_approval",
-      publishable: true,
+    const candidate = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", "null-errata-candidate");
+    const records = await nativeCandidateRecords(String(candidate.id));
+    expect(records).toMatchObject({
       cards: [{ effective_rules_text: null }],
       printings: [{ printed_rules_text: "Printed and observed rules text." }],
     });
-    expect(reconciled.document.errata).toEqual(
-      expect.arrayContaining([expect.objectContaining({ corrected_value: null })]),
-    );
-    const published = await approve(reconciled.document);
+    expect(records.errata).toEqual(expect.arrayContaining([expect.objectContaining({ corrected_value: null })]));
+    const published = await approveNativeCandidate(candidate, "null-errata-publication");
     expect(published.response.status).toBe(200);
     const revisionId = requiredString(published.document, "resulting_revision_id");
     const [cards, printings, errata] = await Promise.all([
@@ -870,28 +917,31 @@ describe("Errata rules-text lifecycle", () => {
       "/reconciliation/errata-card-rules-text-longitudinal",
       "reconcile-errata-layer-first",
     );
-    const first = await reconcile(firstRun.id);
-    const firstPublished = await approve(first.document);
-    expect(firstPublished.response.status).toBe(200);
-    const firstCard = requiredFirst(first.document, "cards");
-    const firstErratum = requiredObjectWithField(
-      first.document,
-      "errata",
-      "target_id",
-      requiredString(firstCard, "id"),
+    const first = await prepareNativeCandidate(
+      firstRun.id,
+      "one-piece",
+      "catrev_spine_000",
+      "errata-layer-first-candidate",
     );
+    const firstRecords = await nativeCandidateRecords(String(first.id));
+    const firstPublished = await approveNativeCandidate(first, "errata-layer-first-publication");
+    expect(firstPublished.response.status).toBe(200);
+    const firstCard = requiredFirst(firstRecords, "cards");
+    const firstErratum = requiredObjectWithField(firstRecords, "errata", "target_id", requiredString(firstCard, "id"));
     const firstRevisionId = requiredString(firstPublished.document, "resulting_revision_id");
 
     const secondRun = await collect(
       "/reconciliation/errata-card-rules-text-longitudinal-v2",
       "reconcile-errata-layer-second",
     );
-    const second = await reconcile(secondRun.id);
-
-    expect(second.response.status).toBe(200);
-    expect(second.document).toMatchObject({
-      state: "awaiting_approval",
-      publishable: true,
+    const second = await prepareNativeCandidate(
+      secondRun.id,
+      "one-piece",
+      firstRevisionId,
+      "errata-layer-second-candidate",
+    );
+    const secondRecords = await nativeCandidateRecords(String(second.id));
+    expect(secondRecords).toMatchObject({
       cards: [
         {
           effective_rules_text: "[On Play] Draw 2 cards, then discard 2 cards.",
@@ -903,8 +953,8 @@ describe("Errata rules-text lifecycle", () => {
         },
       ],
     });
-    const layeredErrata = Array.isArray(second.document.errata)
-      ? second.document.errata.filter(
+    const layeredErrata = Array.isArray(secondRecords.errata)
+      ? secondRecords.errata.filter(
           (erratum) =>
             erratum !== null &&
             typeof erratum === "object" &&
@@ -922,34 +972,23 @@ describe("Errata rules-text lifecycle", () => {
       ]),
     );
     expect(layeredErrata).toHaveLength(2);
-    const secondPublished = await approve(second.document);
+    const secondPublished = await approveNativeCandidate(second, "errata-layer-second-publication");
     expect(secondPublished.response.status).toBe(200);
     const secondRevisionId = requiredString(secondPublished.document, "resulting_revision_id");
-    const [persistedErratum, persistedProvenance, relationships] = await Promise.all([
-      reconciliationQueries
-        .readReconciledErrataFirstRevisionIdLastObservedRevisionId(testEnv.CATALOGUE_DB)
-        .bind(firstErratum.id)
-        .first<{
-          first_revision_id: string;
-          last_observed_revision_id: string;
-        }>(),
-      publishedCatalogueQueries
-        .readErratumProvenanceFirstRevisionIdLastObservedRevisionId(testEnv.CATALOGUE_DB)
-        .bind(firstErratum.id)
-        .first<{
-          first_revision_id: string;
-          last_observed_revision_id: string;
-        }>(),
+    const [originalErrata, currentErrata, relationships] = await Promise.all([
+      exportComponentRecords(firstRevisionId, "errata"),
+      exportComponentRecords(secondRevisionId, "errata"),
       exportComponentRecords(secondRevisionId, "relationships"),
     ]);
-    expect(persistedErratum).toEqual({
-      first_revision_id: firstRevisionId,
-      last_observed_revision_id: firstRevisionId,
-    });
-    expect(persistedProvenance).toEqual({
-      first_revision_id: firstRevisionId,
-      last_observed_revision_id: firstRevisionId,
-    });
+    const original = originalErrata.find(({ id }) => id === firstErratum.id);
+    const retained = currentErrata.find(({ id }) => id === firstErratum.id);
+    expect(retained).toEqual(original);
+    expect(retained).not.toHaveProperty("lifecycle");
+    const history = await nativeErratumHistory(testEnv.CATALOGUE_DB, String(second.id), String(firstErratum.id));
+    expect(history.results).toEqual([
+      { kind: "erratum", first_revision_id: firstRevisionId, last_observed_revision_id: firstRevisionId },
+      { kind: "provenance", first_revision_id: firstRevisionId, last_observed_revision_id: firstRevisionId },
+    ]);
     expect(relationships).toContainEqual(
       expect.objectContaining({
         kind: "erratum-target",
@@ -968,7 +1007,7 @@ describe("Errata rules-text lifecycle", () => {
     expect(reconciled.response.status).toBe(200);
     const card = requiredFirst(reconciled.document, "cards");
     const printing = requiredFirst(reconciled.document, "printings");
-    const published = await approve(reconciled.document);
+    const published = await recoverHistoricalPublication(run.id, "historical-erratum-target-publication");
     expect(published.response.status).toBe(200);
     const revisionId = requiredString(published.document, "resulting_revision_id");
     const insert = (id: string, game: "one-piece" | "gundam", targetType: "card" | "printing", targetId: string) =>
@@ -1056,6 +1095,76 @@ async function waitForRunState(
   throw new Error(`run ${id} did not reach ${expectedState}`);
 }
 
+/** Exercise the real publication switch at the Erratum boundary, then verify its actual backup. */
+async function publishErrataAt(candidate: Record<string, unknown>, key: string, at: string) {
+  const { advanceGamePublication } = await import("../../../src/catalogue/reconciliation");
+  const { advancePublicationExports } = await import("../../../src/catalogue/ingestion");
+  const { startOrObserveCatalogueBackupWorkflow } = await import("../../../src/catalogue/backup-recovery");
+  const headers = { "x-keepr-test-now": at };
+  const approval = await post(
+    "/v1/publications",
+    {
+      candidate_id: candidate.id,
+      manifest_digest: candidate.manifest_digest,
+      expected_game_revision_id: candidate.expected_game_revision_id,
+      generation: candidate.generation,
+      idempotency_key: key,
+    },
+    headers,
+  );
+  expect(approval.response.status, JSON.stringify(approval.document)).toBe(202);
+  const operation = requiredString(approval.document, "id");
+  let artifacts: Record<string, unknown> = { sequence: 0, state: "preparing" };
+  for (let unit = 0; artifacts.state === "preparing" && unit < 250; unit++) {
+    const result = await post(
+      `/v1/game-candidates/${candidate.id}/publication-preparation`,
+      {
+        manifest_digest: candidate.manifest_digest,
+        generation: candidate.generation,
+        sequence: artifacts.sequence,
+        idempotency_key: `${key}-artifacts-${unit}`,
+      },
+      headers,
+    );
+    expect(result.response.status, JSON.stringify(result.document)).toBe(200);
+    artifacts = result.document;
+  }
+  expect(artifacts.state).toBe("verified");
+  const environment = { ...testEnv, CATALOGUE_DB: catalogueStore(testEnv.CATALOGUE_DB) };
+  let exports: { state: string } = { state: "preparing" };
+  for (let unit = 0; exports.state === "preparing" && unit < 250; unit++)
+    exports = await advancePublicationExports(environment, operation, 0, `${key}-exports-${unit}`);
+  expect(exports.state).toBe("verified");
+  const published = await advanceGamePublication(environment, operation, 0, at);
+  expect(published.state, JSON.stringify(published)).toBe("published");
+  const revision = requiredString(published, "resulting_revision_id");
+  const backup = requiredString(published, "backup_attempt_id");
+  await startOrObserveCatalogueBackupWorkflow(
+    environment.CATALOGUE_DB,
+    testEnv.CATALOGUE_BACKUP_WORKFLOW,
+    {
+      expected_current_revision_id: revision,
+      idempotency_key: backup,
+    },
+    new Date().toISOString(),
+  );
+  await waitForVerifiedPublicationBackup(backup, revision);
+  return published;
+}
+
+async function prepareFailedErrataCandidate(runId: string, predecessor: string) {
+  const started = await post("/v1/game-candidates", {
+    ingestion_run_id: runId,
+    supported_game: "one-piece",
+    expected_game_revision_id: predecessor,
+    idempotency_key: `failed-errata-${runId}`,
+  });
+  expect(started.response.status, JSON.stringify(started.document)).toBe(201);
+  const [candidate] = await waitForNativeCandidates(runId, 1, 15_000, { "one-piece": "failed" });
+  expect(candidate!.outcome).toMatchObject({ state: "failed", publishable: false });
+  return candidate!;
+}
+
 async function reconcile(runId: string, extraHeaders: Record<string, string> = {}) {
   const shown = await get(`/v1/ingestion-runs/${runId}`);
   const expectedCurrentRevisionId = requiredString(shown.document, "expected_current_revision_id");
@@ -1084,14 +1193,6 @@ async function reconcile(runId: string, extraHeaders: Record<string, string> = {
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   throw new Error(`reconciliation Workflow ${runId} did not complete`);
-}
-
-function approve(document: Record<string, unknown>) {
-  return post(`/v1/ingestion-runs/${requiredString(document, "run_id")}/approval`, {
-    candidate_digest: requiredString(document, "candidate_digest"),
-    expected_current_revision_id: requiredString(document, "expected_current_revision_id"),
-    idempotency_key: `approve-${crypto.randomUUID()}`,
-  });
 }
 
 function get(pathname: string) {
@@ -1175,30 +1276,4 @@ function requiredString(document: Record<string, unknown>, field: string): strin
   const value = document[field];
   if (typeof value !== "string") throw new Error(`${field} is not a string`);
   return value;
-}
-
-async function exportComponentRecords(revisionId: string, componentName: string): Promise<Record<string, unknown>[]> {
-  const exportRow = await catalogueExportQueries
-    .readCatalogueExportsManifestKeyForExportComponentRecords(testEnv.CATALOGUE_DB)
-    .bind(revisionId)
-    .first<{ manifest_key: string }>();
-  const manifestObject = await testEnv.CATALOGUE_EXPORTS.get(exportRow?.manifest_key ?? "");
-  const manifest = await manifestObject?.json<{
-    components: {
-      name: string;
-      compressed_sha256: string;
-    }[];
-  }>();
-  const component = manifest?.components.find((entry) => entry.name === componentName);
-  const object = await testEnv.CATALOGUE_EXPORTS.get(
-    `catalogue-exports/${revisionId}/components/${component?.compressed_sha256}.ndjson.gz`,
-  );
-  if (object === null) throw new Error("export component missing");
-  const decompressed = object.body.pipeThrough(new DecompressionStream("gzip"));
-  const text = await new Response(decompressed).text();
-  return text
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
 }

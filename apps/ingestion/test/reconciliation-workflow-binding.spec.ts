@@ -11,7 +11,9 @@ import {
 } from "../../../src/catalogue/reconciliation";
 import { type CatalogueCandidate, catalogueRevisionIdentity, catalogueStore } from "../../../src/catalogue/shared";
 import ingestionWorker from "../src/index";
-import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
+import { recoverHistoricalPublication } from "./historical-publication-fixture";
+import { nativeCandidateRecords } from "./native-candidate-helpers";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import * as catalogueExportQueries from "./query-helpers/catalogue-export";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
@@ -30,6 +32,7 @@ import {
   requiredString,
   testEnv,
 } from "./reconciliation-helpers";
+import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 
 installReconciliationSuite();
 
@@ -683,12 +686,12 @@ test("an exact replay pauses retained work when Workflow pause-finalization itse
   expect(exactReplay.document).toEqual(recovered.document);
 });
 
-test("an empty published revision has an available projection and concurrent repair steps converge by CAS", async () => {
+test("an empty retained historical revision has an available projection and concurrent repair steps converge by CAS", async () => {
   const run = await collect("/reconciliation/complete-empty-lineage", "empty-query-revision");
   const reconciled = await reconcile(run.id);
   expect(reconciled.response.status).toBe(200);
   expect(reconciled.document.cards).toEqual([]);
-  const published = await approve(reconciled.document);
+  const published = await recoverHistoricalPublication(run.id, "historical-empty-query-revision");
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
   await expect(
@@ -975,27 +978,40 @@ test("retained immutable evidence publishes stable identities and warns when ear
 });
 
 test("parsed observation count warnings use the normative absolute threshold", async () => {
-  // The 25-record absolute floor needs only 1 -> 25 -> 50 observations.
-  // This crosses the same 24/25 boundary without publishing hundreds of cards.
+  // Preserve the 24/25 absolute boundary with 1 -> 25 -> 50 records.
   const firstRun = await collect("/reconciliation/observation-count-1", "observation-count-first");
-  const first = await reconcile(firstRun.id);
-  expect(first.response.status).toBe(200);
-  expect((await approve(first.document)).response.status).toBe(200);
+  const first = await prepareNativeCandidate(
+    firstRun.id,
+    "one-piece",
+    "catrev_spine_000",
+    "observation-count-first-candidate",
+  );
+  const firstPublished = await approveNativeCandidate(first, "observation-count-first-publication");
+  expect(firstPublished.response.status).toBe(200);
 
   const secondRun = await collect("/reconciliation/observation-count-25", "observation-count-second");
-  const second = await reconcile(secondRun.id);
-  expect(second.response.status).toBe(200);
-  expect(second.document.warnings).not.toContainEqual(
-    expect.objectContaining({
-      code: "source_observation_count_changed",
-    }),
+  const second = await prepareNativeCandidate(
+    secondRun.id,
+    "one-piece",
+    requiredString(firstPublished.document, "resulting_revision_id"),
+    "observation-count-second-candidate",
   );
-  expect((await approve(second.document)).response.status).toBe(200);
+  const secondRecords = await nativeCandidateRecords(String(second.id));
+  expect([...(secondRecords.warnings ?? []), ...(secondRecords.shared_warnings ?? [])]).not.toContainEqual(
+    expect.objectContaining({ code: "source_observation_count_changed" }),
+  );
+  const secondPublished = await approveNativeCandidate(second, "observation-count-second-publication");
+  expect(secondPublished.response.status).toBe(200);
 
   const thirdRun = await collect("/reconciliation/observation-count-50", "observation-count-third");
-  const third = await reconcile(thirdRun.id);
-  expect(third.response.status).toBe(200);
-  expect(third.document.warnings).toContainEqual(
+  const third = await prepareNativeCandidate(
+    thirdRun.id,
+    "one-piece",
+    requiredString(secondPublished.document, "resulting_revision_id"),
+    "observation-count-third-candidate",
+  );
+  const thirdRecords = await nativeCandidateRecords(String(third.id));
+  expect([...(thirdRecords.warnings ?? []), ...(thirdRecords.shared_warnings ?? [])]).toContainEqual(
     expect.objectContaining({
       code: "source_observation_count_changed",
       source_lineage: "one-piece-en",
