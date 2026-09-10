@@ -11,11 +11,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        selection: [progress]
+        selection: [contracts, runtime, preparation, history, profiles, progress]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 02ccf41cc793efc760461c55ba6a9507c04f2c4b
+          ref: 19393ac1eb17b904725c97d388e674128bbf9d3c
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         id: node
         with:
@@ -37,11 +37,16 @@ jobs:
           (while true; do date -u; free -m; ps -eo pid,ppid,pcpu,rss,stat,comm --sort=-rss | head -12; df -m -t tmpfs; sleep 10; done) | tee diagnostic-output/host.log &
           sampler=$!
           trap 'kill "$sampler" 2>/dev/null || true' EXIT
-          if [ "$SELECTION" = timing ]; then
-            bash scripts/ci-test.sh npm run test:workers:ingestion -- apps/ingestion/test/reconciliation-card-identity.spec.ts apps/ingestion/test/reconciliation-curated-lookup.spec.ts apps/ingestion/test/reconciliation-provenance-locators.spec.ts apps/ingestion/test/reconciliation-workflow-binding.spec.ts apps/ingestion/test/game-reconciliation-operations.spec.ts apps/ingestion/test/publication-caller-retirement.spec.ts -t 'Gundam EN-ASIA and EN-US|Gundam cross-locale formatting|Gundam shared-fact conflict blocks|curated .* lookup|locator variant evolution|parsed observation count warnings|native source change retains reconfirmable|a repeated native publication' > diagnostic-output/tests.log 2>&1
-          else
-            bash scripts/ci-test.sh npm run test:workers:ingestion -- apps/ingestion/test/identity-corrections.spec.ts apps/ingestion/test/reconciliation-completeness-profiles.spec.ts > diagnostic-output/tests.log 2>&1
-          fi
+          case "$SELECTION" in
+            contracts) files="apps/ingestion/test/native-source-verification.spec.ts apps/ingestion/test/source-refresh-publication.spec.ts apps/ingestion/test/publication-caller-retirement.spec.ts apps/ingestion/test/source-refresh.spec.ts apps/ingestion/test/runtime-game-preparation-dispatch.spec.ts" ;;
+            runtime) files="apps/ingestion/test/runtime-workflow-collection.spec.ts apps/ingestion/test/runtime-synthetic-transport.spec.ts apps/ingestion/test/runtime-adapter-reparse.spec.ts apps/ingestion/test/native-errata-locators.spec.ts" ;;
+            preparation) files="apps/ingestion/test/identity-corrections.spec.ts apps/ingestion/test/reconciliation-curated-lookup.spec.ts apps/ingestion/test/reconciliation-curated-conflicts.spec.ts apps/ingestion/test/game-reconciliation-operations.spec.ts" ;;
+            history) files="apps/ingestion/test/reconciliation-card-identity.spec.ts apps/ingestion/test/reconciliation-provenance-locators.spec.ts apps/ingestion/test/errata-rules-text.spec.ts" ;;
+            profiles) files="apps/ingestion/test/reconciliation-completeness-profiles.spec.ts apps/ingestion/test/reconciliation-product-identity.spec.ts apps/ingestion/test/reconciliation-product-release.spec.ts apps/ingestion/test/reviewed-printing-matches.spec.ts" ;;
+            progress) files="apps/ingestion/test/reconciliation-progress.spec.ts apps/ingestion/test/reconciliation-workflow-binding.spec.ts" ;;
+            *) exit 2 ;;
+          esac
+          bash scripts/ci-test.sh npm run test:workers:ingestion -- $files > diagnostic-output/tests.log 2>&1
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
