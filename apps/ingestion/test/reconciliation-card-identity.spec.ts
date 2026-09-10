@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 import type { SourceHistoryCursor } from "../../../src/catalogue/reconciliation/native-source-history";
 import { NativeSourceHistory } from "../../../src/catalogue/reconciliation/native-source-history-state";
 import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
@@ -226,215 +226,221 @@ test("withdrawal assertions are longitudinal, append-only, and preserve the firs
   });
 });
 
-test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substantive conflict blocks", async () => {
-  const asiaRun = await collect("/reconciliation/gundam-cross-asia", "reconcile-gundam-cross-asia", {
-    game: "gundam",
-    lineage: "gundam-en-asia",
-    adapter: "fixture-gundam-en-asia-json@2",
-  });
-  const asia = await prepareIdentityEvidence(asiaRun.id, "gundam", "sealed");
-  const printingId = requiredString(requiredFirst(asia.records, "printings"), "id");
-  expect(asia.records.warnings).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        code: "single_locale_gundam_printing",
-        printing_id: printingId,
-        source_lineage: "gundam-en-asia",
-      }),
-    ]),
-  );
-  await approveNativeCandidate(asia.header, `publish-${asia.header.id}`);
-
-  const productMismatchRun = await collect(
-    "/reconciliation/gundam-cross-product-conflict",
-    "reconcile-gundam-product-conflict",
-    {
+describe("Gundam EN-ASIA and EN-US evidence", () => {
+  let asia: Awaited<ReturnType<typeof prepareIdentityEvidence>>;
+  let printingId: string;
+  beforeEach(async () => {
+    const asiaRun = await collect("/reconciliation/gundam-cross-asia", "reconcile-gundam-cross-asia", {
       game: "gundam",
-      lineage: "gundam-en-us",
-      adapter: "fixture-gundam-en-us-json@2",
-    },
-  );
-  const productMismatch = await prepareIdentityEvidence(productMismatchRun.id, "gundam", "failed");
-  expect(productMismatch.header.state).toBe("failed");
-  expect(productMismatch.diagnostics).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        code: "printing_match_insufficient_evidence",
-        matched_printing_ids: [printingId],
-        detail: expect.stringContaining("Product"),
-      }),
-    ]),
-  );
-  expect(productMismatch.records).not.toMatchObject({
-    publishable: true,
+      lineage: "gundam-en-asia",
+      adapter: "fixture-gundam-en-asia-json@2",
+    });
+    asia = await prepareIdentityEvidence(asiaRun.id, "gundam", "sealed");
+    printingId = requiredString(requiredFirst(asia.records, "printings"), "id");
+    expect(asia.records.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "single_locale_gundam_printing",
+          printing_id: printingId,
+          source_lineage: "gundam-en-asia",
+        }),
+      ]),
+    );
+    await approveNativeCandidate(asia.header, `publish-${asia.header.id}`);
   });
-
-  const usRun = await collect("/reconciliation/gundam-cross-us", "reconcile-gundam-cross-us", {
-    game: "gundam",
-    lineage: "gundam-en-us",
-    adapter: "fixture-gundam-en-us-json@2",
-  });
-  const us = await prepareIdentityEvidence(usRun.id, "gundam", "sealed");
-  expect(requiredFirst(us.records, "printings")).toMatchObject({
-    id: printingId,
-  });
-  expect(us.records.warnings).not.toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        code: "single_locale_gundam_printing",
-        printing_id: printingId,
-      }),
-    ]),
-  );
-  await approveNativeCandidate(us.header, `publish-${us.header.id}`);
-  const lifecycle = await get(`/v1/reconciliation/printings/${printingId}`);
-  expect(lifecycle.document.locators).toMatchObject({
-    current: [
-      expect.objectContaining({
-        locator: "/official/gundam/gundam-cross-asia",
-        source_lineage: "gundam-en-asia",
-        current: true,
-      }),
-      expect.objectContaining({
-        locator: "/official/gundam/gundam-cross-us",
-        source_lineage: "gundam-en-us",
-        current: true,
-      }),
-    ],
-    historical: [],
-  });
-  expect(lifecycle.document.relationship_evidence).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        source_lineage: "gundam-en-asia",
-        relationship_value: "product_gd99",
-        current: true,
-      }),
-      expect.objectContaining({
-        source_lineage: "gundam-en-us",
-        relationship_value: "product_gd99",
-        current: true,
-      }),
-    ]),
-  );
-
-  const usMissingRun = await collect(
-    "/reconciliation/complete-empty-lineage",
-    "reconcile-gundam-cross-us-whole-printing-omitted",
-    {
-      game: "gundam",
-      lineage: "gundam-en-us",
-      adapter: "fixture-gundam-en-us-json@2",
-    },
-  );
-  const usMissing = await prepareIdentityEvidence(usMissingRun.id, "gundam", "sealed");
-  expect(usMissing.records.warnings).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        code: "single_locale_gundam_printing",
-        printing_id: printingId,
-        source_lineage: "gundam-en-asia",
-      }),
-    ]),
-  );
-  expect(usMissing.records.warnings).toEqual(
-    expect.arrayContaining([expect.objectContaining({ code: "record_not_observed", printing_id: printingId })]),
-  );
-  const usMissingPublished = await approveNativeCandidate(usMissing.header, `publish-${usMissing.header.id}`);
-  const usMissingRevision = requiredString(usMissingPublished.document, "resulting_revision_id");
-  const isolated = await get(`/v1/reconciliation/printings/${printingId}`);
-  expect((isolated.document.locators as Record<string, unknown>).historical).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        source_lineage: "gundam-en-us",
-        current: false,
-        last_missing_revision_id: usMissingRevision,
-      }),
-    ]),
-  );
-  const historyReceipt = await reconciliationCheckpoint<{ sourceHistory: SourceHistoryCursor }>(
-    catalogueStore(testEnv.CATALOGUE_DB),
-    String(usMissing.header.id),
-    "disappearance_warnings",
-  );
-  expect(historyReceipt?.value.sourceHistory.stage).toBe("complete");
-  const history = new NativeSourceHistory(
-    catalogueStore(testEnv.CATALOGUE_DB),
-    String(usMissing.header.id),
-    historyReceipt!.value.sourceHistory.history,
-  );
-  expect(await history.forEntity("card", String(requiredFirst(us.records, "cards").id))).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        sourceLineage: "gundam-en-us",
-        current: false,
-        missing: { candidate: usMissing.header.id },
-      }),
-    ]),
-  );
-  expect(isolated.document.relationship_evidence).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        source_lineage: "gundam-en-asia",
-        relationship_value: "product_gd99",
-        current: true,
-      }),
-      expect.objectContaining({
-        source_lineage: "gundam-en-us",
-        relationship_value: "product_gd99",
-        current: false,
-      }),
-    ]),
-  );
-
-  const cardConflictRun = await collect("/reconciliation/gundam-card-conflict", "reconcile-gundam-card-conflict", {
-    game: "gundam",
-    lineage: "gundam-en-us",
-    adapter: "fixture-gundam-en-us-json@2",
-  });
-  const cardConflict = await prepareIdentityEvidence(cardConflictRun.id, "gundam", "failed");
-  expect(cardConflict.header.state).toBe("failed");
-  expect(cardConflict).toMatchObject({
-    diagnostics: [
+  test("rejects contradictory Product evidence before convergence", async () => {
+    const productMismatchRun = await collect(
+      "/reconciliation/gundam-cross-product-conflict",
+      "reconcile-gundam-product-conflict",
       {
-        code: "canonical_card_conflict",
-        detail: expect.stringContaining("source lineages"),
+        game: "gundam",
+        lineage: "gundam-en-us",
+        adapter: "fixture-gundam-en-us-json@2",
       },
-    ],
+    );
+    const productMismatch = await prepareIdentityEvidence(productMismatchRun.id, "gundam", "failed");
+    expect(productMismatch.header.state).toBe("failed");
+    expect(productMismatch.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "printing_match_insufficient_evidence",
+          matched_printing_ids: [printingId],
+          detail: expect.stringContaining("Product"),
+        }),
+      ]),
+    );
+    expect(productMismatch.records).not.toMatchObject({
+      publishable: true,
+    });
   });
-
-  const conflictRun = await collect("/reconciliation/gundam-cross-conflict", "reconcile-gundam-cross-conflict", {
-    game: "gundam",
-    lineage: "gundam-en-us",
-    adapter: "fixture-gundam-en-us-json@2",
-  });
-  const conflict = await prepareIdentityEvidence(conflictRun.id, "gundam", "failed");
-  expect(conflict.header.state).toBe("failed");
-  expect(conflict).toMatchObject({
-    diagnostics: [
-      {
-        code: "printing_match_contradictory",
-        matched_printing_ids: [printingId],
-      },
-    ],
-  });
-
-  const variantMismatchRun = await collect(
-    "/reconciliation/gundam-cross-variant-conflict",
-    "reconcile-gundam-variant-conflict",
-    {
+  test("converges on one Printing and preserves disappearance and conflict history", async () => {
+    const usRun = await collect("/reconciliation/gundam-cross-us", "reconcile-gundam-cross-us", {
       game: "gundam",
       lineage: "gundam-en-us",
       adapter: "fixture-gundam-en-us-json@2",
-    },
-  );
-  const variantMismatch = await prepareIdentityEvidence(variantMismatchRun.id, "gundam", "sealed");
-  expect(variantMismatch.header.state).toBe("sealed");
-  expect(requiredFirst(variantMismatch.records, "printings")).toMatchObject({
-    id: printingId,
-  });
-  await approveNativeCandidate(variantMismatch.header, `publish-${variantMismatch.header.id}`);
-}, 30_000);
+    });
+    const us = await prepareIdentityEvidence(usRun.id, "gundam", "sealed");
+    expect(requiredFirst(us.records, "printings")).toMatchObject({
+      id: printingId,
+    });
+    expect(us.records.warnings).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "single_locale_gundam_printing",
+          printing_id: printingId,
+        }),
+      ]),
+    );
+    await approveNativeCandidate(us.header, `publish-${us.header.id}`);
+    const lifecycle = await get(`/v1/reconciliation/printings/${printingId}`);
+    expect(lifecycle.document.locators).toMatchObject({
+      current: [
+        expect.objectContaining({
+          locator: "/official/gundam/gundam-cross-asia",
+          source_lineage: "gundam-en-asia",
+          current: true,
+        }),
+        expect.objectContaining({
+          locator: "/official/gundam/gundam-cross-us",
+          source_lineage: "gundam-en-us",
+          current: true,
+        }),
+      ],
+      historical: [],
+    });
+    expect(lifecycle.document.relationship_evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source_lineage: "gundam-en-asia",
+          relationship_value: "product_gd99",
+          current: true,
+        }),
+        expect.objectContaining({
+          source_lineage: "gundam-en-us",
+          relationship_value: "product_gd99",
+          current: true,
+        }),
+      ]),
+    );
+
+    const usMissingRun = await collect(
+      "/reconciliation/complete-empty-lineage",
+      "reconcile-gundam-cross-us-whole-printing-omitted",
+      {
+        game: "gundam",
+        lineage: "gundam-en-us",
+        adapter: "fixture-gundam-en-us-json@2",
+      },
+    );
+    const usMissing = await prepareIdentityEvidence(usMissingRun.id, "gundam", "sealed");
+    expect(usMissing.records.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "single_locale_gundam_printing",
+          printing_id: printingId,
+          source_lineage: "gundam-en-asia",
+        }),
+      ]),
+    );
+    expect(usMissing.records.warnings).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "record_not_observed", printing_id: printingId })]),
+    );
+    const usMissingPublished = await approveNativeCandidate(usMissing.header, `publish-${usMissing.header.id}`);
+    const usMissingRevision = requiredString(usMissingPublished.document, "resulting_revision_id");
+    const isolated = await get(`/v1/reconciliation/printings/${printingId}`);
+    expect((isolated.document.locators as Record<string, unknown>).historical).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source_lineage: "gundam-en-us",
+          current: false,
+          last_missing_revision_id: usMissingRevision,
+        }),
+      ]),
+    );
+    const historyReceipt = await reconciliationCheckpoint<{ sourceHistory: SourceHistoryCursor }>(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      String(usMissing.header.id),
+      "disappearance_warnings",
+    );
+    expect(historyReceipt?.value.sourceHistory.stage).toBe("complete");
+    const history = new NativeSourceHistory(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      String(usMissing.header.id),
+      historyReceipt!.value.sourceHistory.history,
+    );
+    expect(await history.forEntity("card", String(requiredFirst(us.records, "cards").id))).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceLineage: "gundam-en-us",
+          current: false,
+          missing: { candidate: usMissing.header.id },
+        }),
+      ]),
+    );
+    expect(isolated.document.relationship_evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source_lineage: "gundam-en-asia",
+          relationship_value: "product_gd99",
+          current: true,
+        }),
+        expect.objectContaining({
+          source_lineage: "gundam-en-us",
+          relationship_value: "product_gd99",
+          current: false,
+        }),
+      ]),
+    );
+
+    const cardConflictRun = await collect("/reconciliation/gundam-card-conflict", "reconcile-gundam-card-conflict", {
+      game: "gundam",
+      lineage: "gundam-en-us",
+      adapter: "fixture-gundam-en-us-json@2",
+    });
+    const cardConflict = await prepareIdentityEvidence(cardConflictRun.id, "gundam", "failed");
+    expect(cardConflict.header.state).toBe("failed");
+    expect(cardConflict).toMatchObject({
+      diagnostics: [
+        {
+          code: "canonical_card_conflict",
+          detail: expect.stringContaining("source lineages"),
+        },
+      ],
+    });
+
+    const conflictRun = await collect("/reconciliation/gundam-cross-conflict", "reconcile-gundam-cross-conflict", {
+      game: "gundam",
+      lineage: "gundam-en-us",
+      adapter: "fixture-gundam-en-us-json@2",
+    });
+    const conflict = await prepareIdentityEvidence(conflictRun.id, "gundam", "failed");
+    expect(conflict.header.state).toBe("failed");
+    expect(conflict).toMatchObject({
+      diagnostics: [
+        {
+          code: "printing_match_contradictory",
+          matched_printing_ids: [printingId],
+        },
+      ],
+    });
+
+    const variantMismatchRun = await collect(
+      "/reconciliation/gundam-cross-variant-conflict",
+      "reconcile-gundam-variant-conflict",
+      {
+        game: "gundam",
+        lineage: "gundam-en-us",
+        adapter: "fixture-gundam-en-us-json@2",
+      },
+    );
+    const variantMismatch = await prepareIdentityEvidence(variantMismatchRun.id, "gundam", "sealed");
+    expect(variantMismatch.header.state).toBe("sealed");
+    expect(requiredFirst(variantMismatch.records, "printings")).toMatchObject({
+      id: printingId,
+    });
+    await approveNativeCandidate(variantMismatch.header, `publish-${variantMismatch.header.id}`);
+  }, 30_000);
+});
 
 test("Gundam Printing identity is independent of locale observation order when EN-US is first", async () => {
   const usRun = await collect("/reconciliation/gundam-mirror-us", "stable-id-en-us-first", {
@@ -938,7 +944,7 @@ test.each([
   15_000,
 );
 
-test("Gundam cross-locale formatting normalizes while substantive shared-fact conflicts block in both orders", async () => {
+test("Gundam cross-locale formatting normalizes and later substantive shared facts conflict", async () => {
   const usRun = await collect("/reconciliation/gundam-authority-us", "reconcile-gundam-authority-us-first", {
     game: "gundam",
     lineage: "gundam-en-us",
@@ -974,25 +980,28 @@ test("Gundam cross-locale formatting normalizes while substantive shared-fact co
   expect(laterUs).toMatchObject({
     diagnostics: [expect.objectContaining({ code: "canonical_card_conflict" })],
   });
+}, 30_000);
 
-  for (const sequence of [
-    [
-      "gundam-conflict-us-first",
-      "gundam-en-us",
-      "fixture-gundam-en-us-json@2",
-      "gundam-conflict-asia-second",
-      "gundam-en-asia",
-      "fixture-gundam-en-asia-json@2",
-    ],
-    [
-      "gundam-conflict-asia-first",
-      "gundam-en-asia",
-      "fixture-gundam-en-asia-json@2",
-      "gundam-conflict-us-second",
-      "gundam-en-us",
-      "fixture-gundam-en-us-json@2",
-    ],
-  ] as const) {
+test.each([
+  [
+    "gundam-conflict-us-first",
+    "gundam-en-us",
+    "fixture-gundam-en-us-json@2",
+    "gundam-conflict-asia-second",
+    "gundam-en-asia",
+    "fixture-gundam-en-asia-json@2",
+  ],
+  [
+    "gundam-conflict-asia-first",
+    "gundam-en-asia",
+    "fixture-gundam-en-asia-json@2",
+    "gundam-conflict-us-second",
+    "gundam-en-us",
+    "fixture-gundam-en-us-json@2",
+  ],
+] as const)(
+  "Gundam shared-fact conflict blocks after %s",
+  async (...sequence) => {
     const [firstScenario, firstLineage, firstAdapter, secondScenario, secondLineage, secondAdapter] = sequence;
     const firstRun = await collect(`/reconciliation/${firstScenario}`, `reconcile-${firstScenario}`, {
       game: "gundam",
@@ -1013,8 +1022,9 @@ test("Gundam cross-locale formatting normalizes while substantive shared-fact co
     expect(second).toMatchObject({
       diagnostics: [expect.objectContaining({ code: "canonical_card_conflict" })],
     });
-  }
-}, 30_000);
+  },
+  30_000,
+);
 
 // Synthetic source fixture exercises the authenticated administration boundary.
 test("opaque identities retain inspectable source mappings before and after publication", async () => {

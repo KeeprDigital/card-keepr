@@ -1,5 +1,5 @@
 import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
-import { expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import { sourceFreshnessFromStorage } from "../../../src/catalogue/read";
 import {
@@ -976,51 +976,41 @@ test("retained historical materialization preserves identities, membership warni
   });
 });
 
-test("parsed observation count warnings use the normative absolute threshold", async () => {
-  // Preserve the 24/25 absolute boundary with 1 -> 25 -> 50 records.
-  const firstRun = await collect("/reconciliation/observation-count-1", "observation-count-first");
-  const first = await prepareNativeCandidate(
-    firstRun.id,
-    "one-piece",
-    "catrev_spine_000",
-    "observation-count-first-candidate",
-  );
-  const firstPublished = await approveNativeCandidate(first, "observation-count-first-publication");
-  expect(firstPublished.response.status).toBe(200);
+describe.each([
+  { previous: 1, current: 25, warns: false },
+  { previous: 25, current: 50, warns: true },
+])("parsed observation count warnings from $previous to $current", ({ previous, current, warns }) => {
+  const caseKey = `observation-count-${previous}-${current}`;
+  let previousRevision: string;
+  beforeEach(async () => {
+    const run = await collect(`/reconciliation/observation-count-${previous}`, `${caseKey}-first`);
+    const seed = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", `${caseKey}-first-candidate`);
+    const published = await approveNativeCandidate(seed, `${caseKey}-first-publication`);
+    expect(published.response.status).toBe(200);
+    previousRevision = requiredString(published.document, "resulting_revision_id");
+  });
 
-  const secondRun = await collect("/reconciliation/observation-count-25", "observation-count-second");
-  const second = await prepareNativeCandidate(
-    secondRun.id,
-    "one-piece",
-    requiredString(firstPublished.document, "resulting_revision_id"),
-    "observation-count-second-candidate",
-  );
-  const secondRecords = await nativeCandidateRecords(String(second.id));
-  expect([...(secondRecords.warnings ?? []), ...(secondRecords.shared_warnings ?? [])]).not.toContainEqual(
-    expect.objectContaining({ code: "source_observation_count_changed" }),
-  );
-  const secondPublished = await approveNativeCandidate(second, "observation-count-second-publication");
-  expect(secondPublished.response.status).toBe(200);
-
-  const thirdRun = await collect("/reconciliation/observation-count-50", "observation-count-third");
-  const third = await prepareNativeCandidate(
-    thirdRun.id,
-    "one-piece",
-    requiredString(secondPublished.document, "resulting_revision_id"),
-    "observation-count-third-candidate",
-  );
-  const thirdRecords = await nativeCandidateRecords(String(third.id));
-  expect([...(thirdRecords.warnings ?? []), ...(thirdRecords.shared_warnings ?? [])]).toContainEqual(
-    expect.objectContaining({
-      code: "source_observation_count_changed",
-      source_lineage: "one-piece-en",
-      request_id: "one-piece-en:discovery",
-      previous_count: 25,
-      current_count: 50,
-      absolute_delta: 25,
-      warning_threshold: 25,
-    }),
-  );
+  test("uses the normative absolute threshold", async () => {
+    const run = await collect(`/reconciliation/observation-count-${current}`, `${caseKey}-next`);
+    const candidate = await prepareNativeCandidate(run.id, "one-piece", previousRevision, `${caseKey}-next-candidate`);
+    const records = await nativeCandidateRecords(String(candidate.id));
+    const warnings = [...(records.warnings ?? []), ...(records.shared_warnings ?? [])];
+    if (!warns) {
+      expect(warnings).not.toContainEqual(expect.objectContaining({ code: "source_observation_count_changed" }));
+    } else {
+      expect(warnings).toContainEqual(
+        expect.objectContaining({
+          code: "source_observation_count_changed",
+          source_lineage: "one-piece-en",
+          request_id: "one-piece-en:discovery",
+          previous_count: 25,
+          current_count: 50,
+          absolute_delta: 25,
+          warning_threshold: 25,
+        }),
+      );
+    }
+  });
 });
 
 test("an interrupted reconciliation publication recovers the exact digest-bound candidate and export", async () => {

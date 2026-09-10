@@ -84,7 +84,8 @@ test("a repeated native publication retains unchanged source evidence and obtain
   const repeated = await prepareNativeCandidate(collection.id, "one-piece", revision, "native-repeat-second");
   const next = await approveNativeCandidate(repeated, "native-repeat-second-publication");
   expect(next.document).toMatchObject({ state: "published", expected_game_revision_id: revision });
-  expect(next.document.resulting_revision_id).not.toBe(revision);
+  expect(next.document.resulting_revision_id).toBe(revision);
+  expect(next.document.backup_attempt_id).not.toBe(published.document.backup_attempt_id);
   const retained = (await get(`/v1/ingestion-runs/${collection.id}/evidence`)).document;
   expect(retained.snapshots).toEqual(evidence.snapshots);
   expect(retained.source_coverage).toEqual(evidence.source_coverage);
