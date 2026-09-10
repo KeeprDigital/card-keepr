@@ -8,7 +8,7 @@ const workflows = [
   env.CATALOGUE_BACKUP_WORKFLOW,
 ];
 
-export function installWorkflowIsolation(): void {
+export function installWorkflowIsolation() {
   let introspectors: WorkflowIntrospector[] = [];
 
   beforeEach(async () => {
@@ -23,6 +23,13 @@ export function installWorkflowIsolation(): void {
       await resetTestStorage();
     }
   });
+  return {
+    async instanceCounts() {
+      if (introspectors.length !== workflows.length) throw new Error("Workflow isolation is not active.");
+      const counts = await Promise.all(introspectors.map(async (introspector) => (await introspector.get()).length));
+      return { evidence: counts[0]!, host: counts[1]!, reconciliation: counts[2]!, backup: counts[3]! };
+    },
+  };
 }
 
 export async function resetTestStorage(): Promise<void> {

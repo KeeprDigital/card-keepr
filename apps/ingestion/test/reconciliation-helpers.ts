@@ -22,8 +22,8 @@ let requestSequence = 0;
 
 let preparationDriver: ReturnType<typeof nativePreparationDriver> | undefined;
 
-export function installReconciliationSuite(options: { directPreparation?: boolean } = {}): void {
-  installWorkflowIsolation();
+export function installReconciliationSuite(options: { directPreparation?: boolean } = {}) {
+  const workflowIsolation = installWorkflowIsolation();
 
   beforeEach(async () => {
     preparationDriver = options.directPreparation ? nativePreparationDriver(testEnv) : undefined;
@@ -40,6 +40,7 @@ export function installReconciliationSuite(options: { directPreparation?: boolea
       curatedQueries.setCuratedRevisionsStatusEventVersion(testEnv.CATALOGUE_DB),
     ]);
   });
+  return workflowIsolation;
 }
 
 export async function collect(
@@ -190,6 +191,24 @@ export function postWithControlledPreparation(
   return request(pathname, body, extraHeaders, nativePreparationDriver(testEnv));
 }
 
+/** Explicit platform-boundary request; never inherits a semantic suite's scheduling driver. */
+export function postThroughWorkflowBindings(
+  pathname: string,
+  body: Record<string, unknown>,
+  extraHeaders: Record<string, string> = {},
+) {
+  return request(pathname, body, extraHeaders, null);
+}
+
+/** Semantic publication fixtures settle their real publication and SQL backup before returning. */
+export function postWithControlledPublication(
+  pathname: string,
+  body: Record<string, unknown>,
+  extraHeaders: Record<string, string> = {},
+) {
+  return request(pathname, body, extraHeaders, nativePreparationDriver(testEnv, "native-owner"));
+}
+
 export async function postFixtureEvidence(body: StartEvidenceRunRequest) {
   const document = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, body);
   return {
@@ -202,7 +221,7 @@ export async function request(
   pathname: string,
   body?: Record<string, unknown>,
   extraHeaders: Record<string, string> = {},
-  driver = preparationDriver,
+  driver: ReturnType<typeof nativePreparationDriver> | null | undefined = preparationDriver,
 ): Promise<{
   response: Response;
   document: Record<string, unknown>;

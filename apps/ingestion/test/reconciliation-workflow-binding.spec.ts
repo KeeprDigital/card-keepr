@@ -13,7 +13,10 @@ import { type CatalogueCandidate, catalogueRevisionIdentity, catalogueStore } fr
 import ingestionWorker from "../src/index";
 import { recoverHistoricalPublication } from "./historical-publication-fixture";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
-import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import {
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
+} from "./native-publication-helpers";
 import * as catalogueExportQueries from "./query-helpers/catalogue-export";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";

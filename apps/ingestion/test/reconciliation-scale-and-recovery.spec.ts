@@ -7,7 +7,7 @@ import { sourceRequestInsertionStatement } from "../../../src/catalogue/source-e
 import ingestionWorker from "../src/index";
 import { stageHistoricalPublication } from "./historical-publication-fixture";
 import { waitNativeState } from "./native-no-change-helpers";
-import { prepareNativeCandidate } from "./native-publication-helpers";
+import { prepareNativeCandidateThroughBinding as prepareNativeCandidate } from "./native-publication-helpers";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as reconciliationQueries from "./query-helpers/reconciliation";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";

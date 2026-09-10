@@ -8,7 +8,10 @@ import { publicationCheckpointStatement } from "../../../src/catalogue/reconcili
 import { verifyCompositionArtifacts } from "../../../src/catalogue/backup-recovery/composition-artifacts";
 import type { CompositionSnapshotEvidence } from "../../../src/catalogue/backup-recovery/composition-verification";
 import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
-import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import {
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
+} from "./native-publication-helpers";
 import {
   approveNoChangeWithoutDispatch,
   assertVerifiedBackup,

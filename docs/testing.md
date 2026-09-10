@@ -44,6 +44,33 @@ Workflow driver can exercise recovery paths with real D1/R2 and controlled child
 dispatch. Preserve a small binding test when using that driver; a controlled
 driver alone does not prove the platform wiring.
 
+### Native test fixtures have an explicit execution boundary
+
+Use `prepareNativeCandidate` and `approveNativeCandidate` from
+`apps/ingestion/test/native-publication-helpers.ts` for rule and persistence
+fixtures. They run the existing production Workflow functions with controlled
+scheduling and settle child work before returning. They preserve owner intent,
+D1/R2 writes, real SQL export/import and verification; they do not prove the
+platform scheduler. The controlled owner driver rejects unrelated background
+Workflow dispatch instead of silently adding asynchronous work to a rule test.
+
+Use the explicitly named `prepareNativeCandidateThroughBinding` and
+`approveNativeCandidateThroughBinding` when the assertion is about actual
+Workflow dispatch, contention, interruption or recovery across that boundary.
+Existing binding/recovery fixtures select these explicitly. The caller-retirement
+suite checks unchanged-publication/checkpoint behavior through both execution
+paths and uses the platform introspector to require zero background instances
+for the default fixture and real instances for the binding fixture. This is a
+behavioral guard against changing the defaults back. Its concurrent owner-approval
+case also retains the real binding.
+
+Do not make every new semantic case repeat a background publication journey.
+Do not replace a scheduling/recovery assertion with a controlled fixture. Keep
+published predecessor setup separate from the transition under test, split
+independent cases, and use the smallest fixture that still crosses the asserted
+boundary. A helper changing its default back to background execution is a test
+architecture change requiring review of these contracts and hosted validation.
+
 Routine acceptance currently has 67 files, of which 20 directly boot a Worker.
 The others include SQL, CLI and contract checks; the directory name does not
 mean every file is a complete application journey. Extended recovery and

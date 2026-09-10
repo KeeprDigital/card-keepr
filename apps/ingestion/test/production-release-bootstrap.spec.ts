@@ -1,7 +1,10 @@
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
 import { beforeEach, expect, test } from "vitest";
-import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import {
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
+} from "./native-publication-helpers";
 import { collect } from "./reconciliation-helpers";
 import { administrationRequest } from "./runtime-helpers";
 import { installWorkflowIsolation } from "./workflow-isolation";

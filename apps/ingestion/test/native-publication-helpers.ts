@@ -1,8 +1,14 @@
 import { expect } from "vitest";
-import { get, post, postWithControlledPreparation, requiredString } from "./reconciliation-helpers";
+import {
+  get,
+  postThroughWorkflowBindings,
+  postWithControlledPreparation,
+  postWithControlledPublication,
+  requiredString,
+} from "./reconciliation-helpers";
 
 /** A native fixture starts from retained collection, never a legacy aggregate candidate. */
-export async function prepareNativeCandidate(
+async function prepareCandidate(
   runId: string,
   game: string,
   expectedGameRevision: string,
@@ -11,7 +17,7 @@ export async function prepareNativeCandidate(
   extraHeaders: Record<string, string> = {},
   scheduling: "binding" | "direct" = "binding",
 ) {
-  const created = await (scheduling === "direct" ? postWithControlledPreparation : post)(
+  const created = await (scheduling === "direct" ? postWithControlledPreparation : postThroughWorkflowBindings)(
     "/v1/game-candidates",
     {
       ingestion_run_id: runId,
@@ -29,7 +35,7 @@ export async function prepareNativeCandidate(
 }
 
 /** Completed seed for fault/semantic tests; subsequent operations retain their own bindings or injected drivers. */
-export function prepareNativeCandidateDirect(
+export function prepareNativeCandidate(
   runId: string,
   game: string,
   expectedGameRevision: string,
@@ -37,16 +43,18 @@ export function prepareNativeCandidateDirect(
   timeoutMs = 15_000,
   extraHeaders: Record<string, string> = {},
 ) {
-  return prepareNativeCandidate(runId, game, expectedGameRevision, key, timeoutMs, extraHeaders, "direct");
+  return prepareCandidate(runId, game, expectedGameRevision, key, timeoutMs, extraHeaders, "direct");
 }
 
 /** Exercise the owner protocol; return its actual publication result, not legacy run aliases. */
-export async function approveNativeCandidate(
+async function approveCandidate(
   candidate: Record<string, unknown>,
   key: string,
   timeoutMs = 15_000,
   extraHeaders: Record<string, string> = {},
+  execution: "binding" | "controlled" = "binding",
 ) {
+  const submit = execution === "controlled" ? postWithControlledPublication : postThroughWorkflowBindings;
   const id = requiredString(candidate, "id");
   const manifest = requiredString(candidate, "manifest_digest");
   const inspected = await get(`/v1/game-candidates/${id}/inspection?manifest=${manifest}`);
@@ -57,7 +65,7 @@ export async function approveNativeCandidate(
     manifest_digest: manifest,
   });
   const preparationPath = `/v1/game-candidates/${id}/publication-preparation`;
-  const prepared = await post(`${preparationPath}/start`, {
+  const prepared = await submit(`${preparationPath}/start`, {
     manifest_digest: manifest,
     generation: candidate.generation,
     sequence: 0,
@@ -66,7 +74,7 @@ export async function approveNativeCandidate(
   expect(prepared.response.status, JSON.stringify(prepared.document)).toBe(202);
   const artifacts = await observeUntil(preparationPath, (state) => state !== "preparing", timeoutMs);
   expect(artifacts.document.state, JSON.stringify(artifacts.document)).toBe("verified");
-  const approved = await post(
+  const approved = await submit(
     "/v1/publications/start",
     {
       candidate_id: id,
@@ -98,6 +106,16 @@ export async function approveNativeCandidate(
   return result;
 }
 
+/** Rule and storage fixtures use controlled scheduling; binding and recovery journeys keep the original helper. */
+export function approveNativeCandidate(
+  candidate: Record<string, unknown>,
+  key: string,
+  timeoutMs = 15_000,
+  extraHeaders: Record<string, string> = {},
+) {
+  return approveCandidate(candidate, key, timeoutMs, extraHeaders, "controlled");
+}
+
 export async function waitForVerifiedPublicationBackup(attemptId: string, revisionId: string, timeoutMs = 15_000) {
   const backup = await observeUntil(
     `/v1/backups/${attemptId}`,
@@ -120,4 +138,13 @@ async function observeUntil(path: string, complete: (state: string) => boolean, 
   throw new Error(
     `Native owner operation ${path} remained pending after ${timeoutMs}ms: ${JSON.stringify(observed.document)}`,
   );
+}
+
+/** Explicitly exercise platform scheduling instead of a suite's controlled driver. */
+export function prepareNativeCandidateThroughBinding(...args: Parameters<typeof prepareNativeCandidate>) {
+  return prepareCandidate(...args);
+}
+
+export function approveNativeCandidateThroughBinding(...args: Parameters<typeof approveNativeCandidate>) {
+  return approveCandidate(...args);
 }
