@@ -163,10 +163,20 @@ jobs:
         with:
           ref: ${{ inputs.expected_head_sha }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        id: node
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
+          package-manager-cache: false
+      - name: Set up Corepack and pnpm
+        id: pnpm
+        run: bash scripts/setup-pnpm.sh
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: pnpm-store
+        with:
+          path: ${{ steps.pnpm.outputs.store-path }}
+          key: pnpm-store-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.node.outputs.node-version }}-${{ steps.pnpm.outputs.version }}-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'pnpm-workspace.yaml', '.npmrc', 'scripts/setup-pnpm.sh') }}
+      # Always recreate node_modules and run approved native builds, even on a store hit.
+      - run: pnpm install --frozen-lockfile
       - name: Validate the exact prepared dispatch before mutation
         run: |
           set -euo pipefail
@@ -206,7 +216,7 @@ jobs:
           marker="$(node scripts/production-release-d1.mjs execute --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/migration-started.sql)"
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${marker}")" = 1
           test "$(jq -r '.[-1].results[0].migration_started' <<<"${marker}")" = 1
-          npx wrangler d1 migrations apply CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc
+          pnpm exec wrangler d1 migrations apply CATALOGUE_DB --remote --config apps/ingestion/wrangler.jsonc
           trap - EXIT
       - name: Transfer the pre-migration fence to the durable Production Release
         if: env.FRESH_BASELINE_HANDOFF != 'true' && (inputs.bootstrap != 'true')
@@ -235,7 +245,7 @@ jobs:
             cp apps/ingestion/wrangler.jsonc "${ingestion_config}"
           else
             node scripts/production-release.mjs replacement-configs "${REPLACEMENT_DATABASE_ID}" "${api_config}" "${ingestion_config}"
-            npx wrangler d1 migrations apply CATALOGUE_DB --remote --config "${ingestion_config}"
+            pnpm exec wrangler d1 migrations apply CATALOGUE_DB --remote --config "${ingestion_config}"
             handoff_result="$(node scripts/production-release-d1.mjs execute --config apps/ingestion/wrangler.jsonc --file /tmp/production-release/replacement-handoff.sql)"
             handoff="$(jq -er 'if length == 1 and (.[0].results | length) == 1 and (.[0].results[0].handoff_json | type) == "string" then .[0].results[0].handoff_json else error("invalid replacement handoff result") end' <<<"${handoff_result}")"
             KEEPR_REPLACEMENT_HANDOFF_EVIDENCE="${handoff}" node scripts/production-release.mjs replacement-seed /tmp/production-release/replacement-seed.sql
@@ -248,8 +258,8 @@ jobs:
         if: env.FRESH_BASELINE_HANDOFF != 'true'
         run: |
           set -euo pipefail
-          npx wrangler versions upload --strict --config "${API_RELEASE_CONFIG}" --tag "release-${RELEASE_ID}-api" --message "${RELEASE_ID} ${EXPECTED_HEAD_SHA}"
-          npx wrangler versions upload --strict --config "${INGESTION_RELEASE_CONFIG}" --tag "release-${RELEASE_ID}-ingestion" --message "${RELEASE_ID} ${EXPECTED_HEAD_SHA}"
+          pnpm exec wrangler versions upload --strict --config "${API_RELEASE_CONFIG}" --tag "release-${RELEASE_ID}-api" --message "${RELEASE_ID} ${EXPECTED_HEAD_SHA}"
+          pnpm exec wrangler versions upload --strict --config "${INGESTION_RELEASE_CONFIG}" --tag "release-${RELEASE_ID}-ingestion" --message "${RELEASE_ID} ${EXPECTED_HEAD_SHA}"
           result="$(node scripts/production-release-d1.mjs execute --config "${RELEASE_STATE_CONFIG}" --file /tmp/production-release/deploying.sql)"
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].transitioned' <<<"${result}")" = 1
@@ -263,16 +273,16 @@ jobs:
         if: env.FRESH_BASELINE_HANDOFF != 'true'
         run: |
           set -euo pipefail
-          npx wrangler versions deploy --yes --config "${API_RELEASE_CONFIG}" --version-tag "release-${RELEASE_ID}-api@100%"
-          npx wrangler versions deploy --yes --config "${INGESTION_RELEASE_CONFIG}" --version-tag "release-${RELEASE_ID}-ingestion@100%"
+          pnpm exec wrangler versions deploy --yes --config "${API_RELEASE_CONFIG}" --version-tag "release-${RELEASE_ID}-api@100%"
+          pnpm exec wrangler versions deploy --yes --config "${INGESTION_RELEASE_CONFIG}" --version-tag "release-${RELEASE_ID}-ingestion@100%"
       - name: Deploy the route triggers
         if: env.FRESH_BASELINE_HANDOFF != 'true'
         # Versions carry code, vars, and bindings; zone routes are script-level
         # triggers that versions upload/deploy never apply (issue #123).
         run: |
           set -euo pipefail
-          npx wrangler triggers deploy --config "${API_RELEASE_CONFIG}"
-          npx wrangler triggers deploy --config "${INGESTION_RELEASE_CONFIG}"
+          pnpm exec wrangler triggers deploy --config "${API_RELEASE_CONFIG}"
+          pnpm exec wrangler triggers deploy --config "${INGESTION_RELEASE_CONFIG}"
       - name: Observe the binding while recovery remains blocked
         if: env.FRESH_BASELINE_HANDOFF != 'true'
         run: |

@@ -2,7 +2,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22.18"
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
   "bin": {
     "keepr": "./cli/keepr.mjs"
@@ -13,8 +13,8 @@
     "dev:ingestion": "WRANGLER_LOG_PATH=.wrangler/logs wrangler dev --config apps/ingestion/wrangler.jsonc --port 8788 --inspector-port 9230",
     "db:migrate:local": "WRANGLER_LOG_PATH=.wrangler/logs wrangler d1 migrations apply CATALOGUE_DB --local --config apps/ingestion/wrangler.jsonc",
     "keepr": "node cli/keepr.mjs",
-    "test": "npm run test:domain && npm run test:api && npm run test:acceptance:smoke",
-    "test:full": "npm run test:domain && npm run test:api && npm run test:ingestion && npm run test:acceptance",
+    "test": "pnpm run test:domain && pnpm run test:api && pnpm run test:acceptance:smoke",
+    "test:full": "pnpm run test:domain && pnpm run test:api && pnpm run test:ingestion && pnpm run test:acceptance",
     "test:domain": "vitest run --config test/domain/vitest.config.ts",
     "test:api": "vitest run --config apps/api/vitest.config.ts",
     "test:ingestion": "vitest run --config apps/ingestion/vitest.config.ts",
@@ -24,7 +24,7 @@
     "test:benchmark": "node scripts/acceptance-tier.mjs benchmark",
     "test:stress": "KEEPR_TEST_SUITE=stress vitest run --config apps/ingestion/vitest.config.ts apps/ingestion/test/runtime-host-pacing.stress.spec.ts apps/ingestion/test/runtime-collection-throughput.stress.spec.ts",
     "test:stress:full": "KEEPR_TEST_SUITE=stress vitest run --config apps/ingestion/vitest.config.ts",
-    "check": "npm run lint && npm run format:check && npm run typecheck && npm run check:generated && npm run check:imports && npm run build",
+    "check": "pnpm run lint && pnpm run format:check && pnpm run typecheck && pnpm run check:generated && pnpm run check:imports && pnpm run build",
     "lint": "biome lint .",
     "format": "node scripts/format.mjs",
     "format:check": "node scripts/format.mjs --check",
@@ -33,7 +33,7 @@
     "check:imports": "node scripts/catalogue-import-cycles.mjs && node scripts/catalogue-import-boundary.mjs",
     "generate:worker-types": "node scripts/worker-types.mjs",
     "generate:validators": "node scripts/document-validators.mjs",
-    "build": "npm run build:api && npm run build:ingestion",
+    "build": "pnpm run build:api && pnpm run build:ingestion",
     "build:api": "WRANGLER_LOG_PATH=.wrangler/logs wrangler deploy --dry-run --config apps/api/wrangler.jsonc",
     "build:ingestion": "WRANGLER_LOG_PATH=.wrangler/logs wrangler deploy --dry-run --config apps/ingestion/wrangler.jsonc"
   },
@@ -56,9 +56,5 @@
     "pako": "3.0.1",
     "parse5": "8.0.1"
   },
-  "overrides": {
-    "parse5": {
-      "entities": "8.0.0"
-    }
-  }
+  "packageManager": "pnpm@10.34.5+sha512.a4ee05f2f73658255bd6a89859c065a45c28a57daefae2c893a168ee2b73168c37b91e83e57ea67654ad03f03031746430e8bce38e362e042605fb8abc80192e"
 }

@@ -1,20 +1,20 @@
 # Acceptance tests
 
-`npm test` runs two smoke files. `npm run test:full` and the three CI acceptance
+`pnpm test` runs two smoke files. `pnpm run test:full` and the three CI acceptance
 shards run all routine acceptance, including the small publisher journeys and
 mixed-game recovery. See [the testing guide](../docs/testing.md) for CI policy.
 
 | Command | Scope |
 | --- | --- |
-| `npm run test:acceptance` | All routine acceptance; at most two files at once |
-| `npm run test:acceptance:smoke` | External evidence CLI and two-record native publication/SQL restore |
-| `npm run test:acceptance -- --shard=1/3` | One routine CI shard |
-| `npm run test:acceptance:extended -- composed-recovery` | One explicit extended scenario |
-| `npm run test:benchmark -- native-sqlite-export` | One explicit capacity/profiling regression |
-| `npm run test:stress` | Bounded production-pacing Worker checks used by weekly CI |
-| `npm run test:stress:full` | All Worker capacity experiments; explicit opt-in |
+| `pnpm run test:acceptance` | All routine acceptance; at most two files at once |
+| `pnpm run test:acceptance:smoke` | External evidence CLI and two-record native publication/SQL restore |
+| `pnpm run test:acceptance --shard=1/3` | One routine CI shard |
+| `pnpm run test:acceptance:extended composed-recovery` | One explicit extended scenario |
+| `pnpm run test:benchmark native-sqlite-export` | One explicit capacity/profiling regression |
+| `pnpm run test:stress` | Bounded production-pacing Worker checks used by weekly CI |
+| `pnpm run test:stress:full` | All Worker capacity experiments; explicit opt-in |
 
-Append `-- --list` to an acceptance/benchmark command to inspect selection without
+Append `--list` to an acceptance/benchmark command to inspect selection without
 starting a Worker. Extended and benchmark commands require a scenario name
 (with or without `.test.mjs`); `--all` explicitly selects every scenario in that
 tier. Omitting a scenario fails before allocating resources.
@@ -60,7 +60,7 @@ Benchmarks are separate: `native-sqlite-export` deliberately crosses 64 MiB,
 The latter requires a report destination and never silently skips:
 
 ```sh
-KEEPR_CAPACITY_OUTPUT_PREFIX=/tmp/keepr-capacity npm run test:benchmark -- reconciliation-capacity-probe
+KEEPR_CAPACITY_OUTPUT_PREFIX=/tmp/keepr-capacity pnpm run test:benchmark reconciliation-capacity-probe
 ```
 
 The probe retains its temporary state on failure and reports the location for

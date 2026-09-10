@@ -2,17 +2,17 @@
 
 ## Everyday workflow
 
-Run `npm ci` after a lockfile change, then `npm test` while developing. It runs
+Run `pnpm install --frozen-lockfile` after a lockfile change, then `pnpm test` while developing. It runs
 domain rules, API Worker tests and two small offline CLI/publication/SQL-restore
 smoke tests. For ingestion changes, also run the affected file:
 
 ```sh
-npm run test:ingestion -- apps/ingestion/test/evidence-cleanup.spec.ts
-npm run test:api -- apps/api/test/health.spec.ts
-npm run test:domain -- source-host-pacing-mode
+pnpm run test:ingestion apps/ingestion/test/evidence-cleanup.spec.ts
+pnpm run test:api apps/api/test/health.spec.ts
+pnpm run test:domain source-host-pacing-mode
 ```
 
-Before review, run `npm run check` and `npm run test:full`, or use the full
+Before review, run `pnpm run check` and `pnpm run test:full`, or use the full
 ready-PR CI result. A quick pass is iteration feedback; full CI is the merge and
 release standard. No production credentials or live publisher access are needed.
 
@@ -87,26 +87,26 @@ run a small hosted selection before full CI for a shared helper change.
 
 ## Commands
 
-`npm run check` runs all non-test validation, including build dry runs. The
+`pnpm run check` runs all non-test validation, including build dry runs. The
 [command reference](commands.md) also covers development, formatting, generated
 files and the renamed commands.
 
 | Command | Coverage / use |
 | --- | --- |
-| `npm test` | Everyday domain, API and two acceptance smoke paths |
-| `npm run test:full` | All routine domain, API, ingestion and acceptance |
-| `npm run test:domain` | Runtime-free rules and contracts |
-| `npm run test:api` | API routes, authentication, reads and bindings |
-| `npm run test:ingestion` | D1/R2/Workflow transitions, concurrency and recovery |
-| `npm run test:acceptance` | Routine HTTP/CLI, migrations, provider failures and SQL restore |
-| `npm run test:acceptance:smoke` | Small CLI and publication/restore paths |
-| `npm run test:acceptance:extended -- <scenario>` | Explicit long recovery or retained-data journey |
-| `npm run test:benchmark -- <scenario>` | Explicit capacity/profiling experiment |
-| `npm run test:stress` | Two bounded production-pacing checks used weekly |
-| `npm run test:stress:full` | All ingestion capacity experiments, explicit opt-in |
+| `pnpm test` | Everyday domain, API and two acceptance smoke paths |
+| `pnpm run test:full` | All routine domain, API, ingestion and acceptance |
+| `pnpm run test:domain` | Runtime-free rules and contracts |
+| `pnpm run test:api` | API routes, authentication, reads and bindings |
+| `pnpm run test:ingestion` | D1/R2/Workflow transitions, concurrency and recovery |
+| `pnpm run test:acceptance` | Routine HTTP/CLI, migrations, provider failures and SQL restore |
+| `pnpm run test:acceptance:smoke` | Small CLI and publication/restore paths |
+| `pnpm run test:acceptance:extended <scenario>` | Explicit long recovery or retained-data journey |
+| `pnpm run test:benchmark <scenario>` | Explicit capacity/profiling experiment |
+| `pnpm run test:stress` | Two bounded production-pacing checks used weekly |
+| `pnpm run test:stress:full` | All ingestion capacity experiments, explicit opt-in |
 
 Vitest accepts file filters and `-t 'test name'`. Acceptance commands accept
-`-- --list` and `-- --shard=1/3`. Extended/benchmark commands require a scenario
+`--list` and `--shard=1/3`. Extended/benchmark commands require a scenario
 or `--all`; listing never boots services. Selection lives in
 `acceptance/helpers/test-tiers.mjs`, with a contract test proving that routine
 files appear exactly once across three shards. New acceptance files enter routine
@@ -204,7 +204,9 @@ gh workflow run test-suite-diagnostics.yml --ref <branch> \
 Keep Vitest within the installed Cloudflare plugin's peer range (currently
 Vitest 4.1; Vitest 5 fails before Worker tests execute). Commit manifest and
 lockfile together and validate a small Worker file after upgrades. The CI
-installed-dependency cache includes OS, architecture, exact Node version,
-manifest, lockfile and npm settings; misses run `npm ci`. Retain one Linux/Node 22
-configuration and the existing three shards until hosted measurements justify
-changing them.
+pnpm store cache includes OS, architecture, exact Node and pnpm versions,
+manifest, lockfile, pnpm settings and the Corepack setup script. Every job runs
+`pnpm install --frozen-lockfile`, including cache hits, to recreate links and
+run approved native builds. Test and operational results are never cached.
+Retain one Linux/Node 22 configuration and the existing three shards until
+hosted measurements justify changing them. See [toolchain policy](toolchain.md).

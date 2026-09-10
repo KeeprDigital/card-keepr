@@ -1,0 +1,12 @@
+# Corepack owns package-manager selection; pnpm must not download another version.
+managePackageManagerVersions: false
+packageManagerStrictVersion: true
+strictPeerDependencies: true
+# New install scripts require review instead of silently skipping native setup.
+strictDepBuilds: true
+onlyBuiltDependencies:
+  - esbuild
+  - workerd
+# Keep the parser edge distinct from the direct entities@8.1.0 dependency.
+overrides:
+  "parse5>entities": 8.0.0

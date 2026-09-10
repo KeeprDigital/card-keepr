@@ -158,7 +158,7 @@ same original response digest, that supplies its missing baseline bytes. Otherwi
 changed whole-response meaning remains unresolved. Standalone normalized HTML
 fragments remain parser examples, not recapturable HTTP goldens.
 
-After `npm ci`, use a fresh output directory:
+After `pnpm install --frozen-lockfile`, use a fresh output directory:
 
 ```sh
 node scripts/recapture-official-bytes.mjs /tmp/official-source-recapture
