@@ -96,3 +96,26 @@ The complete 11-case identity file passes locally in 80.16 seconds after this bo
 Hosted progress run [34435605209](https://github.com/KeeprDigital/card-keepr/actions/runs/34435605209) at `1d9645be` completed naturally with all three sealed-candidate fault cases passing. It recorded 28 passes and one timeout in the separate append-only assignment test, which performed five complete publications inside one body. The neighboring known-number merge case performed four and took 26.4 seconds. Their existing published predecessor setup now runs in named scoped hooks, while all transition, export, contradiction, history and append-only assertions remain in the test body. The operation order, execution mode, deadlines and number of tests are unchanged.
 
 All 11 identity tests pass locally in 84.34 seconds with this final setup separation; typecheck and formatting pass. Both independent review axes found the original operations and assertions preserved. Hosted verification remains required.
+
+
+### Shared fixture contracts and native accepted evidence
+
+Full PR run [34436580452](https://github.com/KeeprDigital/card-keepr/actions/runs/34436580452) at `02ccf41c` passed lint, checks, domain and all acceptance jobs. Ingestion shards 1 and 3 passed 264 tests each in 565.73 and 581.16 seconds. Shard 2 recorded 248 passes and five failures before the twelve-minute job cap (710.69 seconds of tests). All 96 files finished: this was a protocol failure plus excessive routine work, not evidence of a hung candidate. Integration remained unmerged.
+
+All five failures shared a fixture that treated collected synthetic single-game evidence as automatic native dispatch. Those adapters deliberately use the retained legacy aggregate path; no native candidate existed. The local reproduction failed after 18.94 seconds with an empty candidate list. Increasing the waiter deadline could not fix it.
+
+The shared boundary correction audits every run/count candidate waiter and the native fixture caller families:
+
+- Explicit creation now observes its returned candidate ID; automatic dispatch observes the real parent receipt and rejects a legacy result immediately. No waiter creates a missing candidate.
+- Preparation-only identity, curated lookup/conflict and game-operation seeds use real published predecessors with an explicitly pending backup. Real verification is retained for multi-publication histories, checkpoints and restore.
+- Product identity/release, reviewed Printing matches and completeness semantic fixtures use controlled execution. Genuine dispatch, contention, interruption and recovery tests retain platform bindings.
+- Behavioral guards retain the complete controlled-versus-binding publication/SQL checkpoint comparison; prove no background fixture instances; distinguish two candidates from one collection; and prove both changed and unchanged successor publication remain blocked by the pending backup.
+
+After explicit native creation, the source-refresh regression exposed an application bug: unchanged accepted-source verification searched only legacy published-run partitions. It therefore rejected previously accepted, unchanged supplemental evidence after native publication. The fix follows the captured native predecessor chain, reads hash-verified selected metadata, compares exact request/digest/adapter identity and checks the complete selection's count and digest before granting equality or walking past an omitted source. It stops at the latest selected scope. New competing facts still require the designated authority. The cursor is part of existing bounded source-selection checkpoints, and only missing-authority scopes trigger this work. No schema or timeout change is involved.
+
+Fault guards use real persisted predecessor state to prove an interrupted metadata read retains retryable storage classification and an incomplete selection fails closed. Resuming the saved prefix against real storage must recover the same unchanged-evidence result. The original supplemental-only refresh, optional outage, coverage loss, reinstatement and capture-date assertions remain; a further post-outage preparation checks that incomplete optional evidence cannot become the accepted proof.
+
+The first complete source-refresh rerun passed five tests in 30.86 seconds locally. The pending-predecessor guards passed in 5.88 seconds including setup. Review identified and corrected retry classification and selection-completeness gaps before wider validation. Affected-family local and hosted validation, complete PR checks and actual merged-main checks remain required; these focused results are not a green integration claim.
+
+
+All 45 tests across the seven directly affected local families passed together in 118.00 seconds, including the two metadata-fault guards, both pending-backup gates, source refresh, identity correction faults, curated lookup/conflicts and game-operation preparation. Full typecheck, lint, formatting, catalogue dependency cycles and import boundaries also pass. Independent Standards and Spec review findings were corrected and re-reviewed with no further actionable findings. Hosted affected-family verification is the next gate.

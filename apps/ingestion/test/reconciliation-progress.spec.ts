@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
+import { nativeCandidateRecords, waitForDispatchedNativeCandidates } from "./native-candidate-helpers";
 import {
   approveNativeCandidateThroughBinding as approveNativeCandidate,
   prepareNativeCandidate,
@@ -139,7 +139,7 @@ test("one collection exposes separate sealed game manifests containing only each
   expect(started.status).toBe(201);
   const { id } = await started.json<{ id: string }>();
   await resumeCollection(id);
-  const candidates = await waitForNativeCandidates(id, 2);
+  const candidates = await waitForDispatchedNativeCandidates(id, 2);
   expect(candidates.map((candidate) => candidate.supported_game).sort()).toEqual(["fusion-world", "one-piece"]);
   expect(new Set(candidates.map((candidate) => candidate.manifest_digest)).size).toBe(2);
   for (const candidate of candidates) {

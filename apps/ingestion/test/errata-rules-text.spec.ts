@@ -1,3 +1,4 @@
+import { postWithControlledPreparation } from "./reconciliation-helpers";
 import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { beforeEach, describe, expect, test } from "vitest";
@@ -12,7 +13,7 @@ import { fixtureCandidate } from "../../../test/support/catalogue-fixture";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { injectFixtureEvidencePlan, injectFixturePublication } from "./fixture-plan-injection";
 import { recoverHistoricalPublication } from "./historical-publication-fixture";
-import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
+import { nativeCandidateRecords, waitForNativeCandidate } from "./native-candidate-helpers";
 import {
   approveNativeCandidateThroughBinding as approveNativeCandidate,
   prepareNativeCandidate,
@@ -1157,14 +1158,14 @@ async function publishErrataAt(candidate: Record<string, unknown>, key: string, 
 }
 
 async function prepareFailedErrataCandidate(runId: string, predecessor: string) {
-  const started = await post("/v1/game-candidates", {
+  const started = await postWithControlledPreparation("/v1/game-candidates", {
     ingestion_run_id: runId,
     supported_game: "one-piece",
     expected_game_revision_id: predecessor,
     idempotency_key: `failed-errata-${runId}`,
   });
   expect(started.response.status, JSON.stringify(started.document)).toBe(201);
-  const [candidate] = await waitForNativeCandidates(runId, 1, 15_000, { "one-piece": "failed" });
+  const candidate = await waitForNativeCandidate(String(started.document.id), "failed", 15_000);
   expect(candidate!.outcome).toMatchObject({ state: "failed", publishable: false });
   return candidate!;
 }

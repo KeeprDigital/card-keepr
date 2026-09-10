@@ -3,7 +3,7 @@ import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/
 import { catalogueStore } from "../../../src/catalogue/shared";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
 import { retainNativePreparation } from "./native-preparation-fixture";
-import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import { approveNativeCandidate, prepareNativeCandidate, seedNativePredecessor } from "./native-publication-helpers";
 import { retainLegacyCorrectionPin } from "./query-helpers/legacy-decision-pins";
 import {
   collect,
@@ -635,16 +635,16 @@ test.each(["lookup", "application"])(
 describe.each(["associations", "application", "lookup"])(
   "reviewed identity %s prepare through durable bounded groups",
   (failurePhase) => {
-    let published: Awaited<ReturnType<typeof publishIdentityFixture>>;
+    let published: Awaited<ReturnType<typeof seedNativePredecessor>>;
     let cards: Awaited<ReturnType<typeof exportComponentRecords>>;
     beforeEach(async () => {
-      published = await publishIdentityFixture(
+      const { candidate } = await prepareIdentityFixture(
         "/reconciliation/curated-conflict-fanout-base",
         `association-${failurePhase}-seed`,
         "catrev_spine_000",
       );
-      expect(published.response.status).toBe(200);
-      cards = await exportComponentRecords(String(published.document.resulting_revision_id), "cards");
+      published = await seedNativePredecessor(candidate, `association-${failurePhase}-predecessor`);
+      cards = await exportComponentRecords(String(published.revisionId), "cards");
       for (let index = 0; index < 12; index++) {
         const proposal = {
           game: "one-piece",
@@ -656,7 +656,7 @@ describe.each(["associations", "application", "lookup"])(
               : [cards[failurePhase !== "associations" ? 8 + index : 8 + index * 2]!.id],
           replacement_ids: [cards[index === 0 ? 9 : failurePhase !== "associations" ? 9 + index : 9 + index * 2]!.id],
           printing_assignments: {},
-          expected_current_revision_id: published.document.resulting_revision_id,
+          expected_current_revision_id: published.revisionId,
           rationale: "Synthetic owner comparison establishes one rules-level Card",
           evidence: { attestation: "Synthetic comparison of retained identities" },
         };
@@ -677,11 +677,7 @@ describe.each(["associations", "application", "lookup"])(
           : "/reconciliation/curated-conflict-fanout-base",
         `association-${failurePhase}-refresh`,
       );
-      const preparation = await retainNativePreparation(
-        run.id,
-        String(published.document.resulting_revision_id),
-        `reconcile-${run.id}`,
-      );
+      const preparation = await retainNativePreparation(run.id, String(published.revisionId), `reconcile-${run.id}`);
       let calls = 0;
       const associationCalls: number[] = [];
       const applicationCalls: number[] = [];

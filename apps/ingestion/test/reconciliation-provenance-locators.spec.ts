@@ -1,9 +1,10 @@
+import { postWithControlledPreparation } from "./reconciliation-helpers";
 import { nativePrintingHistory } from "../../../src/catalogue/reconciliation/native-printing-history";
 import { beforeEach, describe, expect, test } from "vitest";
 import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
-import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
+import { nativeCandidateRecords, waitForNativeCandidate } from "./native-candidate-helpers";
 import { readNativeCards } from "./native-no-change-helpers";
 import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import { currentGameMembers } from "./query-helpers/atomic-publication";
@@ -200,14 +201,14 @@ test("a known locator with contradictory retained material evidence fails the na
   const revisionId = requiredString(published.document, "resulting_revision_id");
 
   const conflictRun = await collect("/reconciliation/conflict-changed", "reconcile-conflict-changed");
-  const created = await post("/v1/game-candidates", {
+  const created = await postWithControlledPreparation("/v1/game-candidates", {
     ingestion_run_id: conflictRun.id,
     supported_game: "one-piece",
     expected_game_revision_id: revisionId,
     idempotency_key: "conflict-changed-prepare",
   });
   expect(created.response.status).toBe(201);
-  const [conflict] = await waitForNativeCandidates(conflictRun.id, 1, 15_000, { "one-piece": "failed" });
+  const conflict = await waitForNativeCandidate(String(created.document.id), "failed", 15_000);
   expect(conflict?.outcome).toMatchObject({ state: "failed" });
   // The operation envelope is a bounded code/detail summary. The exact
   // retained diagnostic, including its locator, belongs to the candidate pages.
@@ -661,14 +662,14 @@ async function prepareEvidence(runId: string, game = "one-piece", state = "seale
   const members = await currentGameMembers(testEnv.CATALOGUE_DB);
   const predecessor =
     members.results.find((member) => member.supported_game === game)?.game_revision_id ?? "catrev_spine_000";
-  const created = await post("/v1/game-candidates", {
+  const created = await postWithControlledPreparation("/v1/game-candidates", {
     ingestion_run_id: runId,
     supported_game: game,
     expected_game_revision_id: predecessor,
     idempotency_key: `provenance-prepare-${runId}`,
   });
   expect(created.response.status, JSON.stringify(created.document)).toBe(201);
-  const [header] = await waitForNativeCandidates(runId, 1, 15000, { [game]: state });
+  const header = await waitForNativeCandidate(String(created.document.id), state, 15_000);
   return { header: header!, records: await nativeCandidateRecords(String(header!.id)) };
 }
 async function publishEvidence(prepared: Awaited<ReturnType<typeof prepareEvidence>>) {

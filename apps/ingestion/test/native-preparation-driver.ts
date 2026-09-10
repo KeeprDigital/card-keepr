@@ -11,6 +11,15 @@ type Pending =
 
 /** Control scheduling at the existing Workflow entrypoints, retaining real owner, D1/R2 and SQL restore work. */
 export function nativePreparationDriver(env: Env, scope: "preparation" | "native-owner" = "preparation") {
+  return createNativeDriver(env, scope);
+}
+
+/** A predecessor fixture retains the real pending backup; it cannot stand in for a verified publication. */
+export function nativePredecessorDriver(env: Env) {
+  return createNativeDriver(env, "native-predecessor");
+}
+
+function createNativeDriver(env: Env, scope: "preparation" | "native-owner" | "native-predecessor") {
   const pending: Pending[] = [];
   const states = new Map<string, "queued" | "running" | "complete" | "errored">();
   const instance = (id: string) => ({ id, status: async () => ({ status: states.get(id)! }) }) as WorkflowInstance;
@@ -27,8 +36,8 @@ export function nativePreparationDriver(env: Env, scope: "preparation" | "native
           const preparation =
             options.params.preparation_id && !options.params.publication && !options.params.publication_preparation;
           const publication = options.params.publication || options.params.publication_preparation;
-          if (!preparation && !(scope === "native-owner" && publication)) {
-            if (scope === "native-owner")
+          if (!preparation && !(scope !== "preparation" && publication)) {
+            if (scope !== "preparation")
               throw new Error("A controlled native-owner fixture cannot dispatch an unrelated background Workflow.");
             return target.create(options);
           }
@@ -43,7 +52,7 @@ export function nativePreparationDriver(env: Env, scope: "preparation" | "native
     get(target, property) {
       if (property === "create")
         return async (options: { id: string; params: CatalogueBackupWorkflowParams }) => {
-          if (scope !== "native-owner") return target.create(options);
+          if (scope === "preparation") return target.create(options);
           return enqueue({ kind: "backup", ...options });
         };
       if (property === "get") return async (id: string) => (states.has(id) ? instance(id) : target.get(id));
@@ -54,8 +63,14 @@ export function nativePreparationDriver(env: Env, scope: "preparation" | "native
   const environment = { ...env, RECONCILIATION_WORKFLOW: binding, CATALOGUE_BACKUP_WORKFLOW: backups };
   return {
     environment,
+    pendingBackups() {
+      return pending.filter((work) => work.kind === "backup").map((work) => ({ id: work.id, ...work.params }));
+    },
     async drain() {
-      for (let work = pending.shift(); work; work = pending.shift()) {
+      for (;;) {
+        const index = pending.findIndex((work) => scope !== "native-predecessor" || work.kind !== "backup");
+        if (index === -1) break;
+        const work = pending.splice(index, 1)[0]!;
         states.set(work.id, "running");
         const step = {
           do: async (_name: string, config: unknown, callback: () => Promise<unknown>) => {

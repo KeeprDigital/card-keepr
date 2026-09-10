@@ -1,10 +1,14 @@
 import { expect } from "vitest";
+import { waitForNativeCandidate } from "./native-candidate-helpers";
+import { nativePredecessorDriver } from "./native-preparation-driver";
 import {
   get,
   postThroughWorkflowBindings,
   postWithControlledPreparation,
   postWithControlledPublication,
   requiredString,
+  request,
+  testEnv,
 } from "./reconciliation-helpers";
 
 /** A native fixture starts from retained collection, never a legacy aggregate candidate. */
@@ -15,7 +19,8 @@ async function prepareCandidate(
   key: string,
   timeoutMs = 15_000,
   extraHeaders: Record<string, string> = {},
-  scheduling: "binding" | "direct" = "binding",
+  scheduling: "binding" | "direct",
+  expectedState: "sealed" | "failed" = "sealed",
 ) {
   const created = await (scheduling === "direct" ? postWithControlledPreparation : postThroughWorkflowBindings)(
     "/v1/game-candidates",
@@ -29,9 +34,7 @@ async function prepareCandidate(
   );
   expect(created.response.status, JSON.stringify(created.document)).toBe(201);
   const id = requiredString(created.document, "id");
-  const observed = await observeUntil(`/v1/game-candidates/${id}`, (state) => state !== "preparing", timeoutMs);
-  expect(observed.document.state, JSON.stringify(observed.document)).toBe("sealed");
-  return observed.document;
+  return waitForNativeCandidate(id, expectedState, timeoutMs);
 }
 
 /** Completed seed for fault/semantic tests; subsequent operations retain their own bindings or injected drivers. */
@@ -46,15 +49,34 @@ export function prepareNativeCandidate(
   return prepareCandidate(runId, game, expectedGameRevision, key, timeoutMs, extraHeaders, "direct");
 }
 
+/** Explicit native preparation after collection, including intentionally rejected evidence. */
+export function prepareNativeEvidence(input: {
+  runId: string;
+  game: string;
+  predecessor: string;
+  key: string;
+  expectedState?: "sealed" | "failed";
+}) {
+  return prepareCandidate(
+    input.runId,
+    input.game,
+    input.predecessor,
+    input.key,
+    15_000,
+    {},
+    "direct",
+    input.expectedState,
+  );
+}
+
 /** Exercise the owner protocol; return its actual publication result, not legacy run aliases. */
-async function approveCandidate(
+async function publishCandidate(
   candidate: Record<string, unknown>,
   key: string,
   timeoutMs = 15_000,
   extraHeaders: Record<string, string> = {},
-  execution: "binding" | "controlled" = "binding",
+  submit: typeof postThroughWorkflowBindings,
 ) {
-  const submit = execution === "controlled" ? postWithControlledPublication : postThroughWorkflowBindings;
   const id = requiredString(candidate, "id");
   const manifest = requiredString(candidate, "manifest_digest");
   const inspected = await get(`/v1/game-candidates/${id}/inspection?manifest=${manifest}`);
@@ -98,22 +120,20 @@ async function approveCandidate(
     timeoutMs,
   );
   expect(result.document.state, JSON.stringify(result.document)).toBe("published");
-  await waitForVerifiedPublicationBackup(
-    requiredString(result.document, "backup_attempt_id"),
-    requiredString(result.document, "resulting_revision_id"),
-    timeoutMs,
-  );
+
   return result;
 }
 
 /** Rule and storage fixtures use controlled scheduling; binding and recovery journeys keep the original helper. */
-export function approveNativeCandidate(
+export async function approveNativeCandidate(
   candidate: Record<string, unknown>,
   key: string,
   timeoutMs = 15_000,
   extraHeaders: Record<string, string> = {},
 ) {
-  return approveCandidate(candidate, key, timeoutMs, extraHeaders, "controlled");
+  const result = await publishCandidate(candidate, key, timeoutMs, extraHeaders, postWithControlledPublication);
+  await verifyPublicationResult(result, timeoutMs);
+  return result;
 }
 
 export async function waitForVerifiedPublicationBackup(attemptId: string, revisionId: string, timeoutMs = 15_000) {
@@ -142,9 +162,52 @@ async function observeUntil(path: string, complete: (state: string) => boolean, 
 
 /** Explicitly exercise platform scheduling instead of a suite's controlled driver. */
 export function prepareNativeCandidateThroughBinding(...args: Parameters<typeof prepareNativeCandidate>) {
-  return prepareCandidate(...args);
+  const [runId, game, predecessor, key, timeout = 15_000, headers = {}] = args;
+  return prepareCandidate(runId, game, predecessor, key, timeout, headers, "binding");
 }
 
-export function approveNativeCandidateThroughBinding(...args: Parameters<typeof approveNativeCandidate>) {
-  return approveCandidate(...args);
+export async function approveNativeCandidateThroughBinding(...args: Parameters<typeof approveNativeCandidate>) {
+  const [candidate, key, timeout = 15_000, headers = {}] = args;
+  const result = await publishCandidate(candidate, key, timeout, headers, postThroughWorkflowBindings);
+  await verifyPublicationResult(result, timeout);
+  return result;
+}
+
+async function verifyPublicationResult(result: Awaited<ReturnType<typeof publishCandidate>>, timeout: number) {
+  await waitForVerifiedPublicationBackup(
+    requiredString(result.document, "backup_attempt_id"),
+    requiredString(result.document, "resulting_revision_id"),
+    timeout,
+  );
+}
+
+export type NativePredecessor = {
+  candidateId: string;
+  revisionId: string;
+  publicationId: string;
+  backupAttemptId: string;
+  checkpoint: "pending";
+};
+
+/** Real published storage for preparation assertions. Backup remains pending and blocks the next publication. */
+export async function seedNativePredecessor(
+  candidate: Record<string, unknown>,
+  key: string,
+): Promise<NativePredecessor> {
+  const driver = nativePredecessorDriver(testEnv);
+  const submit: typeof postThroughWorkflowBindings = (path, body, headers = {}) => request(path, body, headers, driver);
+  const result = await publishCandidate(candidate, key, 15_000, {}, submit);
+  const backupAttemptId = requiredString(result.document, "backup_attempt_id");
+  const queued = driver.pendingBackups();
+  expect(queued).toHaveLength(1);
+  expect(queued[0]).toMatchObject({ idempotency_key: backupAttemptId });
+  const backup = await get(`/v1/backups/${backupAttemptId}`);
+  expect(backup.document.state, JSON.stringify(backup.document)).toBe("pending");
+  return {
+    candidateId: requiredString(candidate, "id"),
+    revisionId: requiredString(result.document, "resulting_revision_id"),
+    publicationId: requiredString(result.document, "id"),
+    backupAttemptId,
+    checkpoint: "pending",
+  };
 }

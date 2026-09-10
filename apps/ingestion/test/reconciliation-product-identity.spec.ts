@@ -1,12 +1,10 @@
+import { postWithControlledPreparation } from "./reconciliation-helpers";
 import { expect, test } from "vitest";
 import { compositionEntityResponse } from "../../../src/catalogue/read";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
-import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
-import {
-  approveNativeCandidateThroughBinding as approveNativeCandidate,
-  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
-} from "./native-publication-helpers";
+import { nativeCandidateRecords, waitForNativeCandidate } from "./native-candidate-helpers";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import { mutateNativeProductOfficialCode, nativeProductIdentity } from "./query-helpers/native-product-history";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import * as reconciliationQueries from "./query-helpers/reconciliation";
@@ -685,14 +683,14 @@ async function productSourceFreshness() {
 }
 
 async function expectProductEvidenceInvalid(runId: string, predecessor: string, detail: string) {
-  const created = await post("/v1/game-candidates", {
+  const created = await postWithControlledPreparation("/v1/game-candidates", {
     ingestion_run_id: runId,
     supported_game: "one-piece",
     expected_game_revision_id: predecessor,
     idempotency_key: `product-invalid-${runId}`,
   });
   expect(created.response.status, JSON.stringify(created.document)).toBe(201);
-  const [candidate] = await waitForNativeCandidates(runId, 1, 15_000, { "one-piece": "failed" });
+  const candidate = await waitForNativeCandidate(String(created.document.id), "failed", 15_000);
   expect(candidate).toMatchObject({ state: "failed", failure_code: "printing_reconciliation_blocked" });
   expect(candidate?.outcome).toMatchObject({
     state: "failed",

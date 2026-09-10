@@ -3,7 +3,7 @@ import type { ReconciliationWorkflowParams } from "../../../src/catalogue/reconc
 import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
 import worker from "../src/index";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
-import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import { seedNativePredecessor, prepareNativeCandidate } from "./native-publication-helpers";
 import { catalogueStore, canonicalJson, sha256Text } from "../../../src/catalogue/shared";
 import {
   exportComponentRecords,
@@ -44,7 +44,7 @@ describe.each(["release", "relationships"] as const)("a curated %s lookup", (kin
       (
         await post("/admin/v1/curated-revisions", {
           environment: "production",
-          expected_current_revision_id: published.document.resulting_revision_id,
+          expected_current_revision_id: published.revisionId,
           proposal,
           proposal_digest: await sha256Text(canonicalJson(proposal)),
           idempotency_key: "curated-lookup-revision",
@@ -75,7 +75,7 @@ describe.each(["release", "relationships"] as const)("a curated %s lookup", (kin
     const created = await request("/v1/game-candidates", {
       ingestion_run_id: run.id,
       supported_game: "one-piece",
-      expected_game_revision_id: published.document.resulting_revision_id,
+      expected_game_revision_id: published.revisionId,
       idempotency_key: "curated-lookup-next-prepare",
     });
     expect(created.response.status, JSON.stringify(created.document)).toBe(201);
@@ -204,11 +204,11 @@ async function seedLookup(kind: "release" | "relationships") {
   expect(products).toHaveLength(32);
   const product = [...products].sort((a, b) => a.id.localeCompare(b.id)).at(-1)!;
   const release = product.releases[0]!;
-  const published = await approveNativeCandidate(seed, "curated-lookup-seed-publish");
-  expect(published.response.status).toBe(200);
+  const published = await seedNativePredecessor(seed, "curated-lookup-seed-publish");
+  expect(published.checkpoint).toBe("pending");
   const relationship =
     kind === "relationships"
-      ? (await exportComponentRecords(String(published.document.resulting_revision_id), "relationships"))
+      ? (await exportComponentRecords(String(published.revisionId), "relationships"))
           .sort((a, b) => String(a.id).localeCompare(String(b.id)))
           .at(-1)!
       : undefined;
