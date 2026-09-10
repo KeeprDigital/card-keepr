@@ -26,6 +26,40 @@ ready-PR CI run provide the full result. Also run `npm run lint` and
 `npm run typecheck` for the changes. A passing quick check is feedback for
 iteration; the full CI checks are the merge/release standard.
 
+## Test boundaries
+
+The suite has three responsibilities. Keep each assertion at the narrowest
+boundary that can prove it:
+
+| Layer | Exercise for real | Control or omit |
+| --- | --- | --- |
+| Domain | Parsers and business rules | Worker boot, storage and scheduling |
+| Worker integration | D1/R2 persistence, transactions, API contracts and Workflow fences | Use explicit barriers or the existing direct Workflow driver for ordering and fault injection |
+| Acceptance | Selected HTTP/CLI journeys, process wiring and export/restore | Small offline publisher fixtures; no full catalogue replay |
+
+A real Workflow binding test proves that dispatch, execution and stored results
+connect correctly. It should not repeat every parser, business-rule or recovery
+permutation through asynchronous HTTP polling. The existing reconciliation
+Workflow driver can exercise recovery paths with real D1/R2 and controlled child
+dispatch. Preserve a small binding test when using that driver; a controlled
+driver alone does not prove the platform wiring.
+
+Routine acceptance currently has 63 files, of which 19 directly boot a Worker.
+The others include SQL, CLI and contract checks; the directory name does not
+mean every file is a complete application journey. Extended recovery and
+capacity experiments remain separately selected. Reduce duplicate journeys
+when their assertions can be retained at a narrower boundary; do not remove
+regression coverage merely because a test fails in CI.
+
+For concurrency, distinguish an admission response from the eventual durable
+outcome. Explicitly control the ordering that matters instead of assuming
+`Promise.all` exercises every interleaving. For example, the termination test
+holds Workflow creation after resume intent is persisted, commits termination,
+then releases the real Workflow and checks that it cannot revive the run.
+Independent races have separate tests and setup, so one failure does not hide
+later scenarios. Keep one uncontrolled race only when it adds a distinct
+atomicity check, such as two termination writers competing for one record.
+
 ## Commands and coverage
 
 | Command | What it proves | When to use it |
@@ -188,7 +222,10 @@ Tmpfs's size option limits storage allocation; see the
    still dispose Workflows and reset storage between tests. Publication helpers
    should read only the candidate identities/manifests they need; reading every
    data partition belongs in assertions that inspect those records.
-7. Run the affected file first, then the appropriate quick/full check. For a CI-only
+7. Control race ordering at an existing boundary with an explicit promise/barrier;
+   do not use sleeps to hope a particular request wins. Wait for late work to
+   settle before asserting the final durable state.
+8. Run the affected file first, then the appropriate quick/full check. For a CI-only
    failure, reproduce it in a small hosted selection, fix the cause, and repeat
    that selection before returning to the full suite. Do not use repeated full
    runs, larger timeouts, higher rate limits, or automatic retries to chase green.

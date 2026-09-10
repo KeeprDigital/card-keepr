@@ -1,21 +1,23 @@
-import { waitForCollectionCompletion } from "./runtime-helpers";
-import { dropPausePrerequisiteGuards } from "./query-helpers/collection-resume";
-import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
-import { catalogueStore } from "../../../src/catalogue/shared";
-import * as ingestionQueries from "./query-helpers/ingestion";
-import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import { env, exports } from "cloudflare:workers";
 import { beforeEach, expect, test } from "vitest";
+import { catalogueStore } from "../../../src/catalogue/shared";
 import {
-  prepareCaptureAttempt,
   finalizeEvidenceRun,
   pauseEvidenceRunForRequestCapacity,
   pauseEvidenceRunForWorkflowRecovery,
   pendingEvidenceRequests,
+  prepareCaptureAttempt,
   RequestCapacityProblem,
   requiredEvidenceRun,
+  resumeEvidenceRun,
   resumePausedEvidenceRun,
+  terminateEvidenceCollection,
 } from "../../../src/catalogue/source-evidence";
+import { pauseRunAtCapacity } from "./capacity-pause-helpers";
+import { dropPausePrerequisiteGuards } from "./query-helpers/collection-resume";
+import * as ingestionQueries from "./query-helpers/ingestion";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import {
   administrationRequest,
   clearActiveRunForNextScenario,
@@ -26,7 +28,6 @@ import {
   waitForEvidenceCondition,
   waitForWorkflowStatus,
 } from "./runtime-helpers";
-import { pauseRunAtCapacity } from "./capacity-pause-helpers";
 
 installRuntimeSuite();
 beforeEach(() => dropPausePrerequisiteGuards(env.CATALOGUE_DB));
@@ -402,7 +403,7 @@ test("termination problems fail closed with explicit documents", async () => {
   expect(await ingestionQueries.readIngestionRunsState(env.CATALOGUE_DB).bind(second.id).first("state")).toBe("paused");
 });
 
-test("concurrent lifecycle requests preserve one durable termination and never revive it", async () => {
+test("concurrent terminations record exactly one owner decision", async () => {
   // Two terminations under different keys: one applies, one conflicts.
   const first = await createCollection("termination_race_terminate_001", "https://official-source.invalid/cards");
   await pauseForWorkflowRecovery(first.id, "source_workflow_stalled");
@@ -417,66 +418,78 @@ test("concurrent lifecycle requests preserve one durable termination and never r
   expect(
     await sourceEvidenceQueries.countIngestionRunTerminationsCount(env.CATALOGUE_DB).bind(first.id).first("count"),
   ).toBe(1);
-  await clearActiveRunForNextScenario();
+});
 
-  // Resume acknowledges dispatch with 202. Termination can still observe the
-  // new attempt before it exists, pause it, and commit a terminal fence. Assert
-  // the durable outcome rather than treating both HTTP successes as impossible.
-  const second = await createCollection("termination_race_resume_001", "https://official-source.invalid/cards");
-  await pauseEvidenceRunForWorkflowRecovery(catalogueStore(env.CATALOGUE_DB), second.id, {
-    workflow_instance_id: `evidence-${second.id}`,
-    pause_reason: "source_workflow_stalled",
-    workflow_status: "running",
-    last_progress_at: null,
+test("a resume dispatched before termination cannot revive the terminal run", async () => {
+  const run = await createCollection("termination_delayed_resume_001", "https://official-source.invalid/cards");
+  await pauseForWorkflowRecovery(run.id, "source_workflow_stalled");
+  let notifyCreate!: (id: string) => void;
+  let rejectCreate!: (error: unknown) => void;
+  const reachedCreate = new Promise<string>((resolve, reject) => {
+    notifyCreate = resolve;
+    rejectCreate = reject;
   });
-  const [terminateOutcome, resumeOutcome] = await Promise.all([
-    administrationRequest(`/v1/ingestion-runs/${second.id}/collection/termination`, "POST", {
-      idempotency_key: "termination_race_resume_terminate",
-    }),
-    administrationRequest(`/v1/ingestion-runs/${second.id}/collection/resume`, "POST"),
-  ]);
-  const state = await ingestionQueries.readIngestionRunsState(env.CATALOGUE_DB).bind(second.id).first("state");
-  const terminationCount = await sourceEvidenceQueries
-    .countIngestionRunTerminationsCount(env.CATALOGUE_DB)
-    .bind(second.id)
-    .first("count");
-  console.info(
-    `[DEBUG-termination] terminate=${terminateOutcome.status} resume=${resumeOutcome.status} state=${state}`,
+  let releaseCreate!: () => void;
+  const creationReleased = new Promise<void>((resolve) => {
+    releaseCreate = resolve;
+  });
+  const delayedWorkflow = new Proxy(env.EVIDENCE_INGESTION_WORKFLOW, {
+    get(target, property) {
+      if (property === "create")
+        return async (options: Parameters<typeof target.create>[0]) => {
+          notifyCreate(options!.id!);
+          await creationReleased;
+          return target.create(options);
+        };
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const resumed = resumeEvidenceRun(
+    catalogueStore(env.CATALOGUE_DB),
+    delayedWorkflow,
+    run.id,
+    env.EVIDENCE_HOST_WORKFLOW,
   );
-  if (terminateOutcome.status === 200) {
-    expect(state).toBe("failed");
-    expect(terminationCount).toBe(1);
-    expect([202, 409]).toContain(resumeOutcome.status);
-    if (resumeOutcome.status === 409) {
-      await expect(resumeOutcome.json()).resolves.toMatchObject({ code: "ingestion_run_not_collecting" });
-    } else {
-      await expect(resumeOutcome.json()).resolves.toMatchObject({ ingestion_run_id: second.id });
-    }
-    const laterResume = await administrationRequest(`/v1/ingestion-runs/${second.id}/collection/resume`, "POST");
-    expect(laterResume.status).toBe(409);
-    await expect(laterResume.json()).resolves.toMatchObject({ code: "ingestion_run_not_collecting" });
-    expect(await ingestionQueries.readIngestionRunsStateFailureCode(env.CATALOGUE_DB).bind(second.id).first()).toEqual({
-      state: "failed",
-      failure_code: "ingestion_run_terminated",
-    });
-  } else {
-    expect(resumeOutcome.status).toBe(202);
-    expect(terminationCount).toBe(0);
-    expect(terminateOutcome.status).toBe(409);
-    await expect(terminateOutcome.json()).resolves.toMatchObject({
-      code: "ingestion_run_not_paused",
-    });
-    await waitForCollectionCompletion(second.id, 20_000);
-    // Collection may advance or fail independently after a successful resume;
-    // the rejected termination must not record an owner termination.
-    const completed = await ingestionQueries
-      .readIngestionRunsStateFailureCode(env.CATALOGUE_DB)
-      .bind(second.id)
-      .first();
-    expect(completed?.failure_code).not.toBe("ingestion_run_terminated");
+  // Propagate an early admission failure instead of leaving the barrier waiting.
+  void resumed.catch(rejectCreate);
+  let workflowId: string;
+  try {
+    workflowId = await reachedCreate;
+    expect(await ingestionQueries.readIngestionRunsState(env.CATALOGUE_DB).bind(run.id).first("state")).toBe(
+      "collecting",
+    );
+    // Dispatch intent is durable, but the replacement instance does not exist
+    // yet. Termination must observe that precise ordering on every run.
+    const terminated = await terminateEvidenceCollection(
+      catalogueStore(env.CATALOGUE_DB),
+      env.EVIDENCE_INGESTION_WORKFLOW,
+      env.EVIDENCE_HOST_WORKFLOW,
+      run.id,
+      "termination_delayed_resume_terminate",
+    );
+    expect(terminated).toMatchObject({ state: "failed", failure_code: "ingestion_run_terminated" });
+  } finally {
+    releaseCreate();
   }
-  await clearActiveRunForNextScenario();
+  await expect(resumed).resolves.toMatchObject({ ingestion_run_id: run.id });
+  // The real Workflow now starts after the terminal fence; wait for it to
+  // settle so the assertion catches late writes, not just admission state.
+  const parent = await env.EVIDENCE_INGESTION_WORKFLOW.get(workflowId);
+  await waitForWorkflowStatus(workflowId, () => parent.status(), "complete", 12_000);
+  expect(await ingestionQueries.readIngestionRunsStateFailureCode(env.CATALOGUE_DB).bind(run.id).first()).toEqual({
+    state: "failed",
+    failure_code: "ingestion_run_terminated",
+  });
+  expect(
+    await sourceEvidenceQueries.countIngestionRunTerminationsCount(env.CATALOGUE_DB).bind(run.id).first("count"),
+  ).toBe(1);
+  const laterResume = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
+  expect(laterResume.status).toBe(409);
+  await expect(laterResume.json()).resolves.toMatchObject({ code: "ingestion_run_not_collecting" });
+});
 
+test("a capacity extension racing termination cannot revive the terminal run", async () => {
   // Terminate racing a capacity extension on a capacity-paused run: the
   // extension cannot apply to a terminated run and termination cannot apply
   // to a resumed one, so at most one generation and one termination exist.
