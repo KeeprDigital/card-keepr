@@ -1,0 +1,84 @@
+import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
+import { ReconciliationReducerIndex } from "./reconciliation-reducer-state";
+import type { RelationshipKind } from "./reconciliation-relationships";
+
+export type HistoryPublication = { candidate: string } | { revision: string };
+export type SourceHistoryRecord = {
+  id: string;
+  kind: "card" | "locator" | "membership";
+  entityId: string;
+  cardId: string;
+  sourceLineage: string;
+  identity: { kind: string; value: string | null };
+  locator?: string;
+  variantKey?: string | null;
+  relationshipKind?: RelationshipKind;
+  relationshipValue?: string;
+  sourceObservationId?: string;
+  first: HistoryPublication;
+  last: HistoryPublication;
+  missing: HistoryPublication | null;
+  current: boolean;
+};
+export type SourceHistoryPosition = { position: number; count: number; entities: number };
+
+/** Private history is separate from consumer facts and each preparation owns its immutable prefix. */
+export class NativeSourceHistory {
+  readonly index: ReconciliationReducerIndex<SourceHistoryRecord>;
+  private count = 0;
+  private entities: ReconciliationReducerIndex<number>;
+  constructor(
+    database: CatalogueStore,
+    preparation: string,
+    position: SourceHistoryPosition = { position: 0, count: 0, entities: 0 },
+  ) {
+    this.index = new ReconciliationReducerIndex(database, preparation, "source_history", sourceHistoryGroup);
+    this.entities = new ReconciliationReducerIndex(database, preparation, "source_history_entity_counts");
+    this.resumeAt(position);
+  }
+  get cursor(): SourceHistoryPosition {
+    return { position: this.index.position, count: this.count, entities: this.entities.position };
+  }
+  resumeAt(cursor: SourceHistoryPosition) {
+    if (!Number.isSafeInteger(cursor.count) || cursor.count < 0 || cursor.count > cursor.position)
+      throw new Error("Native source history has an invalid completed prefix.");
+    this.index.resumeAt(cursor.position);
+    this.count = cursor.count;
+    this.entities.resumeAt(cursor.entities);
+  }
+  async retain(value: SourceHistoryRecord) {
+    if (!(await this.index.has(value.id))) {
+      this.count++;
+      const group = sourceHistoryGroup(value);
+      await this.entities.seed(group, ((await this.entities.get(group)) ?? 0) + 1);
+    }
+    await this.index.seed(value.id, value);
+  }
+  async *entries(after = "") {
+    for await (const entry of this.index.latestEntries(after)) {
+      if ((await sha256Text(entry.value.id)) !== entry.key)
+        throw new Error("Native source history key differs from its retained record.");
+      yield entry;
+    }
+  }
+  async forEntity(kind: "card" | "printing", entityId: string) {
+    // This reader opens the exact completed prefix, including its final observation.
+    this.index.beginObservation();
+    const records: SourceHistoryRecord[] = [];
+    try {
+      for await (const record of this.index.matchingBeforeObservation(canonicalJson([kind, entityId]))) {
+        if (sourceHistoryGroup(record) !== canonicalJson([kind, entityId]))
+          throw new Error("Native source history group differs from its retained record.");
+        records.push(record);
+      }
+    } finally {
+      this.index.resumeAt(this.index.position - 1);
+    }
+    if (records.length !== ((await this.entities.get(canonicalJson([kind, entityId]))) ?? 0))
+      throw new Error("Native source history entity prefix is missing records.");
+    return records;
+  }
+}
+function sourceHistoryGroup(record: SourceHistoryRecord) {
+  return canonicalJson([record.kind === "card" ? "card" : "printing", record.entityId]);
+}

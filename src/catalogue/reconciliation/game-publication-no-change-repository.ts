@@ -32,6 +32,18 @@ export function acceptGameEvidenceStatements(db: CatalogueStore, publicationId: 
   const sql = repositoryStatements(db);
   return [
     sql
+      .prepare(`INSERT INTO source_freshness(game,area,source_lineage,region,checked_at,ingestion_run_id)
+      SELECT c.supported_game,json_extract(checks.value,'$.area'),'','',json_extract(checks.value,'$.checked_at'),c.ingestion_run_id
+      FROM game_publication_operations p JOIN game_candidates c ON c.id=p.candidate_id
+      JOIN reconciliation_reducer_state receipt ON receipt.preparation_id=c.preparation_id
+        AND receipt.namespace='publication_source_checks' AND receipt.observation_ordinal=1,
+      json_each(receipt.content,'$.value.checks') checks
+      WHERE p.id=? AND p.state='published' AND c.state='published'
+        AND json_extract(checks.value,'$.game')=c.supported_game
+      ON CONFLICT(game,area,source_lineage,region) DO UPDATE SET
+        checked_at=excluded.checked_at,ingestion_run_id=excluded.ingestion_run_id`)
+      .bind(publicationId),
+    sql
       .prepare(`INSERT INTO game_accepted_candidates(supported_game,candidate_id)
       SELECT c.supported_game,c.id FROM game_publication_operations p JOIN game_candidates c ON c.id=p.candidate_id
       WHERE p.id=? AND p.state='published' AND c.state='published'

@@ -1,3 +1,4 @@
+import { prepareNativeSourceHistory } from "./native-source-history";
 import { type CheckedCardScope } from "./scoped-disappearance";
 import {
   nativePrintingMatches,
@@ -510,6 +511,13 @@ export async function reconcileRetainedCardPrintingEvidence(
     sourceWarnings.resumeAt(reduction.value.warnings);
     diagnostics.resumeAt(reduction.value.diagnostics);
   }
+  let sourceHistory: Awaited<ReturnType<typeof prepareNativeSourceHistory>>;
+  try {
+    sourceHistory = await prepareNativeSourceHistory(database, runId, false, yieldAtCheckpoint);
+  } catch (error) {
+    if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
+    throw error;
+  }
   let reductionOrdinal = (reduction?.ordinal ?? -1) + 1;
   let processedObservations = reduction?.value.processedObservations ?? 0;
   let pendingSourceWarning = reduction?.value.pendingSourceWarning ?? null;
@@ -897,7 +905,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           proposedCard.game === "gundam" &&
           observation.sourceLineage === "gundam-en-us" &&
           carriedCard !== undefined &&
-          ((await gundamCardLineages(database, cardId)).some(
+          ((await gundamCardLineages(database, cardId, sourceHistory?.prior)).some(
             ({ source_lineage, current }) => source_lineage === "gundam-en-asia" && current === 1,
           ) ||
             (await localGundamCardLineages.get(cardId))?.includes("gundam-en-asia") === true);
@@ -917,10 +925,17 @@ export async function reconcileRetainedCardPrintingEvidence(
               ),
         };
         const publishedConflict = publishedCardGames.includes(proposedCard.game)
-          ? await canonicalCardConflict(database, cardId, proposedForComparison, observation.sourceLineage, {
-              effectiveRulesText: currentEffectiveAuthority,
-              confirmedPublisherNumber,
-            })
+          ? await canonicalCardConflict(
+              database,
+              cardId,
+              proposedForComparison,
+              observation.sourceLineage,
+              {
+                effectiveRulesText: currentEffectiveAuthority,
+                confirmedPublisherNumber,
+              },
+              sourceHistory ? { history: sourceHistory.prior, card: await priorCards.get(cardId) } : undefined,
+            )
           : null;
         let acceptedCanonicalCard = acceptedCard;
         try {
@@ -1094,7 +1109,9 @@ export async function reconcileRetainedCardPrintingEvidence(
             for (const matchId of matchIds) {
               consumeIdentityMatch();
               const observedLineages = new Set([
-                ...(await gundamPrintingLineages(database, matchId)).map(({ source_lineage }) => source_lineage),
+                ...(await gundamPrintingLineages(database, matchId, sourceHistory?.prior)).map(
+                  ({ source_lineage }) => source_lineage,
+                ),
                 ...((await localGundamPrintingProvenance.get(matchId)) ?? []),
               ]);
               if (
@@ -1106,7 +1123,12 @@ export async function reconcileRetainedCardPrintingEvidence(
               const localProducts = new Set((await localGundamProducts.get(matchId)) ?? []);
               if (
                 observation.memberships.products.some((product) => localProducts.has(product)) ||
-                (await gundamPrintingHasProductMembership(database, matchId, observation.memberships.products))
+                (await gundamPrintingHasProductMembership(
+                  database,
+                  matchId,
+                  observation.memberships.products,
+                  sourceHistory?.prior,
+                ))
               )
                 corroboratedCrossLocaleMatches.push(matchId);
             }
@@ -1239,12 +1261,15 @@ export async function reconcileRetainedCardPrintingEvidence(
             printingId,
             proposedPrinting,
             observation.sourceLineage,
+            sourceHistory
+              ? { history: sourceHistory.prior, printing: await priorPrintings.get(printingId) }
+              : undefined,
           );
           const retainAsiaPrintingAuthority =
             observation.supportedGame === "gundam" &&
             observation.sourceLineage === "gundam-en-us" &&
             carriedPrinting !== undefined &&
-            ((await gundamPrintingLineages(database, printingId)).some(
+            ((await gundamPrintingLineages(database, printingId, sourceHistory?.prior)).some(
               ({ source_lineage, current }) => source_lineage === "gundam-en-asia" && current === 1,
             ) ||
               (await localGundamPrintingProvenance.get(printingId))?.includes("gundam-en-asia") === true);
@@ -1813,6 +1838,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   const { draft: official, observedCards, observedPrintings } = assembled;
   const checkedSourceLineages = errataOnlyEvidence ? [] : [...completeLineages].sort();
   try {
+    sourceHistory = await prepareNativeSourceHistory(database, runId, true, yieldAtCheckpoint);
     await prepareDisappearanceWarnings(
       database,
       runId,

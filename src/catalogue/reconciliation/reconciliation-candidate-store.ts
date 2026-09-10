@@ -1,3 +1,4 @@
+import { retainNativeSourceChecks } from "./native-source-freshness";
 import { retainGameSemanticReceiptStatements } from "./game-publication-no-change-repository";
 import { failIndependentGamePreparation } from "./game-reconciliation-outcome";
 import { prepareRunWarningSummary } from "./reconciliation-warning-summary";
@@ -82,6 +83,7 @@ export async function persistReviewableCandidate(
     input.yieldAtCheckpoint,
   );
   if (input.independentGame) {
+    await retainNativeSourceChecks(database, input.runId, input.candidate.source_checks);
     const gameSeals = await prepareGameCandidateManifests(
       database,
       input.runId,

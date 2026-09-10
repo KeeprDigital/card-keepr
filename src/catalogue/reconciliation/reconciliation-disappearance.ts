@@ -1,3 +1,4 @@
+import type { SourceHistoryCursor } from "./native-source-history";
 import { checkedPrintingLineages, type CheckedCardScope } from "./scoped-disappearance";
 import type { CataloguePrinting } from "../shared";
 import type { ReconciliationCardState } from "./reconciliation-card-state";
@@ -33,6 +34,7 @@ type Stage =
   | "errata"
   | "complete";
 type Cursor = {
+  sourceHistory?: SourceHistoryCursor;
   stage: Stage;
   after: string;
   lineage: number;
@@ -85,7 +87,7 @@ export async function prepareDisappearanceWarnings(
   let relationshipValue = checkpoint?.value.relationshipValue ?? "";
   let processedRecords = checkpoint?.value.processedRecords ?? 0;
   let ordinal = (checkpoint?.ordinal ?? -1) + 1;
-  if (checkpoint) {
+  if (checkpoint?.value.stage) {
     groups.resumeAt(checkpoint.value.groups);
     scopedCards.resumeAt(checkpoint.value.scopedCards ?? 0);
     warnings.resumeAt(checkpoint.value.warnings);
@@ -93,6 +95,7 @@ export async function prepareDisappearanceWarnings(
   }
   const save = async () => {
     await retainReconciliationCheckpoint(database, runId, "disappearance_warnings", ordinal, {
+      ...(checkpoint?.value.sourceHistory ? { sourceHistory: checkpoint.value.sourceHistory } : {}),
       stage,
       after,
       lineage,
@@ -106,7 +109,7 @@ export async function prepareDisappearanceWarnings(
     if (yieldAtCheckpoint) throw new ReconciliationContinuation({ phase: "disappearance_warnings", ordinal });
     ordinal++;
   };
-  if (!checkpoint) await save();
+  if (!checkpoint?.value.stage) await save();
   let records = 0,
     bytes = 0;
   const budget = async (value: unknown) => {

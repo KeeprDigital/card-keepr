@@ -1,3 +1,4 @@
+import { nativePrintingHistory } from "./native-printing-history";
 import type { CatalogueStore } from "../shared";
 import type { LocatorEvidence, LocatorEvidenceCollection } from "./reconciliation-publication";
 import {
@@ -48,14 +49,19 @@ export async function publicReconciledPrinting(
   database: CatalogueStore,
   printingId: string,
 ): Promise<Record<string, unknown> | null> {
-  const printing = await reconciledPrintingDocumentStatement(database, printingId).first<ReconciledPrintingRow>();
+  const native = await nativePrintingHistory(database, printingId);
+  const printing =
+    native?.printing ??
+    (await reconciledPrintingDocumentStatement(database, printingId).first<ReconciledPrintingRow>());
   if (printing === null) return null;
-  const [locators, memberships] = await Promise.all([
-    reconciledPrintingLocatorsStatement(database, printingId).all<
-      Omit<LocatorEvidence, "current"> & { current: number }
-    >(),
-    reconciledPrintingRelationshipsStatement(database, printingId).all<MembershipRow>(),
-  ]);
+  const [locators, memberships] = native
+    ? [{ results: native.locators }, { results: native.memberships }]
+    : await Promise.all([
+        reconciledPrintingLocatorsStatement(database, printingId).all<
+          Omit<LocatorEvidence, "current"> & { current: number }
+        >(),
+        reconciledPrintingRelationshipsStatement(database, printingId).all<MembershipRow>(),
+      ]);
   const current = membershipProjection<string[]>(() => []);
   const historical = membershipProjection<
     {
