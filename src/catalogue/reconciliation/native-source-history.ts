@@ -1,19 +1,19 @@
 import { type CatalogueStore, canonicalJson } from "../shared";
-import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
-import { ReconciliationContinuation } from "./reconciliation-continuation";
-import { ReconciliationPlanState, type ObservationPlan } from "./reconciliation-plan-state";
-import { ReconciliationReducerIndex } from "./reconciliation-reducer-state";
-import { membershipEntries } from "./reconciliation-relationships";
+import {
+  legacySourceHistoryStatement,
+  type SourceHistoryCandidate,
+  sourceHistoryCandidateStatement,
+} from "./native-source-history-repository";
 import {
   NativeSourceHistory,
   type SourceHistoryPosition,
   type SourceHistoryRecord,
 } from "./native-source-history-state";
-import {
-  legacySourceHistoryStatement,
-  sourceHistoryCandidateStatement,
-  type SourceHistoryCandidate,
-} from "./native-source-history-repository";
+import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
+import { ReconciliationContinuation } from "./reconciliation-continuation";
+import { type ObservationPlan, ReconciliationPlanState } from "./reconciliation-plan-state";
+import { ReconciliationReducerIndex } from "./reconciliation-reducer-state";
+import { membershipEntries } from "./reconciliation-relationships";
 
 type Coverage = {
   sourceLineage: string;
@@ -94,6 +94,7 @@ export async function prepareNativeSourceHistory(
     checkpoint = { ordinal, value };
     if (yieldAtCheckpoint) throw new ReconciliationContinuation({ phase: "disappearance_warnings", ordinal });
   };
+  let work = 0;
   while (cursor.stage !== "complete") {
     if (cursor.stage === "prior_ready") {
       if (!finishCurrent) break;
@@ -221,7 +222,11 @@ export async function prepareNativeSourceHistory(
         }
       }
     }
-    await save();
+    // Eight bounded records per durable unit avoid a new Workflow dispatch for every small history row.
+    if (++work === 8 || cursor.stage === "prior_ready" || cursor.stage === "complete") {
+      await save();
+      work = 0;
+    }
   }
   if (!cursor.prior) throw new Error("Native source history has no completed predecessor prefix.");
   return { prior: new NativeSourceHistory(db, preparation, cursor.prior), current: history };
@@ -257,7 +262,7 @@ async function requiredFrame(db: CatalogueStore, candidate: SourceHistoryCandida
       (plan) =>
         plan.supportedGame !== candidate.supported_game ||
         typeof plan.sourceLineage !== "string" ||
-        ![undefined, "complete", "partial"].includes(plan.subset),
+        (plan.subset !== undefined && (typeof plan.subset !== "string" || plan.subset.length === 0)),
     )
   )
     throw new Error("Native source history requires complete retained observation plans and declared coverage.");

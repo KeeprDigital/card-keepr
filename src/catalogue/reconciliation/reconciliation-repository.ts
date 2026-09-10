@@ -1,4 +1,3 @@
-import type { NativeSourceHistory } from "./native-source-history-state";
 import {
   type CatalogueCard,
   type CataloguePrinting,
@@ -6,6 +5,8 @@ import {
   canonicalJson,
   repositoryStatements,
 } from "../shared";
+import { gamePredecessorCandidateSql } from "./game-candidate-predecessor-repository";
+import type { NativeSourceHistory } from "./native-source-history-state";
 import type { PrintingCompatibility } from "./reconciliation-model";
 
 export type ReconciledCardRow = {
@@ -48,10 +49,17 @@ export async function existingCard(
     .first<ReconciledCardRow>();
 }
 
-export function publishedCardPresentStatement(database: CatalogueStore, game: string) {
+export function publishedCardPresentStatement(
+  database: CatalogueStore,
+  game: string,
+  preparation: string,
+  revision: string,
+) {
   return repositoryStatements(database)
-    .prepare("SELECT 1 AS present FROM reconciled_cards WHERE supported_game = ? LIMIT 1")
-    .bind(game);
+    .prepare(`SELECT 1 AS present FROM reconciled_cards WHERE supported_game = ?1
+      UNION ALL SELECT 1 FROM publication_read_entities WHERE kind='cards'
+        AND candidate_id=${gamePredecessorCandidateSql("?3", "?1", "?2")} LIMIT 1`)
+    .bind(game, preparation, revision);
 }
 
 export async function compatiblePrintings(

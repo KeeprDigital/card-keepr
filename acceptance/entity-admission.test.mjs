@@ -1,10 +1,16 @@
-import { syntheticSourceAdapterMigrations } from "./helpers/synthetic-source-adapters.mjs";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { runCli, startWorker, stopWorker, waitForHealth, waitForRunState } from "./helpers/acceptance-runtime.mjs";
+import { runCli, startWorker, stopWorker, waitForHealth } from "./helpers/acceptance-runtime.mjs";
+import {
+  inspectNativeCollection,
+  nativeCheckpointTransport,
+  publishNativeCollection,
+  waitForNativeCollection,
+} from "./helpers/native-catalogue-runtime.mjs";
+import { syntheticSourceAdapterMigrations } from "./helpers/synthetic-source-adapters.mjs";
 
 // Synthetic owner attestation and source fixtures; no real-card evidence claim.
 test("owner CLI admission remains administrative until publication and serves ordinary authenticated consumers", async (t) => {
@@ -18,8 +24,10 @@ test("owner CLI admission remains administrative until publication and serves or
   await writeFile(apiEnv, `API_BEARER_KEY=${key}\n`);
   const config = JSON.parse(await readFile(join(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
   delete config.$schema;
-  config.main = join(root, "acceptance/fixtures/retained-evidence-base-harness.ts");
+  config.main = join(root, "acceptance/fixtures/native-retained-evidence-harness.ts");
   config.d1_databases[0].migrations_dir = join(root, "migrations");
+  // This journey exercises admission/publication; the fixture budget covers its bounded inspection requests.
+  config.ratelimits.find(({ name }) => name === "ADMINISTRATION_RATE_LIMIT").simple.limit = 300;
   config.services = [{ binding: "OFFICIAL_SOURCE_TRANSPORT", service: "card-keepr-synthetic-official-source" }];
   const configPath = join(directory, "ingestion.json");
   await writeFile(configPath, JSON.stringify(config));
@@ -27,7 +35,9 @@ test("owner CLI admission remains administrative until publication and serves or
     config: "acceptance/fixtures/synthetic-official-source.wrangler.jsonc",
     statePath: join(directory, "source"),
   });
+  const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory, configPath);
   const ingestion = await startWorker({
+    ...checkpointTransport,
     config: configPath,
     envFile: ingestionEnv,
     statePath,
@@ -40,11 +50,45 @@ test("owner CLI admission remains administrative until publication and serves or
     await rm(directory, { recursive: true, force: true });
   });
   await waitForHealth(`${ingestion.url}/health`, key, ingestion);
-  const environment = { KEEPR_INGESTION_URL: ingestion.url, KEEPR_ADMINISTRATION_KEY: key };
+  const environment = {
+    KEEPR_INGESTION_URL: ingestion.url,
+    KEEPR_ADMINISTRATION_KEY: key,
+    KEEPR_NATIVE_REQUEST_INTERVAL_MS: "250",
+  };
   const cli = async (args) => {
     const result = await runCli([...args, "--json"], environment);
     assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
     return JSON.parse(result.stdout);
+  };
+  const collectNativeSource = async (lineage, adapter, url, key) => {
+    const path = join(directory, `${key}-source-plan.json`);
+    await writeFile(
+      path,
+      JSON.stringify({
+        plans: [
+          {
+            supported_game: "one-piece",
+            source_lineage: lineage,
+            adapter_version: adapter,
+            requests: [{ id: `${lineage}:discovery`, url }],
+          },
+        ],
+      }),
+    );
+    const run = await cli(["source", "collect", "--plan-file", path, "--idempotency-key", key]);
+    assert.equal(run.state, "parsing");
+    const prepared = await fetch(`${ingestion.url}/v1/game-candidates`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        ingestion_run_id: run.id,
+        supported_game: "one-piece",
+        expected_game_revision_id: "catrev_spine_000",
+        idempotency_key: `${key}-candidate`,
+      }),
+    });
+    assert.equal(prepared.status, 201, await prepared.clone().text());
+    return run;
   };
 
   const proposalPath = join(directory, "proposal.json");
@@ -137,44 +181,16 @@ test("owner CLI admission remains administrative until publication and serves or
   assert.equal(admitted.status, "admitted");
   assert.equal((await cli(["entity-proposal", "inspect", "--proposal-id", proposed.id])).history.length, 3);
   assert.equal((await cli(["entity-proposal", "list", "--game", "one-piece"])).proposals[0].id, proposed.id);
-  const run = await cli([
-    "source",
-    "collect",
-    "--game",
-    "one-piece",
-    "--lineage",
+  const run = await collectNativeSource(
     "one-piece-en",
-    "--adapter",
     "fixture-one-piece-json@3",
-    "--request-id",
-    "one-piece-en:discovery",
-    "--url",
     "https://shared-profile-source.invalid/nested",
-    "--idempotency-key",
     "collect",
-  ]);
-  const reconciliation = await fetch(`${ingestion.url}/v1/ingestion-runs/${run.id}/reconciliation`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-    body: JSON.stringify({ expected_current_revision_id: "catrev_spine_000", idempotency_key: "reconcile" }),
-  });
-  assert.ok(reconciliation.ok, await reconciliation.text());
-  await waitForRunState(run.id, "awaiting_approval", environment, ingestion);
-  const candidate = await cli(["candidate", "inspect", "--run-id", run.id]);
-  assert.ok(candidate.diff.warnings.some((warning) => warning.code === "entity_admission"));
-  const approved = await cli([
-    "run",
-    "approve",
-    "--run-id",
-    run.id,
-    "--candidate-digest",
-    candidate.candidate_digest,
-    "--expected-current-revision",
-    "catrev_spine_000",
-    "--idempotency-key",
-    "approve",
-    "--yes",
-  ]);
+  );
+  await waitForNativeCollection(run.id, "sealed", environment, ingestion);
+  const candidate = await inspectNativeCollection(run.id, environment);
+  assert.ok(candidate.warnings.some((warning) => warning.code === "entity_admission"));
+  const approved = await publishNativeCollection(candidate, "approve-admitted", environment, ingestion);
   assert.ok(approved.resulting_revision_id);
   await stopWorker(ingestion);
   api = await startWorker({ config: "apps/api/wrangler.jsonc", envFile: apiEnv, statePath });

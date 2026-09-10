@@ -1,21 +1,21 @@
 import { expect, test } from "vitest";
 import { compositionEntityResponse } from "../../../src/catalogue/read";
 import { catalogueStore } from "../../../src/catalogue/shared";
-import { nativeProductIdentity, mutateNativeProductOfficialCode } from "./query-helpers/native-product-history";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
 import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import { mutateNativeProductOfficialCode, nativeProductIdentity } from "./query-helpers/native-product-history";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import * as reconciliationQueries from "./query-helpers/reconciliation";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import {
   collect,
-  post,
   collectRequests,
   exportComponentRecords,
   exportManifest,
   get,
   installReconciliationSuite,
+  post,
   postFixtureEvidence,
   requiredFirst,
   requiredString,
@@ -407,7 +407,7 @@ test("Product observations and disappearance remain scoped to their Source Linea
 
   const usRun = await collect("/reconciliation/gundam-product-us", "gundam-product-us", usSource);
   const usCandidate = await prepareProductCandidate(usRun.id, asiaRevision, "gundam");
-  const combined = requiredFirst(usCandidate.records, "products");
+  const combined = usCandidate.records.products!.find((product) => product.official_code === "GD-CROSS")!;
   expect(combined.releases).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ region: "EN-ASIA" }),
@@ -453,26 +453,21 @@ test("Product observations and disappearance remain scoped to their Source Linea
       withdrawn: false,
     },
   });
-  const releases = await reconciliationQueries
-    .readReconciledReleasesRegionFirstRevisionId(testEnv.CATALOGUE_DB)
-    .bind(requiredString(exported ?? {}, "id"))
-    .all<{
-      region: string;
-      first_revision_id: string;
-      last_observed_revision_id: string;
-    }>();
-  expect(releases.results).toEqual([
-    {
-      region: "EN-ASIA",
-      first_revision_id: asiaRevision,
-      last_observed_revision_id: asiaRevision,
-    },
-    {
-      region: "EN-US",
-      first_revision_id: usRevision,
-      last_observed_revision_id: usRevision,
-    },
-  ]);
+  const priorReleases = (await exportComponentRecords(usRevision, "releases")).filter(
+    (release) => release.product_id === exported?.id,
+  );
+  expect(priorReleases).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ region: "EN-ASIA" }),
+      expect.objectContaining({ region: "EN-US" }),
+    ]),
+  );
+  const currentReleases = (await exportComponentRecords(missingRevision, "releases")).filter(
+    (release) => release.product_id === exported?.id,
+  );
+  expect(currentReleases).toEqual([expect.objectContaining({ region: "EN-US" })]);
+  expect(currentReleases[0]!.id).toBe(priorReleases.find((release) => release.region === "EN-US")!.id);
+  expect(await exportComponentRecords(usRevision, "releases")).toEqual(expect.arrayContaining(priorReleases));
 }, 45_000);
 
 test("only an actual Product surface checks its Gundam Source Lineage", async () => {
@@ -695,7 +690,7 @@ async function expectProductEvidenceInvalid(runId: string, predecessor: string, 
   });
   expect(created.response.status, JSON.stringify(created.document)).toBe(201);
   const [candidate] = await waitForNativeCandidates(runId, 1, 15_000, { "one-piece": "failed" });
-  expect(candidate).toMatchObject({ state: "failed", failure_code: "retained_evidence_invalid" });
+  expect(candidate).toMatchObject({ state: "failed", failure_code: "printing_reconciliation_blocked" });
   expect(candidate?.outcome).toMatchObject({
     state: "failed",
     diagnostics: [

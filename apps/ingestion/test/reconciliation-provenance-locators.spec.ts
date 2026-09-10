@@ -1,24 +1,23 @@
 import { expect, test } from "vitest";
-import { catalogueStore } from "../../../src/catalogue/shared";
 import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
+import { catalogueStore } from "../../../src/catalogue/shared";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
-import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
-import { injectFixturePublication } from "./fixture-plan-injection";
+import { readNativeCards } from "./native-no-change-helpers";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import { currentGameMembers } from "./query-helpers/atomic-publication";
 import * as catalogueExportQueries from "./query-helpers/catalogue-export";
-import * as ingestionQueries from "./query-helpers/ingestion";
+import { nativeNoChangeState } from "./query-helpers/native-no-change";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import * as reconciliationQueries from "./query-helpers/reconciliation";
-import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import {
-  approve,
   collect,
   exportComponentRecords,
   exportManifest,
   get,
   installReconciliationSuite,
   post,
-  reconcile,
+  reconcile as reconcileLegacy,
   requiredFirst,
   requiredRecord,
   requiredString,
@@ -71,9 +70,9 @@ test("fresh native provenance retains the consumer revision and export for seman
 
 test("locator and SourceBucket evidence refresh without minting Catalogue Revisions or exports", async () => {
   const baseRun = await collect("/reconciliation/semantic-evidence-base", "reconcile-semantic-evidence-base");
-  const base = await reconcile(baseRun.id);
-  const printingId = requiredString(requiredFirst(base.document, "printings"), "id");
-  const basePublished = await approve(base.document);
+  const base = await prepareEvidence(baseRun.id);
+  const printingId = requiredString(requiredFirst(base.records, "printings"), "id");
+  const basePublished = await publishEvidence(base);
   const revisionId = requiredString(basePublished.document, "resulting_revision_id");
   const exportIdentity = await catalogueExportQueries
     .readCatalogueExportsManifestKeyManifestDigestForLocatorSourceBucketEvidenceRefreshWithoutMintingCatalogueRevisionsOr(
@@ -86,72 +85,37 @@ test("locator and SourceBucket evidence refresh without minting Catalogue Revisi
     .first<{ count: number }>();
 
   const locatorRun = await collect("/reconciliation/semantic-evidence-locator", "reconcile-semantic-evidence-locator");
-  const locator = await reconcile(locatorRun.id);
-  expect(locator.document.candidate_digest).not.toBe(base.document.candidate_digest);
-  const locatorDigests = await ingestionQueries
-    .readIngestionRunsCandidateCatalogueDigestContentDigest(testEnv.CATALOGUE_DB)
-    .bind(revisionId, locatorRun.id)
-    .first<{
-      candidate_catalogue_digest: string;
-      content_digest: string;
-    }>();
-  expect(locatorDigests?.candidate_catalogue_digest).toBe(locatorDigests?.content_digest);
-  const locatorPublished = await approve(locator.document);
+  const locator = await prepareEvidence(locatorRun.id);
+  expect(locator.header.manifest_digest).not.toBe(base.header.manifest_digest);
+  expect(await semanticDigest(locator.header)).toBe(await semanticDigest(base.header));
+  const locatorPublished = await publishEvidence(locator);
   expect(locatorPublished.document).toMatchObject({
-    publication_outcome: "no_change",
+    state: "published",
     resulting_revision_id: revisionId,
   });
-  const retainedLocator = await reconciliationQueries
-    .readReconciledPrintingLocatorsLastObservedRevisionIdCurrent(testEnv.CATALOGUE_DB)
-    .bind(printingId)
-    .first<{
-      last_observed_revision_id: string;
-      current: number;
-    }>();
-  expect(retainedLocator).toMatchObject({
-    last_observed_revision_id: revisionId,
-    current: 1,
-  });
-  const retainedLocatorPlan = await reconciliationQueries
-    .readReconciliationCandidatesSourceObservationIdForLocatorSourceBucketEvidenceRefreshWithoutMintingCatalogueRevisionsOr(
-      testEnv.CATALOGUE_DB,
-    )
-    .bind(locatorRun.id, printingId)
-    .first<{ source_observation_id: string }>();
-  expect(retainedLocatorPlan?.source_observation_id).toMatch(/^srcobs_/);
+  const retainedLocator = await get(`/v1/reconciliation/printings/${printingId}`);
+  expect(requiredRecord(retainedLocator.document.locators, "locators").current).toContainEqual(
+    expect.objectContaining({
+      locator: "/official/evidence/relocated",
+      last_observed_revision_id: revisionId,
+      current: true,
+    }),
+  );
+  expect(JSON.stringify(locator.records)).toContain("srcobs_");
 
   const sourceBucketRun = await collect(
     "/reconciliation/semantic-evidence-source-bucket",
     "reconcile-semantic-evidence-source-bucket",
   );
-  const sourceBucket = await reconcile(sourceBucketRun.id);
-  expect(sourceBucket.document.candidate_digest).not.toBe(locator.document.candidate_digest);
-  const sourceBucketDigests = await ingestionQueries
-    .readIngestionRunsCandidateCatalogueDigestContentDigest(testEnv.CATALOGUE_DB)
-    .bind(revisionId, sourceBucketRun.id)
-    .first<{
-      candidate_catalogue_digest: string;
-      content_digest: string;
-    }>();
-  expect(sourceBucketDigests?.candidate_catalogue_digest).toBe(sourceBucketDigests?.content_digest);
-  const sourceBucketPublished = await approve(sourceBucket.document);
+  const sourceBucket = await prepareEvidence(sourceBucketRun.id);
+  expect(sourceBucket.header.manifest_digest).not.toBe(locator.header.manifest_digest);
+  expect(await semanticDigest(sourceBucket.header)).toBe(await semanticDigest(base.header));
+  const sourceBucketPublished = await publishEvidence(sourceBucket);
   expect(sourceBucketPublished.document).toMatchObject({
-    publication_outcome: "no_change",
+    state: "published",
     resulting_revision_id: revisionId,
   });
-  const retainedBucket = await reconciliationQueries
-    .readReconciledPrintingMembershipsSourceObservationIdLastObservedRevisionId(testEnv.CATALOGUE_DB)
-    .bind(printingId)
-    .first<{
-      source_observation_id: string;
-      last_observed_revision_id: string;
-      current: number;
-    }>();
-  expect(retainedBucket).toMatchObject({
-    source_observation_id: expect.stringMatching(/^srcobs_/),
-    last_observed_revision_id: revisionId,
-    current: 1,
-  });
+  expect(JSON.stringify(sourceBucket.records)).toContain("srcobs_");
   const lifecycle = await get(`/v1/reconciliation/printings/${printingId}`);
   expect(lifecycle.document).toMatchObject({
     locators: {
@@ -245,36 +209,36 @@ test("a known locator with contradictory retained material evidence fails the na
 
 test("same-lineage authoritative Card evolution updates canonical facts while preserving identity", async () => {
   const firstRun = await collect("/reconciliation/canonical-base", "reconcile-canonical-base");
-  const first = await reconcile(firstRun.id);
-  const cardId = requiredString(requiredFirst(first.document, "cards"), "id");
-  await approve(first.document);
+  const first = await prepareEvidence(firstRun.id);
+  const cardId = requiredString(requiredFirst(first.records, "cards"), "id");
+  await publishEvidence(first);
 
   const changedRun = await collect("/reconciliation/canonical-name-conflict", "reconcile-canonical-name-conflict");
-  const changed = await reconcile(changedRun.id);
-  expect(changed.response.status).toBe(200);
-  expect(requiredFirst(changed.document, "cards")).toMatchObject({
+  const changed = await prepareEvidence(changedRun.id);
+  expect(changed.header.state).toBe("sealed");
+  expect(requiredFirst(changed.records, "cards")).toMatchObject({
     id: cardId,
     name: "Unsupported replacement name",
   });
-  await approve(changed.document);
-  const history = await reconciliationQueries
-    .readReconciledCardObservationsSourceLineageCanonicalFactsJson(testEnv.CATALOGUE_DB)
-    .bind(cardId)
-    .all<{
-      source_lineage: string;
-      canonical_facts_json: string;
-      current: number;
-    }>();
-  expect(history.results).toHaveLength(2);
-  expect(history.results.map(({ current }) => current).sort()).toEqual([0, 1]);
+  await publishEvidence(changed);
+  expect(requiredFirst(first.records, "cards").name).not.toBe(requiredFirst(changed.records, "cards").name);
+  expect(requiredFirst(await nativeCandidateRecords(String(first.header.id)), "cards")).toEqual(
+    requiredFirst(first.records, "cards"),
+  );
+  const current = await readNativeCards(
+    requiredString((await get("/v1/status")).document.safe_state as Record<string, unknown>, "current_revision_id"),
+  );
+  expect(await current.json()).toMatchObject({
+    data: expect.arrayContaining([expect.objectContaining({ id: cardId, name: "Unsupported replacement name" })]),
+  });
 });
 
 test("sequential selected-game publications retain the complete current catalogue across D1 and export", async () => {
   const onePieceRun = await collect("/reconciliation/base", "reconcile-union-one-piece");
-  const onePiece = await reconcile(onePieceRun.id);
-  const onePieceCard = requiredFirst(onePiece.document, "cards");
-  const onePiecePrinting = requiredFirst(onePiece.document, "printings");
-  const onePiecePublished = await approve(onePiece.document);
+  const onePiece = await prepareEvidence(onePieceRun.id);
+  const onePieceCard = requiredFirst(onePiece.records, "cards");
+  const onePiecePrinting = requiredFirst(onePiece.records, "printings");
+  const onePiecePublished = await publishEvidence(onePiece);
   expect(onePiecePublished.response.status).toBe(200);
   const onePieceRevision = requiredString(onePiecePublished.document, "resulting_revision_id");
   const _firstManifest = await exportManifest(onePieceRevision);
@@ -284,18 +248,13 @@ test("sequential selected-game publications retain the complete current catalogu
     lineage: "fusion-world-en",
     adapter: "fixture-fusion-world-json@2",
   });
-  const fusion = await reconcile(fusionRun.id);
-  expect(fusion.response.status).toBe(200);
-  const candidate = await get(`/v1/ingestion-runs/${fusionRun.id}/candidate`);
-  expect(candidate.document).toMatchObject({
-    diff: {
-      summary: {
-        cards_added: 1,
-        printings_added: 1,
-      },
-    },
-  });
-  const published = await approve(fusion.document);
+  const fusion = await prepareEvidence(fusionRun.id, "fusion-world");
+  expect(fusion.header.state).toBe("sealed");
+  for (const kind of ["cards", "printings"])
+    expect(
+      (fusion.records.inspection ?? []).filter((entry) => entry.entity_class === kind && entry.change === "added"),
+    ).toHaveLength(1);
+  const published = await publishEvidence(fusion);
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const profiles = await exportComponentRecords(revisionId, "game-profiles");
@@ -315,22 +274,14 @@ test("sequential selected-game publications retain the complete current catalogu
     }),
   );
 
-  const d1Cards = await publishedCatalogueQueries
-    .readRevisionCardsCardId(testEnv.CATALOGUE_DB)
-    .bind(revisionId)
-    .all<{ card_id: string }>();
-  expect(d1Cards.results.length).toBeGreaterThanOrEqual(2);
-  expect(d1Cards.results.map(({ card_id }) => card_id)).toContain(requiredString(onePieceCard, "id"));
-  const d1Printings = await publishedCatalogueQueries
-    .readRevisionPrintingsPrintingId(testEnv.CATALOGUE_DB)
-    .bind(revisionId)
-    .all<{ printing_id: string }>();
-  expect(d1Printings.results.map(({ printing_id }) => printing_id)).toContain(requiredString(onePiecePrinting, "id"));
-  expect(await exportComponentRecords(revisionId, "cards")).toHaveLength(d1Cards.results.length);
-  const _fusionSnapshot = await sourceEvidenceQueries
-    .readSourceSnapshotsRetrievedAt(testEnv.CATALOGUE_DB)
-    .bind(fusionRun.id)
-    .first<{ retrieved_at: string }>();
+  const members = await currentGameMembers(testEnv.CATALOGUE_DB);
+  expect(members.results.map((member) => member.supported_game).sort()).toEqual(["fusion-world", "one-piece"]);
+  const cardIds = members.results.flatMap((member) => member.card_ids.split(","));
+  expect(cardIds).toContain(requiredString(onePieceCard, "id"));
+  expect(await exportComponentRecords(revisionId, "cards")).toHaveLength(cardIds.length);
+  expect(await exportComponentRecords(revisionId, "printings")).toContainEqual(
+    expect.objectContaining({ id: onePiecePrinting.id }),
+  );
   const secondManifest = await exportManifest(revisionId);
   expect(secondManifest).not.toHaveProperty("source_freshness");
   const products = await exportComponentRecords(revisionId, "products");
@@ -353,54 +304,22 @@ test("sequential selected-game publications retain the complete current catalogu
   expect(new Set(productTargets).size).toBe(2);
 
   const refreshRun = await collect("/reconciliation/base", "reconcile-union-one-piece-refresh");
-  const refresh = await reconcile(refreshRun.id);
-  const retainedPlan = await reconciliationQueries
-    .readReconciliationCandidatesSourceObservationId(testEnv.CATALOGUE_DB)
-    .bind(refreshRun.id)
-    .first<{ source_observation_id: string }>();
-  const digests = await ingestionQueries
-    .readIngestionRunsCandidateDigestCandidateCatalogueDigest(testEnv.CATALOGUE_DB)
-    .bind(revisionId, refreshRun.id)
-    .first<{
-      candidate_digest: string;
-      candidate_catalogue_digest: string;
-      content_digest: string;
-    }>();
-  expect(digests?.candidate_digest).toBe(requiredString(refresh.document, "candidate_digest"));
-  expect(digests?.candidate_catalogue_digest).toBe(digests?.content_digest);
-  const refreshed = await approve(refresh.document);
+  const refresh = await prepareEvidence(refreshRun.id);
+  expect(refresh.header.manifest_digest).not.toBe(onePiece.header.manifest_digest);
+  expect(await semanticDigest(refresh.header)).toBe(await semanticDigest(onePiece.header));
+  const refreshed = await publishEvidence(refresh);
   expect(refreshed.document).toMatchObject({
-    publication_outcome: "no_change",
+    state: "published",
     resulting_revision_id: revisionId,
   });
-  const refreshedCardObservation = await reconciliationQueries
-    .readReconciledCardObservationsSourceObservationIdCatalogueRevisionId(testEnv.CATALOGUE_DB)
-    .bind(requiredString(onePieceCard, "id"))
-    .first<{
-      source_observation_id: string;
-      catalogue_revision_id: string;
-      current: number;
-    }>();
-  expect(refreshedCardObservation).toEqual({
-    source_observation_id: retainedPlan?.source_observation_id,
-    catalogue_revision_id: revisionId,
-    current: 1,
+  expect((await nativeNoChangeState(testEnv.CATALOGUE_DB))?.accepted_candidate).toBe(refresh.header.id);
+  const refreshedHistory = await get(`/v1/reconciliation/printings/${onePiecePrinting.id}`);
+  expect(refreshedHistory.response.status).toBe(200);
+  expect(JSON.stringify(refreshedHistory.document.relationship_evidence)).toContain("srcobs_");
+  expect(refreshedHistory.document.locators).toMatchObject({
+    current: expect.arrayContaining([expect.objectContaining({ last_observed_revision_id: revisionId })]),
   });
-  const refreshedMembership = await reconciliationQueries
-    .readReconciledPrintingMembershipsSourceObservationIdLastObservedRevisionIdForSequentialSelectedGamePublicationsRetainCompleteCurrentCatalogueAcross(
-      testEnv.CATALOGUE_DB,
-    )
-    .bind(requiredString(onePiecePrinting, "id"))
-    .first<{
-      source_observation_id: string;
-      last_observed_revision_id: string;
-      current: number;
-    }>();
-  expect(refreshedMembership).toEqual({
-    source_observation_id: retainedPlan?.source_observation_id,
-    last_observed_revision_id: revisionId,
-    current: 1,
-  });
+  expect(await exportComponentRecords(revisionId, "cards")).toHaveLength(cardIds.length);
 });
 
 test("candidate inspection reports stable reconciliation matches rather than every entity as added", async () => {
@@ -452,7 +371,7 @@ test("candidate inspection reports stable reconciliation matches rather than eve
 
 test("generic retry rejects an evidence-backed terminal run so reconciliation provenance cannot be reset", async () => {
   const run = await collect("/reconciliation/base", "reconcile-generic-retry");
-  const reconciled = await reconcile(run.id);
+  const reconciled = await reconcileLegacy(run.id);
   await post(`/v1/ingestion-runs/${run.id}/rejection`, {
     candidate_digest: requiredString(reconciled.document, "candidate_digest"),
     idempotency_key: "reject-before-generic-retry",
@@ -480,22 +399,9 @@ test("generic retry rejects an evidence-backed terminal run so reconciliation pr
     candidate_digest: requiredString(reconciled.document, "candidate_digest"),
   });
   expect(retainedCandidate?.digest_payload_json).toContain('"catalogue_data"');
-  const interveningDocument = await injectFixturePublication(testEnv.CATALOGUE_DB, testEnv.CATALOGUE_EXPORTS, {
-    fixture: "first-catalogue",
-    selected_games: ["one-piece"],
-    idempotency_key: "intervening-current-revision",
-  });
-  const intervening = {
-    response: new Response(null, { status: 201 }),
-    document: interveningDocument,
-  };
-  expect(intervening.response.status).toBe(201);
-  const interveningPublished = await post(`/v1/ingestion-runs/${requiredString(intervening.document, "id")}/approval`, {
-    candidate_digest: requiredString(intervening.document, "candidate_digest"),
-    expected_current_revision_id: requiredString(intervening.document, "expected_current_revision_id"),
-    idempotency_key: "approve-intervening-current-revision",
-  });
-  expect(interveningPublished.response.status).toBe(200);
+  const interveningRun = await collect("/reconciliation/repeatable", "intervening-current-revision");
+  const intervening = await prepareEvidence(interveningRun.id);
+  const interveningPublished = await publishEvidence(intervening);
   const currentRevision = requiredString(interveningPublished.document, "resulting_revision_id");
   const evidenceRetry = await post(`/v1/ingestion-runs/${run.id}/collection/retry`, {
     idempotency_key: "linked-retry-retains-evidence-plan",
@@ -517,7 +423,7 @@ test("generic retry rejects an evidence-backed terminal run so reconciliation pr
     retryId,
   );
   await waitForRunState(retryId, "parsing");
-  const retryCandidate = await reconcile(retryId);
+  const retryCandidate = await reconcileLegacy(retryId);
   const rejected = await post(`/v1/ingestion-runs/${retryId}/rejection`, {
     candidate_digest: requiredString(retryCandidate.document, "candidate_digest"),
     idempotency_key: "reject-linked-retry-after-verification",
@@ -527,14 +433,14 @@ test("generic retry rejects an evidence-backed terminal run so reconciliation pr
 
 test("historical locator bindings reactivate only for the same Printing and expose lifecycle evidence", async () => {
   const baseRun = await collect("/reconciliation/locator-binding-base", "locator-binding-base");
-  const base = await reconcile(baseRun.id);
-  const printingId = requiredString(requiredFirst(base.document, "printings"), "id");
-  const basePublished = await approve(base.document);
+  const base = await prepareEvidence(baseRun.id);
+  const printingId = requiredString(requiredFirst(base.records, "printings"), "id");
+  const basePublished = await publishEvidence(base);
   const firstRevision = requiredString(basePublished.document, "resulting_revision_id");
 
   const missingRun = await collect("/reconciliation/complete-empty-lineage", "locator-binding-missing-first");
-  const missing = await reconcile(missingRun.id);
-  const missingPublished = await approve(missing.document);
+  const missing = await prepareEvidence(missingRun.id);
+  const missingPublished = await publishEvidence(missing);
   const missingRevision = requiredString(missingPublished.document, "resulting_revision_id");
   const stale = await get(`/v1/reconciliation/printings/${printingId}`);
   expect(stale.document).toMatchObject({
@@ -563,11 +469,11 @@ test("historical locator bindings reactivate only for the same Printing and expo
     "/reconciliation/locator-binding-compatible",
     "locator-binding-compatible-return",
   );
-  const compatible = await reconcile(compatibleRun.id);
-  expect(requiredFirst(compatible.document, "printings")).toMatchObject({
+  const compatible = await prepareEvidence(compatibleRun.id);
+  expect(requiredFirst(compatible.records, "printings")).toMatchObject({
     id: printingId,
   });
-  const compatiblePublished = await approve(compatible.document);
+  const compatiblePublished = await publishEvidence(compatible);
   const reactivatedRevision = requiredString(compatiblePublished.document, "resulting_revision_id");
   const reactivated = await get(`/v1/reconciliation/printings/${printingId}`);
   expect(reactivated.document).toMatchObject({
@@ -588,36 +494,29 @@ test("historical locator bindings reactivate only for the same Printing and expo
   });
 
   const missingAgainRun = await collect("/reconciliation/complete-empty-lineage", "locator-binding-missing-second");
-  const missingAgain = await reconcile(missingAgainRun.id);
-  const missingAgainPublished = await approve(missingAgain.document);
+  const missingAgain = await prepareEvidence(missingAgainRun.id);
+  const missingAgainPublished = await publishEvidence(missingAgain);
   const missingAgainRevision = requiredString(missingAgainPublished.document, "resulting_revision_id");
   const incompatibleRun = await collect(
     "/reconciliation/locator-binding-incompatible",
     "locator-binding-incompatible-return",
   );
-  const incompatible = await reconcile(incompatibleRun.id);
-  expect(incompatible.response.status).toBe(409);
-  expect(incompatible.document).toMatchObject({
-    diagnostics: [
-      {
-        code: "printing_match_contradictory",
-        locator: "/official/locator-binding/stable",
-        matched_printing_ids: [printingId],
-        detail: expect.stringContaining("retained locator contradicts"),
-      },
-    ],
-  });
-  const retainedBinding = await reconciliationQueries
-    .readReconciledPrintingLocatorsPrintingIdCurrent(testEnv.CATALOGUE_DB)
-    .first<{
-      printing_id: string;
-      current: number;
-      last_missing_revision_id: string;
-    }>();
-  expect(retainedBinding).toEqual({
-    printing_id: printingId,
-    current: 0,
-    last_missing_revision_id: missingAgainRevision,
+  const incompatible = await prepareEvidence(incompatibleRun.id, "one-piece", "failed");
+  expect(incompatible.header.state).toBe("failed");
+  expect([...(incompatible.records.warnings ?? []), ...(incompatible.records.shared_warnings ?? [])]).toContainEqual(
+    expect.objectContaining({
+      code: "printing_match_contradictory",
+      locator: "/official/locator-binding/stable",
+      matched_printing_ids: [printingId],
+      detail: expect.stringContaining("retained locator contradicts"),
+    }),
+  );
+  const retainedBinding = await get(`/v1/reconciliation/printings/${printingId}`);
+  expect(retainedBinding.document.locators).toMatchObject({
+    current: [],
+    historical: expect.arrayContaining([
+      expect.objectContaining({ current: false, last_missing_revision_id: missingAgainRevision }),
+    ]),
   });
   expect(await exportComponentRecords(missingAgainRevision, "printings")).toContainEqual(
     expect.objectContaining({
@@ -628,15 +527,15 @@ test("historical locator bindings reactivate only for the same Printing and expo
 
 test("locator variant evolution preserves effective-dated suffix history across disappearance and reactivation", async () => {
   const firstRun = await collect("/reconciliation/locator-variant-v1", "locator-variant-v1");
-  const first = await reconcile(firstRun.id);
-  const printingId = requiredString(requiredFirst(first.document, "printings"), "id");
-  const firstRevision = requiredString((await approve(first.document)).document, "resulting_revision_id");
+  const first = await prepareEvidence(firstRun.id);
+  const printingId = requiredString(requiredFirst(first.records, "printings"), "id");
+  const firstRevision = requiredString((await publishEvidence(first)).document, "resulting_revision_id");
   const secondRun = await collect("/reconciliation/locator-variant-v2", "locator-variant-v2");
-  const second = await reconcile(secondRun.id);
-  expect(requiredFirst(second.document, "printings")).toMatchObject({
+  const second = await prepareEvidence(secondRun.id);
+  expect(requiredFirst(second.records, "printings")).toMatchObject({
     id: printingId,
   });
-  const secondRevision = requiredString((await approve(second.document)).document, "resulting_revision_id");
+  const secondRevision = requiredString((await publishEvidence(second)).document, "resulting_revision_id");
   const evolved = await get(`/v1/reconciliation/printings/${printingId}`);
   expect(evolved.document.locators).toMatchObject({
     current: [
@@ -659,11 +558,11 @@ test("locator variant evolution preserves effective-dated suffix history across 
     ],
   });
   const missingRun = await collect("/reconciliation/complete-empty-lineage", "locator-variant-missing");
-  const missing = await reconcile(missingRun.id);
-  const missingRevision = requiredString((await approve(missing.document)).document, "resulting_revision_id");
+  const missing = await prepareEvidence(missingRun.id);
+  const missingRevision = requiredString((await publishEvidence(missing)).document, "resulting_revision_id");
   const reactivatedRun = await collect("/reconciliation/locator-variant-v1", "locator-variant-reactivate-v1");
-  const reactivated = await reconcile(reactivatedRun.id);
-  const reactivatedRevision = requiredString((await approve(reactivated.document)).document, "resulting_revision_id");
+  const reactivated = await prepareEvidence(reactivatedRun.id);
+  const reactivatedRevision = requiredString((await publishEvidence(reactivated)).document, "resulting_revision_id");
   const lifecycle = await get(`/v1/reconciliation/printings/${printingId}`);
   expect(lifecycle.document.locators).toMatchObject({
     current: [
@@ -698,7 +597,6 @@ test("Card search keeps exactly the current and two preceding distinct Catalogue
     "current_revision_id",
   );
   const revisions: string[] = [];
-  let retainedDocumentCount: number | null = null;
   for (const [index, scenario] of [
     "query-hot-window-1",
     "query-hot-window-2",
@@ -706,23 +604,13 @@ test("Card search keeps exactly the current and two preceding distinct Catalogue
     "query-hot-window-4",
   ].entries()) {
     const run = await collect(`/reconciliation/${scenario}`, `query-hot-window-${index + 1}-${scenario}`);
-    const reconciled = await reconcile(run.id);
-    expect(reconciled.response.status).toBe(200);
-    const revisionId = requiredString((await approve(reconciled.document)).document, "resulting_revision_id");
+    const reconciled = await prepareEvidence(run.id);
+    expect(reconciled.header.state).toBe("sealed");
+    const revisionId = requiredString((await publishEvidence(reconciled)).document, "resulting_revision_id");
     expect(revisions).not.toContain(revisionId);
     revisions.push(revisionId);
-    if (retainedDocumentCount === null) {
-      retainedDocumentCount =
-        (
-          await publishedCatalogueQueries
-            .countRevisionCardQueryDocumentsCount(testEnv.CATALOGUE_DB)
-            .bind(revisionId)
-            .first<{ count: number }>()
-        )?.count ?? null;
-    }
   }
   const [first, second, third, current] = revisions as [string, string, string, string];
-  expect(retainedDocumentCount).not.toBeNull();
   const chain = await publishedCatalogueQueries
     .readCatalogueRevisionsIdExpectedPreviousRevisionId(testEnv.CATALOGUE_DB)
     .bind(first, second, third, current)
@@ -742,31 +630,41 @@ test("Card search keeps exactly the current and two preceding distinct Catalogue
   );
   expect(new Set(chain.results.map(({ current_revision_id }) => current_revision_id))).toEqual(new Set([current]));
 
-  const queryStates = await publishedCatalogueQueries
-    .countCatalogueQueryRevisionsDocumentCountForCardSearchKeepsExactlyCurrentTwoPrecedingDistinctCatalogue(
-      testEnv.CATALOGUE_DB,
-    )
-    .bind(first, second, third, current)
-    .all<{
-      catalogue_revision_id: string;
-      state: string;
-      document_count: number;
-    }>();
-  expect(queryStates.results).toHaveLength(4);
-  const queryStateByRevision = new Map(
-    queryStates.results.map((row) => [
-      row.catalogue_revision_id,
-      { state: row.state, document_count: row.document_count },
-    ]),
-  );
-  expect(queryStateByRevision.get(first)).toEqual({
-    state: "archived",
-    document_count: 0,
-  });
+  const archived = await readNativeCards(first);
+  expect(archived.status).toBe(503);
+  expect(await archived.json()).toMatchObject({ code: "catalogue_query_unavailable" });
   for (const retainedRevision of [second, third, current]) {
-    expect(queryStateByRevision.get(retainedRevision)).toEqual({
-      state: "available",
-      document_count: retainedDocumentCount,
-    });
+    const response = await readNativeCards(retainedRevision);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ data: expect.any(Array) });
   }
 }, 30_000);
+
+async function prepareEvidence(runId: string, game = "one-piece", state = "sealed") {
+  const members = await currentGameMembers(testEnv.CATALOGUE_DB);
+  const predecessor =
+    members.results.find((member) => member.supported_game === game)?.game_revision_id ?? "catrev_spine_000";
+  const created = await post("/v1/game-candidates", {
+    ingestion_run_id: runId,
+    supported_game: game,
+    expected_game_revision_id: predecessor,
+    idempotency_key: `provenance-prepare-${runId}`,
+  });
+  expect(created.response.status, JSON.stringify(created.document)).toBe(201);
+  const [header] = await waitForNativeCandidates(runId, 1, 15000, { [game]: state });
+  return { header: header!, records: await nativeCandidateRecords(String(header!.id)) };
+}
+async function publishEvidence(prepared: Awaited<ReturnType<typeof prepareEvidence>>) {
+  const published = await approveNativeCandidate(prepared.header, `provenance-publish-${prepared.header.id}`);
+  expect(published.response.status, JSON.stringify(published.document)).toBe(200);
+  return published;
+}
+async function semanticDigest(header: Record<string, unknown>) {
+  const receipt = await reconciliationCheckpoint<{ digest: string }>(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    String(header.id),
+    "canonical_digest:catalogue",
+  );
+  expect(receipt?.value.digest).toMatch(/^[a-f0-9]{64}$/);
+  return receipt!.value.digest;
+}

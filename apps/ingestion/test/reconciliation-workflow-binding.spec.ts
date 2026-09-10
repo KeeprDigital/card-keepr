@@ -19,7 +19,6 @@ import * as ingestionQueries from "./query-helpers/ingestion";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import * as reconciliationQueries from "./query-helpers/reconciliation";
 import {
-  approve,
   collect,
   collectRequests,
   exportComponentRecords,
@@ -691,7 +690,7 @@ test("an empty retained historical revision has an available projection and conc
   const reconciled = await reconcile(run.id);
   expect(reconciled.response.status).toBe(200);
   expect(reconciled.document.cards).toEqual([]);
-  const published = await recoverHistoricalPublication(run.id, "historical-empty-query-revision");
+  const published = await recoverHistoricalPublication(run.id, "historical-empty-query-revision", "empty-historical");
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
   await expect(
@@ -730,7 +729,7 @@ test("an empty retained historical revision has an available projection and conc
   ).resolves.toMatchObject({ state: "available" });
 });
 
-test("retained immutable evidence publishes stable identities and warns when earlier membership disappears", async () => {
+test("retained historical materialization preserves identities, membership warnings and legacy read envelopes", async () => {
   const firstRun = await collect("/reconciliation/base", "reconcile-base");
   const first = await reconcile(firstRun.id);
   expect(first.response.status).toBe(200);
@@ -744,7 +743,7 @@ test("retained immutable evidence publishes stable identities and warns when ear
   const firstPrinting = requiredFirst(first.document, "printings");
   expect(firstCard.id).toMatch(/^card_[a-f0-9]{32}$/);
   expect(firstPrinting.id).toMatch(/^printing_[a-f0-9]{32}$/);
-  const firstPublished = await approve(first.document);
+  const firstPublished = await recoverHistoricalPublication(firstRun.id, "historical-membership-first");
   expect(firstPublished.response.status).toBe(200);
   const firstRevision = requiredString(firstPublished.document, "resulting_revision_id");
   expect(await exportComponentRecords(firstRevision, "relationships")).toContainEqual(
@@ -775,7 +774,7 @@ test("retained immutable evidence publishes stable identities and warns when ear
       },
     ],
   });
-  const secondPublished = await approve(second.document);
+  const secondPublished = await recoverHistoricalPublication(secondRun.id, "historical-membership-second");
   expect(secondPublished.response.status).toBe(200);
   const secondRevision = requiredString(secondPublished.document, "resulting_revision_id");
 
@@ -921,7 +920,7 @@ test("retained immutable evidence publishes stable identities and warns when ear
   const withdrawalRun = await collect("/reconciliation/withdrawn", "reconcile-withdrawn");
   const withdrawal = await reconcile(withdrawalRun.id);
   expect(withdrawal.response.status).toBe(200);
-  const withdrawalPublished = await approve(withdrawal.document);
+  const withdrawalPublished = await recoverHistoricalPublication(withdrawalRun.id, "historical-membership-withdrawal");
   const withdrawalRevision = requiredString(withdrawalPublished.document, "resulting_revision_id");
   const withdrawn = await get(`/v1/reconciliation/printings/${firstPrinting.id}`);
   expect(withdrawn.document).toMatchObject({
@@ -1132,7 +1131,7 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
 test("reserved recovery never adopts or cleans an existing published export prefix", async () => {
   const firstRun = await collect("/reconciliation/new-locator", "reservation-owner-existing-export");
   const firstReconciled = await reconcile(firstRun.id);
-  const firstPublished = await approve(firstReconciled.document);
+  const firstPublished = await recoverHistoricalPublication(firstRun.id, "historical-reservation-owner");
   expect(firstPublished.response.status).toBe(200);
   const existingRevision = requiredString(firstPublished.document, "resulting_revision_id");
   const existingManifest = requiredString(firstPublished.document, "export_manifest_digest");

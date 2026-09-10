@@ -167,6 +167,7 @@ type OfficialReductionCursor = {
   admissions: { cards: number; printings: number };
   cardCheckTimes: [SupportedGame, string][];
   productCheckTimes: [SupportedGame, string][];
+  errataCheckTimes?: [SupportedGame, string][];
   productGames: SupportedGame[];
   publishedCardGames?: SupportedGame[];
   after: ReconciliationInputRecordCursor | null;
@@ -178,6 +179,8 @@ type OfficialReductionCursor = {
   errataAfter?: ReconciliationInputRecordCursor | null;
   processedErrata?: number;
   errataComplete?: boolean;
+  errataChecksAfter?: ReconciliationInputRecordCursor | null;
+  errataChecksComplete?: boolean;
 };
 
 export async function reconcileRetainedCardPrintingEvidence(
@@ -479,13 +482,18 @@ export async function reconcileRetainedCardPrintingEvidence(
   const targetedPrintingIds = new ReconciliationReducerIndex<boolean>(database, runId, "erratum_target_printings");
   const cardCheckTimes = new Map<SupportedGame, string>(reduction?.value.cardCheckTimes);
   const productCheckTimes = new Map<SupportedGame, string>(reduction?.value.productCheckTimes);
+  const errataCheckTimes = new Map<SupportedGame, string>(reduction?.value.errataCheckTimes);
   const productGames = new Set<SupportedGame>(reduction?.value.productGames);
   const publishedCardGames = reduction ? (reduction.value.publishedCardGames ?? selectedGames) : [];
   if (!reduction) {
     // Pin only existence, including withdrawn identities. The preparation's
     // head fence prevents publication from changing this absence observation.
     for (const game of selectedGames)
-      if (await documentStorage(() => publishedCardPresentStatement(database, game).first()))
+      if (
+        await documentStorage(() =>
+          publishedCardPresentStatement(database, game, runId, run.expected_current_revision_id).first(),
+        )
+      )
         publishedCardGames.push(game);
   }
   type RetainedObservation = NormalizedReconciliationObservation;
@@ -526,7 +534,13 @@ export async function reconcileRetainedCardPrintingEvidence(
   const saveReduction = async (
     after: ReconciliationInputRecordCursor | null,
     complete: boolean,
-    errata?: { errataAfter: ReconciliationInputRecordCursor | null; processedErrata: number; errataComplete: boolean },
+    errata?: {
+      errataAfter: ReconciliationInputRecordCursor | null;
+      processedErrata: number;
+      errataComplete: boolean;
+      errataChecksAfter: ReconciliationInputRecordCursor | null;
+      errataChecksComplete: boolean;
+    },
   ) => {
     const phase = errata ? "official_errata" : "official_reduction";
     const mappings = await sourceMappings.checkpoint();
@@ -550,6 +564,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       admissions: admittedEntities.cursor,
       cardCheckTimes: [...cardCheckTimes],
       productCheckTimes: [...productCheckTimes],
+      errataCheckTimes: [...errataCheckTimes],
       productGames: [...productGames],
       publishedCardGames,
       after,
@@ -1513,12 +1528,47 @@ export async function reconcileRetainedCardPrintingEvidence(
     let scanned = 0;
     let reduced = 0;
     let bytes = 0;
+    let errataChecksAfter = errataReduction?.value.errataChecksAfter ?? null;
+    let errataChecksComplete = errataReduction?.value.errataChecksComplete ?? false;
     const saveErrata = (complete: boolean) =>
       saveReduction(reduction?.value.after ?? null, true, {
         errataAfter: after,
         processedErrata,
         errataComplete: complete,
+        errataChecksAfter,
+        errataChecksComplete,
       });
+    // A successful Errata surface check still counts when its retained record set is empty.
+    // Scan the frozen partition receipts through the same bounded durable phase.
+    if (!errataChecksComplete) {
+      let checked = 0,
+        checkedBytes = 0;
+      for await (const entry of verifiedReconciliationRecordEntries<{
+        supportedGame: SupportedGame;
+        capturedAt?: string;
+        reconciliationCapability?: string;
+      }>(database, runId, "partitions", errataChecksAfter)) {
+        if (checked > 0 && (checked === 8 || checkedBytes + entry.byteLength > 512000)) {
+          const next = await saveErrata(false);
+          if (yieldAtCheckpoint) return next;
+          checked = 0;
+          checkedBytes = 0;
+        }
+        const receipt = entry.value;
+        if (
+          receipt.reconciliationCapability === "errata" &&
+          receipt.capturedAt &&
+          (errataCheckTimes.get(receipt.supportedGame) ?? "") < receipt.capturedAt
+        )
+          errataCheckTimes.set(receipt.supportedGame, receipt.capturedAt);
+        checked++;
+        checkedBytes += entry.byteLength;
+        errataChecksAfter = entry.cursor;
+      }
+      errataChecksComplete = true;
+      const next = await saveErrata(false);
+      if (yieldAtCheckpoint) return next;
+    }
     if (dedicatedErrata > 0)
       for await (const entry of scannedReconciliationRecordEntries<
         Extract<RetainedObservation, { kind: "official_erratum" }>
@@ -1533,6 +1583,8 @@ export async function reconcileRetainedCardPrintingEvidence(
         const observation = entry.value;
         erratumUnit: {
           if (observation === null) break erratumUnit;
+          if ((errataCheckTimes.get(observation.supportedGame) ?? "") < observation.sourceCapturedAt)
+            errataCheckTimes.set(observation.supportedGame, observation.sourceCapturedAt);
           if (observation.target.type === "card" && !observation.appliesToParallelPrintings) {
             await diagnostics.push({
               code: "retained_evidence_invalid",
@@ -1802,6 +1854,9 @@ export async function reconcileRetainedCardPrintingEvidence(
           area: "products-and-releases" as const,
           checked_at,
         })),
+      ...[...errataCheckTimes]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([game, checked_at]) => ({ game, area: "errata" as const, checked_at })),
     ],
     errata: [],
   };
@@ -2395,9 +2450,10 @@ async function requiredActiveParsingRun(database: CatalogueStore, runId: string)
   }
   return row;
 }
-import { ReconciliationTextStorageError } from "./reconciliation-text";
+
 import { documentStorage, ReconciliationDocumentStorageError } from "./reconciliation-document";
 import { ReconciliationNormalizationStorageError } from "./reconciliation-normalized";
+import { ReconciliationTextStorageError } from "./reconciliation-text";
 
 function isStorageOrCapacityFailure(error: unknown): boolean {
   return (

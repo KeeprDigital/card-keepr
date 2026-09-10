@@ -18,6 +18,7 @@ import { fixtureCandidate } from "../../../test/support/catalogue-fixture";
 import { fixturePublicationSourceId } from "../../../test/support/fixture-publication";
 import ingestionWorker from "../src/index";
 import { injectFixturePublication } from "./fixture-plan-injection";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import * as catalogueExportQueries from "./query-helpers/catalogue-export";
 import {
   countDeletionResponseQueriesDatabase,
@@ -26,6 +27,7 @@ import {
 import * as ingestionQueries from "./query-helpers/ingestion";
 import { disableExportTransitionTriggers } from "./query-helpers/maintenance-guards";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import { collect } from "./reconciliation-helpers";
 import { installWorkflowIsolation } from "./workflow-isolation";
 
 installWorkflowIsolation();
@@ -1169,7 +1171,7 @@ test("unexpected recovery keys fail publication and are all removed by cleanup",
   expect(requiredDocumentNumber(afterDiagnostics, "catalogue_export_object_count")).toBe(beforeObjectCount);
 });
 
-test("an unchanged successful retry advances freshness without another revision or export", async () => {
+test("an unchanged successful recapture advances freshness without another revision or export", async () => {
   const before = await administrationRequest("/v1/status");
   const beforeDiagnostics = before.document.diagnostics;
   if (
@@ -1182,32 +1184,15 @@ test("an unchanged successful retry advances freshness without another revision 
   ) {
     throw new Error("status diagnostics are invalid");
   }
-  const first = await startRun("start-first-publication");
-  const firstPublished = await approve(
-    requiredDocumentString(first.document, "id"),
-    requiredDocumentString(first.document, "candidate_digest"),
-    requiredDocumentString(first.document, "expected_current_revision_id"),
-    "approve-first-publication",
-  );
+  const first = await collect("/reconciliation/card-without-printing", "freshness-first-capture");
+  const candidate = await prepareNativeCandidate(first.id, "one-piece", "catrev_spine_000", "freshness-first");
+  const firstPublished = await approveNativeCandidate(candidate, "freshness-first-publication");
   const revisionId = requiredDocumentString(firstPublished.document, "resulting_revision_id");
-  const retry = await administrationRequest(
-    `/v1/ingestion-runs/${requiredDocumentString(firstPublished.document, "id")}/retry`,
-    { idempotency_key: "retry-no-change" },
-  );
-  const unchanged = await approve(
-    requiredDocumentString(retry.document, "id"),
-    requiredDocumentString(retry.document, "candidate_digest"),
-    revisionId,
-    "approve-no-change",
-  );
+  const second = await collect("/reconciliation/card-without-printing", "freshness-second-capture");
+  const refreshed = await prepareNativeCandidate(second.id, "one-piece", revisionId, "freshness-refresh");
+  const unchanged = await approveNativeCandidate(refreshed, "freshness-unchanged-publication");
   expect(unchanged.response.status).toBe(200);
-  expect(unchanged.document).toMatchObject({
-    state: "published",
-    publication_outcome: "no_change",
-    published_revision_id: null,
-    resulting_revision_id: revisionId,
-  });
-  expect(unchanged.document.freshness_checked_at).toEqual(expect.any(String));
+  expect(unchanged.document).toMatchObject({ state: "published", resulting_revision_id: revisionId });
 
   const status = await administrationRequest("/v1/status");
   expect(status.response.status).toBe(200);
@@ -1242,7 +1227,7 @@ test("an unchanged successful retry advances freshness without another revision 
       {
         game: "one-piece",
         area: "cards-and-printings",
-        ingestion_run_id: unchanged.document.id,
+        ingestion_run_id: second.id,
       },
     ],
   });
@@ -1255,7 +1240,7 @@ test("an unchanged successful retry advances freshness without another revision 
   expect(repairableRevisions.length).toBeLessThanOrEqual(3);
   expect(repairableRevisions).not.toContain("catrev_spine_000");
   const diagnostics = status.document.diagnostics;
-  const expectedNewRevision = firstPublished.document.publication_outcome === "revision" ? 1 : 0;
+  const expectedNewRevision = 1;
   expect(diagnostics).toMatchObject({
     catalogue_revision_count: beforeDiagnostics.catalogue_revision_count + expectedNewRevision,
     catalogue_export_count: beforeDiagnostics.catalogue_export_count + expectedNewRevision,

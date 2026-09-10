@@ -741,6 +741,10 @@ describe("Errata rules-text lifecycle", () => {
     ).find(({ id }) => id === observedErratum.id);
     expect(retained).toBeDefined();
     expect(retained).not.toHaveProperty("lifecycle");
+    const checked = await sourceEvidenceQueries
+      .readSourceFreshnessAreaIngestionRunId(testEnv.CATALOGUE_DB)
+      .all<{ area: string; ingestion_run_id: string }>();
+    expect(checked.results).toContainEqual({ area: "errata", ingestion_run_id: missingRun.id });
     const history = await nativeErratumHistory(testEnv.CATALOGUE_DB, String(missing.id), String(observedErratum.id));
     expect(history.results).toEqual([
       { kind: "erratum", first_revision_id: observedRevisionId, last_observed_revision_id: observedRevisionId },

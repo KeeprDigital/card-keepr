@@ -1,9 +1,10 @@
-import type { NativeSourceHistory } from "./native-source-history-state";
-import type { SourceHistoryCursor } from "./native-source-history";
-import { checkedPrintingLineages, type CheckedCardScope } from "./scoped-disappearance";
 import type { CataloguePrinting } from "../shared";
-import type { ReconciliationCardState } from "./reconciliation-card-state";
 import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
+import type { SourceHistoryCursor } from "./native-source-history";
+import { type SourceHistoryCandidate, sourceHistoryCandidateStatement } from "./native-source-history-repository";
+import type { NativeSourceHistory } from "./native-source-history-state";
+import { type PublicLifecycleFact, priorPublicLifecycle } from "./publication-lifecycle-repository";
+import type { ReconciliationCardState } from "./reconciliation-card-state";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
 import type { ReconciliationErrataState } from "./reconciliation-errata-state";
@@ -12,8 +13,9 @@ import type { ReconciliationPlanState } from "./reconciliation-plan-state";
 import { printingRelationshipsForLineageStatement } from "./reconciliation-read-repository";
 import type { ReconciliationRecordSink } from "./reconciliation-record-collection";
 import { ReconciliationReducerIndex, ReconciliationReducerStorageError } from "./reconciliation-reducer-state";
-import { gundamAffectedPrintingIds, gundamPrintingLineages } from "./reconciliation-repository";
 import { membershipEntries } from "./reconciliation-relationships";
+import { gundamAffectedPrintingIds, gundamPrintingLineages } from "./reconciliation-repository";
+import { type CheckedCardScope, checkedPrintingLineages } from "./scoped-disappearance";
 
 type Group = {
   id: string;
@@ -299,6 +301,25 @@ export async function prepareDisappearanceWarnings(
           "The Gundam Printing is currently observed on only one English surface; publication retains that provenance for owner review.",
       });
   };
+  if (stage === "gundam_published" && sources.history) {
+    if (hasGundam)
+      for await (const entry of sources.history.entries(after)) {
+        await budget(entry.value);
+        const record = entry.value;
+        const key = `gundam:${record.entityId}`;
+        if (
+          record.kind === "locator" &&
+          record.current &&
+          sources.checkedLineages.includes(record.sourceLineage) &&
+          !(await relationshipWarnings.has(key))
+        ) {
+          await addGundamWarning(record.entityId);
+          await relationshipWarnings.seed(key, true);
+        }
+        after = entry.key;
+      }
+    await finish("gundam_local");
+  }
   if (stage === "gundam_published") {
     if (hasGundam)
       for await (const id of gundamAffectedPrintingIds(database, sources.checkedLineages, after)) {
@@ -328,6 +349,45 @@ export async function prepareDisappearanceWarnings(
     ["cards", "card", "errata"],
   ] as const) {
     if (stage !== expected) continue;
+    if (sources.history) {
+      const candidate = await sourceHistoryCandidateStatement(database, runId).first<SourceHistoryCandidate>();
+      if (!candidate) throw new Error("Native disappearance history lost its candidate.");
+      for (; lineage < sources.checkedLineages.length; lineage++) {
+        const sourceLineage = sources.checkedLineages[lineage]!;
+        for await (const entry of sources.history.entries(after)) {
+          await budget(entry.value);
+          const record = entry.value;
+          const key = `missing:${kind}:${sourceLineage}:${record.entityId}`;
+          if (
+            record.kind === (kind === "card" ? "card" : "locator") &&
+            record.current &&
+            record.sourceLineage === sourceLineage &&
+            !(await relationshipWarnings.has(key))
+          ) {
+            const prior = await priorPublicLifecycle(
+              database,
+              candidate.expected_game_revision_id,
+              candidate.supported_game,
+              kind === "card" ? "cards" : "printings",
+              record.entityId,
+              runId,
+            ).first<PublicLifecycleFact>();
+            if (prior?.withdrawn !== 1 && !(await sources.plans.hasObserved(kind, record.entityId, sourceLineage)))
+              await warnings.push({
+                code: "record_not_observed",
+                [kind === "card" ? "card_id" : "printing_id"]: record.entityId,
+                detail: `The ${kind === "card" ? "Card" : "Printing"} was not observed in this complete run; it remains historical and is not withdrawn.`,
+              });
+            await relationshipWarnings.seed(key, true);
+          }
+          after = entry.key;
+          processedRecords++;
+        }
+        after = "";
+      }
+      await finish(next);
+      continue;
+    }
     for (; lineage < sources.checkedLineages.length; lineage++) {
       for await (const entry of sources.plans.previousObservationEntries(
         kind,

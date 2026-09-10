@@ -410,6 +410,8 @@ async function collectRetainedReconciliationObservation(
             supportedGame: row.supported_game,
             gameProfileVersion: row.game_profile_version,
             adapterVersion: row.adapter_version,
+            capturedAt: row.retrieved_at,
+            reconciliationCapability: requiredSourceAdapter(row.adapter_version).reconciliationCapability,
           },
         ],
   );

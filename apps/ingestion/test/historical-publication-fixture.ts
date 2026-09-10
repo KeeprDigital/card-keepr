@@ -9,13 +9,14 @@ import {
   catalogueStore,
   sha256,
 } from "../../../src/catalogue/shared";
+import { waitNativeState } from "./native-no-change-helpers";
 import { waitForVerifiedPublicationBackup } from "./native-publication-helpers";
 import { setIngestionRunsStateApprovalJson } from "./query-helpers/ingestion";
 import { readReconciliationPayloadChunks } from "./query-helpers/reconciliation";
 import { get, post, requiredString, testEnv } from "./reconciliation-helpers";
 
 /** Seed only retained historical materializers; current publication fixtures must use native approval. */
-export async function recoverHistoricalPublication(runId: string, approvalKey: string) {
+export async function stageHistoricalPublication(runId: string, approvalKey: string) {
   const inspection = await get(`/v1/ingestion-runs/${runId}/candidate`);
   expect(inspection.response.status, JSON.stringify(inspection.document)).toBe(200);
   const shown = inspection.document;
@@ -105,15 +106,39 @@ export async function recoverHistoricalPublication(runId: string, approvalKey: s
     )
     .run();
   const request = { candidate_digest: digest, expected_current_revision_id: predecessor, idempotency_key: approvalKey };
+  return {
+    request,
+    expiredAt,
+    revisionId,
+    manifestDigest: exported.manifest.manifest_sha256,
+    empty: candidate.cards.length === 0 && (candidate.products?.length ?? 0) === 0,
+  };
+}
+
+export async function recoverHistoricalPublication(
+  runId: string,
+  approvalKey: string,
+  expectedBackup: "verified" | "empty-historical" = "verified",
+) {
+  const { request, expiredAt, revisionId, manifestDigest, empty } = await stageHistoricalPublication(
+    runId,
+    approvalKey,
+  );
   const recovered = await post(`/v1/ingestion-runs/${runId}/approval`, request, { "x-keepr-test-now": expiredAt });
   expect(recovered.response.status, JSON.stringify(recovered.document)).toBe(200);
   expect(recovered.document).toMatchObject({
     state: "published",
     resulting_revision_id: revisionId,
-    export_manifest_digest: exported.manifest.manifest_sha256,
+    export_manifest_digest: manifestDigest,
   });
   expect((await post(`/v1/ingestion-runs/${runId}/approval`, request)).document).toEqual(recovered.document);
   const backup = await publicationBackupReservation(revisionId);
-  await waitForVerifiedPublicationBackup(backup.idempotencyKey, revisionId);
+  if (expectedBackup === "empty-historical") {
+    // The old verification contract deliberately rejects a vacuous catalogue.
+    // Projection-repair fixtures retain that real failure instead of inventing a verified backup.
+    expect(empty).toBe(true);
+    const failed = await waitNativeState(`/v1/backups/${backup.idempotencyKey}`, ["failed", "verified"]);
+    expect(failed).toMatchObject({ state: "failed", failure: { detail: "Restored D1 verification failed." } });
+  } else await waitForVerifiedPublicationBackup(backup.idempotencyKey, revisionId);
   return recovered;
 }

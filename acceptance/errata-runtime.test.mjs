@@ -519,7 +519,8 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     20_000,
   );
   const repeatedRevision = repeatedPublication.resulting_revision_id;
-  assert.notEqual(repeatedRevision, revisionId);
+  // Fresh private provenance preserves unchanged consumer facts and their revision.
+  assert.equal(repeatedRevision, revisionId);
   const approvedCandidate = repeatedCandidate.candidates[0];
   const approvalReplay = await administrationFetch(cliEnvironment, `${runtime.url}/v1/publications`, {
     method: "POST",

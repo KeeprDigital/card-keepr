@@ -1,12 +1,9 @@
-import { withNativeRequestPacing } from "./helpers/native-request-pacing.mjs";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import test from "node:test";
-import { isNativeCheckpointRequest } from "./helpers/native-checkpoint-hosts.mjs";
-import { nativeExportReader } from "./helpers/native-export-reader.mjs";
+import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { reconciliationSourceDocument } from "../test/support/fake-publisher/reconciliation-documents.ts";
 import {
@@ -14,10 +11,13 @@ import {
   runCli,
   startWorker,
   stopWorker,
-  waitForHealth,
   waitForAdministrationDocument,
+  waitForHealth,
 } from "./helpers/acceptance-runtime.mjs";
 import { nativeCheckpointTransport, publishNativeCollection } from "./helpers/native-catalogue-runtime.mjs";
+import { isNativeCheckpointRequest } from "./helpers/native-checkpoint-hosts.mjs";
+import { nativeExportReader } from "./helpers/native-export-reader.mjs";
+import { withNativeRequestPacing } from "./helpers/native-request-pacing.mjs";
 import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs";
 
 // Synthetic source facts, actual publication/backup Workflows and SQL imports.
@@ -39,7 +39,7 @@ test("mixed-game composition and current plus two survive an actual SQL import",
   const { syntheticSourceAdapterMigration } = await import(pathToFileURL(migrationModule).href);
   const config = JSON.parse(await readFile("apps/ingestion/wrangler.jsonc", "utf8"));
   delete config.$schema;
-  config.main = resolve("test/support/ingestion-worker.ts");
+  config.main = resolve("acceptance/fixtures/native-retained-evidence-harness.ts");
   config.d1_databases[0].migrations_dir = resolve("migrations");
   config.ratelimits[0].simple.limit = 300;
   const configPath = join(directory, "ingestion.json");
@@ -57,7 +57,10 @@ test("mixed-game composition and current plus two survive an actual SQL import",
       const url = new URL(request.url);
       if (isNativeCheckpointRequest(request)) return checkpoint.outboundService(request);
       assert.equal(url.hostname, "official-source.invalid");
-      return Response.json(reconciliationSourceDocument(url.pathname.split("/").at(-1), "", request.url));
+      const document = reconciliationSourceDocument(url.pathname.split("/").at(-1), "", request.url);
+      if (url.searchParams.has("revision"))
+        document.cards[0].card.name = `Agumon revision ${url.searchParams.get("revision")}`;
+      return Response.json(document);
     },
   });
   let api;
@@ -115,7 +118,6 @@ test("mixed-game composition and current plus two survive an actual SQL import",
   // A declared multi-game collection selects the shipped native preparation
   // path. Single-game synthetic adapters intentionally retain the legacy path.
   const source = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", "mixed-game-source"]);
-  const collectionRun = source.id;
   await cli(["source", "resume", "--run-id", source.id]);
   await waitForAdministrationDocument(
     `/v1/ingestion-runs/${source.id}/evidence`,
@@ -149,6 +151,7 @@ test("mixed-game composition and current plus two survive an actual SQL import",
       worker,
       120_000,
     );
+    assert.ok(!revisions.includes(published.resulting_revision_id));
     revisions.push(published.resulting_revision_id);
     const nextComponents = await components(published.resulting_revision_id);
     for (const sibling of previousComponents)
@@ -160,26 +163,52 @@ test("mixed-game composition and current plus two survive an actual SQL import",
   }
   const initialCompositionRevision = revisions.at(-1);
   for (let repeat = 0; repeat < 3; repeat++) {
-    const prepared = await cli([
-      "game-candidate",
-      "prepare",
-      "--run-id",
-      collectionRun,
-      "--game",
-      "digimon",
-      "--expected-game-revision-id",
-      revisions.at(-1),
+    await writeFile(
+      planPath,
+      JSON.stringify({
+        plans: [
+          {
+            supported_game: "digimon",
+            source_lineage: "digimon-en",
+            adapter_version: "fixture-digimon-json@2",
+            requests: [
+              {
+                id: "digimon-en:refresh",
+                url: `https://official-source.invalid/reconciliation/profile-digimon?revision=${repeat}`,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const refreshed = await cli([
+      "source",
+      "collect",
+      "--plan-file",
+      planPath,
       "--idempotency-key",
-      `mixed-repeat-${repeat}`,
-      "--yes",
+      `mixed-refresh-${repeat}`,
     ]);
-    const candidate = await waitForAdministrationDocument(
-      `/v1/game-candidates/${prepared.id}`,
-      (d) => d.state === "sealed" || (["failed", "paused"].includes(d.state) ? JSON.stringify(d) : false),
+    assert.equal(refreshed.state, "parsing");
+    const prepared = await fetch(`${worker.url}/v1/game-candidates`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${adminKey}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        ingestion_run_id: refreshed.id,
+        supported_game: "digimon",
+        expected_game_revision_id: revisions.at(-1),
+        idempotency_key: `mixed-refresh-candidate-${repeat}`,
+      }),
+    });
+    assert.equal(prepared.status, 201, await prepared.clone().text());
+    const refreshedCollection = await waitForAdministrationDocument(
+      `/v1/ingestion-runs/${refreshed.id}/game-candidates`,
+      (d) => d.candidates.length === 1 && d.candidates[0].state === "sealed",
       environment,
       worker,
-      { deadlineMs: 120_000 },
+      { deadlineMs: 30000 },
     );
+    const candidate = await cli(["game-candidate", "show", "--candidate-id", refreshedCollection.candidates[0].id]);
     const published = await publishNativeCollection(
       { candidates: [candidate] },
       `mixed-repeat-publication-${repeat}`,
@@ -187,6 +216,7 @@ test("mixed-game composition and current plus two survive an actual SQL import",
       worker,
       120_000,
     );
+    assert.ok(!revisions.includes(published.resulting_revision_id));
     revisions.push(published.resulting_revision_id);
     const nextComponents = await components(published.resulting_revision_id);
     for (const sibling of previousComponents.filter((c) => !c.name.startsWith("digimon.")))

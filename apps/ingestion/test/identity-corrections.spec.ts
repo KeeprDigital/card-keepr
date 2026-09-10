@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
@@ -612,223 +612,229 @@ test.each(["lookup", "application"])(
   },
 );
 
-test.each(["associations", "application", "lookup"])(
+describe.each(["associations", "application", "lookup"])(
   "reviewed identity %s prepare through durable bounded groups",
-  async (failurePhase) => {
-    const published = await publishIdentityFixture(
-      "/reconciliation/curated-conflict-fanout-base",
-      `association-${failurePhase}-seed`,
-      "catrev_spine_000",
-    );
-    expect(published.response.status).toBe(200);
-    const cards = await exportComponentRecords(String(published.document.resulting_revision_id), "cards");
-    for (let index = 0; index < 12; index++) {
-      const proposal = {
-        game: "one-piece",
-        entity_kind: "card",
-        action: "merge",
-        source_ids:
-          index === 0
-            ? cards.slice(0, 9).map((card) => card.id)
-            : [cards[failurePhase !== "associations" ? 8 + index : 8 + index * 2]!.id],
-        replacement_ids: [cards[index === 0 ? 9 : failurePhase !== "associations" ? 9 + index : 9 + index * 2]!.id],
-        printing_assignments: {},
-        expected_current_revision_id: published.document.resulting_revision_id,
-        rationale: "Synthetic owner comparison establishes one rules-level Card",
-        evidence: { attestation: "Synthetic comparison of retained identities" },
+  (failurePhase) => {
+    let published: Awaited<ReturnType<typeof publishIdentityFixture>>;
+    let cards: Awaited<ReturnType<typeof exportComponentRecords>>;
+    beforeEach(async () => {
+      published = await publishIdentityFixture(
+        "/reconciliation/curated-conflict-fanout-base",
+        `association-${failurePhase}-seed`,
+        "catrev_spine_000",
+      );
+      expect(published.response.status).toBe(200);
+      cards = await exportComponentRecords(String(published.document.resulting_revision_id), "cards");
+      for (let index = 0; index < 12; index++) {
+        const proposal = {
+          game: "one-piece",
+          entity_kind: "card",
+          action: "merge",
+          source_ids:
+            index === 0
+              ? cards.slice(0, 9).map((card) => card.id)
+              : [cards[failurePhase !== "associations" ? 8 + index : 8 + index * 2]!.id],
+          replacement_ids: [cards[index === 0 ? 9 : failurePhase !== "associations" ? 9 + index : 9 + index * 2]!.id],
+          printing_assignments: {},
+          expected_current_revision_id: published.document.resulting_revision_id,
+          rationale: "Synthetic owner comparison establishes one rules-level Card",
+          evidence: { attestation: "Synthetic comparison of retained identities" },
+        };
+        const validated = await post("/v1/identity-corrections/validate", proposal);
+        expect(validated.response.status, JSON.stringify(validated.document)).toBe(200);
+        const decision = await post("/v1/identity-corrections", {
+          ...proposal,
+          review_digest: validated.document.review_digest,
+          idempotency_key: `association-merge-${index}`,
+        });
+        expect(decision.response.status).toBe(201);
+      }
+    });
+    test("retains bounded progress through the injected outage and native publication", async () => {
+      const run = await collect(
+        failurePhase === "application"
+          ? "/reconciliation/identity-chain-card-surface"
+          : "/reconciliation/curated-conflict-fanout-base",
+        `association-${failurePhase}-refresh`,
+      );
+      const preparation = await retainNativePreparation(
+        run.id,
+        String(published.document.resulting_revision_id),
+        `reconcile-${run.id}`,
+      );
+      let calls = 0;
+      const associationCalls: number[] = [];
+      const applicationCalls: number[] = [];
+      const lookupCalls: number[] = [];
+      const reductionCalls: number[] = [];
+      const associationOffsets: number[] = [];
+      let sawChain = false;
+      let armed = false,
+        resumed = false,
+        writes = 0,
+        failures = 0;
+      const statements = new WeakMap<object, { sql: string; values: unknown[] }>();
+      const wrap = (statement: D1PreparedStatement, sql: string, values: unknown[] = []): D1PreparedStatement => {
+        const proxy = new Proxy(statement, {
+          get(target, property) {
+            if (property === "bind")
+              return (...values: unknown[]) => {
+                if (
+                  failurePhase === "lookup" &&
+                  armed &&
+                  !resumed &&
+                  sql.includes("INSERT INTO reconciliation_checkpoints") &&
+                  values[1] === "identity_lookup"
+                ) {
+                  failures++;
+                  throw new Error("Injected identity lookup checkpoint outage.");
+                }
+                return wrap(target.bind(...values), sql, values);
+              };
+            const value = Reflect.get(target, property);
+            if (["run", "first", "all", "raw"].includes(String(property)))
+              return (...args: unknown[]) => {
+                calls++;
+                return Reflect.apply(value, target, args);
+              };
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+        statements.set(proxy, { sql, values });
+        return proxy;
       };
-      const validated = await post("/v1/identity-corrections/validate", proposal);
-      expect(validated.response.status, JSON.stringify(validated.document)).toBe(200);
-      const decision = await post("/v1/identity-corrections", {
-        ...proposal,
-        review_digest: validated.document.review_digest,
-        idempotency_key: `association-merge-${index}`,
-      });
-      expect(decision.response.status).toBe(201);
-    }
-    const run = await collect(
-      failurePhase === "application"
-        ? "/reconciliation/identity-chain-card-surface"
-        : "/reconciliation/curated-conflict-fanout-base",
-      `association-${failurePhase}-refresh`,
-    );
-    const preparation = await retainNativePreparation(
-      run.id,
-      String(published.document.resulting_revision_id),
-      `reconcile-${run.id}`,
-    );
-    let calls = 0;
-    const associationCalls: number[] = [];
-    const applicationCalls: number[] = [];
-    const lookupCalls: number[] = [];
-    const reductionCalls: number[] = [];
-    const associationOffsets: number[] = [];
-    let sawChain = false;
-    let armed = false,
-      resumed = false,
-      writes = 0,
-      failures = 0;
-    const statements = new WeakMap<object, { sql: string; values: unknown[] }>();
-    const wrap = (statement: D1PreparedStatement, sql: string, values: unknown[] = []): D1PreparedStatement => {
-      const proxy = new Proxy(statement, {
+      const database = new Proxy(testEnv.CATALOGUE_DB, {
         get(target, property) {
-          if (property === "bind")
-            return (...values: unknown[]) => {
+          if (property === "prepare") return (sql: string) => wrap(target.prepare(sql), sql);
+          if (property === "batch")
+            return (...args: Parameters<D1Database["batch"]>) => {
+              calls++;
               if (
-                failurePhase === "lookup" &&
+                failurePhase !== "lookup" &&
                 armed &&
                 !resumed &&
-                sql.includes("INSERT INTO reconciliation_checkpoints") &&
-                values[1] === "identity_lookup"
+                args[0].some((statement) => {
+                  const entry = statements.get(statement);
+                  return (
+                    entry?.sql.includes("INSERT INTO reconciliation_reducer_state") &&
+                    entry.values.includes(
+                      failurePhase === "associations"
+                        ? "correction_merges"
+                        : "candidate_corrections_identity_corrections",
+                    )
+                  );
+                }) &&
+                ++writes === 2
               ) {
                 failures++;
-                throw new Error("Injected identity lookup checkpoint outage.");
+                throw new Error("Injected identity association storage outage after a partial write.");
               }
-              return wrap(target.bind(...values), sql, values);
+              return target.batch(...args);
             };
           const value = Reflect.get(target, property);
-          if (["run", "first", "all", "raw"].includes(String(property)))
-            return (...args: unknown[]) => {
-              calls++;
-              return Reflect.apply(value, target, args);
-            };
           return typeof value === "function" ? value.bind(target) : value;
         },
       });
-      statements.set(proxy, { sql, values });
-      return proxy;
-    };
-    const database = new Proxy(testEnv.CATALOGUE_DB, {
-      get(target, property) {
-        if (property === "prepare") return (sql: string) => wrap(target.prepare(sql), sql);
-        if (property === "batch")
-          return (...args: Parameters<D1Database["batch"]>) => {
-            calls++;
-            if (
-              failurePhase !== "lookup" &&
-              armed &&
-              !resumed &&
-              args[0].some((statement) => {
-                const entry = statements.get(statement);
-                return (
-                  entry?.sql.includes("INSERT INTO reconciliation_reducer_state") &&
-                  entry.values.includes(
-                    failurePhase === "associations"
-                      ? "correction_merges"
-                      : "candidate_corrections_identity_corrections",
-                  )
-                );
-              }) &&
-              ++writes === 2
-            ) {
-              failures++;
-              throw new Error("Injected identity association storage outage after a partial write.");
+      const event = {
+        payload: preparation.params,
+      } as import("cloudflare:workers").WorkflowEvent<
+        import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
+      >;
+      const step = {
+        do: async (_name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
+          let result: string;
+          for (let attempt = 0; ; attempt++) {
+            calls = 0;
+            writes = 0;
+            try {
+              result = await callback();
+              break;
+            } catch (error) {
+              if (attempt >= config.retries.limit) throw error;
             }
-            return target.batch(...args);
-          };
-        const value = Reflect.get(target, property);
-        return typeof value === "function" ? value.bind(target) : value;
-      },
-    });
-    const event = {
-      payload: preparation.params,
-    } as import("cloudflare:workers").WorkflowEvent<
-      import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams
-    >;
-    const step = {
-      do: async (_name: string, config: { retries: { limit: number } }, callback: () => Promise<string>) => {
-        let result: string;
-        for (let attempt = 0; ; attempt++) {
-          calls = 0;
-          writes = 0;
-          try {
-            result = await callback();
-            break;
-          } catch (error) {
-            if (attempt >= config.retries.limit) throw error;
           }
-        }
-        if (JSON.parse(result).continuation?.phase === "official_reduction") reductionCalls.push(calls);
-        if (JSON.parse(result).continuation?.phase === "identity_lookup") {
-          lookupCalls.push(calls);
-          if (failurePhase === "lookup" && !armed) {
-            const cursor = (await reconciliationCheckpoint<{ visited: string[] }>(
+          if (JSON.parse(result).continuation?.phase === "official_reduction") reductionCalls.push(calls);
+          if (JSON.parse(result).continuation?.phase === "identity_lookup") {
+            lookupCalls.push(calls);
+            if (failurePhase === "lookup" && !armed) {
+              const cursor = (await reconciliationCheckpoint<{ visited: string[] }>(
+                catalogueStore(testEnv.CATALOGUE_DB),
+                preparation.candidateId,
+                "identity_lookup",
+              ))!.value;
+              if (cursor.visited.length > 0) {
+                armed = true;
+                sawChain = true;
+              }
+            }
+          }
+          if (JSON.parse(result).continuation?.phase === "identity_application") {
+            applicationCalls.push(calls);
+            if (failurePhase === "application" && (!armed || !sawChain)) {
+              const checkpoint = (await reconciliationCheckpoint<{
+                stage: string;
+                source: number;
+                chain: { visited: string[] } | null;
+              }>(catalogueStore(testEnv.CATALOGUE_DB), preparation.candidateId, "identity_application"))!.value;
+              sawChain ||= (checkpoint.chain?.visited.length ?? 0) > 0;
+              if (checkpoint.stage === "retire" && checkpoint.source > 0) armed = true;
+            }
+          }
+          if (JSON.parse(result).continuation?.phase === "identity_associations") {
+            associationCalls.push(calls);
+            const checkpoint = (await reconciliationCheckpoint<{ association: number }>(
               catalogueStore(testEnv.CATALOGUE_DB),
               preparation.candidateId,
-              "identity_lookup",
+              "identity_associations",
             ))!.value;
-            if (cursor.visited.length > 0) {
-              armed = true;
-              sawChain = true;
-            }
+            associationOffsets.push(checkpoint.association);
+            if (failurePhase === "associations" && checkpoint.association > 0) armed = true;
           }
-        }
-        if (JSON.parse(result).continuation?.phase === "identity_application") {
-          applicationCalls.push(calls);
-          if (failurePhase === "application" && (!armed || !sawChain)) {
-            const checkpoint = (await reconciliationCheckpoint<{
-              stage: string;
-              source: number;
-              chain: { visited: string[] } | null;
-            }>(catalogueStore(testEnv.CATALOGUE_DB), preparation.candidateId, "identity_application"))!.value;
-            sawChain ||= (checkpoint.chain?.visited.length ?? 0) > 0;
-            if (checkpoint.stage === "retire" && checkpoint.source > 0) armed = true;
-          }
-        }
-        if (JSON.parse(result).continuation?.phase === "identity_associations") {
-          associationCalls.push(calls);
-          const checkpoint = (await reconciliationCheckpoint<{ association: number }>(
-            catalogueStore(testEnv.CATALOGUE_DB),
-            preparation.candidateId,
-            "identity_associations",
-          ))!.value;
-          associationOffsets.push(checkpoint.association);
-          if (failurePhase === "associations" && checkpoint.association > 0) armed = true;
-        }
-        return result;
-      },
-    } as unknown as import("cloudflare:workers").WorkflowStep;
-    const environment = { ...testEnv, CATALOGUE_DB: database };
-    await runReconciliationWorkflow(environment, event, step);
-    const paused = (await get(`/v1/game-candidates/${preparation.candidateId}`)).document;
-    expect(failures, JSON.stringify({ state: paused.state, failure_code: paused.failure_code })).toBe(4);
-    expect(paused).toMatchObject({ state: "paused", generation: 1 });
-    expect((await preparation.resume(1, "resume-identity-associations")).status).toBe(200);
-    resumed = true;
-    await runReconciliationWorkflow(
-      environment,
-      { payload: { ...event.payload, generation: 1 } } as typeof event,
-      step,
-    );
-    expect((await get(`/v1/game-candidates/${preparation.candidateId}`)).document.deadline).toBe(paused.deadline);
-    if (failurePhase !== "associations") expect(sawChain).toBe(true);
-    if (failurePhase === "lookup") {
-      expect(lookupCalls.length).toBeGreaterThan(0);
-      expect(Math.max(...lookupCalls)).toBeLessThanOrEqual(100);
-      expect(Math.max(...reductionCalls)).toBeLessThanOrEqual(100);
-    }
-    expect(applicationCalls.length).toBeGreaterThan(0);
-    expect(Math.max(...applicationCalls)).toBeLessThanOrEqual(100);
-    expect(associationOffsets.some((offset) => offset > 0)).toBe(true);
-    expect(associationCalls.length).toBeGreaterThanOrEqual(4);
-    expect(Math.max(...associationCalls)).toBeLessThanOrEqual(100);
-    const candidate = await get(`/v1/game-candidates/${preparation.candidateId}`);
-    expect(candidate.response.status, JSON.stringify(candidate.document)).toBe(200);
-    const checkpoint = await reconciliationCheckpoint(
-      catalogueStore(testEnv.CATALOGUE_DB),
-      preparation.candidateId,
-      "identity_associations",
-    );
-    expect(checkpoint).toMatchObject({ value: { complete: true, processedDecisions: 12 } });
-    expect(checkpoint!.ordinal).toBeGreaterThan(0);
-    const accepted = await approveNativeCandidate(candidate.document, "association-reviewed-publication");
-    expect(accepted.response.status, JSON.stringify(accepted.document)).toBe(200);
-    const current = String(accepted.document.resulting_revision_id);
-    expect(await exportComponentRecords(current, "cards")).toHaveLength(12);
-    const finalPrintings = await exportComponentRecords(current, "printings");
-    expect(finalPrintings).toHaveLength(32);
-    if (failurePhase !== "associations")
-      expect(finalPrintings.filter((printing) => printing.card_id === cards[20]!.id)).toHaveLength(21);
-    expect(await exportComponentRecords(current, "identity-corrections")).toHaveLength(20);
+          return result;
+        },
+      } as unknown as import("cloudflare:workers").WorkflowStep;
+      const environment = { ...testEnv, CATALOGUE_DB: database };
+      await runReconciliationWorkflow(environment, event, step);
+      const paused = (await get(`/v1/game-candidates/${preparation.candidateId}`)).document;
+      expect(failures, JSON.stringify({ state: paused.state, failure_code: paused.failure_code })).toBe(4);
+      expect(paused).toMatchObject({ state: "paused", generation: 1 });
+      expect((await preparation.resume(1, "resume-identity-associations")).status).toBe(200);
+      resumed = true;
+      await runReconciliationWorkflow(
+        environment,
+        { payload: { ...event.payload, generation: 1 } } as typeof event,
+        step,
+      );
+      expect((await get(`/v1/game-candidates/${preparation.candidateId}`)).document.deadline).toBe(paused.deadline);
+      if (failurePhase !== "associations") expect(sawChain).toBe(true);
+      if (failurePhase === "lookup") {
+        expect(lookupCalls.length).toBeGreaterThan(0);
+        expect(Math.max(...lookupCalls)).toBeLessThanOrEqual(100);
+        expect(Math.max(...reductionCalls)).toBeLessThanOrEqual(100);
+      }
+      expect(applicationCalls.length).toBeGreaterThan(0);
+      expect(Math.max(...applicationCalls)).toBeLessThanOrEqual(100);
+      expect(associationOffsets.some((offset) => offset > 0)).toBe(true);
+      expect(associationCalls.length).toBeGreaterThanOrEqual(4);
+      expect(Math.max(...associationCalls)).toBeLessThanOrEqual(100);
+      const candidate = await get(`/v1/game-candidates/${preparation.candidateId}`);
+      expect(candidate.response.status, JSON.stringify(candidate.document)).toBe(200);
+      const checkpoint = await reconciliationCheckpoint(
+        catalogueStore(testEnv.CATALOGUE_DB),
+        preparation.candidateId,
+        "identity_associations",
+      );
+      expect(checkpoint).toMatchObject({ value: { complete: true, processedDecisions: 12 } });
+      expect(checkpoint!.ordinal).toBeGreaterThan(0);
+      const accepted = await approveNativeCandidate(candidate.document, "association-reviewed-publication");
+      expect(accepted.response.status, JSON.stringify(accepted.document)).toBe(200);
+      const current = String(accepted.document.resulting_revision_id);
+      expect(await exportComponentRecords(current, "cards")).toHaveLength(12);
+      const finalPrintings = await exportComponentRecords(current, "printings");
+      expect(finalPrintings).toHaveLength(32);
+      if (failurePhase !== "associations")
+        expect(finalPrintings.filter((printing) => printing.card_id === cards[20]!.id)).toHaveLength(21);
+      expect(await exportComponentRecords(current, "identity-corrections")).toHaveLength(20);
+    });
   },
 );

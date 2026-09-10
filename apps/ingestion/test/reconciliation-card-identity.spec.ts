@@ -1,16 +1,20 @@
 import { expect, test } from "vitest";
+import type { SourceHistoryCursor } from "../../../src/catalogue/reconciliation/native-source-history";
+import { NativeSourceHistory } from "../../../src/catalogue/reconciliation/native-source-history-state";
+import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
+import { ReconciliationPlanState } from "../../../src/catalogue/reconciliation/reconciliation-plan-state";
+import { catalogueStore } from "../../../src/catalogue/shared";
 import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
 import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import { currentGameMembers } from "./query-helpers/atomic-publication";
 import { nativeDiagnosticRecords } from "./query-helpers/native-diagnostic-records";
 import * as reconciliationQueries from "./query-helpers/reconciliation";
 import {
-  approve,
   collect,
   exportComponentRecords,
   get,
   installReconciliationSuite,
   post,
-  reconcile,
   requiredFirst,
   requiredString,
   testEnv,
@@ -181,21 +185,20 @@ test("conflicting explicit withdrawal assertions fail during reconciliation with
 
 test("withdrawal assertions are longitudinal, append-only, and preserve the first transition", async () => {
   const firstRun = await collect("/reconciliation/withdrawn-longitudinal", "reconcile-withdrawal-longitudinal-first");
-  const first = await reconcile(firstRun.id);
-  const firstPublished = await approve(first.document);
+  const first = await prepareIdentityEvidence(firstRun.id, "one-piece", "sealed");
+  const firstPublished = await approveNativeCandidate(first.header, `publish-${first.header.id}`);
   const firstRevision = requiredString(firstPublished.document, "resulting_revision_id");
-  const printingId = requiredString(requiredFirst(first.document, "printings"), "id");
+  const printingId = requiredString(requiredFirst(first.records, "printings"), "id");
 
   const repeatRun = await collect(
     "/reconciliation/withdrawn-longitudinal-corroboration",
     "reconcile-withdrawal-longitudinal-repeat",
   );
-  const repeat = await reconcile(repeatRun.id);
-  expect(repeat.response.status).toBe(200);
-  expect(repeat.document.candidate_digest).not.toBe(first.document.candidate_digest);
-  const repeated = await approve(repeat.document);
+  const repeat = await prepareIdentityEvidence(repeatRun.id, "one-piece", "sealed");
+  expect(repeat.header.state).toBe("sealed");
+  expect(repeat.header.manifest_digest).not.toBe(first.header.manifest_digest);
+  const repeated = await approveNativeCandidate(repeat.header, `publish-${repeat.header.id}`);
   expect(repeated.document).toMatchObject({
-    publication_outcome: "no_change",
     resulting_revision_id: firstRevision,
   });
   const retained = await get(`/v1/reconciliation/printings/${printingId}`);
@@ -205,19 +208,20 @@ test("withdrawal assertions are longitudinal, append-only, and preserve the firs
       withdrawal: { revision_id: firstRevision },
     },
   });
-  const history = await reconciliationQueries
-    .readReconciledWithdrawalAssertionsEvidenceJson(testEnv.CATALOGUE_DB)
-    .bind(printingId)
-    .all<{ evidence_json: string }>();
-  expect(history.results).toHaveLength(2);
+  const firstAssertions = await nativeWithdrawalAssertions(String(first.header.id), printingId);
+  const repeatAssertions = await nativeWithdrawalAssertions(String(repeat.header.id), printingId);
+  expect(firstAssertions).toHaveLength(1);
+  expect(repeatAssertions).toHaveLength(1);
+  expect(firstAssertions[0]!.sourceObservationId).not.toBe(repeatAssertions[0]!.sourceObservationId);
+  expect(await nativeWithdrawalAssertions(String(first.header.id), printingId)).toEqual(firstAssertions);
 
   const conflictRun = await collect(
     "/reconciliation/withdrawn-conflicting-later",
     "reconcile-withdrawal-longitudinal-conflict",
   );
-  const conflict = await reconcile(conflictRun.id);
-  expect(conflict.response.status).toBe(409);
-  expect(conflict.document).toMatchObject({
+  const conflict = await prepareIdentityEvidence(conflictRun.id, "one-piece", "failed");
+  expect(conflict.header.state).toBe("failed");
+  expect(conflict.header.outcome).toMatchObject({
     diagnostics: [expect.objectContaining({ code: "withdrawal_evidence_conflict" })],
   });
 });
@@ -228,9 +232,9 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     lineage: "gundam-en-asia",
     adapter: "fixture-gundam-en-asia-json@2",
   });
-  const asia = await reconcile(asiaRun.id);
-  const printingId = requiredString(requiredFirst(asia.document, "printings"), "id");
-  expect(asia.document.warnings).toEqual(
+  const asia = await prepareIdentityEvidence(asiaRun.id, "gundam", "sealed");
+  const printingId = requiredString(requiredFirst(asia.records, "printings"), "id");
+  expect(asia.records.warnings).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
         code: "single_locale_gundam_printing",
@@ -239,7 +243,7 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
       }),
     ]),
   );
-  await approve(asia.document);
+  await approveNativeCandidate(asia.header, `publish-${asia.header.id}`);
 
   const productMismatchRun = await collect(
     "/reconciliation/gundam-cross-product-conflict",
@@ -250,9 +254,9 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
       adapter: "fixture-gundam-en-us-json@2",
     },
   );
-  const productMismatch = await reconcile(productMismatchRun.id);
-  expect(productMismatch.response.status).toBe(409);
-  expect(productMismatch.document.diagnostics).toEqual(
+  const productMismatch = await prepareIdentityEvidence(productMismatchRun.id, "gundam", "failed");
+  expect(productMismatch.header.state).toBe("failed");
+  expect(productMismatch.diagnostics).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
         code: "printing_match_insufficient_evidence",
@@ -261,7 +265,7 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
       }),
     ]),
   );
-  expect(productMismatch.document).not.toMatchObject({
+  expect(productMismatch.records).not.toMatchObject({
     publishable: true,
   });
 
@@ -270,11 +274,11 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     lineage: "gundam-en-us",
     adapter: "fixture-gundam-en-us-json@2",
   });
-  const us = await reconcile(usRun.id);
-  expect(requiredFirst(us.document, "printings")).toMatchObject({
+  const us = await prepareIdentityEvidence(usRun.id, "gundam", "sealed");
+  expect(requiredFirst(us.records, "printings")).toMatchObject({
     id: printingId,
   });
-  expect(us.document.warnings).not.toEqual(
+  expect(us.records.warnings).not.toEqual(
     expect.arrayContaining([
       expect.objectContaining({
         code: "single_locale_gundam_printing",
@@ -282,7 +286,7 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
       }),
     ]),
   );
-  await approve(us.document);
+  await approveNativeCandidate(us.header, `publish-${us.header.id}`);
   const lifecycle = await get(`/v1/reconciliation/printings/${printingId}`);
   expect(lifecycle.document.locators).toMatchObject({
     current: [
@@ -323,8 +327,8 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
       adapter: "fixture-gundam-en-us-json@2",
     },
   );
-  const usMissing = await reconcile(usMissingRun.id);
-  expect(usMissing.document.warnings).toEqual(
+  const usMissing = await prepareIdentityEvidence(usMissingRun.id, "gundam", "sealed");
+  expect(usMissing.records.warnings).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
         code: "single_locale_gundam_printing",
@@ -333,31 +337,41 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
       }),
     ]),
   );
-  const inspected = await get(`/v1/ingestion-runs/${usMissingRun.id}/candidate`);
-  expect(inspected.document.diff).toMatchObject({
-    printings: {
-      missing_observations: [printingId],
-    },
-  });
-  const usMissingPublished = await approve(usMissing.document);
+  expect(usMissing.records.warnings).toEqual(
+    expect.arrayContaining([expect.objectContaining({ code: "record_not_observed", printing_id: printingId })]),
+  );
+  const usMissingPublished = await approveNativeCandidate(usMissing.header, `publish-${usMissing.header.id}`);
   const usMissingRevision = requiredString(usMissingPublished.document, "resulting_revision_id");
-  const omittedCardObservation = await reconciliationQueries
-    .readReconciledCardObservationsCurrentLastMissingRevisionId(testEnv.CATALOGUE_DB)
-    .bind(requiredString(requiredFirst(us.document, "cards"), "id"))
-    .first<{ current: number; last_missing_revision_id: string | null }>();
-  expect(omittedCardObservation).toEqual({
-    current: 0,
-    last_missing_revision_id: usMissingRevision,
-  });
-  const omittedPrintingLocator = await reconciliationQueries
-    .readReconciledPrintingLocatorsCurrentLastMissingRevisionId(testEnv.CATALOGUE_DB)
-    .bind(printingId)
-    .first<{ current: number; last_missing_revision_id: string | null }>();
-  expect(omittedPrintingLocator).toEqual({
-    current: 0,
-    last_missing_revision_id: usMissingRevision,
-  });
   const isolated = await get(`/v1/reconciliation/printings/${printingId}`);
+  expect((isolated.document.locators as Record<string, unknown>).historical).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        source_lineage: "gundam-en-us",
+        current: false,
+        last_missing_revision_id: usMissingRevision,
+      }),
+    ]),
+  );
+  const historyReceipt = await reconciliationCheckpoint<{ sourceHistory: SourceHistoryCursor }>(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    String(usMissing.header.id),
+    "disappearance_warnings",
+  );
+  expect(historyReceipt?.value.sourceHistory.stage).toBe("complete");
+  const history = new NativeSourceHistory(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    String(usMissing.header.id),
+    historyReceipt!.value.sourceHistory.history,
+  );
+  expect(await history.forEntity("card", String(requiredFirst(us.records, "cards").id))).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        sourceLineage: "gundam-en-us",
+        current: false,
+        missing: { candidate: usMissing.header.id },
+      }),
+    ]),
+  );
   expect(isolated.document.relationship_evidence).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
@@ -378,9 +392,9 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     lineage: "gundam-en-us",
     adapter: "fixture-gundam-en-us-json@2",
   });
-  const cardConflict = await reconcile(cardConflictRun.id);
-  expect(cardConflict.response.status).toBe(409);
-  expect(cardConflict.document).toMatchObject({
+  const cardConflict = await prepareIdentityEvidence(cardConflictRun.id, "gundam", "failed");
+  expect(cardConflict.header.state).toBe("failed");
+  expect(cardConflict).toMatchObject({
     diagnostics: [
       {
         code: "canonical_card_conflict",
@@ -394,9 +408,9 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
     lineage: "gundam-en-us",
     adapter: "fixture-gundam-en-us-json@2",
   });
-  const conflict = await reconcile(conflictRun.id);
-  expect(conflict.response.status).toBe(409);
-  expect(conflict.document).toMatchObject({
+  const conflict = await prepareIdentityEvidence(conflictRun.id, "gundam", "failed");
+  expect(conflict.header.state).toBe("failed");
+  expect(conflict).toMatchObject({
     diagnostics: [
       {
         code: "printing_match_contradictory",
@@ -414,12 +428,12 @@ test("Gundam EN-ASIA and EN-US evidence converges on one Printing while substant
       adapter: "fixture-gundam-en-us-json@2",
     },
   );
-  const variantMismatch = await reconcile(variantMismatchRun.id);
-  expect(variantMismatch.response.status).toBe(200);
-  expect(requiredFirst(variantMismatch.document, "printings")).toMatchObject({
+  const variantMismatch = await prepareIdentityEvidence(variantMismatchRun.id, "gundam", "sealed");
+  expect(variantMismatch.header.state).toBe("sealed");
+  expect(requiredFirst(variantMismatch.records, "printings")).toMatchObject({
     id: printingId,
   });
-  await approve(variantMismatch.document);
+  await approveNativeCandidate(variantMismatch.header, `publish-${variantMismatch.header.id}`);
 }, 30_000);
 
 test("Gundam Printing identity is independent of locale observation order when EN-US is first", async () => {
@@ -896,18 +910,18 @@ test("Gundam substantive Printing fact conflicts outside the identity tuple bloc
       lineage: sequence.firstLineage,
       adapter: sequence.firstAdapter,
     });
-    const first = await reconcile(firstRun.id);
-    const printingId = requiredString(requiredFirst(first.document, "printings"), "id");
-    await approve(first.document);
+    const first = await prepareIdentityEvidence(firstRun.id, "gundam", "sealed");
+    const printingId = requiredString(requiredFirst(first.records, "printings"), "id");
+    await approveNativeCandidate(first.header, `publish-${first.header.id}`);
 
     const secondRun = await collect(`/reconciliation/${sequence.secondScenario}`, sequence.secondScenario, {
       game: "gundam",
       lineage: sequence.secondLineage,
       adapter: sequence.secondAdapter,
     });
-    const second = await reconcile(secondRun.id);
-    expect(second.response.status).toBe(409);
-    expect(second.document).toMatchObject({
+    const second = await prepareIdentityEvidence(secondRun.id, "gundam", "failed");
+    expect(second.header.state).toBe("failed");
+    expect(second).toMatchObject({
       diagnostics: [
         expect.objectContaining({
           code: "printing_match_contradictory",
@@ -928,21 +942,21 @@ test("Gundam cross-locale formatting normalizes while substantive shared-fact co
     lineage: "gundam-en-us",
     adapter: "fixture-gundam-en-us-json@2",
   });
-  const us = await reconcile(usRun.id);
-  await approve(us.document);
+  const us = await prepareIdentityEvidence(usRun.id, "gundam", "sealed");
+  await approveNativeCandidate(us.header, `publish-${us.header.id}`);
 
   const asiaRun = await collect("/reconciliation/gundam-authority-asia", "reconcile-gundam-authority-asia-second", {
     game: "gundam",
     lineage: "gundam-en-asia",
     adapter: "fixture-gundam-en-asia-json@2",
   });
-  const asia = await reconcile(asiaRun.id);
-  expect(asia.response.status).toBe(200);
-  expect(requiredFirst(asia.document, "cards")).toMatchObject({
-    id: requiredString(requiredFirst(us.document, "cards"), "id"),
+  const asia = await prepareIdentityEvidence(asiaRun.id, "gundam", "sealed");
+  expect(asia.header.state).toBe("sealed");
+  expect(requiredFirst(asia.records, "cards")).toMatchObject({
+    id: requiredString(requiredFirst(us.records, "cards"), "id"),
     name: "Formatting equivalent name",
   });
-  await approve(asia.document);
+  await approveNativeCandidate(asia.header, `publish-${asia.header.id}`);
 
   const laterUsRun = await collect(
     "/reconciliation/gundam-authority-us-conflict",
@@ -953,9 +967,9 @@ test("Gundam cross-locale formatting normalizes while substantive shared-fact co
       adapter: "fixture-gundam-en-us-json@2",
     },
   );
-  const laterUs = await reconcile(laterUsRun.id);
-  expect(laterUs.response.status).toBe(409);
-  expect(laterUs.document).toMatchObject({
+  const laterUs = await prepareIdentityEvidence(laterUsRun.id, "gundam", "failed");
+  expect(laterUs.header.state).toBe("failed");
+  expect(laterUs).toMatchObject({
     diagnostics: [expect.objectContaining({ code: "canonical_card_conflict" })],
   });
 
@@ -983,18 +997,18 @@ test("Gundam cross-locale formatting normalizes while substantive shared-fact co
       lineage: firstLineage,
       adapter: firstAdapter,
     });
-    const first = await reconcile(firstRun.id);
-    expect(first.response.status).toBe(200);
-    await approve(first.document);
+    const first = await prepareIdentityEvidence(firstRun.id, "gundam", "sealed");
+    expect(first.header.state).toBe("sealed");
+    await approveNativeCandidate(first.header, `publish-${first.header.id}`);
 
     const secondRun = await collect(`/reconciliation/${secondScenario}`, `reconcile-${secondScenario}`, {
       game: "gundam",
       lineage: secondLineage,
       adapter: secondAdapter,
     });
-    const second = await reconcile(secondRun.id);
-    expect(second.response.status).toBe(409);
-    expect(second.document).toMatchObject({
+    const second = await prepareIdentityEvidence(secondRun.id, "gundam", "failed");
+    expect(second.header.state).toBe("failed");
+    expect(second).toMatchObject({
       diagnostics: [expect.objectContaining({ code: "canonical_card_conflict" })],
     });
   }
@@ -1314,4 +1328,35 @@ async function prepareFailedNativeIdentity(runId: string, game: string, predeces
   expect(created.response.status, JSON.stringify(created.document)).toBe(201);
   const [candidate] = await waitForNativeCandidates(runId, 1, 15_000, { [game]: "failed" });
   return candidate!;
+}
+
+async function prepareIdentityEvidence(runId: string, game: string, state: string) {
+  const members = await currentGameMembers(testEnv.CATALOGUE_DB);
+  const predecessor =
+    members.results.find((member) => member.supported_game === game)?.game_revision_id ?? "catrev_spine_000";
+  const created = await post("/v1/game-candidates", {
+    ingestion_run_id: runId,
+    supported_game: game,
+    expected_game_revision_id: predecessor,
+    idempotency_key: `identity-${runId}`,
+  });
+  expect(created.response.status, JSON.stringify(created.document)).toBe(201);
+  const [header] = await waitForNativeCandidates(runId, 1, 15_000, { [game]: state });
+  const records = await nativeCandidateRecords(String(header!.id));
+  const diagnostics = state === "failed" ? await nativeDiagnosticRecords(testEnv.CATALOGUE_DB, String(header!.id)) : [];
+  return { header: header!, records, diagnostics };
+}
+async function nativeWithdrawalAssertions(preparation: string, printingId: string) {
+  const store = catalogueStore(testEnv.CATALOGUE_DB);
+  const checkpoint = await reconciliationCheckpoint<{ indexes: { plans: number } }>(
+    store,
+    preparation,
+    "official_reduction",
+  );
+  expect(checkpoint).not.toBeNull();
+  const plans = new ReconciliationPlanState(store, preparation);
+  plans.resumeAt(checkpoint!.value.indexes.plans);
+  const assertions = [];
+  for await (const plan of plans.values()) if (plan.printingId === printingId && plan.withdrawal) assertions.push(plan);
+  return assertions;
 }
