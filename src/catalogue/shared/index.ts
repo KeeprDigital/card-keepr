@@ -3,6 +3,7 @@ export { MissingObjectError } from "./missing-object-error";
 // modules every other cluster may import. Nothing here imports another
 // cluster. See ../README.md for the cluster map (issue #96).
 
+export { membershipRelationshipId, membershipDistributionContextId } from "./membership-identity";
 export {
   administrationClaimGuardStatement,
   administrationOutcomeGuardStatement,
@@ -180,3 +181,12 @@ export { trackedStagingBucket } from "./staging-object-storage";
 
 export { sharedCuratableFieldSchemas } from "./curated-field-schemas";
 export { validCuratedField } from "./curated-field-validation";
+
+export {
+  isCatalogueSourceCheck,
+  sourceFreshnessFromStorage,
+  sourceFreshnessStorageScope,
+  sourceFreshnessKey,
+  compareSourceFreshness,
+  type SourceFreshnessStorageRow,
+} from "./source-freshness";

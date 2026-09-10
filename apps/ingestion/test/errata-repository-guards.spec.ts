@@ -1,21 +1,17 @@
 import { expect, test } from "vitest";
-import { catalogueStore } from "../../../src/catalogue/shared";
 import { publishReconciledErrataStatement } from "../../../src/catalogue/reconciliation/reconciliation-publication-repository";
+import { catalogueStore } from "../../../src/catalogue/shared";
+import { recoverHistoricalPublication } from "./historical-publication-fixture";
 import { coreGuardPublicationTime, markCoreGuardSibling } from "./query-helpers/core-guards";
-import { erratumCount, removeErrataTargetGuards, publishedErratumTarget } from "./query-helpers/errata-guards";
-import {
-  approve,
-  collect,
-  installReconciliationSuite,
-  reconcile,
-  requiredString,
-  testEnv,
-} from "./reconciliation-helpers";
+import { erratumCount, publishedErratumTarget, removeErrataTargetGuards } from "./query-helpers/errata-guards";
+import { collect, installReconciliationSuite, reconcile, requiredString, testEnv } from "./reconciliation-helpers";
+
 installReconciliationSuite();
 test("Errata reject unknown Card and Printing targets and roll back sibling writes without triggers", async () => {
   const run = await collect("/reconciliation/product-release", "repository_errata_targets");
-  const reconciled = await reconcile(run.id);
-  const published = await approve(reconciled.document);
+  const candidate = await reconcile(run.id);
+  expect(candidate.response.status).toBe(200);
+  const published = await recoverHistoricalPublication(run.id, "errata-repository-historical-publication");
   expect(published.response.status, JSON.stringify(published.document)).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
   await removeErrataTargetGuards(testEnv.CATALOGUE_DB);

@@ -1,0 +1,73 @@
+[
+  {
+    "phase": "full61",
+    "sha": "15bf19e3f4b4b8b219e6c24b8adecfec69178d89",
+    "worktree_status": "",
+    "command": [
+      "/Users/marcus/.n/n/versions/node/22.23.2/bin/node",
+      "node_modules/vitest/vitest.mjs",
+      "run",
+      "--config",
+      "apps/ingestion/vitest.config.ts",
+      "--maxWorkers=1",
+      "apps/ingestion/test/reconciliation-progress.spec.ts"
+    ],
+    "timeout_seconds": 2160,
+    "started_at": "2026-09-09T11:46:42.845842+00:00",
+    "log": "full61-15bf19e3.log.gz",
+    "exit_code": 1,
+    "interrupted": false,
+    "seconds": 146.428,
+    "finished_at": "2026-09-09T11:49:09.275118+00:00",
+    "uncompressed_sha256": "2643cea6242be5f4e84606ea926159afcb89014d6b1433753af6a49531aa8cc2",
+    "compressed_sha256": "81e5d679c6336b3a84fc7a7a8fc57c4ae16f4d914e18c17f37644b9937473909"
+  },
+  {
+    "phase": "retained12",
+    "sha": "e87612aa7157aef67976537f5ea8043d4f707e1a",
+    "worktree_status": "",
+    "command": [
+      "/Users/marcus/.n/n/versions/node/22.23.2/bin/node",
+      "node_modules/vitest/vitest.mjs",
+      "run",
+      "--config",
+      "apps/ingestion/vitest.config.ts",
+      "--maxWorkers=1",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "-t",
+      "storage outage resumes retained identities"
+    ],
+    "timeout_seconds": 600,
+    "started_at": "2026-09-09T12:00:10.251193+00:00",
+    "log": "retained12-e87612aa.log.gz",
+    "exit_code": 0,
+    "interrupted": false,
+    "seconds": 41.704,
+    "finished_at": "2026-09-09T12:00:51.956155+00:00",
+    "uncompressed_sha256": "c963470100f2809d55da1072fc21e379da8bbc1f804a413e4fd4f600a1dc840b",
+    "compressed_sha256": "0719d598ff47b80dfa4de09b346fd8fa05281cc9b356a8811c873baeaaa072b3"
+  },
+  {
+    "phase": "full61b",
+    "sha": "e87612aa7157aef67976537f5ea8043d4f707e1a",
+    "worktree_status": "",
+    "command": [
+      "/Users/marcus/.n/n/versions/node/22.23.2/bin/node",
+      "node_modules/vitest/vitest.mjs",
+      "run",
+      "--config",
+      "apps/ingestion/vitest.config.ts",
+      "--maxWorkers=1",
+      "apps/ingestion/test/reconciliation-progress.spec.ts"
+    ],
+    "timeout_seconds": 2160,
+    "started_at": "2026-09-09T12:00:59.423821+00:00",
+    "log": "full61b-e87612aa.log.gz",
+    "exit_code": 0,
+    "interrupted": false,
+    "seconds": 145.823,
+    "finished_at": "2026-09-09T12:03:25.190621+00:00",
+    "uncompressed_sha256": "7c1d4a268924efbb7871f76d5ce3b628b639a187244aea89522448440e52bdbe",
+    "compressed_sha256": "302cfcd23c823b9302586f7e5853d647d9608b2ce537acee289bc6c1fe170a1d"
+  }
+]

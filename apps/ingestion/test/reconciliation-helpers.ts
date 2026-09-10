@@ -1,8 +1,12 @@
+import ingestionWorker from "../src/index";
+import { nativePreparationDriver } from "./native-preparation-driver";
 import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { afterEach, beforeEach, expect } from "vitest";
-import { catalogueStore } from "../../../src/catalogue/shared";
+import { catalogueRoutes } from "../../../src/catalogue/read";
+import { canonicalJson, catalogueStore, sha256, sha256Text } from "../../../src/catalogue/shared";
 import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
+import { routeTable } from "../../../src/http/routes";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 import * as catalogueExportQueries from "./query-helpers/catalogue-export";
@@ -16,10 +20,13 @@ export const testEnv = env as Env & {
 
 let requestSequence = 0;
 
-export function installReconciliationSuite(): void {
+let preparationDriver: ReturnType<typeof nativePreparationDriver> | undefined;
+
+export function installReconciliationSuite(options: { directPreparation?: boolean } = {}): void {
   installWorkflowIsolation();
 
   beforeEach(async () => {
+    preparationDriver = options.directPreparation ? nativePreparationDriver(testEnv) : undefined;
     await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
   });
 
@@ -190,18 +197,20 @@ export async function request(
   response: Response;
   document: Record<string, unknown>;
 }> {
-  const rpcResponse = await exports.default.fetch(
-    new Request(`https://card-keepr.invalid${pathname}`, {
-      method: body === undefined ? "GET" : "POST",
-      headers: {
-        authorization: "Bearer vitest-administration-key",
-        "cf-connecting-ip": `203.0.113.${(requestSequence++ % 250) + 1}`,
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
-        ...extraHeaders,
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    }),
-  );
+  const requested = new Request(`https://card-keepr.invalid${pathname}`, {
+    method: body === undefined ? "GET" : "POST",
+    headers: {
+      authorization: "Bearer vitest-administration-key",
+      "cf-connecting-ip": `203.0.113.${(requestSequence++ % 250) + 1}`,
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+      ...extraHeaders,
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const rpcResponse = preparationDriver
+    ? await ingestionWorker.fetch(requested, preparationDriver.environment)
+    : await exports.default.fetch(requested);
+  await preparationDriver?.drain();
   const status = rpcResponse.status;
   const document = (await rpcResponse.json()) as Record<string, unknown>;
   return {
@@ -250,6 +259,9 @@ export async function exportComponentRecords(
       compressed_sha256: string;
     }[];
   }>();
+  if (manifest !== undefined && !("components" in manifest)) {
+    return nativeExportComponentRecords(revisionId, componentName);
+  }
   const component = manifest?.components.find((entry) => entry.name === componentName);
   const object = await testEnv.CATALOGUE_EXPORTS.get(
     `catalogue-exports/${revisionId}/components/${component?.compressed_sha256}.ndjson.gz`,
@@ -264,25 +276,86 @@ export async function exportComponentRecords(
     .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
-export async function exportManifest(revisionId: string): Promise<{
+type ExportFixtureManifest = {
   published_at: string;
-  source_freshness: {
-    game: string;
-    area: string;
-    checked_at: string;
-  }[];
+  source_freshness?: { game: string; area: string; checked_at: string }[];
   components: {
     name: string;
+    kind?: string;
+    records: number;
     uncompressed_bytes: number;
+    content_sha256: string;
     compressed_bytes: number;
     compressed_sha256: string;
   }[];
-}> {
+  page?: { next_cursor: string | null };
+  manifest_sha256: string;
+};
+
+/** Native manifests remain honest pages; callers inspecting all bytes must follow the cursor. */
+export async function exportManifest(revisionId: string): Promise<ExportFixtureManifest> {
   const exportRow = await catalogueExportQueries
     .readCatalogueExportsManifestKeyForExportComponentRecords(testEnv.CATALOGUE_DB)
     .bind(revisionId)
     .first<{ manifest_key: string }>();
   const manifestObject = await testEnv.CATALOGUE_EXPORTS.get(exportRow?.manifest_key ?? "");
   if (manifestObject === null) throw new Error("export manifest missing");
-  return manifestObject.json();
+  const manifest = await manifestObject.json<ExportFixtureManifest>();
+  return "components" in manifest ? manifest : nativeExportManifestPage(revisionId, null);
+}
+
+const dispatchExportRead = routeTable(catalogueRoutes);
+async function exportRead(path: string) {
+  const request = new Request(`https://card-keepr.invalid${path}`);
+  const response = await dispatchExportRead("GET", new URL(request.url).pathname, {
+    request,
+    env: { ...testEnv, CATALOGUE_DB: catalogueStore(testEnv.CATALOGUE_DB) },
+    requestId: "fixture-export-read",
+    base: { origin: "https://card-keepr.invalid", basePath: "" },
+  });
+  if (response === null || response.status !== 200) throw new Error(`Export read failed: ${path}`);
+  return response;
+}
+
+async function nativeExportManifestPage(revisionId: string, after: string | null) {
+  const response = await exportRead(
+    `/v1/catalogue-exports/${revisionId}${after === null ? "" : `?after=${encodeURIComponent(after)}`}`,
+  );
+  const { data } = await response.json<{ data: ExportFixtureManifest }>();
+  expect(await sha256Text(canonicalJson({ ...data, manifest_sha256: "0".repeat(64) }))).toBe(data.manifest_sha256);
+  return data;
+}
+
+async function nativeExportComponentRecords(revisionId: string, kind: string) {
+  const records: Record<string, unknown>[] = [];
+  let after: string | null = null;
+  const visited = new Set<string>();
+  do {
+    const manifest = await nativeExportManifestPage(revisionId, after);
+    for (const component of manifest.components.filter((component) => component.kind === kind)) {
+      const response = await exportRead(`/v1/catalogue-exports/${revisionId}/components/${component.name}`);
+      const compressed = new Uint8Array(await response.arrayBuffer());
+      expect(compressed.byteLength).toBe(component.compressed_bytes);
+      expect(await sha256(compressed)).toBe(component.compressed_sha256);
+      const raw = new Uint8Array(
+        await new Response(new Response(compressed).body!.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer(),
+      );
+      expect(raw.byteLength).toBe(component.uncompressed_bytes);
+      expect(await sha256(raw)).toBe(component.content_sha256);
+      const values = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false })
+        .decode(raw)
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+      expect(values).toHaveLength(component.records);
+      records.push(...values);
+    }
+    after = manifest.page?.next_cursor ?? null;
+    if (after !== null) {
+      expect(visited.has(after)).toBe(false);
+      visited.add(after);
+    }
+  } while (after !== null);
+  return records;
 }

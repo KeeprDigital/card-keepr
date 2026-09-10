@@ -5,11 +5,13 @@ import { currentCatalogueStatus } from "../../../src/catalogue/read";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import { sourceRequestInsertionStatement } from "../../../src/catalogue/source-evidence/source-plan-repository";
 import ingestionWorker from "../src/index";
+import { stageHistoricalPublication } from "./historical-publication-fixture";
+import { waitNativeState } from "./native-no-change-helpers";
+import { prepareNativeCandidate } from "./native-publication-helpers";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as reconciliationQueries from "./query-helpers/reconciliation";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import {
-  approve,
   collect,
   collectRequests,
   expectRetainedEvidenceInvalid,
@@ -329,9 +331,10 @@ test("a partial Gundam refresh accepts one selected production lineage independe
   await ingestionQueries.setOperationStateActiveIngestionRunIdForInstallApiSuite(testEnv.CATALOGUE_DB).run();
 });
 
-test("publication stays readable while its immutable degraded backup blocks the next approval", async () => {
+test("historical publication recovery stays readable while its degraded backup blocks the next native approval", async () => {
   const firstRun = await collect("/reconciliation/base", "publication-backup-degraded-first");
-  const firstCandidate = await reconcile(firstRun.id);
+  await reconcile(firstRun.id);
+  const retained = await stageHistoricalPublication(firstRun.id, "publication-backup-degraded-approval");
   let dispatchBeforeCreation: unknown;
   const failingWorkflow = {
     async create() {
@@ -354,7 +357,7 @@ test("publication stays readable while its immutable degraded backup blocks the 
   const publicEnv = {
     ...testEnv,
     CATALOGUE_BACKUP_WORKFLOW: failingWorkflow,
-    ADMINISTRATION_CLOCK_MODE: "system",
+    ADMINISTRATION_CLOCK_MODE: "request",
   } as unknown as Env;
   const approvalResponse = await ingestionWorker.fetch(
     new Request(`https://card-keepr.invalid/v1/ingestion-runs/${firstRun.id}/approval`, {
@@ -363,12 +366,9 @@ test("publication stays readable while its immutable degraded backup blocks the 
         authorization: "Bearer vitest-administration-key",
         "content-type": "application/json",
         "cf-connecting-ip": "203.0.113.240",
+        "x-keepr-test-now": retained.expiredAt,
       },
-      body: JSON.stringify({
-        candidate_digest: requiredString(firstCandidate.document, "candidate_digest"),
-        expected_current_revision_id: requiredString(firstCandidate.document, "expected_current_revision_id"),
-        idempotency_key: "publication-backup-degraded-approval",
-      }),
+      body: JSON.stringify(retained.request),
     }),
     publicEnv,
     {
@@ -428,13 +428,51 @@ test("publication stays readable while its immutable degraded backup blocks the 
     )
     .run();
   const secondRun = await collect("/reconciliation/profile-one-piece", "publication-backup-degraded-second");
-  const secondCandidate = await reconcile(secondRun.id);
+  const secondCandidate = await prepareNativeCandidate(
+    secondRun.id,
+    "one-piece",
+    revisionId,
+    "degraded-next-candidate",
+  );
+  const artifactsPath = `/v1/game-candidates/${secondCandidate.id}/publication-preparation`;
+  expect(
+    (
+      await post(`${artifactsPath}/start`, {
+        manifest_digest: secondCandidate.manifest_digest,
+        generation: secondCandidate.generation,
+        sequence: 0,
+        idempotency_key: "degraded-next-artifacts",
+      })
+    ).response.status,
+  ).toBe(202);
+  expect((await waitNativeState(artifactsPath, ["verified", "failed", "paused"])).state).toBe("verified");
   await ingestionQueries
     .setOperationStateRecoveryHealthForDegradedRecoveryPermitsEvidenceCollectionStartsRetriesWhileBlocked(
       testEnv.CATALOGUE_DB,
     )
     .run();
-  const blocked = await approve(secondCandidate.document);
+  const blocked = await post("/v1/publications", {
+    candidate_id: secondCandidate.id,
+    manifest_digest: secondCandidate.manifest_digest,
+    expected_game_revision_id: revisionId,
+    generation: secondCandidate.generation,
+    idempotency_key: "blocked-native-approval",
+  });
   expect(blocked.response.status).toBe(409);
-  expect(blocked.document).toMatchObject({ code: "recovery_not_verified" });
+  expect(blocked.document).toMatchObject({ code: "publication_approval_conflict" });
+  // The earlier real backup is verified; remove only the injected degraded flag
+  // and prove the identical, fully prepared approval now passes its reservation.
+  await ingestionQueries
+    .setOperationStateRecoveryHealthForRecoveryHealthGatesFixtureEvidenceInjectionReconciliationBeforeMutation(
+      testEnv.CATALOGUE_DB,
+    )
+    .run();
+  const allowed = await post("/v1/publications", {
+    candidate_id: secondCandidate.id,
+    manifest_digest: secondCandidate.manifest_digest,
+    expected_game_revision_id: revisionId,
+    generation: secondCandidate.generation,
+    idempotency_key: "blocked-native-approval",
+  });
+  expect(allowed.response.status, JSON.stringify(allowed.document)).toBe(202);
 }, 60_000);

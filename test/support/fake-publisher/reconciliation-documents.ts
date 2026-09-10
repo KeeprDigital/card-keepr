@@ -781,7 +781,7 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
       ],
     };
   }
-  if (/^observation-count-(?:100|124|149)$/u.test(scenario)) {
+  if (/^observation-count-(?:1|25|26|50)$/u.test(scenario)) {
     const count = Number(scenario.slice("observation-count-".length));
     return {
       cards: Array.from({ length: count }, (_, index) =>
@@ -2084,6 +2084,43 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
   const incompleteAppearance = scenario === "incomplete-appearance";
   const setCountMismatch = scenario === "set-count-mismatch";
   const productReleaseCatalogue = productReleaseCatalogueForScenario(scenario);
+  if (["gundam-membership-asia", "gundam-membership-us", "gundam-membership-asia-missing"].includes(scenario)) {
+    const region = scenario === "gundam-membership-us" ? "us" : "asia";
+    const missing = scenario === "gundam-membership-asia-missing";
+    return {
+      cards: [
+        printingObservation({
+          game: "gundam",
+          profile: "gundam@1",
+          cardNumber: region === "asia" ? "GD89-001" : "GD89-002",
+          name: `Membership ${region} Card`,
+          cardAttributes: {
+            card_type: "unit",
+            colours: ["blue"],
+            level: 4,
+            cost: 3,
+            block_icon: "1",
+            effect_text: "Official effect",
+            zone: "space",
+            traits: ["Earth Federation"],
+            link_condition: null,
+            ap: 3,
+            hp: 4,
+            series_titles: ["Mobile Suit Gundam"],
+          },
+          printingAttributes: { alternate_art: false },
+          locator: `/official/gundam/membership-${region}`,
+          variantKey: "base",
+          lineageMarker: `membership-${region}`,
+          memberships: {
+            products: missing ? [] : [`membership-product-${region}`],
+            distribution_contexts: missing ? [] : [`membership-context-${region}`],
+            source_buckets: [`membership-source-bucket-${region}`],
+          },
+        }),
+      ],
+    };
+  }
   if (
     scenario === "gundam-product-asia" ||
     scenario === "gundam-product-us" ||

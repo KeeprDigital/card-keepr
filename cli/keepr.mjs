@@ -267,15 +267,6 @@ const commandRoutes = {
   inspectCandidate: {
     path: "/v1/ingestion-runs/{run-id}/candidate",
   },
-  approveRun: {
-    path: "/v1/ingestion-runs/{run-id}/approval",
-    yes: true,
-    fields: {
-      candidate_digest: "candidate-digest",
-      expected_current_revision_id: "expected-current-revision",
-      idempotency_key: "idempotency-key",
-    },
-  },
   rejectRun: {
     path: "/v1/ingestion-runs/{run-id}/rejection",
     yes: true,
@@ -414,7 +405,16 @@ const commands = {
   "release production": runProductionReleaseCommand,
   "run show": (args, env, json) => routeCommand("showRun", args, env, json),
   "candidate inspect": (args, env, json) => routeCommand("inspectCandidate", args, env, json),
-  "run approve": (args, env, json) => routeCommand("approveRun", args, env, json),
+  "run approve": (_args, _env, json) =>
+    writeFailure(
+      json,
+      {
+        code: "run_approval_retired",
+        detail:
+          "Run approval is retired. Review the exact whole candidate with game-candidate inspect, prepare its artifacts with publication-preparation start, then use publication approve with its candidate ID, manifest, game predecessor and generation. Inspect publication status for completion; an approval acknowledgement may still be pending.",
+      },
+      2,
+    ),
   "run reject": (args, env, json) => routeCommand("rejectRun", args, env, json),
   "run retry": (args, env, json) => routeCommand("retryRun", args, env, json),
   "staging-cleanup start": (args, env, json) => routeCommand("stagingCleanupStart", args, env, json),
@@ -1081,7 +1081,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr identity-correction validate | identity-correction create | identity-correction inspect | identity-correction list | entity-proposal list | entity-proposal inspect | entity-proposal create | entity-proposal admit | entity-proposal link | entity-proposal reject | entity-proposal reconsider | identity inspect | identity reviews | identity resolve | health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | game-candidate prepare | game-candidate abandon | game-candidate list | game-candidate show | game-candidate inspect | game-candidate evidence | game-candidate partitions | game-candidate partition | reconciliation status | reconciliation text | reconciliation inputs | reconciliation input | reconciliation partitions | reconciliation partition | reconciliation pause | reconciliation resume | reconciliation abandon | run approve | run reject | run retry | run cleanup | staging-cleanup start | evidence-cleanup start | evidence-cleanup status | evidence-cleanup objects | evidence-cleanup retry | source registry | source authorities | source designate | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
+        "Usage: keepr identity-correction validate | identity-correction create | identity-correction inspect | identity-correction list | entity-proposal list | entity-proposal inspect | entity-proposal create | entity-proposal admit | entity-proposal link | entity-proposal reject | entity-proposal reconsider | identity inspect | identity reviews | identity resolve | health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | game-candidate prepare | game-candidate abandon | game-candidate list | game-candidate show | game-candidate inspect | game-candidate evidence | game-candidate partitions | game-candidate partition | reconciliation status | reconciliation text | reconciliation inputs | reconciliation input | reconciliation partitions | reconciliation partition | reconciliation pause | reconciliation resume | reconciliation abandon | publication-preparation start | publication-preparation status | publication-preparation artifacts | publication-preparation resume | publication approve | publication status | publication resume | run reject | run retry | run cleanup | staging-cleanup start | evidence-cleanup start | evidence-cleanup status | evidence-cleanup objects | evidence-cleanup retry | source registry | source authorities | source designate | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
     },
     2,
   );

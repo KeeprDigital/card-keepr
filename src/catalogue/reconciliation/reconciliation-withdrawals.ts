@@ -1,10 +1,12 @@
 import { type CatalogueStore, canonicalJson } from "../shared";
-import { ReconciliationContinuation } from "./reconciliation-continuation";
+import { type SourceHistoryCandidate, sourceHistoryCandidateStatement } from "./native-source-history-repository";
+import { type PublicLifecycleFact, priorPublicLifecycle } from "./publication-lifecycle-repository";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
-import { type ObservationPlan, ReconciliationPlanState } from "./reconciliation-plan-state";
-import { ReconciliationReducerIndex, ReconciliationReducerStorageError } from "./reconciliation-reducer-state";
+import { ReconciliationContinuation } from "./reconciliation-continuation";
+import type { ObservationPlan, ReconciliationPlanState } from "./reconciliation-plan-state";
 import { publishedWithdrawalAssertionsStatement } from "./reconciliation-read-repository";
 import type { ReconciliationRecordSink } from "./reconciliation-record-collection";
+import { ReconciliationReducerIndex, ReconciliationReducerStorageError } from "./reconciliation-reducer-state";
 
 type WithdrawalDiagnostic = {
   code: "withdrawal_evidence_conflict";
@@ -110,7 +112,7 @@ export async function prepareWithdrawalDiagnostics(
           yield plan;
         },
       };
-      for await (const diagnostic of publishedWithdrawalConflictDiagnostics(database, single))
+      for await (const diagnostic of publishedWithdrawalConflictDiagnostics(database, runId, single))
         await diagnostics.push(diagnostic);
       after = plan.sourceObservationId;
     }
@@ -148,8 +150,10 @@ async function retainAssertion(assertions: ReconciliationReducerIndex<Assertion>
 
 async function* publishedWithdrawalConflictDiagnostics(
   database: CatalogueStore,
+  preparation: string,
   plans: AsyncIterable<ObservationPlan>,
 ): AsyncGenerator<WithdrawalDiagnostic> {
+  const candidate = await sourceHistoryCandidateStatement(database, preparation).first<SourceHistoryCandidate>();
   for await (const plan of plans) {
     const withdrawal = plan.withdrawal;
     if (withdrawal === null) continue;
@@ -164,10 +168,26 @@ async function* publishedWithdrawalConflictDiagnostics(
     for (const target of targets) {
       let latest: { assertion: string; state: string; effective_at: string } | null;
       try {
-        latest = await publishedWithdrawalAssertionsStatement(database, {
-          entityType: target.entityType,
-          entityId: target.entityId,
-        }).first<{ assertion: string; state: string; effective_at: string }>();
+        if (candidate?.predecessor_candidate_id) {
+          const prior = await priorPublicLifecycle(
+            database,
+            candidate.expected_game_revision_id,
+            candidate.supported_game,
+            target.entityType === "card" ? "cards" : "printings",
+            target.entityId,
+            preparation,
+          ).first<PublicLifecycleFact>();
+          const evidence = prior?.withdrawal_evidence_json ? JSON.parse(prior.withdrawal_evidence_json) : null;
+          latest = evidence
+            ? { assertion: evidence.assertion, state: evidence.state, effective_at: evidence.effective_at }
+            : null;
+        } else {
+          latest = await publishedWithdrawalAssertionsStatement(database, target).first<{
+            assertion: string;
+            state: string;
+            effective_at: string;
+          }>();
+        }
       } catch (cause) {
         throw new ReconciliationReducerStorageError(cause);
       }

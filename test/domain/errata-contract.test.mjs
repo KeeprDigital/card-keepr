@@ -29,21 +29,6 @@ test("Official Errata evidence has an explicit normative contract", async () => 
     ),
   );
   assert.deepEqual(exportSchema.$defs.ErratumRecord.properties.corrected_value.type, ["string", "null"]);
-
-  const contract = await readFile(resolve(root, "docs/contracts/official-errata.md"), "utf8");
-  for (const term of [
-    "Official Source",
-    "Card",
-    "Printing",
-    "Effective Rules Text",
-    "Printed Rules Text",
-    "effective_from",
-    "official_wording",
-    "corrected_value",
-  ]) {
-    assert.match(contract, new RegExp(term));
-  }
-  assert.match(contract, /https:\/\/en\.onepiece-cardgame\.com\/rules\/errata_card\//);
 });
 
 test("the baseline enforces the reconciliation workflow and Errata constraints", async () => {

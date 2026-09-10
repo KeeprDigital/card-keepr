@@ -90,6 +90,7 @@ export { dispatchPublicationPreparation } from "./publication-preparation-dispat
 
 export {
   advanceGamePublication,
+  gamePublicationHasUnchangedFacts,
   pauseGamePublication,
   dispatchGamePublication,
   inspectPublication,

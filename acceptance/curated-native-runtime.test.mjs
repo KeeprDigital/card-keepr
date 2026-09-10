@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import test from "node:test";
 import { build } from "esbuild";
-import { convertV4MiniflareOptions, Miniflare } from "miniflare";
+import { Miniflare } from "miniflare";
 import { profileNativeIsolates } from "./helpers/native-isolate-metrics.mjs";
 import { curatedNativeD1Statements } from "./helpers/query-helpers/curated-native-fixture.mjs";
 
@@ -19,16 +19,14 @@ test("owner validation resolves a native published target in Workerd without req
     external: ["node:*", "cloudflare:*"],
   });
   const capacityOutput = process.env.KEEPR_CURATED_CAPACITY_OUTPUT;
-  const runtime = new Miniflare(
-    convertV4MiniflareOptions({
-      ...(capacityOutput ? { inspectorPort: 0 } : {}),
-      modules: true,
-      script: bundled.outputFiles[0].text,
-      compatibilityDate: "2026-07-29",
-      compatibilityFlags: ["nodejs_compat"],
-      d1Databases: ["CATALOGUE_DB"],
-    }),
-  );
+  const runtime = new Miniflare({
+    ...(capacityOutput ? { inspectorPort: 0 } : {}),
+    modules: true,
+    script: bundled.outputFiles[0].text,
+    compatibilityDate: "2026-07-29",
+    compatibilityFlags: ["nodejs_compat"],
+    d1Databases: ["CATALOGUE_DB"],
+  });
   t.after(() => runtime.dispose());
   const db = await runtime.getD1Database("CATALOGUE_DB");
   for (const statement of curatedNativeD1Statements())

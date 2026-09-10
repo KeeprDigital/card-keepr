@@ -8,7 +8,6 @@ import {
 import {
   claimPublicationCleanupStatement,
   completePublicationCleanupStatement,
-  failCandidatePublicationStatement,
   failPublicationCleanupStatement,
   failPublicationEvidencePlanStatement,
   failReservedPublicationStatement,
@@ -29,7 +28,6 @@ import {
   requiredRun,
 } from "./run-storage";
 import {
-  type ApproveRunRequest,
   type IdempotencyClaimOwner,
   type PublicationCleanupRow,
   publicationLeaseMilliseconds,
@@ -301,43 +299,6 @@ async function deleteR2KeysInBatches(bucket: R2Bucket, keys: readonly string[]):
   for (let index = 0; index < keys.length; index += 1_000) {
     await bucket.delete(keys.slice(index, index + 1_000));
   }
-}
-
-export async function failUnreservedPublication(
-  database: CatalogueStore,
-  run: RunRow,
-  request: ApproveRunRequest,
-  requestJson: string,
-  terminalAt: string,
-  claimOwner: IdempotencyClaimOwner,
-  problem: AdministrationProblem,
-): Promise<void> {
-  await database.batch([
-    failCandidatePublicationStatement(database, { terminalAt: terminalAt, failureCode: problem.code, runId: run.id }),
-    failPublicationEvidencePlanStatement(database, { failureCode: problem.code, runId: run.id }),
-    releaseRunLockStatement(database, run.id),
-    recordApprovalFailureStatement(database, {
-      key: request.idempotency_key,
-      requestJson: requestJson,
-      responseJson: canonicalJson({
-        code: problem.code,
-        detail: problem.message,
-      }),
-      status: problem.status,
-      createdAt: terminalAt,
-      ownerToken: claimOwner.ownerToken,
-      claimVersion: claimOwner.version,
-    }),
-    administrationClaimDeleteStatement(
-      database,
-      {
-        key: request.idempotency_key,
-        operation: "approve_ingestion_run",
-        requestJson,
-      },
-      claimOwner,
-    ),
-  ]);
 }
 
 export async function failReservedPublication(

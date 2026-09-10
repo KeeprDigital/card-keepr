@@ -1,27 +1,18 @@
 import { expect, test } from "vitest";
 import { canonicalJson, sha256Text } from "../../../src/catalogue/shared";
-import {
-  approve,
-  collect,
-  get,
-  installReconciliationSuite,
-  post,
-  reconcile,
-  requiredString,
-  testEnv,
-} from "./reconciliation-helpers";
+import { nativeCandidateRecords } from "./native-candidate-helpers";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import { collect, get, installReconciliationSuite, post, requiredString, testEnv } from "./reconciliation-helpers";
 import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 
-installReconciliationSuite();
+installReconciliationSuite({ directPreparation: true });
 
 test("all 32 changed Curated Revisions become reconfirmable with a bounded final transaction", async () => {
-  const seed = await reconcile(
-    (await collect("/reconciliation/curated-conflict-fanout-base", "curated-fanout-seed")).id,
-  );
-  expect(seed.response.status).toBe(200);
-  const cards = seed.document.cards as { id: string; name: string }[];
+  const source = await collect("/reconciliation/curated-conflict-fanout-base", "curated-fanout-seed");
+  const seed = await prepareNativeCandidate(source.id, "one-piece", "catrev_spine_000", "curated-fanout-candidate");
+  const cards = (await nativeCandidateRecords(String(seed.id))).cards as { id: string; name: string }[];
   expect(cards).toHaveLength(32);
-  const published = await approve(seed.document);
+  const published = await approveNativeCandidate(seed, "curated-fanout-publish");
   expect(published.response.status).toBe(200);
   const revisions: string[] = [];
   for (const card of cards) {

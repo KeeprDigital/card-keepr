@@ -366,7 +366,7 @@ async function claimAdministration(
   }
 }
 
-function pendingAdministrationOperation(
+export function pendingAdministrationOperation(
   context: IdempotencyContext,
   claim: IdempotencyClaimRow,
 ): Record<string, unknown> {

@@ -42,7 +42,9 @@ export function publicationStateSnapshot(db: D1Database) {
 export function admitSyntheticCurrentCheckpoint(db: D1Database) {
   return db
     .prepare(`UPDATE catalogue_backup_attempts SET state='verified',d1_bookmark='synthetic-guard-test',completed_at='2026-09-01T00:00:00.000Z',manifest_sha256=?
-    WHERE catalogue_revision_id=(SELECT current_revision_id FROM catalogue_state WHERE singleton=1)`)
+    WHERE catalogue_revision_id=(SELECT current_revision_id FROM catalogue_state WHERE singleton=1)
+    AND state='pending' AND publication_reserved=1
+    AND publication_operation_id=(SELECT publication_operation_id FROM catalogue_acceptance_head WHERE singleton=1)`)
     .bind("f".repeat(64))
     .run();
 }

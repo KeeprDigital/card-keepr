@@ -1,29 +1,30 @@
 import { environmentNames } from "../../http/environment-target.mjs";
 import { validatedEnvironmentTarget } from "../../http/production-target.mjs";
-import { advancePublicationExports } from "./publication-export-preparation";
-import { resolveAdministrationTarget } from "./administration-target";
 import {
   administrationResultStatus,
   assertOnlyFields,
   readAdministrationBody,
   requiredString,
 } from "../../http/administration";
+import { validatedProductionTarget } from "../../http/production-target.mjs";
 import { absoluteDocumentLinks } from "../../http/public-base";
 import { type RouteContext, route } from "../../http/routes";
 import { publicationBackupReservation, startOrObserveCatalogueBackupWorkflow } from "../backup-recovery";
 import { AdministrationProblem, type CatalogueStore } from "../shared";
 import { evidenceInspectionOptions, showEvidenceRun } from "../source-evidence";
+import { resolveAdministrationTarget } from "./administration-target";
 import { runGuardedCardSearchRepair } from "./card-search-repair-administration";
 import {
   administrationStatus,
-  approveRun,
   inspectCandidate,
+  observeHistoricalRunApproval,
   rejectRun,
   retryPublicationCleanup,
   retryRun,
   showRun,
 } from "./ingestion";
 import { resolveProductionRelease } from "./production-release-preparation";
+import { advancePublicationExports } from "./publication-export-preparation";
 import { runHasEvidencePlanStatement } from "./run-lifecycle-repository";
 
 type Environment = Parameters<typeof evidenceInspectionOptions>[0] & {
@@ -112,7 +113,7 @@ export const ingestionRoutes = [
     async ({ request, env, requestId, base, observedAt, publicationBackupWaiter }, params) => {
       const body = await readAdministrationBody(request);
       assertOnlyFields(body, ["candidate_digest", "expected_current_revision_id", "idempotency_key"]);
-      const result = await approveRun(
+      const result = await observeHistoricalRunApproval(
         env.CATALOGUE_DB,
         env.CATALOGUE_EXPORTS,
         params.run!,
@@ -122,7 +123,6 @@ export const ingestionRoutes = [
           idempotency_key: requiredString(body, "idempotency_key"),
         },
         observedAt,
-        env.PRINTING_IMAGES,
       );
       if (result.publication_outcome === "revision" && typeof result.resulting_revision_id === "string") {
         const reservation = await publicationBackupReservation(result.resulting_revision_id);

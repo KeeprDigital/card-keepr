@@ -29,14 +29,19 @@ import {
   retainNormalizedObservation,
   stagedNormalizedObservations,
 } from "./reconciliation-normalized";
-import { imageStorage, retainCandidateImage } from "./reconciliation-images";
+import {
+  imageStorage,
+  retainCandidateImage,
+  verifiedRetainedPrintingImage,
+  type VerifiedPrintingImage,
+} from "./reconciliation-images";
 import {
   sourceAdapterForCoverage,
   adapterReconciliationAreas,
   parsedOfficialArtworkIdentity,
   requiredSourceAdapter,
 } from "../adapters";
-import { type CatalogueStore, type SupportedGame, canonicalJson, sha256, sha256Text } from "../shared";
+import { type CatalogueStore, type SupportedGame, canonicalJson, sha256Text } from "../shared";
 import {
   evidencePlanForRequest,
   parseEvidencePlans,
@@ -293,29 +298,33 @@ async function collectRetainedReconciliationObservation(
         return;
       }
       if (await hasNormalizedObservation(database, runId, wrapped.id)) return;
-      let parsed = parseReconciliationObservation(
-        wrapped.id,
-        await attachRetainedPrintingImages(
-          wrapped.value,
-          async (url) => {
-            const image = await imageStorage(() =>
-              reconciliationSnapshotEvidenceStatement(database, runId, url, row.source_lineage).first<
-                PrintingImageSnapshotRow & { selection_content: string; selection_sha256: string }
-              >(),
-            );
-            if (image && (await sha256Text(image.selection_content)) !== image.selection_sha256)
-              throw new Error("Retained image evidence selection failed integrity verification.");
-            return image;
-          },
-          evidenceObjects,
-          row.plan_origin === "production",
-        ),
+      const retained = await attachRetainedPrintingImages(
+        wrapped.value,
+        async (url) => {
+          const image = await imageStorage(() =>
+            reconciliationSnapshotEvidenceStatement(database, runId, url, row.source_lineage).first<
+              PrintingImageSnapshotRow & { selection_content: string; selection_sha256: string }
+            >(),
+          );
+          if (image && (await sha256Text(image.selection_content)) !== image.selection_sha256)
+            throw new Error("Retained image evidence selection failed integrity verification.");
+          return image;
+        },
+        evidenceObjects,
+        row.plan_origin === "production",
       );
+      let parsed = parseReconciliationObservation(wrapped.id, retained.value, retained.images);
       if (parsed.kind === "card_printing") {
         const references = [];
         for (const image of parsed.printingImages)
           references.push(
-            await retainCandidateImage(trackedStagingBucket(database, printingImages, "PRINTING_IMAGES", runId), image),
+            await retainCandidateImage(
+              trackedStagingBucket(database, printingImages, "PRINTING_IMAGES", runId),
+              image,
+              retained.images.has(image.source_url)
+                ? { bucket: evidenceObjects, key: retained.images.get(image.source_url)!.content_object_key }
+                : undefined,
+            ),
           );
         parsed = { ...parsed, printingImages: references };
       }
@@ -401,6 +410,8 @@ async function collectRetainedReconciliationObservation(
             supportedGame: row.supported_game,
             gameProfileVersion: row.game_profile_version,
             adapterVersion: row.adapter_version,
+            capturedAt: row.retrieved_at,
+            reconciliationCapability: requiredSourceAdapter(row.adapter_version).reconciliationCapability,
           },
         ],
   );
@@ -526,10 +537,11 @@ async function attachRetainedPrintingImages(
   imageAtUrl: (url: string) => Promise<PrintingImageSnapshotRow | null>,
   evidenceObjects: R2Bucket,
   allowVerifiedNovelty: boolean,
-): Promise<unknown> {
-  if (!isRecord(value) || !isRecord(value.appearance_evidence)) return value;
+): Promise<{ value: unknown; images: Map<string, VerifiedPrintingImage & { content_object_key: string }> }> {
+  const images = new Map<string, VerifiedPrintingImage & { content_object_key: string }>();
+  if (!isRecord(value) || !isRecord(value.appearance_evidence)) return { value, images };
   const declared = value.appearance_evidence.images;
-  if (!Array.isArray(declared)) return value;
+  if (!Array.isArray(declared)) return { value, images };
   // The observation contract permits one image for each of its three roles.
   // Reject excess declarations before any per-image storage lookup.
   if (declared.length > 3)
@@ -541,9 +553,13 @@ async function attachRetainedPrintingImages(
       continue;
     }
     const retained = await imageAtUrl(item.source_url);
-    retainedImages.push(
-      retained === null ? item : { ...item, ...(await retainedPrintingImage(evidenceObjects, retained)) },
-    );
+    if (retained === null) {
+      retainedImages.push(item);
+    } else {
+      const verified = await verifiedRetainedPrintingImage(evidenceObjects, retained);
+      images.set(item.source_url, { ...verified, content_object_key: retained.content_object_key });
+      retainedImages.push({ ...item, ...verified });
+    }
   }
   const complete =
     retainedImages.length > 0 &&
@@ -556,10 +572,13 @@ async function attachRetainedPrintingImages(
     );
   if (!complete || !allowVerifiedNovelty || !isRecord(value.identity_evidence)) {
     return {
-      ...value,
-      appearance_evidence: {
-        ...value.appearance_evidence,
-        images: retainedImages,
+      images,
+      value: {
+        ...value,
+        appearance_evidence: {
+          ...value.appearance_evidence,
+          images: retainedImages,
+        },
       },
     };
   }
@@ -569,10 +588,13 @@ async function attachRetainedPrintingImages(
   }
   if (parsedOfficialArtworkIdentity(fingerprint) === null) {
     return {
-      ...value,
-      appearance_evidence: {
-        ...value.appearance_evidence,
-        images: retainedImages,
+      images,
+      value: {
+        ...value,
+        appearance_evidence: {
+          ...value.appearance_evidence,
+          images: retainedImages,
+        },
       },
     };
   }
@@ -581,152 +603,25 @@ async function attachRetainedPrintingImages(
     throw new Error("Retained Printing Image source URL is invalid.");
   }
   return {
-    ...value,
-    identity_evidence: {
-      ...value.identity_evidence,
-      artwork_fingerprint: fingerprint,
-      demonstrably_novel: true,
-      novelty_basis: {
-        kind: "official_printing_image",
-        source_url: firstImage.source_url,
+    images,
+    value: {
+      ...value,
+      identity_evidence: {
+        ...value.identity_evidence,
         artwork_fingerprint: fingerprint,
+        demonstrably_novel: true,
+        novelty_basis: {
+          kind: "official_printing_image",
+          source_url: firstImage.source_url,
+          artwork_fingerprint: fingerprint,
+        },
+      },
+      appearance_evidence: {
+        ...value.appearance_evidence,
+        images: retainedImages.map((item) => (isRecord(item) ? { ...item, artwork_fingerprint: fingerprint } : item)),
       },
     },
-    appearance_evidence: {
-      ...value.appearance_evidence,
-      images: retainedImages.map((item) => (isRecord(item) ? { ...item, artwork_fingerprint: fingerprint } : item)),
-    },
   };
-}
-
-async function retainedPrintingImage(
-  evidenceObjects: R2Bucket,
-  row: PrintingImageSnapshotRow,
-): Promise<{
-  media_type: string;
-  width: number;
-  height: number;
-  content_sha256: string;
-  content_base64: string;
-}> {
-  if (row.media_type === null || !row.media_type.startsWith("image/")) {
-    throw new Error("Retained Printing Image media type is invalid.");
-  }
-  const object = await imageStorage(() => evidenceObjects.get(row.content_object_key));
-  if (object === null || object.size !== row.content_byte_length) {
-    throw new Error("Retained Printing Image bytes are unavailable.");
-  }
-  const bytes = new Uint8Array(await imageStorage(() => object.arrayBuffer()));
-  if ((await sha256(bytes)) !== row.content_digest) {
-    throw new Error("Retained Printing Image digest is invalid.");
-  }
-  const dimensions = imageDimensions(bytes, row.media_type);
-  return {
-    media_type: row.media_type,
-    width: dimensions.width,
-    height: dimensions.height,
-    content_sha256: row.content_digest,
-    content_base64: base64(bytes),
-  };
-}
-
-function imageDimensions(bytes: Uint8Array, mediaType: string): { width: number; height: number } {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (
-    mediaType === "image/png" &&
-    bytes.byteLength >= 24 &&
-    bytes[0] === 0x89 &&
-    bytes[1] === 0x50 &&
-    bytes[2] === 0x4e &&
-    bytes[3] === 0x47
-  ) {
-    return {
-      width: view.getUint32(16),
-      height: view.getUint32(20),
-    };
-  }
-  if (mediaType === "image/gif" && bytes.byteLength >= 10 && String.fromCharCode(...bytes.subarray(0, 3)) === "GIF") {
-    return { width: view.getUint16(6, true), height: view.getUint16(8, true) };
-  }
-  if (
-    (mediaType === "image/jpeg" || mediaType === "image/jpg") &&
-    bytes.byteLength >= 4 &&
-    bytes[0] === 0xff &&
-    bytes[1] === 0xd8
-  ) {
-    let offset = 2;
-    while (offset + 8 < bytes.byteLength) {
-      if (bytes[offset] !== 0xff) {
-        offset += 1;
-        continue;
-      }
-      const marker = bytes[offset + 1]!;
-      const length = view.getUint16(offset + 2);
-      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
-        return {
-          height: view.getUint16(offset + 5),
-          width: view.getUint16(offset + 7),
-        };
-      }
-      if (length < 2) break;
-      offset += 2 + length;
-    }
-  }
-  if (
-    mediaType === "image/webp" &&
-    bytes.byteLength >= 30 &&
-    String.fromCharCode(...bytes.subarray(0, 4)) === "RIFF" &&
-    String.fromCharCode(...bytes.subarray(8, 12)) === "WEBP"
-  ) {
-    const chunk = String.fromCharCode(...bytes.subarray(12, 16));
-    if (chunk === "VP8X") {
-      return {
-        width: 1 + uint24le(bytes, 24),
-        height: 1 + uint24le(bytes, 27),
-      };
-    }
-    if (chunk === "VP8 " && bytes.byteLength >= 30) {
-      return {
-        width: view.getUint16(26, true) & 0x3fff,
-        height: view.getUint16(28, true) & 0x3fff,
-      };
-    }
-    if (chunk === "VP8L" && bytes.byteLength >= 25 && bytes[20] === 0x2f) {
-      const bits = view.getUint32(21, true);
-      return {
-        width: 1 + (bits & 0x3fff),
-        height: 1 + ((bits >>> 14) & 0x3fff),
-      };
-    }
-  }
-  if (mediaType === "image/avif") {
-    for (let offset = 4; offset + 16 <= bytes.byteLength; offset += 1) {
-      if (
-        bytes[offset] === 0x69 &&
-        bytes[offset + 1] === 0x73 &&
-        bytes[offset + 2] === 0x70 &&
-        bytes[offset + 3] === 0x65
-      ) {
-        return {
-          width: view.getUint32(offset + 8),
-          height: view.getUint32(offset + 12),
-        };
-      }
-    }
-  }
-  throw new Error("Retained Printing Image dimensions are unsupported.");
-}
-
-function uint24le(bytes: Uint8Array, offset: number): number {
-  return bytes[offset]! | (bytes[offset + 1]! << 8) | (bytes[offset + 2]! << 16);
-}
-
-function base64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let offset = 0; offset < bytes.byteLength; offset += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
-  }
-  return btoa(binary);
 }
 
 function assertObservationAuthority(

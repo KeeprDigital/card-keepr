@@ -6,6 +6,7 @@ import {
   createFakePublisher,
   workersPoolScenarios,
 } from "../../test/support/fake-publisher/index.ts";
+import { SqliteRestore } from "../../test/support/fake-publisher/sqlite-restore.ts";
 import { syntheticSourceAdapterMigration } from "../../test/support/source-adapters/migration";
 
 const migrations = await readD1Migrations(resolve(import.meta.dirname, "../../migrations"));
@@ -14,11 +15,6 @@ const migrations = await readD1Migrations(resolve(import.meta.dirname, "../../mi
 // stress measurements stay production-faithful. The default suite runs with
 // the immediate pacing override instead of sleeping ~1s per simulated fetch.
 const stressSuite = process.env.KEEPR_TEST_SUITE === "stress";
-const currentSchemaMigrationLevel = Number.parseInt(migrations.at(-1)?.name ?? "", 10);
-if (!Number.isSafeInteger(currentSchemaMigrationLevel)) {
-  throw new Error("The current schema migration level could not be derived.");
-}
-
 // The test suite is hermetic: it pins the placeholder resource identifiers
 // its Cloudflare API mocks and fixtures assert on, independent of the
 // provisioned production ids in wrangler.jsonc.
@@ -29,17 +25,27 @@ const d1VerificationToken = "vitest-d1-verification-token-active";
 
 // The fake internet behind every outbound fetch: the Cloudflare API mock and
 // the shared fake publisher's workers-pool scenario catalogue.
-const fakePublisher = createFakePublisher({
-  scenarios: [
-    cloudflareApiMock({
-      accountId: cloudflareAccountId,
-      disposableDatabaseId: disposableD1DatabaseId,
-      verificationToken: d1VerificationToken,
-      schemaMigrationLevel: currentSchemaMigrationLevel,
-    }),
-    ...workersPoolScenarios,
-  ],
-});
+// The installed Miniflare V4FetchHandler supplies the owning runtime as its
+// second argument. Keep each runtime's REST fixture and restore database isolated.
+const publishers = new WeakMap<object, ReturnType<typeof createFakePublisher>>();
+function publisherFor(miniflare: object, exportSql: () => Promise<string>) {
+  const existing = publishers.get(miniflare);
+  if (existing !== undefined) return existing;
+  const publisher = createFakePublisher({
+    scenarios: [
+      cloudflareApiMock({
+        accountId: cloudflareAccountId,
+        disposableDatabaseId: disposableD1DatabaseId,
+        verificationToken: d1VerificationToken,
+        restore: new SqliteRestore(),
+        exportSql,
+      }),
+      ...workersPoolScenarios,
+    ],
+  });
+  publishers.set(miniflare, publisher);
+  return publisher;
+}
 
 export default defineConfig({
   plugins: [
@@ -67,15 +73,21 @@ export default defineConfig({
         },
         // Miniflare hands over undici's Request; the publisher speaks the
         // Workers Request the scenarios were written against.
-        outboundService: (request) => fakePublisher.fetch(request as unknown as Request),
+        outboundService: (request, miniflare) =>
+          publisherFor(miniflare, async () => {
+            const database = await miniflare.getD1Database("CATALOGUE_DB");
+            // Use the plugin's owning runtime rather than the separate acceptance
+            // Miniflare instance. This is Wrangler's installed local SQL export seam.
+            const rows = await database.prepare("PRAGMA miniflare_d1_export(?,?,?);").bind(0, 0).raw<string[]>();
+            const statements = rows[0];
+            if (statements === undefined) throw new Error("Local D1 export returned no SQL.");
+            return statements.join("\n");
+          }).fetch(request as unknown as Request),
       },
     }),
   ],
   test: {
-    // Each file boots a complete Workers runtime. Concurrent runtimes starve
-    // Workflow polling on supported hosts and can leave timed-out test work
-    // racing the next fixture. Keep per-file storage isolation and timeouts.
-    maxWorkers: 1,
+    maxWorkers: stressSuite ? 1 : 2,
     include: stressSuite ? ["apps/ingestion/test/**/*.stress.spec.ts"] : ["apps/ingestion/test/**/*.spec.ts"],
     exclude: stressSuite ? [...configDefaults.exclude] : [...configDefaults.exclude, "**/*.stress.spec.ts"],
     hookTimeout: 30_000,

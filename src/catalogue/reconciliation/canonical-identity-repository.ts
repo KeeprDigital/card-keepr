@@ -183,15 +183,23 @@ export type IdentityDecision = {
 };
 export function identityDecisionStatement(database: CatalogueStore, id: string, runId?: string) {
   return repositoryStatements(database)
-    .prepare(`SELECT * FROM canonical_identity_decisions WHERE review_id = ?
+    .prepare(`SELECT review_id,printing_id,rationale,idempotency_key,request_json,decided_at
+      FROM canonical_identity_decisions WHERE review_id = ?
       AND (? IS NULL OR rowid <= (SELECT identity_decision_cutoff FROM reconciliation_operations WHERE id = ?))`)
     .bind(id, runId ?? null, runId ?? null);
 }
 export function insertIdentityDecisionStatement(database: CatalogueStore, decision: IdentityDecision) {
   return atomicRepositoryStatement(database, {
     statement: repositoryStatements(database)
-      .prepare(`INSERT INTO canonical_identity_decisions
-      (review_id, printing_id, rationale, idempotency_key, request_json, decided_at) VALUES (?, ?, ?, ?, ?, ?)`)
+      .prepare(`WITH reviewed_predecessor AS (
+        SELECT predecessor.predecessor_candidate_id AS candidate_id
+        FROM reconciliation_identity_reviews capture
+        LEFT JOIN game_candidate_predecessors predecessor ON predecessor.candidate_id=capture.preparation_id
+        WHERE capture.review_id=?1 ORDER BY capture.rowid LIMIT 1
+      ) INSERT INTO canonical_identity_decisions
+      (review_id,printing_id,rationale,idempotency_key,request_json,decided_at,native_candidate_id,historical_printing_id)
+      SELECT ?1,?2,?3,?4,?5,?6,(SELECT candidate_id FROM reviewed_predecessor),
+        CASE WHEN (SELECT candidate_id FROM reviewed_predecessor) IS NULL THEN ?2 ELSE NULL END`)
       .bind(
         decision.review_id,
         decision.printing_id,

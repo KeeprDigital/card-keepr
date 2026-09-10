@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { after } from "node:test";
 import { inspect, parseEnv } from "node:util";
 import { build } from "esbuild";
-import { convertV4MiniflareOptions, Miniflare } from "miniflare";
+import { Miniflare } from "miniflare";
 import { unstable_getMiniflareWorkerOptions, unstable_splitSqlQuery } from "wrangler";
 import { nativeOperationalTimeline } from "./native-capacity-metrics.mjs";
 import { profileNativeIsolates } from "./native-isolate-metrics.mjs";
@@ -46,11 +46,11 @@ function identity(statePath, id) {
 
 function persistence(statePath) {
   const path = join(dirname(resolve(statePath)), "miniflare");
-  return { resourcePersistencePath: path };
+  return { d1Persist: join(path, "d1"), r2Persist: join(path, "r2"), workflowsPersist: join(path, "workflows") };
 }
 
 export function inprocessDatabaseDirectory(statePath) {
-  return join(persistence(statePath).resourcePersistencePath, "d1");
+  return persistence(statePath).d1Persist;
 }
 
 async function configuration(config, statePath) {
@@ -139,8 +139,6 @@ export async function startInprocessWorker({
     name: prepared.raw.name,
     ...(outboundService ? { outboundService } : {}),
     modules: true,
-    // esbuild owns asset loading; Miniflare receives one ES module.
-    modulesRules: undefined,
     script: await bundle(prepared.main, prepared.define),
     bindings: {
       ...prepared.workerOptions.bindings,
@@ -188,10 +186,12 @@ export async function startInprocessWorker({
     const all = {
       ...group.options,
       ...(process.env.KEEPR_CAPACITY_OUTPUT_PREFIX ? { inspectorPort: 0 } : {}),
-      handleStructuredLogs: ({ message, level }) => {
-        const line = `${message}\n`;
-        group.output += line;
-        group.timeline?.observe(line, level);
+      handleRuntimeStdio: (stdout, stderr) => {
+        for (const stream of [stdout, stderr])
+          stream.on("data", (chunk) => {
+            group.output += chunk.toString();
+            group.timeline?.observe(chunk.toString(), stream);
+          });
       },
       workers: [
         ...group.workers.values(),
@@ -218,10 +218,8 @@ export async function startInprocessWorker({
       group.stopProfile = undefined;
     }
     if (process.env.KEEPR_CAPACITY_OUTPUT_PREFIX) group.timeline = nativeOperationalTimeline();
-    // Wrangler still returns V4 options; normalize at the Miniflare boundary.
-    const runtimeOptions = convertV4MiniflareOptions(all);
-    if (group.runtime) await group.runtime.setOptions(runtimeOptions);
-    else group.runtime = new Miniflare(runtimeOptions);
+    if (group.runtime) await group.runtime.setOptions(all);
+    else group.runtime = new Miniflare(all);
     await group.runtime.ready;
     if (process.env.KEEPR_CAPACITY_OUTPUT_PREFIX) {
       const offset = group.output.length;
@@ -285,15 +283,13 @@ async function withDatabase(statePath, config, callback) {
     );
     return callback(await group.runtime.getD1Database("CATALOGUE_DB", worker.name), prepared);
   }
-  const runtime = new Miniflare(
-    convertV4MiniflareOptions({
-      ...persistence(statePath),
-      modules: true,
-      script: "export default { fetch() { return new Response('fixture database'); } }",
-      compatibilityDate: prepared.workerOptions.compatibilityDate,
-      d1Databases: prepared.workerOptions.d1Databases,
-    }),
-  );
+  const runtime = new Miniflare({
+    ...persistence(statePath),
+    modules: true,
+    script: "export default { fetch() { return new Response('fixture database'); } }",
+    compatibilityDate: prepared.workerOptions.compatibilityDate,
+    d1Databases: prepared.workerOptions.d1Databases,
+  });
   try {
     return await callback(await runtime.getD1Database("CATALOGUE_DB"), prepared);
   } finally {

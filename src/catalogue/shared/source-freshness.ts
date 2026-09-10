@@ -1,4 +1,5 @@
-import { type CatalogueSourceCheck, type SupportedGame, compareUtf8 } from "../shared";
+import type { CatalogueSourceCheck, SupportedGame } from "./catalogue-candidate-types";
+import { compareUtf8 } from "./serialization";
 
 export type SourceFreshnessStorageRow = {
   game: string;

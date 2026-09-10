@@ -10,6 +10,7 @@ import {
 } from "./reconciliation-read-repository";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
+import { isMembershipRelationship } from "./reconciliation-membership-state";
 
 type Value = { id: string; value: Record<string, unknown> };
 type Membership = {
@@ -18,7 +19,7 @@ type Membership = {
   relationship_kind: string;
   relationship_value: string;
 };
-type Stage = "memberships" | "card_withdrawals" | "printing_withdrawals" | "plans" | "complete";
+type Stage = "memberships" | "native_memberships" | "card_withdrawals" | "printing_withdrawals" | "plans" | "complete";
 type Cursor = {
   inputDigest: string;
   stage: Stage;
@@ -109,6 +110,21 @@ export async function prepareSemanticState(
         cursor.afterMembership = [row.printing_id, row.source_lineage, row.relationship_kind, row.relationship_value];
         await tick();
       }
+    }
+    await advance("native_memberships");
+  }
+  if (cursor.stage === "native_memberships") {
+    for await (const relationship of draft.values("product_relationships", cursor.after)) {
+      await before(relationship);
+      if (relationship.observed && (await isMembershipRelationship(relationship)))
+        await addMembership({
+          printing_id: relationship.from.id,
+          source_lineage: relationship.source_lineage,
+          relationship_kind: relationship.kind === "printing-product" ? "product" : "distribution_context",
+          relationship_value: relationship.relationship_value,
+        });
+      cursor.after = relationship.id;
+      await tick();
     }
     await advance("card_withdrawals");
   }

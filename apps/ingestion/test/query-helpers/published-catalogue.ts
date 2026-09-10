@@ -782,3 +782,7 @@ export function archiveFixtureQueryRevision(database: D1Database, revisionId: st
     .prepare("UPDATE catalogue_query_revisions SET state = 'archived' WHERE catalogue_revision_id = ?")
     .bind(revisionId);
 }
+
+export function readCatalogueRevisionPublishedAt(database: D1Database): D1PreparedStatement {
+  return database.prepare("SELECT published_at FROM catalogue_revisions WHERE id = ?");
+}

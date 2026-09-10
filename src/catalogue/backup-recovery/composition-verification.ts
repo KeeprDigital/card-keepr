@@ -1,6 +1,7 @@
 import { canonicalJson, StreamingSha256 } from "../shared";
 import {
   type CompositionVerificationQuery,
+  type AcceptedEvidenceArtifactRoot,
   compositionSnapshotTables,
   maximumPrivateSnapshotPageBytes,
 } from "./composition-verification-repository";
@@ -11,6 +12,7 @@ export type CompositionSnapshotEvidence = {
   publication_operation_id: string;
   ingestion_run_id: string;
   schema_migration_level: number;
+  accepted_evidence_roots?: AcceptedEvidenceArtifactRoot[];
   members: number;
   schema_sha256: string;
   tables: { table: string; rows: number; sha256: string }[];
@@ -36,6 +38,24 @@ export async function captureCompositionSnapshot(
     state.search_state !== "ready"
   )
     throw new Error("Composed catalogue invariants failed.");
+  let acceptedRoots: AcceptedEvidenceArtifactRoot[] | undefined;
+  if (state.migration_level >= 31) {
+    const rows = await query({ kind: "composition-accepted-roots" });
+    if (
+      rows.length !== state.members ||
+      new Set(rows.map((row) => row.supported_game)).size !== rows.length ||
+      rows.some(
+        (row) =>
+          ["supported_game", "candidate_id", "preparation_id"].some(
+            (field) => typeof row[field] !== "string" || row[field] === "",
+          ) ||
+          !/^[a-f0-9]{64}$/.test(String(row.manifest_digest)) ||
+          !/^[a-f0-9]{64}$/.test(String(row.root_digest)),
+      )
+    )
+      throw new Error("Accepted private evidence roots are unavailable or invalid.");
+    acceptedRoots = rows as AcceptedEvidenceArtifactRoot[];
+  }
   const schema = new StreamingSha256();
   let schemaAfter = "";
   for (;;) {
@@ -47,6 +67,18 @@ export async function captureCompositionSnapshot(
   }
   const tables: CompositionSnapshotEvidence["tables"] = [];
   for (const table of compositionSnapshotTables) {
+    // Schema 30 snapshots predate accepted-evidence metadata and partition fingerprints.
+    if (
+      state.migration_level < 31 &&
+      [
+        "game_candidate_semantic_receipts",
+        "game_candidate_predecessors",
+        "game_accepted_candidates",
+        "catalogue_acceptance_head",
+        "game_candidate_partitions",
+      ].includes(table)
+    )
+      continue;
     const digest = new StreamingSha256();
     let after = 0,
       rows = 0;
@@ -76,6 +108,7 @@ export async function captureCompositionSnapshot(
     publication_operation_id: state.publication_operation_id,
     ingestion_run_id: state.ingestion_run_id,
     schema_migration_level: state.migration_level,
+    ...(acceptedRoots === undefined ? {} : { accepted_evidence_roots: acceptedRoots }),
     members: state.members,
     schema_sha256: schema.digestHex(),
     tables,

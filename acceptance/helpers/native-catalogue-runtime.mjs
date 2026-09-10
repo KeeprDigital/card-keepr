@@ -102,6 +102,7 @@ export async function inspectNativeCollection(runId, environment, { partitionKin
         counts[kind] ??= {};
         counts[kind][change] = (counts[kind][change] ?? 0) + count;
       }
+    if (partitionKinds?.length === 0) continue;
     let after = null;
     do {
       const page = await get(
@@ -135,7 +136,10 @@ export async function inspectNativeCollection(runId, environment, { partitionKin
 
 /** Invoke native owner preparation, approval and real retained checkpoint verification. */
 export async function publishNativeCollection(runId, idempotencyKey, environment, worker, deadlineMs = 30000) {
-  const inspection = typeof runId === "string" ? await inspectNativeCollection(runId, environment) : runId;
+  // Publication needs the sealed identities and manifests, not a second copy
+  // of every catalogue partition already inspected by the caller.
+  const inspection =
+    typeof runId === "string" ? await inspectNativeCollection(runId, environment, { partitionKinds: [] }) : runId;
   let publication;
   const publications = [];
   for (const candidate of inspection.candidates) {
@@ -259,4 +263,36 @@ export async function loadNativeExport(baseUrl, apiKey, revisionId, requestInter
     after = index.data.page.next_cursor;
   } while (after);
   return records;
+}
+
+/** Collect a single retained fixture plan and enter the shipped native candidate owner. */
+export async function collectNativeFixtureSource(directory, environment, lineage, adapter, url, key) {
+  const path = resolve(directory, `${key}-source-plan.json`);
+  await writeFile(
+    path,
+    JSON.stringify({
+      plans: [
+        {
+          supported_game: "one-piece",
+          source_lineage: lineage,
+          adapter_version: adapter,
+          requests: [{ id: `${lineage}:discovery`, url }],
+        },
+      ],
+    }),
+  );
+  const run = await cli(["source", "collect", "--plan-file", path, "--idempotency-key", key], environment);
+  assert.equal(run.state, "parsing");
+  const prepared = await fetch(`${environment.KEEPR_INGESTION_URL}/v1/game-candidates`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      ingestion_run_id: run.id,
+      supported_game: "one-piece",
+      expected_game_revision_id: "catrev_spine_000",
+      idempotency_key: `${key}-candidate`,
+    }),
+  });
+  assert.equal(prepared.status, 201, await prepared.clone().text());
+  return run;
 }

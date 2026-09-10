@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
+import { gunzipSync } from "node:zlib";
 import { readFile, readdir } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { build } from "esbuild";
 import { validateGolden } from "./retained-source-integrity.mjs";
+import { reviewedCosmeticComparison } from "./official-source-cosmetic-comparison.mjs";
 
 // These exact captures preserve the old eligibility evidence and regression
 // census, but ADR 0014 removed their acquisition from the current card scope.
@@ -47,7 +49,10 @@ function changedPaths(before, after, path = "$", result = []) {
   return result;
 }
 
-export async function createOfficialSourceAssessment({ fixturesDirectory }) {
+export async function createOfficialSourceAssessment({ fixturesDirectory, reviewedBaselinesDirectory }) {
+  const reviewedBaselines = reviewedBaselinesDirectory
+    ? JSON.parse(await readFile(join(reviewedBaselinesDirectory, "baselines.json"), "utf8"))
+    : {};
   const root = resolve(import.meta.dirname, "..");
   const bundle = await build({
     stdin: {
@@ -91,7 +96,25 @@ export async function createOfficialSourceAssessment({ fixturesDirectory }) {
     const base = { adapter_version: adapter?.adapterVersion };
     if (!adapter)
       return { ...base, category: "unresolved_drift", actionable: true, reason: "No current adapter for capture." };
-    const fullGolden = fullGoldens.get(golden.full_body_sha256);
+    let fullGolden = fullGoldens.get(golden.full_body_sha256);
+    if (Object.hasOwn(reviewedBaselines, name)) {
+      try {
+        if (!/^[a-z0-9-]+\.json$/u.test(name)) throw new Error("Invalid reviewed capture filename.");
+        const compressed = await readFile(join(reviewedBaselinesDirectory, `${name}.gz`));
+        const capture = JSON.parse(gunzipSync(compressed, { maxOutputLength: 24 * 1024 * 1024 }).toString("utf8"));
+        validateGolden(capture);
+        if (
+          capture.source_url !== golden.source_url ||
+          capture.range_start !== 0 ||
+          capture.range_end_exclusive !== capture.full_body_size ||
+          capture.full_body_sha256 !== reviewedBaselines[name].full_body_sha256
+        )
+          throw new Error("Reviewed baseline must retain the complete declared Source response and digest.");
+        fullGolden = { name: `monitoring/${name}.gz`, capture };
+      } catch (error) {
+        return { ...base, category: "integrity_failure", actionable: true, reason: error.message };
+      }
+    }
     const baseline = fullGolden?.capture ?? golden;
     if (!fullGolden && differences.length)
       return {
@@ -129,13 +152,36 @@ export async function createOfficialSourceAssessment({ fixturesDirectory }) {
     const expectedDigest = digest(expected);
     const actualDigest = digest(observed);
     const semanticChanged = expectedDigest !== actualDigest;
+    let cosmetic = null;
+    if (semanticChanged) {
+      try {
+        const comparison = reviewedCosmeticComparison({
+          name,
+          baseline: { bytes: Buffer.from(baseline.body_base64, "base64"), content_type: baseline.content_type },
+          actual: { bytes, content_type: actual.content_type },
+          expected,
+          observed,
+          observe,
+        });
+        if (comparison && digest(comparison.expected) === digest(comparison.observed)) cosmetic = comparison.rule;
+      } catch {
+        // A comparison-only rule cannot turn a rejection into success.
+      }
+    }
     return {
       ...base,
-      category: semanticChanged ? "semantic_drift" : differences.length ? "cosmetic_drift" : "unchanged",
-      actionable: semanticChanged,
+      category:
+        semanticChanged && !cosmetic
+          ? "semantic_drift"
+          : baseline.full_body_sha256 !== actual.full_body_sha256
+            ? "cosmetic_drift"
+            : "unchanged",
+      actionable: semanticChanged && !cosmetic,
       comparison:
-        "Exact current adapter observations (including source sidecars) and discovered requests; no source fields normalized away.",
+        "Exact current adapter observations (including source sidecars) and discovered requests; reviewed cosmetic equivalence is reported separately without replacing these raw output hashes.",
+      ...(cosmetic ? { cosmetic_equivalence_rule: cosmetic } : {}),
       baseline_file: fullGolden?.name ?? name,
+      baseline_full_body_sha256: baseline.full_body_sha256,
       expected_observations_sha256: expectedDigest,
       actual_observations_sha256: actualDigest,
       observation_count: observed.observations.length,

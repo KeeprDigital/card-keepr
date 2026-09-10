@@ -1,3 +1,5 @@
+import { retainNativeSourceChecks } from "./native-source-freshness";
+import { retainGameSemanticReceiptStatements } from "./game-publication-no-change-repository";
 import { failIndependentGamePreparation } from "./game-reconciliation-outcome";
 import { prepareRunWarningSummary } from "./reconciliation-warning-summary";
 import type { ObservationPlan } from "./reconciliation-plan-state";
@@ -81,6 +83,7 @@ export async function persistReviewableCandidate(
     input.yieldAtCheckpoint,
   );
   if (input.independentGame) {
+    await retainNativeSourceChecks(database, input.runId, input.candidate.source_checks);
     const gameSeals = await prepareGameCandidateManifests(
       database,
       input.runId,
@@ -92,6 +95,7 @@ export async function persistReviewableCandidate(
     );
     await database.batch([
       ...gameSeals,
+      ...retainGameSemanticReceiptStatements(database, input.runId, input.candidateCatalogueDigest),
       sealReconciliationOperationStatement(
         database,
         input.runId,

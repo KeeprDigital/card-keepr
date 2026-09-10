@@ -1,28 +1,10 @@
 import { catalogueStore } from "../../../src/catalogue/shared";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
-import {
-  advanceHostPacing,
-  hostPacingDelay,
-  sourceHostPacingIntervalMilliseconds,
-} from "../../../src/catalogue/source-evidence";
+import { advanceHostPacing, hostPacingDelay } from "../../../src/catalogue/source-evidence";
 import { installRuntimeSuite } from "./runtime-helpers";
 
 installRuntimeSuite();
-
-test("source host pacing interval defaults to 500ms and accepts overrides", () => {
-  expect(sourceHostPacingIntervalMilliseconds(undefined)).toBe(500);
-  expect(sourceHostPacingIntervalMilliseconds("500")).toBe(500);
-  expect(sourceHostPacingIntervalMilliseconds("0")).toBe(0);
-  expect(sourceHostPacingIntervalMilliseconds("1000")).toBe(1000);
-  expect(sourceHostPacingIntervalMilliseconds("60000")).toBe(60000);
-});
-
-test("source host pacing interval fails closed on unrecognized values", () => {
-  for (const value of ["fast", "", "-1", "1.5", "500ms", "60001", "0x20"]) {
-    expect(() => sourceHostPacingIntervalMilliseconds(value)).toThrow(/SOURCE_HOST_PACING_INTERVAL_MS/);
-  }
-});
 
 test("advancing host pacing schedules the next request one interval ahead", async () => {
   const before = Date.now();

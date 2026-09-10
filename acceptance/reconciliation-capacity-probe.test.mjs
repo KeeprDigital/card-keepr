@@ -9,9 +9,7 @@ import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { applyMigrations, startWorker, stopWorker } from "./helpers/acceptance-runtime.mjs";
 
-test("bounded synthetic Product reconciliation isolates memory from the Vitest runner", {
-  skip: !process.env.KEEPR_RECONCILIATION_CAPACITY_PROBE,
-}, async (t) => {
+test("bounded synthetic Product reconciliation isolates memory from the Vitest runner", async (t) => {
   const prefix = process.env.KEEPR_CAPACITY_OUTPUT_PREFIX;
   assert.ok(prefix, "An external report prefix must preserve measurements on failure");
   const directory = await mkdtemp(join(tmpdir(), "keepr-reconciliation-memory-"));

@@ -453,6 +453,17 @@ export function insertAdministrationIdempotencyClaims(database: D1Database): D1P
     ) VALUES (?, 'retry_ingestion_run', ?, ?, ?, 7, ?)`);
 }
 
+export function insertHistoricalApprovalClaim(database: D1Database): D1PreparedStatement {
+  return database.prepare(`INSERT INTO administration_idempotency_claims (
+    idempotency_key, operation, request_json, claimed_at, owner_token, claim_version, claim_expires_at
+  ) VALUES (?, 'approve_ingestion_run', ?, ?, ?, 1, ?)`);
+}
+
+export function readHistoricalApprovalClaim(database: D1Database): D1PreparedStatement {
+  return database.prepare(`SELECT idempotency_key, operation, request_json, claimed_at,
+    owner_token, claim_version, claim_expires_at FROM administration_idempotency_claims WHERE idempotency_key = ?`);
+}
+
 export function readAdministrationIdempotencyClaimsIdempotencyKey(database: D1Database): D1PreparedStatement {
   return database.prepare(`SELECT idempotency_key
     FROM administration_idempotency_claims

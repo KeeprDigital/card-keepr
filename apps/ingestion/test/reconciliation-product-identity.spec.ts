@@ -1,19 +1,22 @@
-import { env } from "cloudflare:test";
 import { expect, test } from "vitest";
+import { compositionEntityResponse } from "../../../src/catalogue/read";
+import { catalogueStore } from "../../../src/catalogue/shared";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
+import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import { mutateNativeProductOfficialCode, nativeProductIdentity } from "./query-helpers/native-product-history";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import * as reconciliationQueries from "./query-helpers/reconciliation";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import {
-  approve,
   collect,
   collectRequests,
-  expectRetainedEvidenceInvalid,
   exportComponentRecords,
   exportManifest,
+  get,
   installReconciliationSuite,
+  post,
   postFixtureEvidence,
-  reconcile,
   requiredFirst,
   requiredString,
   testEnv,
@@ -24,9 +27,11 @@ installReconciliationSuite();
 
 test("accepted typed Product relationships persist without code/name namespace collisions", async () => {
   const run = await collect("/reconciliation/product-typed-relationships", "product-typed-relationships");
-  const reconciled = await reconcile(run.id);
-  expect(reconciled.response.status).toBe(200);
-  const revisionId = requiredString((await approve(reconciled.document)).document, "resulting_revision_id");
+  const reconciled = await prepareProductCandidate(run.id, "catrev_spine_000", "one-piece");
+  const revisionId = requiredString(
+    (await approveNativeCandidate(reconciled.header, `publish-${reconciled.header.id}`)).document,
+    "resulting_revision_id",
+  );
   const [products, contexts, relationships, cards] = await Promise.all([
     exportComponentRecords(revisionId, "products"),
     exportComponentRecords(revisionId, "distribution-contexts"),
@@ -72,12 +77,18 @@ test("accepted typed Product relationships persist without code/name namespace c
 
 test("standalone Product lifecycle survives rename, disappearance, and explicit withdrawal", async () => {
   const firstRun = await collect("/reconciliation/product-standalone-v1", "product-standalone-v1");
-  const firstCandidate = await reconcile(firstRun.id);
-  const firstRevision = requiredString((await approve(firstCandidate.document)).document, "resulting_revision_id");
+  const firstCandidate = await prepareProductCandidate(firstRun.id, "catrev_spine_000", "one-piece");
+  const firstRevision = requiredString(
+    (await approveNativeCandidate(firstCandidate.header, `publish-${firstCandidate.header.id}`)).document,
+    "resulting_revision_id",
+  );
 
   const secondRun = await collect("/reconciliation/product-standalone-v2", "product-standalone-v2");
-  const secondCandidate = await reconcile(secondRun.id);
-  const secondRevision = requiredString((await approve(secondCandidate.document)).document, "resulting_revision_id");
+  const secondCandidate = await prepareProductCandidate(secondRun.id, firstRevision, "one-piece");
+  const secondRevision = requiredString(
+    (await approveNativeCandidate(secondCandidate.header, `publish-${secondCandidate.header.id}`)).document,
+    "resulting_revision_id",
+  );
   const secondProduct = (await exportComponentRecords(secondRevision, "products")).find(
     (entry) => entry.official_code === "ST-STANDALONE",
   );
@@ -91,17 +102,18 @@ test("standalone Product lifecycle survives rename, disappearance, and explicit 
   });
 
   const missingRun = await collect("/reconciliation/product-standalone-missing", "product-standalone-missing");
-  const missingCandidate = await reconcile(missingRun.id);
-  expect(missingCandidate.response.status).toBe(200);
-  expect(Array.isArray(missingCandidate.document.warnings) ? missingCandidate.document.warnings : []).toContainEqual(
+  const missingCandidate = await prepareProductCandidate(missingRun.id, secondRevision, "one-piece");
+  expect(Array.isArray(missingCandidate.records.warnings) ? missingCandidate.records.warnings : []).toContainEqual(
     expect.objectContaining({
       code: "product_not_observed",
       product_id: secondProduct?.id,
     }),
   );
-  const missingPublication = await approve(missingCandidate.document);
+  const missingPublication = await approveNativeCandidate(
+    missingCandidate.header,
+    `publish-${missingCandidate.header.id}`,
+  );
   expect(missingPublication.document).toMatchObject({
-    publication_outcome: "no_change",
     resulting_revision_id: secondRevision,
   });
   const missingRevision = requiredString(missingPublication.document, "resulting_revision_id");
@@ -117,9 +129,9 @@ test("standalone Product lifecycle survives rename, disappearance, and explicit 
   });
 
   const withdrawnRun = await collect("/reconciliation/product-standalone-withdrawn", "product-standalone-withdrawn");
-  const withdrawnCandidate = await reconcile(withdrawnRun.id);
+  const withdrawnCandidate = await prepareProductCandidate(withdrawnRun.id, missingRevision, "one-piece");
   const withdrawnRevision = requiredString(
-    (await approve(withdrawnCandidate.document)).document,
+    (await approveNativeCandidate(withdrawnCandidate.header, `publish-${withdrawnCandidate.header.id}`)).document,
     "resulting_revision_id",
   );
   const withdrawn = (await exportComponentRecords(withdrawnRevision, "products")).find(
@@ -164,15 +176,21 @@ test.each([
   "Product identity and lifecycle survive $label",
   async ({ first, second, firstMatch, secondCode }) => {
     const firstRun = await collect(`/reconciliation/${first}`, `identity-${first}`);
-    const firstCandidate = await reconcile(firstRun.id);
-    const firstRevision = requiredString((await approve(firstCandidate.document)).document, "resulting_revision_id");
+    const firstCandidate = await prepareProductCandidate(firstRun.id, "catrev_spine_000", "one-piece");
+    const firstRevision = requiredString(
+      (await approveNativeCandidate(firstCandidate.header, `publish-${firstCandidate.header.id}`)).document,
+      "resulting_revision_id",
+    );
     const firstProduct = (await exportComponentRecords(firstRevision, "products")).find(firstMatch);
     expect(firstProduct).toBeDefined();
     const firstId = requiredString(firstProduct ?? {}, "id");
 
     const secondRun = await collect(`/reconciliation/${second}`, `identity-${second}`);
-    const secondCandidate = await reconcile(secondRun.id);
-    const secondRevision = requiredString((await approve(secondCandidate.document)).document, "resulting_revision_id");
+    const secondCandidate = await prepareProductCandidate(secondRun.id, firstRevision, "one-piece");
+    const secondRevision = requiredString(
+      (await approveNativeCandidate(secondCandidate.header, `publish-${secondCandidate.header.id}`)).document,
+      "resulting_revision_id",
+    );
     const secondProduct = (await exportComponentRecords(secondRevision, "products")).find(
       ({ official_code }) => official_code === secondCode,
     );
@@ -184,26 +202,30 @@ test.each([
         withdrawn: false,
       },
     });
-    const persistedIdentity = await reconciliationQueries
-      .readReconciledProductsIdOfficialCode(env.CATALOGUE_DB)
-      .bind(firstId)
+    const persistedIdentity = await nativeProductIdentity(testEnv.CATALOGUE_DB)
+      .bind(requiredString(secondCandidate.header, "id"), firstId)
       .first<{ id: string; official_code: string | null }>();
     expect(persistedIdentity).toEqual({
       id: firstId,
       official_code: secondCode,
     });
     await expect(
-      reconciliationQueries.setReconciledProductsOfficialCode(env.CATALOGUE_DB).bind(firstId).run(),
-    ).rejects.toThrow(/reconciled_product_identity_immutable/u);
-    const apiProjection = await publishedCatalogueQueries
-      .readRevisionProductsDocumentJsonForReconciliationProductIdentity(env.CATALOGUE_DB)
-      .bind(secondRevision, firstId)
-      .first<{ document_json: string }>();
-    expect(JSON.parse(apiProjection!.document_json)).toMatchObject({
-      data: {
-        id: firstId,
-        official_code: secondCode,
-      },
+      mutateNativeProductOfficialCode(testEnv.CATALOGUE_DB)
+        .bind(requiredString(secondCandidate.header, "id"), firstId)
+        .run(),
+    ).rejects.toThrow(/publication_read_immutable/u);
+    const productResponse = await compositionEntityResponse(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      new Request(`https://card-keepr.invalid/v1/products/${firstId}`),
+      { origin: "https://card-keepr.invalid", basePath: "" },
+      "products",
+      firstId,
+    );
+    if (!productResponse) throw new Error("Native Product response missing.");
+    expect(productResponse.status).toBe(200);
+    expect(await productResponse.json()).toMatchObject({
+      data: { id: firstId, official_code: secondCode },
+      meta: { catalogue_revision_id: secondRevision },
     });
     const productRelationships = await exportComponentRecords(secondRevision, "relationships");
     expect(
@@ -220,8 +242,11 @@ test.each([
 
 test("same-name Products with different official codes remain distinct across revisions", async () => {
   const firstRun = await collect("/reconciliation/product-identity-distinct-code-a", "identity-distinct-code-a");
-  const firstCandidate = await reconcile(firstRun.id);
-  const firstRevision = requiredString((await approve(firstCandidate.document)).document, "resulting_revision_id");
+  const firstCandidate = await prepareProductCandidate(firstRun.id, "catrev_spine_000", "one-piece");
+  const firstRevision = requiredString(
+    (await approveNativeCandidate(firstCandidate.header, `publish-${firstCandidate.header.id}`)).document,
+    "resulting_revision_id",
+  );
   const firstProducts = await exportComponentRecords(firstRevision, "products");
   const firstProduct = firstProducts.find(({ official_code }) => official_code === "IDENTITY-DISTINCT-A");
   expect(firstProduct).toBeDefined();
@@ -238,8 +263,11 @@ test("same-name Products with different official codes remain distinct across re
   const firstRelationshipId = requiredString(firstRelationship ?? {}, "id");
 
   const secondRun = await collect("/reconciliation/product-identity-distinct-code-b", "identity-distinct-code-b");
-  const secondCandidate = await reconcile(secondRun.id);
-  const secondRevision = requiredString((await approve(secondCandidate.document)).document, "resulting_revision_id");
+  const secondCandidate = await prepareProductCandidate(secondRun.id, firstRevision, "one-piece");
+  const secondRevision = requiredString(
+    (await approveNativeCandidate(secondCandidate.header, `publish-${secondCandidate.header.id}`)).document,
+    "resulting_revision_id",
+  );
   const secondProducts = await exportComponentRecords(secondRevision, "products");
   const carriedFirst = secondProducts.find(({ official_code }) => official_code === "IDENTITY-DISTINCT-A");
   const distinctSecond = secondProducts.find(({ official_code }) => official_code === "IDENTITY-DISTINCT-B");
@@ -290,18 +318,19 @@ test("same-name Products with different official codes remain distinct across re
 }, 90_000);
 
 test("a name-only Product matching multiple published Products fails closed without publication", async () => {
+  let predecessor = "catrev_spine_000";
   for (const scenario of ["product-identity-distinct-code-a", "product-identity-distinct-code-b"]) {
     const run = await collect(`/reconciliation/${scenario}`, `identity-ambiguous-prior-${scenario}`);
-    const candidate = await reconcile(run.id);
-    expect(candidate.response.status).toBe(200);
-    expect((await approve(candidate.document)).response.status).toBe(200);
+    const candidate = await prepareProductCandidate(run.id, predecessor, "one-piece");
+    const publication = await approveNativeCandidate(candidate.header, `publish-${candidate.header.id}`);
+    predecessor = requiredString(publication.document, "resulting_revision_id");
   }
   const currentBefore = await publishedCatalogueQueries
     .readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB)
     .first<{ current_revision_id: string }>();
 
   const ambiguous = await collect("/reconciliation/product-identity-ambiguous-name", "identity-ambiguous-name-only");
-  await expectRetainedEvidenceInvalid(ambiguous.id, "matched multiple published Products");
+  await expectProductEvidenceInvalid(ambiguous.id, predecessor, "matched multiple published Products");
   expect(
     await publishedCatalogueQueries
       .readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB)
@@ -321,7 +350,7 @@ test("conflicting Distribution Context facts fail closed without publication", a
     "product-context-conflicting-facts",
   );
 
-  await expectRetainedEvidenceInvalid(run.id, "Distribution Context facts conflict");
+  await expectProductEvidenceInvalid(run.id, "catrev_spine_000", "Distribution Context facts conflict");
   expect(
     await publishedCatalogueQueries
       .readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB)
@@ -331,25 +360,30 @@ test("conflicting Distribution Context facts fail closed without publication", a
 
 test("identical Product facts are a semantic no-change while source freshness advances", async () => {
   const firstRun = await collect("/reconciliation/product-standalone-v1", "product-semantic-first");
-  const firstCandidate = await reconcile(firstRun.id);
-  const firstPublished = await approve(firstCandidate.document);
+  const firstCandidate = await prepareProductCandidate(firstRun.id, "catrev_spine_000", "one-piece");
+  expect(firstCandidate.records.source_checks).toContainEqual(
+    expect.objectContaining({
+      game: "one-piece",
+      area: "products-and-releases",
+      checked_at: expect.any(String),
+    }),
+  );
+  const firstPublished = await approveNativeCandidate(firstCandidate.header, `publish-${firstCandidate.header.id}`);
   const revisionId = requiredString(firstPublished.document, "resulting_revision_id");
-  const firstFreshness = await sourceEvidenceQueries
-    .readSourceFreshnessCheckedAtForIdenticalProductFactsAreSemanticNoChangeWhileSource(testEnv.CATALOGUE_DB)
-    .first<{ checked_at: string }>();
+  const firstFreshness = await productSourceFreshness();
+  expect(firstFreshness).toMatchObject({ checked_at: expect.any(String), ingestion_run_id: firstRun.id });
 
   const secondRun = await collect("/reconciliation/product-standalone-v1", "product-semantic-second");
-  const secondCandidate = await reconcile(secondRun.id);
-  expect(secondCandidate.document.candidate_digest).not.toBe(firstCandidate.document.candidate_digest);
-  const secondPublished = await approve(secondCandidate.document);
+  const secondCandidate = await prepareProductCandidate(secondRun.id, revisionId, "one-piece");
+  expect(secondCandidate.header.manifest_digest).not.toBe(firstCandidate.header.manifest_digest);
+  expect(await productSourceFreshness()).toEqual(firstFreshness);
+  const secondPublished = await approveNativeCandidate(secondCandidate.header, `publish-${secondCandidate.header.id}`);
   expect(secondPublished.document).toMatchObject({
-    publication_outcome: "no_change",
     resulting_revision_id: revisionId,
   });
-  const secondFreshness = await sourceEvidenceQueries
-    .readSourceFreshnessCheckedAtForIdenticalProductFactsAreSemanticNoChangeWhileSource(testEnv.CATALOGUE_DB)
-    .first<{ checked_at: string }>();
-  expect(secondFreshness?.checked_at).not.toBe(firstFreshness?.checked_at);
+  const secondFreshness = await productSourceFreshness();
+  expect(secondFreshness).toMatchObject({ checked_at: expect.any(String), ingestion_run_id: secondRun.id });
+  expect(String(secondFreshness?.checked_at) > String(firstFreshness?.checked_at)).toBe(true);
 }, 45_000);
 
 test("Product observations and disappearance remain scoped to their Source Lineage", async () => {
@@ -364,16 +398,16 @@ test("Product observations and disappearance remain scoped to their Source Linea
     adapter: "fixture-gundam-en-us-json@2",
   };
   const asiaRun = await collect("/reconciliation/gundam-product-asia", "gundam-product-asia", asiaSource);
-  const asiaCandidate = await reconcile(asiaRun.id);
-  const asiaApproval = await approve(asiaCandidate.document);
+  const asiaCandidate = await prepareProductCandidate(asiaRun.id, "catrev_spine_000", "gundam");
+  const asiaApproval = await approveNativeCandidate(asiaCandidate.header, `publish-${asiaCandidate.header.id}`);
   if (asiaApproval.response.status !== 200) {
     throw new Error(JSON.stringify(asiaApproval.document));
   }
   const asiaRevision = requiredString(asiaApproval.document, "resulting_revision_id");
 
   const usRun = await collect("/reconciliation/gundam-product-us", "gundam-product-us", usSource);
-  const usCandidate = await reconcile(usRun.id);
-  const combined = requiredFirst(usCandidate.document, "products");
+  const usCandidate = await prepareProductCandidate(usRun.id, asiaRevision, "gundam");
+  const combined = usCandidate.records.products!.find((product) => product.official_code === "GD-CROSS")!;
   expect(combined.releases).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ region: "EN-ASIA" }),
@@ -388,26 +422,24 @@ test("Product observations and disappearance remain scoped to their Source Linea
     ]),
   );
   expect(new Set(Object.values(combined.provenance as Record<string, string[]>).flat()).size).toBeGreaterThanOrEqual(2);
-  const usRevision = requiredString((await approve(usCandidate.document)).document, "resulting_revision_id");
+  const usRevision = requiredString(
+    (await approveNativeCandidate(usCandidate.header, `publish-${usCandidate.header.id}`)).document,
+    "resulting_revision_id",
+  );
 
   const asiaMissingRun = await collect(
     "/reconciliation/gundam-product-asia-missing",
     "gundam-product-asia-missing",
     asiaSource,
   );
-  const asiaMissing = await reconcile(asiaMissingRun.id);
-  const missingRevision = requiredString((await approve(asiaMissing.document)).document, "resulting_revision_id");
-  const storedProduct = await publishedCatalogueQueries
-    .readRevisionProductsDocumentJsonForProductObservationsDisappearanceRemainScopedTheirSourceLineage(
-      testEnv.CATALOGUE_DB,
-    )
-    .bind(missingRevision)
-    .first<{ document_json: string }>();
-  const carried = JSON.parse(storedProduct?.document_json ?? "{}") as Record<string, unknown>;
+  const asiaMissing = await prepareProductCandidate(asiaMissingRun.id, usRevision, "gundam");
+  const missingRevision = requiredString(
+    (await approveNativeCandidate(asiaMissing.header, `publish-${asiaMissing.header.id}`)).document,
+    "resulting_revision_id",
+  );
+  const carried = asiaMissing.records.products?.find(({ official_code }) => official_code === "GD-CROSS");
   expect(carried).toMatchObject({
-    data: {
-      releases: [expect.objectContaining({ region: "EN-US" })],
-    },
+    releases: [expect.objectContaining({ region: "EN-US" })],
     included: [expect.objectContaining({ source: "gundam-en-us" })],
   });
   expect(JSON.stringify(carried).includes("gundam-en-asia")).toBe(false);
@@ -421,26 +453,21 @@ test("Product observations and disappearance remain scoped to their Source Linea
       withdrawn: false,
     },
   });
-  const releases = await reconciliationQueries
-    .readReconciledReleasesRegionFirstRevisionId(testEnv.CATALOGUE_DB)
-    .bind(requiredString(exported ?? {}, "id"))
-    .all<{
-      region: string;
-      first_revision_id: string;
-      last_observed_revision_id: string;
-    }>();
-  expect(releases.results).toEqual([
-    {
-      region: "EN-ASIA",
-      first_revision_id: asiaRevision,
-      last_observed_revision_id: asiaRevision,
-    },
-    {
-      region: "EN-US",
-      first_revision_id: usRevision,
-      last_observed_revision_id: usRevision,
-    },
-  ]);
+  const priorReleases = (await exportComponentRecords(usRevision, "releases")).filter(
+    (release) => release.product_id === exported?.id,
+  );
+  expect(priorReleases).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ region: "EN-ASIA" }),
+      expect.objectContaining({ region: "EN-US" }),
+    ]),
+  );
+  const currentReleases = (await exportComponentRecords(missingRevision, "releases")).filter(
+    (release) => release.product_id === exported?.id,
+  );
+  expect(currentReleases).toEqual([expect.objectContaining({ region: "EN-US" })]);
+  expect(currentReleases[0]!.id).toBe(priorReleases.find((release) => release.region === "EN-US")!.id);
+  expect(await exportComponentRecords(usRevision, "releases")).toEqual(expect.arrayContaining(priorReleases));
 }, 45_000);
 
 test("only an actual Product surface checks its Gundam Source Lineage", async () => {
@@ -449,9 +476,9 @@ test("only an actual Product surface checks its Gundam Source Lineage", async ()
     lineage: "gundam-en-us",
     adapter: "fixture-gundam-en-us-json@2",
   });
-  const usCandidate = await reconcile(usRun.id);
-  expect(usCandidate.response.status).toBe(200);
-  expect((await approve(usCandidate.document)).response.status).toBe(200);
+  const usCandidate = await prepareProductCandidate(usRun.id, "catrev_spine_000", "gundam");
+  const usPublication = await approveNativeCandidate(usCandidate.header, `publish-${usCandidate.header.id}`);
+  const usRevision = requiredString(usPublication.document, "resulting_revision_id");
 
   const mixed = await postFixtureEvidence({
     idempotency_key: "gundam-mixed-product-and-card-surfaces",
@@ -493,9 +520,8 @@ test("only an actual Product surface checks its Gundam Source Lineage", async ()
     runId,
   );
   await waitForRunState(runId, "parsing");
-  const candidate = await reconcile(runId);
-  expect(candidate.response.status).toBe(200);
-  const product = (candidate.document.products as Record<string, unknown>[]).find(
+  const candidate = await prepareProductCandidate(runId, usRevision, "gundam");
+  const product = (candidate.records.products as Record<string, unknown>[]).find(
     ({ official_code }) => official_code === "GD-CROSS",
   );
   expect(product?.releases).toEqual(
@@ -504,14 +530,14 @@ test("only an actual Product surface checks its Gundam Source Lineage", async ()
       expect.objectContaining({ region: "EN-US" }),
     ]),
   );
-  expect(candidate.document.warnings ?? []).not.toContainEqual(
+  expect(candidate.records.warnings ?? []).not.toContainEqual(
     expect.objectContaining({
       code: "product_not_observed",
       source_lineages: expect.arrayContaining(["gundam-en-us"]),
     }),
   );
 
-  const published = await approve(candidate.document);
+  const published = await approveNativeCandidate(candidate.header, `publish-${candidate.header.id}`);
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const exportedProduct = (await exportComponentRecords(revisionId, "products")).find(
@@ -531,23 +557,37 @@ test("only an actual Product surface checks its Gundam Source Lineage", async ()
 
 test("Product freshness is emitted only for an actually checked Product surface", async () => {
   const checkedRun = await collect("/reconciliation/product-standalone-v1", "product-freshness-checked");
-  const checkedCandidate = await reconcile(checkedRun.id);
-  const checkedPublication = await approve(checkedCandidate.document);
+  const checkedCandidate = await prepareProductCandidate(checkedRun.id, "catrev_spine_000", "one-piece");
+  expect(checkedCandidate.records.source_checks).toContainEqual(
+    expect.objectContaining({
+      game: "one-piece",
+      area: "products-and-releases",
+      checked_at: expect.any(String),
+    }),
+  );
+  const checkedPublication = await approveNativeCandidate(
+    checkedCandidate.header,
+    `publish-${checkedCandidate.header.id}`,
+  );
   expect(checkedPublication.response.status, JSON.stringify(checkedPublication.document)).toBe(200);
   const checkedRevision = requiredString(checkedPublication.document, "resulting_revision_id");
   const checkedSnapshot = await sourceEvidenceQueries
     .readSourceSnapshotsRetrievedAt(testEnv.CATALOGUE_DB)
     .bind(checkedRun.id)
     .first<{ retrieved_at: string }>();
-  expect(
-    await sourceEvidenceQueries
-      .readSourceFreshnessCheckedAtForIdenticalProductFactsAreSemanticNoChangeWhileSource(testEnv.CATALOGUE_DB)
-      .first<{ checked_at: string }>(),
-  ).toEqual({ checked_at: checkedSnapshot?.retrieved_at });
+  const checkedFreshness = await productSourceFreshness();
+  expect(checkedFreshness).toMatchObject({
+    checked_at: checkedSnapshot?.retrieved_at,
+    ingestion_run_id: checkedRun.id,
+  });
 
   const noCheckRun = await collect("/reconciliation/base", "product-freshness-no-check");
-  const noCheckCandidate = await reconcile(noCheckRun.id);
-  const noCheckRevision = requiredString((await approve(noCheckCandidate.document)).document, "resulting_revision_id");
+  const noCheckCandidate = await prepareProductCandidate(noCheckRun.id, checkedRevision, "one-piece");
+  const noCheckRevision = requiredString(
+    (await approveNativeCandidate(noCheckCandidate.header, `publish-${noCheckCandidate.header.id}`)).document,
+    "resulting_revision_id",
+  );
+  expect(await productSourceFreshness()).toEqual(checkedFreshness);
   expect(await exportManifest(noCheckRevision)).not.toHaveProperty("source_freshness");
   expect(await exportComponentRecords(noCheckRevision, "products")).toContainEqual(
     expect.objectContaining({
@@ -565,9 +605,11 @@ test("a Digimon Release with unknown region remains schema-valid in the export",
     lineage: "digimon-en",
     adapter: "fixture-digimon-json@2",
   });
-  const candidate = await reconcile(run.id);
-  expect(candidate.response.status).toBe(200);
-  const revisionId = requiredString((await approve(candidate.document)).document, "resulting_revision_id");
+  const candidate = await prepareProductCandidate(run.id, "catrev_spine_000", "digimon");
+  const revisionId = requiredString(
+    (await approveNativeCandidate(candidate.header, `publish-${candidate.header.id}`)).document,
+    "resulting_revision_id",
+  );
   expect(await exportComponentRecords(revisionId, "releases")).toContainEqual(
     expect.objectContaining({
       region: "unknown",
@@ -578,29 +620,15 @@ test("a Digimon Release with unknown region remains schema-valid in the export",
 
 test("unknown Product relationship resolution fails closed", async () => {
   const run = await collect("/reconciliation/product-invalid-resolution", "product-invalid-resolution");
-  const reconciled = await reconcile(run.id);
-  expect(reconciled.response.status).toBe(409);
-  expect(reconciled.document).toMatchObject({
-    state: "failed",
-    publishable: false,
-    diagnostics: [
-      expect.objectContaining({
-        code: "retained_evidence_invalid",
-        detail: expect.stringContaining("Product relationship resolution is invalid"),
-      }),
-    ],
-  });
+  await expectProductEvidenceInvalid(run.id, "catrev_spine_000", "Product relationship resolution is invalid");
 });
 
 test("Product-only Official Source surfaces reconcile without fabricating a Card", async () => {
   const run = await collect("/reconciliation/product-only-surface", "product-only-surface");
-  const reconciled = await reconcile(run.id);
-  expect(reconciled.response.status).toBe(200);
-  expect(reconciled.document).toMatchObject({
-    state: "awaiting_approval",
-    publishable: true,
-    cards: [],
-    printings: [],
+  const reconciled = await prepareProductCandidate(run.id, "catrev_spine_000", "one-piece");
+  expect(reconciled.records.cards ?? []).toEqual([]);
+  expect(reconciled.records.printings ?? []).toEqual([]);
+  expect(reconciled.records).toMatchObject({
     products: [
       expect.objectContaining({
         official_code: "ST-PRODUCT-ONLY",
@@ -613,7 +641,10 @@ test("Product-only Official Source surfaces reconcile without fabricating a Card
       }),
     ],
   });
-  const revisionId = requiredString((await approve(reconciled.document)).document, "resulting_revision_id");
+  const revisionId = requiredString(
+    (await approveNativeCandidate(reconciled.header, `publish-${reconciled.header.id}`)).document,
+    "resulting_revision_id",
+  );
   const exportedRelationships = await exportComponentRecords(revisionId, "relationships");
   expect(exportedRelationships).toContainEqual(
     expect.objectContaining({
@@ -630,18 +661,40 @@ test.each([
   ["product-deterministic-explicit", "deterministic", "explicit"],
 ])("relationship resolution %s rejects contradictory evidence coupling", async (scenario, resolution, category) => {
   const run = await collect(`/reconciliation/${scenario}`, `coupling-${scenario}`);
-  const reconciled = await reconcile(run.id);
-  expect(reconciled.response.status).toBe(409);
-  expect(reconciled.document).toMatchObject({
+  await expectProductEvidenceInvalid(
+    run.id,
+    "catrev_spine_000",
+    `${resolution} resolution requires ${category === "derived" ? "explicit" : "derived"} evidence`,
+  );
+});
+
+async function prepareProductCandidate(runId: string, predecessor: string, game: string) {
+  const header = await prepareNativeCandidate(runId, game, predecessor, `product-prepare-${runId}`);
+  const records = await nativeCandidateRecords(requiredString(header, "id"));
+  return { header, records };
+}
+
+async function productSourceFreshness() {
+  const status = await get("/v1/status");
+  expect(status.response.status).toBe(200);
+  const rows = status.document.source_freshness as Record<string, unknown>[];
+  return rows.find(({ game, area }) => game === "one-piece" && area === "products-and-releases");
+}
+
+async function expectProductEvidenceInvalid(runId: string, predecessor: string, detail: string) {
+  const created = await post("/v1/game-candidates", {
+    ingestion_run_id: runId,
+    supported_game: "one-piece",
+    expected_game_revision_id: predecessor,
+    idempotency_key: `product-invalid-${runId}`,
+  });
+  expect(created.response.status, JSON.stringify(created.document)).toBe(201);
+  const [candidate] = await waitForNativeCandidates(runId, 1, 15_000, { "one-piece": "failed" });
+  expect(candidate).toMatchObject({ state: "failed", failure_code: "printing_reconciliation_blocked" });
+  expect(candidate?.outcome).toMatchObject({
     state: "failed",
-    publishable: false,
     diagnostics: [
-      expect.objectContaining({
-        code: "retained_evidence_invalid",
-        detail: expect.stringContaining(
-          `${resolution} resolution requires ${category === "derived" ? "explicit" : "derived"} evidence`,
-        ),
-      }),
+      expect.objectContaining({ code: "retained_evidence_invalid", detail: expect.stringContaining(detail) }),
     ],
   });
-});
+}

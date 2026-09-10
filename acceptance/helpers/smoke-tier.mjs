@@ -1,3 +1,5 @@
+// Publisher coverage registry. Only the external CLI smoke needs a real
+// Wrangler subprocess; publisher journeys share the faster local runtime.
 // The Gundam flow proves both regional lineages and their shared provenance.
 export const smokeFlows = Object.freeze([
   { file: "one-piece-catalogue.test.mjs", lineages: ["one-piece-en"] },
@@ -8,5 +10,5 @@ export const smokeFlows = Object.freeze([
 ]);
 
 export function isWranglerSmokeFile(path) {
-  return smokeFlows.some(({ file }) => path?.endsWith(`/acceptance/${file}`));
+  return smokeFlows.some(({ file, cli }) => cli && path?.endsWith(`/acceptance/${file}`));
 }
