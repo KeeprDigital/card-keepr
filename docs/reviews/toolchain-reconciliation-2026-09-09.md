@@ -1,5 +1,10 @@
 # Worker toolchain reconciliation — 9 September 2026
 
+Historical proposal and validation evidence. The selected 10 September baseline
+and the preserved patch's final disposition are recorded in
+[the cleanup evidence](../evidence/private-launch-cleanup-20260910.md#current-toolchain-disposition).
+The version table below describes this earlier attempt, not the current manifest.
+
 This is the scoped reconciliation for #272, based on reviewed cleanup
 `a14a803434dcc7bb150802dad3476989d0f61355` from PR #277. That cleanup is
 not yet integrated because existing CI failures remain under #271. The

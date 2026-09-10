@@ -8,7 +8,10 @@ import {
 } from "../../../src/catalogue/source-evidence";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
-import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import {
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
+} from "./native-publication-helpers";
 import {
   installReconciliationSuite,
   postFixtureEvidence,

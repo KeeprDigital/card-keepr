@@ -1,9 +1,10 @@
+import { postWithControlledPreparation } from "./reconciliation-helpers";
 import { nativePrintingHistory } from "../../../src/catalogue/reconciliation/native-printing-history";
-import { expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
-import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
+import { nativeCandidateRecords, waitForNativeCandidate } from "./native-candidate-helpers";
 import { readNativeCards } from "./native-no-change-helpers";
 import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import { currentGameMembers } from "./query-helpers/atomic-publication";
@@ -200,14 +201,14 @@ test("a known locator with contradictory retained material evidence fails the na
   const revisionId = requiredString(published.document, "resulting_revision_id");
 
   const conflictRun = await collect("/reconciliation/conflict-changed", "reconcile-conflict-changed");
-  const created = await post("/v1/game-candidates", {
+  const created = await postWithControlledPreparation("/v1/game-candidates", {
     ingestion_run_id: conflictRun.id,
     supported_game: "one-piece",
     expected_game_revision_id: revisionId,
     idempotency_key: "conflict-changed-prepare",
   });
   expect(created.response.status).toBe(201);
-  const [conflict] = await waitForNativeCandidates(conflictRun.id, 1, 15_000, { "one-piece": "failed" });
+  const conflict = await waitForNativeCandidate(String(created.document.id), "failed", 15_000);
   expect(conflict?.outcome).toMatchObject({ state: "failed" });
   // The operation envelope is a bounded code/detail summary. The exact
   // retained diagnostic, including its locator, belongs to the candidate pages.
@@ -535,70 +536,77 @@ test("historical locator bindings reactivate only for the same Printing and expo
   );
 }, 30_000);
 
-test("locator variant evolution preserves effective-dated suffix history across disappearance and reactivation", async () => {
-  const firstRun = await collect("/reconciliation/locator-variant-v1", "locator-variant-v1");
-  const first = await prepareEvidence(firstRun.id);
-  const printingId = requiredString(requiredFirst(first.records, "printings"), "id");
-  const firstRevision = requiredString((await publishEvidence(first)).document, "resulting_revision_id");
-  const secondRun = await collect("/reconciliation/locator-variant-v2", "locator-variant-v2");
-  const second = await prepareEvidence(secondRun.id);
-  expect(requiredFirst(second.records, "printings")).toMatchObject({
-    id: printingId,
-  });
-  const secondRevision = requiredString((await publishEvidence(second)).document, "resulting_revision_id");
-  const evolved = await get(`/v1/reconciliation/printings/${printingId}`);
-  expect(evolved.document.locators).toMatchObject({
-    current: [
-      expect.objectContaining({
-        locator: "/official/locator-variant/stable",
-        variant_key: "suffix-b",
-        first_revision_id: secondRevision,
-        current: true,
-      }),
-    ],
-    historical: [
-      expect.objectContaining({
-        locator: "/official/locator-variant/stable",
-        variant_key: "suffix-a",
-        first_revision_id: firstRevision,
-        last_observed_revision_id: firstRevision,
-        current: false,
-        last_missing_revision_id: secondRevision,
-      }),
-    ],
-  });
-  const missingRun = await collect("/reconciliation/complete-empty-lineage", "locator-variant-missing");
-  const missing = await prepareEvidence(missingRun.id);
-  const missingRevision = requiredString((await publishEvidence(missing)).document, "resulting_revision_id");
-  const reactivatedRun = await collect("/reconciliation/locator-variant-v1", "locator-variant-reactivate-v1");
-  const reactivated = await prepareEvidence(reactivatedRun.id);
-  const reactivatedRevision = requiredString((await publishEvidence(reactivated)).document, "resulting_revision_id");
-  const lifecycle = await get(`/v1/reconciliation/printings/${printingId}`);
-  expect(lifecycle.document.locators).toMatchObject({
-    current: [
-      expect.objectContaining({
-        variant_key: "suffix-a",
-        first_revision_id: firstRevision,
-        last_observed_revision_id: reactivatedRevision,
-        last_missing_revision_id: null,
-      }),
-    ],
-    historical: [
-      expect.objectContaining({
-        variant_key: "suffix-b",
-        first_revision_id: secondRevision,
-        last_observed_revision_id: secondRevision,
-        current: false,
-        last_missing_revision_id: missingRevision,
-      }),
-    ],
-  });
-  expect(await exportComponentRecords(reactivatedRevision, "printings")).toContainEqual(
-    expect.objectContaining({
+describe("locator variant evolution", () => {
+  let printingId: string;
+  let firstRevision: string;
+  let secondRevision: string;
+  beforeEach(async () => {
+    const firstRun = await collect("/reconciliation/locator-variant-v1", "locator-variant-v1");
+    const first = await prepareEvidence(firstRun.id);
+    printingId = requiredString(requiredFirst(first.records, "printings"), "id");
+    firstRevision = requiredString((await publishEvidence(first)).document, "resulting_revision_id");
+    const secondRun = await collect("/reconciliation/locator-variant-v2", "locator-variant-v2");
+    const second = await prepareEvidence(secondRun.id);
+    expect(requiredFirst(second.records, "printings")).toMatchObject({
       id: printingId,
-    }),
-  );
-}, 20_000);
+    });
+    secondRevision = requiredString((await publishEvidence(second)).document, "resulting_revision_id");
+  });
+  test("preserves effective-dated suffix history across disappearance and reactivation", async () => {
+    const evolved = await get(`/v1/reconciliation/printings/${printingId}`);
+    expect(evolved.document.locators).toMatchObject({
+      current: [
+        expect.objectContaining({
+          locator: "/official/locator-variant/stable",
+          variant_key: "suffix-b",
+          first_revision_id: secondRevision,
+          current: true,
+        }),
+      ],
+      historical: [
+        expect.objectContaining({
+          locator: "/official/locator-variant/stable",
+          variant_key: "suffix-a",
+          first_revision_id: firstRevision,
+          last_observed_revision_id: firstRevision,
+          current: false,
+          last_missing_revision_id: secondRevision,
+        }),
+      ],
+    });
+    const missingRun = await collect("/reconciliation/complete-empty-lineage", "locator-variant-missing");
+    const missing = await prepareEvidence(missingRun.id);
+    const missingRevision = requiredString((await publishEvidence(missing)).document, "resulting_revision_id");
+    const reactivatedRun = await collect("/reconciliation/locator-variant-v1", "locator-variant-reactivate-v1");
+    const reactivated = await prepareEvidence(reactivatedRun.id);
+    const reactivatedRevision = requiredString((await publishEvidence(reactivated)).document, "resulting_revision_id");
+    const lifecycle = await get(`/v1/reconciliation/printings/${printingId}`);
+    expect(lifecycle.document.locators).toMatchObject({
+      current: [
+        expect.objectContaining({
+          variant_key: "suffix-a",
+          first_revision_id: firstRevision,
+          last_observed_revision_id: reactivatedRevision,
+          last_missing_revision_id: null,
+        }),
+      ],
+      historical: [
+        expect.objectContaining({
+          variant_key: "suffix-b",
+          first_revision_id: secondRevision,
+          last_observed_revision_id: secondRevision,
+          current: false,
+          last_missing_revision_id: missingRevision,
+        }),
+      ],
+    });
+    expect(await exportComponentRecords(reactivatedRevision, "printings")).toContainEqual(
+      expect.objectContaining({
+        id: printingId,
+      }),
+    );
+  }, 20_000);
+});
 
 test("Card search keeps exactly the current and two preceding distinct Catalogue Revisions hot", async () => {
   const status = await get("/v1/status");
@@ -654,14 +662,14 @@ async function prepareEvidence(runId: string, game = "one-piece", state = "seale
   const members = await currentGameMembers(testEnv.CATALOGUE_DB);
   const predecessor =
     members.results.find((member) => member.supported_game === game)?.game_revision_id ?? "catrev_spine_000";
-  const created = await post("/v1/game-candidates", {
+  const created = await postWithControlledPreparation("/v1/game-candidates", {
     ingestion_run_id: runId,
     supported_game: game,
     expected_game_revision_id: predecessor,
     idempotency_key: `provenance-prepare-${runId}`,
   });
   expect(created.response.status, JSON.stringify(created.document)).toBe(201);
-  const [header] = await waitForNativeCandidates(runId, 1, 15000, { [game]: state });
+  const header = await waitForNativeCandidate(String(created.document.id), state, 15_000);
   return { header: header!, records: await nativeCandidateRecords(String(header!.id)) };
 }
 async function publishEvidence(prepared: Awaited<ReturnType<typeof prepareEvidence>>) {

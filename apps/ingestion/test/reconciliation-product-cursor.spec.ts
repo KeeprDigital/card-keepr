@@ -1,5 +1,8 @@
 import { expect, test } from "vitest";
-import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import {
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
+} from "./native-publication-helpers";
 import { collect, get, installReconciliationSuite, post, requiredString, testEnv } from "./reconciliation-helpers";
 import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 

@@ -4,7 +4,7 @@ import { catalogueRoutes } from "../../../src/catalogue/read";
 import { readSourceObservation } from "../../../src/catalogue/reconciliation/reconciliation-source-observation";
 import { canonicalJson, catalogueStore, sha256 } from "../../../src/catalogue/shared";
 import { routeTable } from "../../../src/http/routes";
-import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
+import { nativeCandidateRecords, waitForDispatchedNativeCandidates } from "./native-candidate-helpers";
 import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import { currentGameMembers } from "./query-helpers/atomic-publication";
 import * as ingestionQueries from "./query-helpers/ingestion";
@@ -471,7 +471,7 @@ test("complete image evidence publishes an unidentified artwork once without col
     expect(started.response.status).toBe(201);
     const runId = requiredString(started.document, "id");
     expect((await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
-    const candidates = await waitForNativeCandidates(runId, 1, 20_000, { digimon: expectedState });
+    const candidates = await waitForDispatchedNativeCandidates(runId, 1, 20_000, { digimon: expectedState });
     return candidates[0]!;
   };
 

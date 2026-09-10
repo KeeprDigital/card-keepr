@@ -5,7 +5,10 @@ import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-p
 import { EMPTY_CATALOGUE_GZIP_HEX, GZIP_PROFILE_GOLDENS } from "./deterministic-gzip-golden";
 import { recoverHistoricalPublication } from "./historical-publication-fixture";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
-import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import {
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidate,
+} from "./native-publication-helpers";
 import * as cardSearchQueries from "./query-helpers/card-search";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import {

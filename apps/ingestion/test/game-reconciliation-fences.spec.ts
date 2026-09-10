@@ -5,7 +5,10 @@ import { readSourceObservation } from "../../../src/catalogue/reconciliation/rec
 import { catalogueStore } from "../../../src/catalogue/shared";
 import worker from "../src/index";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
-import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import {
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
+} from "./native-publication-helpers";
 import { replaceGameHeadForFence } from "./query-helpers/game-candidates";
 import {
   setOperationStateRecoveryHealth,

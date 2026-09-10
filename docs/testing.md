@@ -44,6 +44,55 @@ Workflow driver can exercise recovery paths with real D1/R2 and controlled child
 dispatch. Preserve a small binding test when using that driver; a controlled
 driver alone does not prove the platform wiring.
 
+### Native test fixtures have an explicit execution boundary
+
+Collection, preparation, publication and backup are separate fixture contracts:
+
+| Required state or assertion | Helper / boundary | Contract |
+| --- | --- | --- |
+| Retained source evidence | `collect`, `collectFixtureEvidence` | Real capture/parsing and D1/R2; no implicit native candidate or background collection |
+| Candidate rules and persistence | `prepareNativeCandidate`, `prepareNativeEvidence` | Explicit run, game and predecessor; controlled production preparation; exact returned candidate ID and expected terminal state |
+| Published predecessor for preparation only | `seedNativePredecessor` | Real owner approval, verified artifacts and published storage; the real backup is queued and **pending** |
+| Complete publication or multi-revision history | `approveNativeCandidate` | Controlled production publication plus real SQL export/import and verified backup |
+| Workflow wiring, contention or interruption | Explicit `ThroughBinding` helpers | Actual platform instances, with normal cleanup |
+| Automatic native dispatch | `waitForDispatchedNativeCandidates` | Observe the completed collection parent's `game_preparations` receipt, then those exact candidate IDs |
+
+A completed collection does not imply native dispatch. Synthetic single-game
+adapters can deliberately take the legacy aggregate path. Semantic fixtures must
+request native preparation explicitly; wiring tests must observe the real dispatch
+receipt. Never make a waiter create a missing candidate or infer its identity by
+counting candidates attached to a collection. `waitForNativeCandidate` observes
+an explicit creation result, including intentionally failed preparation.
+
+The controlled driver invokes existing production Workflow functions and retains
+D1/R2 transactions, owner intent, fences and failure handling. The owner driver
+rejects unrelated background dispatch. Controlled execution proves storage and
+protocol behavior; it does not prove the platform scheduler.
+
+`seedNativePredecessor` is only for a test whose next transition stops at
+preparation. It returns a distinct typed result with `checkpoint: "pending"`;
+it does not fabricate a verified checkpoint or expose a skip-backup option on
+normal approval. The next candidate may prepare, but the next publication must
+remain blocked by the real backup gate. Do not use it for multi-publication
+histories, backup health, restore, release preflight or retention assertions,
+and do not resume its deferred backup through a real binding.
+
+The caller-retirement suite compares complete publication/checkpoint behavior
+through both controlled and binding execution. Additional behavioral guards prove
+that preparation fixtures create zero platform instances, a second candidate for
+the same run resolves to its own ID, a pending predecessor has no verification
+result, and both changed and unchanged successors cannot advance the catalogue
+or acceptance head before verification. The legacy collection test proves a
+non-native dispatch result fails immediately with a protocol diagnostic.
+
+Keep published setup separate from the transition under test. Use the smallest
+fixture crossing the asserted boundary; retain complete publication/SQL-restore
+and genuine scheduling/recovery tests. Changing a shared default or fixture
+contract requires auditing all its callers and validating the affected families
+in a small hosted selection before the full merge checks. A helper's name alone
+is not proof of its execution boundary: verify observable dispatch and durable
+state, not imports or source text.
+
 Routine acceptance currently has 67 files, of which 20 directly boot a Worker.
 The others include SQL, CLI and contract checks; the directory name does not
 mean every file is a complete application journey. Extended recovery and

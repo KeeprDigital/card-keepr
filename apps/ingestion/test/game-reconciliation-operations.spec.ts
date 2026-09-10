@@ -5,8 +5,9 @@ import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-p
 import worker from "../src/index";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
 import {
-  approveNativeCandidate,
-  prepareNativeCandidateDirect as prepareNativeCandidate,
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidate,
+  seedNativePredecessor,
 } from "./native-publication-helpers";
 import {
   collect,
@@ -31,9 +32,9 @@ test.each(["base", "large-card-content"])(
       "catrev_spine_000",
       "native-predecessor-seed-candidate",
     );
-    const published = await approveNativeCandidate(priorCandidate, "native-predecessor-seed-publication");
-    expect(published.response.status).toBe(200);
-    const revision = requiredString(published.document, "resulting_revision_id");
+    const published = await seedNativePredecessor(priorCandidate, "native-predecessor-seed-publication");
+    expect(published.checkpoint).toBe("pending");
+    const revision = published.revisionId;
     const onePiece = await collect(`/reconciliation/${fixture}`, "native-predecessor-next");
     const stale = await post("/v1/game-candidates", {
       ingestion_run_id: onePiece.id,
@@ -403,7 +404,7 @@ test("abandonment releases only its game slot and a new intent creates a fresh c
 });
 
 test("a native source change retains reconfirmable curated diagnostics without failing the collection", async () => {
-  const originalSource = await collect("/reconciliation/curated-conflict-fanout-base", "native-curated-seed");
+  const originalSource = await collect("/reconciliation/base", "native-curated-seed");
   const seed = await prepareNativeCandidate(
     originalSource.id,
     "one-piece",
@@ -412,8 +413,8 @@ test("a native source change retains reconfirmable curated diagnostics without f
   );
   const records = await nativeCandidateRecords(requiredString(seed, "id"));
   const card = (records.cards as { id: string; name: string }[])[0]!;
-  const published = await approveNativeCandidate(seed, "native-curated-seed-publication");
-  expect(published.response.status).toBe(200);
+  const published = await seedNativePredecessor(seed, "native-curated-seed-publication");
+  expect(published.checkpoint).toBe("pending");
   const proposal = {
     game: "one-piece",
     target: { kind: "field", entity_type: "card", entity_id: card.id, path: "/name" },
@@ -426,18 +427,18 @@ test("a native source change retains reconfirmable curated diagnostics without f
   };
   const revision = await post("/admin/v1/curated-revisions", {
     environment: "production",
-    expected_current_revision_id: published.document.resulting_revision_id,
+    expected_current_revision_id: published.revisionId,
     proposal,
     proposal_digest: await sha256Text(canonicalJson(proposal)),
     idempotency_key: "native-curated-revision",
   });
   expect(revision.response.status).toBe(201);
   const revisionId = requiredString(revision.document, "curated_revision_id");
-  const run = await collect("/reconciliation/curated-conflict-fanout-changed", "native-curated-next");
+  const run = await collect("/reconciliation/curated-draft-source-changed", "native-curated-next");
   const created = await post("/v1/game-candidates", {
     ingestion_run_id: run.id,
     supported_game: "one-piece",
-    expected_game_revision_id: published.document.resulting_revision_id,
+    expected_game_revision_id: published.revisionId,
     idempotency_key: "native-curated-candidate",
   });
   expect(created.response.status).toBe(201);
@@ -461,14 +462,14 @@ test("a native source change retains reconfirmable curated diagnostics without f
   const bypass = await post("/v1/game-candidates", {
     ingestion_run_id: originalSource.id,
     supported_game: "one-piece",
-    expected_game_revision_id: published.document.resulting_revision_id,
+    expected_game_revision_id: published.revisionId,
     idempotency_key: "native-curated-without-reaffirmation",
   });
   expect(bypass.response.status, JSON.stringify(bypass.document)).toBe(409);
   expect(bypass.document).toMatchObject({ code: "curated_revision_reconfirmation_required" });
   const reaffirmed = await post(`/admin/v1/curated-revisions/${revisionId}/reaffirm`, {
     environment: "production",
-    expected_current_revision_id: published.document.resulting_revision_id,
+    expected_current_revision_id: published.revisionId,
     expected_event_version: pending.event_version,
     conflict_digest: pending.pending_conflict.digest,
     rationale: "Synthetic owner confirms changed source",
@@ -478,7 +479,7 @@ test("a native source change retains reconfirmable curated diagnostics without f
   const fresh = await post("/v1/game-candidates", {
     ingestion_run_id: run.id,
     supported_game: "one-piece",
-    expected_game_revision_id: published.document.resulting_revision_id,
+    expected_game_revision_id: published.revisionId,
     idempotency_key: "native-curated-after-reaffirmation",
   });
   expect(fresh.response.status, JSON.stringify(fresh.document)).toBe(201);
@@ -505,8 +506,8 @@ test("invalid native curated composition fails terminally and replays its retain
   );
   const records = await nativeCandidateRecords(requiredString(seed, "id"));
   const card = (records.cards as { id: string }[])[0]!;
-  const published = await approveNativeCandidate(seed, "native-invalid-curated-seed-publication");
-  expect(published.response.status).toBe(200);
+  const published = await seedNativePredecessor(seed, "native-invalid-curated-seed-publication");
+  expect(published.checkpoint).toBe("pending");
   const proposal = {
     game: "one-piece",
     target: { kind: "field", entity_type: "card", entity_id: card.id, path: "/game_data/attributes/life" },
@@ -519,7 +520,7 @@ test("invalid native curated composition fails terminally and replays its retain
   };
   const revision = await post("/admin/v1/curated-revisions", {
     environment: "production",
-    expected_current_revision_id: published.document.resulting_revision_id,
+    expected_current_revision_id: published.revisionId,
     proposal,
     proposal_digest: await sha256Text(canonicalJson(proposal)),
     idempotency_key: "native-invalid-curated-revision",
@@ -529,7 +530,7 @@ test("invalid native curated composition fails terminally and replays its retain
   const intent = {
     ingestion_run_id: changed.id,
     supported_game: "one-piece",
-    expected_game_revision_id: published.document.resulting_revision_id,
+    expected_game_revision_id: published.revisionId,
     idempotency_key: "native-invalid-curated-candidate",
   };
   const created = await post("/v1/game-candidates", intent);
@@ -586,8 +587,8 @@ test("a fresh native preparation pins later owner corrections and retains them a
   );
   const inspected = await nativeCandidateRecords(requiredString(seed, "id"));
   const card = (inspected.cards as { id: string; name: string }[])[0]!;
-  const published = await approveNativeCandidate(seed, "native-fresh-curated-seed-publication");
-  expect(published.response.status).toBe(200);
+  const published = await seedNativePredecessor(seed, "native-fresh-curated-seed-publication");
+  expect(published.checkpoint).toBe("pending");
   const proposal = {
     game: "one-piece",
     target: { kind: "field", entity_type: "card", entity_id: card.id, path: "/name" },
@@ -600,7 +601,7 @@ test("a fresh native preparation pins later owner corrections and retains them a
   };
   const revision = await post("/admin/v1/curated-revisions", {
     environment: "production",
-    expected_current_revision_id: published.document.resulting_revision_id,
+    expected_current_revision_id: published.revisionId,
     proposal,
     proposal_digest: await sha256Text(canonicalJson(proposal)),
     idempotency_key: "native-fresh-curated-revision",
@@ -622,7 +623,7 @@ test("a fresh native preparation pins later owner corrections and retains them a
       body: JSON.stringify({
         ingestion_run_id: source.id,
         supported_game: "one-piece",
-        expected_game_revision_id: published.document.resulting_revision_id,
+        expected_game_revision_id: published.revisionId,
         idempotency_key: "native-fresh-curated-preparation",
       }),
     }),
@@ -632,7 +633,7 @@ test("a fresh native preparation pins later owner corrections and retains them a
   const id = requiredString(await created.json<Record<string, unknown>>(), "id");
   const retired = await post(`/admin/v1/curated-revisions/${revision.document.curated_revision_id}/retire`, {
     environment: "production",
-    expected_current_revision_id: published.document.resulting_revision_id,
+    expected_current_revision_id: published.revisionId,
     expected_event_version: 1,
     conflict_digest: null,
     rationale: "Later retirement must not change an existing preparation's exact pins.",

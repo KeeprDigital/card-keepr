@@ -1,9 +1,10 @@
+import { postWithControlledPreparation } from "./reconciliation-helpers";
 import { expect, test } from "vitest";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
 import { compositionEntityResponse } from "../../../src/catalogue/read";
 import { catalogueStore } from "../../../src/catalogue/shared";
-import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
+import { nativeCandidateRecords, waitForNativeCandidate } from "./native-candidate-helpers";
 import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import {
   collect,
@@ -423,14 +424,14 @@ test("same-authority Product conflicts fail closed before publication", async ()
     ],
     "product-conflicting-facts",
   );
-  const created = await post("/v1/game-candidates", {
+  const created = await postWithControlledPreparation("/v1/game-candidates", {
     ingestion_run_id: run.id,
     supported_game: "one-piece",
     expected_game_revision_id: "catrev_spine_000",
     idempotency_key: "product-conflict-prepare",
   });
   expect(created.response.status).toBe(201);
-  const [candidate] = await waitForNativeCandidates(run.id, 1, 15_000, { "one-piece": "failed" });
+  const candidate = await waitForNativeCandidate(String(created.document.id), "failed", 15_000);
   expect(candidate).toMatchObject({ state: "failed", failure_code: "printing_reconciliation_blocked" });
   expect(candidate?.outcome).toMatchObject({
     state: "failed",

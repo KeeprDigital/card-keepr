@@ -1,3 +1,4 @@
+import { waitForDispatchedNativeCandidates } from "./native-candidate-helpers";
 import { readSourceObservation } from "../../../src/catalogue/reconciliation/reconciliation-source-observation";
 import { waitForCollectionCompletion } from "./runtime-helpers";
 import { catalogueStore } from "../../../src/catalogue/shared";
@@ -319,6 +320,8 @@ test("the parent Workflow keeps a greater-than-1-MiB card-content candidate in D
   const accepted = await resumed.json<{ workflow: { id: string } }>();
   const parent = await env.EVIDENCE_INGESTION_WORKFLOW.get(accepted.workflow.id);
   await waitForWorkflowStatus(accepted.workflow.id, () => parent.status(), "complete", 90_000);
+
+  await expect(waitForDispatchedNativeCandidates(run.id, 1)).rejects.toThrow("completed without native dispatch");
 
   const assertBoundedOutput = async (expectsReference: boolean) => {
     const status = await parent.status();

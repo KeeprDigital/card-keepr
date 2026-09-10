@@ -13,7 +13,10 @@ import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-p
 import { recoverHistoricalPublication } from "./historical-publication-fixture";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
 import { retainNativePreparation } from "./native-preparation-fixture";
-import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import {
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
+} from "./native-publication-helpers";
 import { retainLegacyAdmissionPin, retainLegacyAdmissionSelection } from "./query-helpers/legacy-decision-pins";
 import {
   collect,

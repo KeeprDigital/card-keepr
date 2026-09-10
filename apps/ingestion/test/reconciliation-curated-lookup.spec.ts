@@ -1,9 +1,9 @@
-import { expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 import type { ReconciliationWorkflowParams } from "../../../src/catalogue/reconciliation";
 import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
 import worker from "../src/index";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
-import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import { seedNativePredecessor, prepareNativeCandidate } from "./native-publication-helpers";
 import { catalogueStore, canonicalJson, sha256Text } from "../../../src/catalogue/shared";
 import {
   exportComponentRecords,
@@ -18,31 +18,14 @@ import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 
 installReconciliationSuite({ directPreparation: true });
 
-test.each(["release", "relationships"])(
-  "a curated %s lookup returns bounded progress across unrelated entities",
-  async (kind) => {
-    const scenario = kind === "release" ? "card-only-work-units" : "curated-lookup-relationships";
-    const seedRun = await collect(`/reconciliation/${scenario}`, "curated-lookup-seed");
-    const seed = await prepareNativeCandidate(
-      seedRun.id,
-      "one-piece",
-      "catrev_spine_000",
-      "curated-lookup-seed-prepare",
-    );
-    const records = await nativeCandidateRecords(requiredString(seed, "id"));
-    const products = records.products as { id: string; releases: { id: string; status: string }[] }[];
-    expect(products).toHaveLength(32);
-    const product = [...products].sort((a, b) => a.id.localeCompare(b.id)).at(-1)!;
-    const release = product.releases[0]!;
-    const published = await approveNativeCandidate(seed, "curated-lookup-seed-publish");
-    expect(published.response.status).toBe(200);
-    const relationship =
-      kind === "relationships"
-        ? (await exportComponentRecords(String(published.document.resulting_revision_id), "relationships"))
-            .sort((a, b) => String(a.id).localeCompare(String(b.id)))
-            .at(-1)!
-        : undefined;
-    if (kind === "relationships") expect(relationship).toBeDefined();
+describe.each(["release", "relationships"] as const)("a curated %s lookup", (kind) => {
+  let fixture: Awaited<ReturnType<typeof seedLookup>>;
+  beforeEach(async () => {
+    fixture = await seedLookup(kind);
+  });
+
+  test("returns bounded progress across unrelated entities", async () => {
+    const { scenario, product, release, published, relationship } = fixture;
     const proposal = {
       game: "one-piece",
       target: relationship
@@ -61,7 +44,7 @@ test.each(["release", "relationships"])(
       (
         await post("/admin/v1/curated-revisions", {
           environment: "production",
-          expected_current_revision_id: published.document.resulting_revision_id,
+          expected_current_revision_id: published.revisionId,
           proposal,
           proposal_digest: await sha256Text(canonicalJson(proposal)),
           idempotency_key: "curated-lookup-revision",
@@ -92,7 +75,7 @@ test.each(["release", "relationships"])(
     const created = await request("/v1/game-candidates", {
       ingestion_run_id: run.id,
       supported_game: "one-piece",
-      expected_game_revision_id: published.document.resulting_revision_id,
+      expected_game_revision_id: published.revisionId,
       idempotency_key: "curated-lookup-next-prepare",
     });
     expect(created.response.status, JSON.stringify(created.document)).toBe(201);
@@ -209,5 +192,26 @@ test.each(["release", "relationships"])(
       expect(found.find(({ id }) => id === product.id)).toMatchObject({
         releases: [expect.objectContaining({ id: release.id, product_id: product.id, status: "released" })],
       });
-  },
-);
+  });
+});
+
+async function seedLookup(kind: "release" | "relationships") {
+  const scenario = kind === "release" ? "card-only-work-units" : "curated-lookup-relationships";
+  const seedRun = await collect(`/reconciliation/${scenario}`, "curated-lookup-seed");
+  const seed = await prepareNativeCandidate(seedRun.id, "one-piece", "catrev_spine_000", "curated-lookup-seed-prepare");
+  const records = await nativeCandidateRecords(requiredString(seed, "id"));
+  const products = records.products as { id: string; releases: { id: string; status: string }[] }[];
+  expect(products).toHaveLength(32);
+  const product = [...products].sort((a, b) => a.id.localeCompare(b.id)).at(-1)!;
+  const release = product.releases[0]!;
+  const published = await seedNativePredecessor(seed, "curated-lookup-seed-publish");
+  expect(published.checkpoint).toBe("pending");
+  const relationship =
+    kind === "relationships"
+      ? (await exportComponentRecords(String(published.revisionId), "relationships"))
+          .sort((a, b) => String(a.id).localeCompare(String(b.id)))
+          .at(-1)!
+      : undefined;
+  if (kind === "relationships") expect(relationship).toBeDefined();
+  return { scenario, product, release, published, relationship };
+}
