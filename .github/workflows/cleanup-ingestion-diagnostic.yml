@@ -11,11 +11,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        selection: [timing, progress]
+        selection: [progress]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 122c6be416a370255fbbb7bbc69d06ac81f1b370
+          ref: 1d9645be028137266cf21a93fc51a9f8c8188855
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         id: node
         with:
