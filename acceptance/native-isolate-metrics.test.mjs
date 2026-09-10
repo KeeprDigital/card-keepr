@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { convertV4MiniflareOptions, Miniflare } from "miniflare";
+import { Miniflare } from "miniflare";
 import { nativeOperationalTimeline } from "./helpers/native-capacity-metrics.mjs";
 import { profileNativeIsolates } from "./helpers/native-isolate-metrics.mjs";
 
@@ -11,21 +11,19 @@ test("local isolate measurements read actual workerd heap and CPU profiles", asy
   const directory = await mkdtemp(join(tmpdir(), "keepr-isolate-metrics-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const timeline = nativeOperationalTimeline();
-  const runtime = new Miniflare(
-    convertV4MiniflareOptions({
-      handleStructuredLogs: ({ message, level }) => timeline.observe(`${message}\n`, level),
-      inspectorPort: 0,
-      modules: true,
-      compatibilityDate: "2026-07-29",
-      script: `let retained; export default { fetch() {
+  const runtime = new Miniflare({
+    handleStructuredLogs: ({ message, level }) => timeline.observe(`${message}\n`, level),
+    inspectorPort: 0,
+    modules: true,
+    compatibilityDate: "2026-07-29",
+    script: `let retained; export default { fetch() {
       retained = Array(18 * 1024 * 1024).fill(1);
       const bytes = new Uint8Array(2 * 1024 * 1024);
       crypto.getRandomValues(bytes.subarray(0, 65536));
       console.info(JSON.stringify({contract: "card-keepr-operational-log@1", event: "request.completed", runtime: "ingestion", request: {method: "GET", route: "/allocation-calibration"}, workflow: {step: null}, status: 200, duration_ms: 0}));
       return new Response(bytes, {headers: {"x-count": String(retained.length)}});
     } }`,
-    }),
-  );
+  });
   t.after(() => runtime.dispose());
   await runtime.ready;
   const destination = join(directory, "measurements.json");

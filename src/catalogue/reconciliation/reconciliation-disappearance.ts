@@ -43,6 +43,7 @@ type Cursor = {
   relationshipValue: string;
   groups: number;
   scopedCards?: number;
+  relationshipWarnings?: number;
   warnings: { position: number; count: number };
   processedRecords: number;
 };
@@ -80,6 +81,12 @@ export async function prepareDisappearanceWarnings(
     runId,
     "scoped_prior_cards",
   );
+  const relationshipWarnings = new ReconciliationReducerIndex<boolean>(
+    database,
+    runId,
+    "disappearance_relationship_warnings",
+  );
+  relationshipWarnings.resumeAt(checkpoint?.value.relationshipWarnings ?? 0);
   const firstUnscopedStage = sources.hasPrintings ? "memberships" : "relationships";
   let stage: Stage =
     checkpoint?.value.stage ?? (sources.cardScopes?.scopes.length ? "scoped_printings" : firstUnscopedStage);
@@ -105,6 +112,7 @@ export async function prepareDisappearanceWarnings(
       relationshipValue,
       groups: groups.position,
       scopedCards: scopedCards.position,
+      relationshipWarnings: relationshipWarnings.position,
       warnings: warnings.cursor,
       processedRecords,
     } satisfies Cursor);
@@ -197,6 +205,40 @@ export async function prepareDisappearanceWarnings(
     }
     await finish("relationships");
   }
+  if (stage === "relationships" && sources.history) {
+    for await (const entry of sources.history.entries(after)) {
+      const record = entry.value;
+      await budget(record);
+      if (record.kind === "membership" && record.current) {
+        const groupId = await sha256Text(canonicalJson([record.entityId, record.sourceLineage]));
+        const group = await groups.get(groupId);
+        if (
+          group &&
+          !membershipEntries(group.memberships).some(
+            (membership) =>
+              membership.relationship_kind === record.relationshipKind &&
+              membership.relationship_value === record.relationshipValue,
+          )
+        ) {
+          const key = await sha256Text(canonicalJson([groupId, record.relationshipKind, record.relationshipValue]));
+          if (!(await relationshipWarnings.has(key))) {
+            await warnings.push({
+              code: "relationship_not_observed",
+              printing_id: record.entityId,
+              relationship_kind: record.relationshipKind,
+              relationship_value: record.relationshipValue,
+              detail:
+                "The relationship was not observed in this complete run; it remains historical and is not withdrawn.",
+            });
+            await relationshipWarnings.seed(key, true);
+          }
+        }
+      }
+      after = entry.key;
+      processedRecords++;
+    }
+    await finish("gundam_published");
+  }
   if (stage === "relationships") {
     for await (const group of groups.entityValues(after)) {
       const current = new Set(
@@ -204,46 +246,18 @@ export async function prepareDisappearanceWarnings(
           canonicalJson([row.relationship_kind, row.relationship_value]),
         ),
       );
-      const priorMemberships = sources.history
-        ? (await sources.history.forEntity("printing", group.printingId))
-            .filter(
-              (record) =>
-                record.kind === "membership" && record.current && record.sourceLineage === group.sourceLineage,
-            )
-            .map((record) => ({
-              relationship_kind: record.relationshipKind!,
-              relationship_value: record.relationshipValue!,
-            }))
-            .sort((a, b) =>
-              a.relationship_kind < b.relationship_kind
-                ? -1
-                : a.relationship_kind > b.relationship_kind
-                  ? 1
-                  : a.relationship_value < b.relationship_value
-                    ? -1
-                    : a.relationship_value > b.relationship_value
-                      ? 1
-                      : 0,
-            )
-        : undefined;
       let firstInGroup = true;
       for (;;) {
         await budget(firstInGroup ? group : group.id);
         firstInGroup = false;
         let row: { relationship_kind: string; relationship_value: string } | null;
         try {
-          row = priorMemberships
-            ? (priorMemberships.find(
-                (item) =>
-                  item.relationship_kind > relationshipKind ||
-                  (item.relationship_kind === relationshipKind && item.relationship_value > relationshipValue),
-              ) ?? null)
-            : await printingRelationshipsForLineageStatement(database, {
-                printingId: group.printingId,
-                sourceLineage: group.sourceLineage,
-                afterKind: relationshipKind,
-                afterValue: relationshipValue,
-              }).first<typeof row>();
+          row = await printingRelationshipsForLineageStatement(database, {
+            printingId: group.printingId,
+            sourceLineage: group.sourceLineage,
+            afterKind: relationshipKind,
+            afterValue: relationshipValue,
+          }).first<typeof row>();
         } catch (cause) {
           throw new ReconciliationReducerStorageError(cause);
         }

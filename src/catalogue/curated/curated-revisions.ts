@@ -21,7 +21,7 @@ import {
   sharedCuratableFieldSchemas,
   validCuratedField,
 } from "../shared";
-import { retainedSourceObservationExists } from "../source-evidence";
+import { retainedSourceObservationExists } from "./curated-retained-evidence";
 import {
   CuratedConflictPreparation,
   type PendingConflict,

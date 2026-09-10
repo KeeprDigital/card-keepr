@@ -1,4 +1,4 @@
-import { isCatalogueSourceCheck } from "../read";
+import { isCatalogueSourceCheck } from "../shared";
 import type { CatalogueStore } from "../shared";
 import { ReconciliationReducerIndex } from "./reconciliation-reducer-state";
 
