@@ -11,3 +11,7 @@ Use the five default canonical triage labels. See `docs/agents/triage-labels.md`
 ### Domain docs
 
 This repository uses a single-context domain-doc layout. See `docs/agents/domain.md`.
+
+### Testing
+
+Before selecting checks, adding tests, or changing CI, read [docs/testing.md](docs/testing.md).

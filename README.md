@@ -19,6 +19,10 @@ health routes are therefore `https://card.keepr.digital/api/health` and
 the same prefixes. Requests outside a mount receive `404` before
 authentication.
 
+Contributors and coding agents: read the [testing approach](docs/testing.md)
+before selecting checks, adding tests, or changing CI. Start with the
+[testing and verification commands](#testing-and-verification) below.
+
 ## Local development
 
 Install dependencies, create the two local secret files, and start both
@@ -242,7 +246,7 @@ retained as diagnostics only. Authenticated content routes stream retained
 objects at `/v1/source-snapshots/{id}/content` and
 `/v1/source-observation-sets/{id}/content`.
 
-## Verification
+## Testing and verification
 
 ```sh
 npm run types:check
@@ -253,7 +257,9 @@ npm run deploy:dry-run
 
 `npm test` is the fast everyday check: domain tests, API Worker tests, and small
 external CLI / native publication-and-restore smoke tests. Use
-`npm run test:full` before marking a PR ready; it adds all ingestion integration
+the affected integration file for focused feedback while changing ingestion.
+Before marking a PR ready, run `npm run test:full` when practical, or use the
+ready-PR CI run for the full result; it adds all ingestion integration
 and routine acceptance tests. CI runs quick checks on drafts and full regression
 checks on ready PRs and pushes to `main`, with three shards for each large suite.
 
