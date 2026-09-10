@@ -3,6 +3,7 @@ import { catalogueStore } from "../../../src/catalogue/shared";
 import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
 import { injectFixturePublication } from "./fixture-plan-injection";
 import * as catalogueExportQueries from "./query-helpers/catalogue-export";
 import * as ingestionQueries from "./query-helpers/ingestion";
@@ -198,39 +199,48 @@ test("locator and SourceBucket evidence refresh without minting Catalogue Revisi
 
 test("reversed retained observation provenance preserves the semantic relationship result", async () => {
   const forwardRun = await collect("/reconciliation/deterministic-forward", "reconcile-deterministic-forward");
-  const forward = await reconcile(forwardRun.id);
-  const published = await approve(forward.document);
+  const forward = await prepareNativeCandidate(forwardRun.id, "one-piece", "catrev_spine_000", "forward-prepare");
+  const published = await approveNativeCandidate(forward, "forward-publish");
   const revisionId = requiredString(published.document, "resulting_revision_id");
+  const relationships = await exportComponentRecords(revisionId, "relationships");
 
   const reverseRun = await collect("/reconciliation/deterministic-reverse", "reconcile-deterministic-reverse");
-  const reverse = await reconcile(reverseRun.id);
-  expect(reverse.document.candidate_digest).not.toBe(forward.document.candidate_digest);
-  const repeated = await approve(reverse.document);
+  const reverse = await prepareNativeCandidate(reverseRun.id, "one-piece", revisionId, "reverse-prepare");
+  expect(reverse.manifest_digest).not.toBe(forward.manifest_digest);
+  const repeated = await approveNativeCandidate(reverse, "reverse-publish");
   expect(repeated.document).toMatchObject({
-    publication_outcome: "no_change",
     resulting_revision_id: revisionId,
   });
+  expect(await exportComponentRecords(revisionId, "relationships")).toEqual(relationships);
 });
 
-test("a known locator with contradictory retained material evidence fails the run before publication", async () => {
+test("a known locator with contradictory retained material evidence fails the native candidate before publication", async () => {
   const establishedRun = await collect("/reconciliation/conflict-base", "reconcile-conflict-base");
-  const established = await reconcile(establishedRun.id);
-  expect(established.response.status).toBe(200);
-  await approve(established.document);
+  const established = await prepareNativeCandidate(
+    establishedRun.id,
+    "one-piece",
+    "catrev_spine_000",
+    "conflict-base-prepare",
+  );
+  const published = await approveNativeCandidate(established, "conflict-base-publish");
+  const revisionId = requiredString(published.document, "resulting_revision_id");
 
   const conflictRun = await collect("/reconciliation/conflict-changed", "reconcile-conflict-changed");
-  const conflict = await reconcile(conflictRun.id);
-  expect(conflict.response.status).toBe(409);
-  expect(conflict.document).toMatchObject({
-    publishable: false,
-    state: "failed",
-    diagnostics: [
-      {
-        code: "printing_match_contradictory",
-        locator: "/official/conflict",
-      },
-    ],
+  const created = await post("/v1/game-candidates", {
+    ingestion_run_id: conflictRun.id,
+    supported_game: "one-piece",
+    expected_game_revision_id: revisionId,
+    idempotency_key: "conflict-changed-prepare",
   });
+  expect(created.response.status).toBe(201);
+  const [conflict] = await waitForNativeCandidates(conflictRun.id, 1, 15_000, { "one-piece": "failed" });
+  expect(conflict?.outcome).toMatchObject({ state: "failed" });
+  // The operation envelope is a bounded code/detail summary. The exact
+  // retained diagnostic, including its locator, belongs to the candidate pages.
+  const diagnostics = await nativeCandidateRecords(requiredString(conflict ?? {}, "id"));
+  expect([...(diagnostics.warnings ?? []), ...(diagnostics.shared_warnings ?? [])]).toMatchObject([
+    { code: "printing_match_contradictory", locator: "/official/conflict" },
+  ]);
 });
 
 test("same-lineage authoritative Card evolution updates canonical facts while preserving identity", async () => {
@@ -395,17 +405,17 @@ test("sequential selected-game publications retain the complete current catalogu
 
 test("candidate inspection reports stable reconciliation matches rather than every entity as added", async () => {
   const firstRun = await collect("/reconciliation/base", "reconcile-inspection-base");
-  const first = await reconcile(firstRun.id);
-  const firstCard = requiredFirst(first.document, "cards");
-  const firstPrinting = requiredFirst(first.document, "printings");
-  await approve(first.document);
+  const first = await prepareNativeCandidate(firstRun.id, "one-piece", "catrev_spine_000", "inspection-first-prepare");
+  const firstRecords = await nativeCandidateRecords(requiredString(first, "id"));
+  const firstCard = requiredFirst(firstRecords, "cards");
+  const firstPrinting = requiredFirst(firstRecords, "printings");
+  const published = await approveNativeCandidate(first, "inspection-first-publish");
+  const revisionId = requiredString(published.document, "resulting_revision_id");
 
   const nextRun = await collect("/reconciliation/new-locator", "reconcile-inspection-new-locator");
-  const next = await reconcile(nextRun.id);
-  const inspected = await get(`/v1/ingestion-runs/${nextRun.id}/candidate`);
-  expect(inspected.response.status).toBe(200);
-  const inspectedWarnings = (inspected.document.diff as Record<string, unknown>).warnings as Record<string, unknown>[];
-  expect(inspectedWarnings).toEqual(
+  const next = await prepareNativeCandidate(nextRun.id, "one-piece", revisionId, "inspection-next-prepare");
+  const inspected = await nativeCandidateRecords(requiredString(next, "id"));
+  expect(inspected.warnings ?? []).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
         code: "relationship_not_observed",
@@ -413,28 +423,31 @@ test("candidate inspection reports stable reconciliation matches rather than eve
       }),
     ]),
   );
-  expect(inspected.document).toMatchObject({
-    diff: {
-      summary: {
-        cards_added: 0,
-        printings_added: 0,
-      },
-      cards: {
-        added: [],
-        changed: [],
-        missing_observations: expect.not.arrayContaining([requiredString(firstCard, "id")]),
-      },
-      printings: {
-        added: [],
-        changed: [],
-        identity_matches: [requiredString(firstPrinting, "id")],
-      },
-    },
+  for (const [kind, entity] of [
+    ["cards", firstCard],
+    ["printings", firstPrinting],
+  ] as const) {
+    const entries = (inspected.inspection ?? []).filter(({ entity_class }) => entity_class === kind);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      entity_id: entity.id,
+      before: { id: entity.id },
+      after: { id: entity.id },
+    });
+    expect(["carry_forward", "evidence_only"]).toContain(entries[0]!.change);
+  }
+  expect(inspected.warnings ?? []).not.toContainEqual(
+    expect.objectContaining({
+      code: "record_not_observed",
+      card_id: firstCard.id,
+    }),
+  );
+  const abandoned = await post(`/v1/game-candidates/${next.id}/abandon`, {
+    generation: next.generation,
+    idempotency_key: "abandon-inspected-candidate",
   });
-  await post(`/v1/ingestion-runs/${nextRun.id}/rejection`, {
-    candidate_digest: requiredString(next.document, "candidate_digest"),
-    idempotency_key: "reject-inspected-candidate",
-  });
+  expect(abandoned.response.status).toBe(200);
+  expect(abandoned.document.state).toBe("abandoned");
 });
 
 test("generic retry rejects an evidence-backed terminal run so reconciliation provenance cannot be reset", async () => {
