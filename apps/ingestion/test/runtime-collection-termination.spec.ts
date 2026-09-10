@@ -423,6 +423,7 @@ test("concurrent terminations record exactly one owner decision", async () => {
 test("a resume dispatched before termination cannot revive the terminal run", async () => {
   const run = await createCollection("termination_delayed_resume_001", "https://official-source.invalid/cards");
   await pauseForWorkflowRecovery(run.id, "source_workflow_stalled");
+  const retainedBeforeResume = await retainedEvidenceCounts(run.id);
   let notifyCreate!: (id: string) => void;
   let rejectCreate!: (error: unknown) => void;
   const reachedCreate = new Promise<string>((resolve, reject) => {
@@ -471,12 +472,15 @@ test("a resume dispatched before termination cannot revive the terminal run", as
     expect(terminated).toMatchObject({ state: "failed", failure_code: "ingestion_run_terminated" });
   } finally {
     releaseCreate();
+    // Settle dispatch even if an assertion fails before releasing the gate.
+    await resumed.catch(() => undefined);
   }
   await expect(resumed).resolves.toMatchObject({ ingestion_run_id: run.id });
   // The real Workflow now starts after the terminal fence; wait for it to
   // settle so the assertion catches late writes, not just admission state.
   const parent = await env.EVIDENCE_INGESTION_WORKFLOW.get(workflowId);
   await waitForWorkflowStatus(workflowId, () => parent.status(), "complete", 12_000);
+  expect(await retainedEvidenceCounts(run.id)).toEqual(retainedBeforeResume);
   expect(await ingestionQueries.readIngestionRunsStateFailureCode(env.CATALOGUE_DB).bind(run.id).first()).toEqual({
     state: "failed",
     failure_code: "ingestion_run_terminated",

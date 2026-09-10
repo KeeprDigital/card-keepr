@@ -175,7 +175,10 @@ and are not measurements of the current full suite.
 Hosted measurements on 2026-09-10 (Ubuntu, Node 22, standard public-repository
 runners):
 
-- All three acceptance shards passed in 2m37s–3m49s, including setup.
+- The [first complete green run](https://github.com/KeeprDigital/card-keepr/actions/runs/34421012486)
+  passed all nine jobs in 6m53s from the first job starting to the last finishing.
+  This establishes an observed full-suite duration, not a guarantee of zero flakes.
+- All three acceptance shards passed in 2m37s–3m49s in an earlier sample, including setup.
 - The bounded stress job passed in 1m13s, including a clean install.
 - Ingestion's first shard fell from 8m25s on disk to 4m47s with capped tmpfs.
   Early full-run samples completed their ingestion shards in roughly five to
