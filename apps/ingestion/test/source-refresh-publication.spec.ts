@@ -178,34 +178,39 @@ test("explicit reinstatement preserves the withdrawn Printing identity and attri
   expect((await get(`/v1/ingestion-runs/${withdrawn.id}/evidence`)).document.snapshots).not.toHaveLength(0);
 }, 30_000);
 
-test("unexplained substantial coverage loss blocks completeness rather than becoming ordinary disappearance", async () => {
-  // 26 -> 1 reaches the 25-record coverage-loss boundary.
-  const full = await refresh([sourcePlan("one-piece-en", "observation-count-26")]);
-  expect(full.candidate!.state).toBe("sealed");
-  expect((await publishRefresh(full)).response.status).toBe(200);
-  const loss = await refresh([sourcePlan("one-piece-en", "base")], "failed");
-  expect(loss.candidate?.state ?? loss.collection.state).toBe("failed");
-  const evidence = await get(`/v1/ingestion-runs/${loss.id}/evidence`);
-  expect(evidence.document.source_coverage).toEqual(
-    expect.arrayContaining([expect.objectContaining({ successful_checked_at: null, status: "incomplete" })]),
-  );
-  const narrower = await refresh([
-    {
-      ...sourcePlan("one-piece-en", "errata-card-rules-text"),
-      adapter_version: "fixture-one-piece-refresh-errata@1",
-      requests: [
-        {
-          id: "one-piece-en:errata",
-          url: "https://official-source.invalid/reconciliation/source-refresh-empty-errata",
-        },
-      ],
-    },
-  ]);
-  expect(narrower.id).not.toBe(loss.id);
-  expect(narrower.candidate!.state).toBe("sealed");
-  expect((await get(`/v1/ingestion-runs/${narrower.id}/evidence`)).document.source_coverage).toEqual([
-    expect.objectContaining({ coverage: { area: "errata", locale: "en", subset: "complete" }, status: "complete" }),
-  ]);
+describe("refreshing a scope with a published coverage baseline", () => {
+  beforeEach(async () => {
+    // 26 -> 1 reaches the 25-record coverage-loss boundary.
+    const full = await refresh([sourcePlan("one-piece-en", "observation-count-26")]);
+    expect(full.candidate!.state).toBe("sealed");
+    expect((await publishRefresh(full)).response.status).toBe(200);
+  });
+
+  test("unexplained substantial coverage loss blocks completeness rather than becoming ordinary disappearance", async () => {
+    const loss = await refresh([sourcePlan("one-piece-en", "base")], "failed");
+    expect(loss.candidate?.state ?? loss.collection.state).toBe("failed");
+    const evidence = await get(`/v1/ingestion-runs/${loss.id}/evidence`);
+    expect(evidence.document.source_coverage).toEqual(
+      expect.arrayContaining([expect.objectContaining({ successful_checked_at: null, status: "incomplete" })]),
+    );
+    const narrower = await refresh([
+      {
+        ...sourcePlan("one-piece-en", "errata-card-rules-text"),
+        adapter_version: "fixture-one-piece-refresh-errata@1",
+        requests: [
+          {
+            id: "one-piece-en:errata",
+            url: "https://official-source.invalid/reconciliation/source-refresh-empty-errata",
+          },
+        ],
+      },
+    ]);
+    expect(narrower.id).not.toBe(loss.id);
+    expect(narrower.candidate!.state).toBe("sealed");
+    expect((await get(`/v1/ingestion-runs/${narrower.id}/evidence`)).document.source_coverage).toEqual([
+      expect.objectContaining({ coverage: { area: "errata", locale: "en", subset: "complete" }, status: "complete" }),
+    ]);
+  });
 });
 
 test.each(["revalidated", "reverted"])(

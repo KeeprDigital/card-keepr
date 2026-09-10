@@ -72,5 +72,19 @@ weakening the merge gate. The goal is less recurring test work.
 
 Local focused validation: all 20 tests across source refresh, native image
 publication and native no-change publication passed. The eight domain capacity
-fixture checks, lint and type checking passed. Hosted validation is recorded
-below once available; local passes are not a claim of zero flakes.
+fixture checks, lint and type checking passed. The separate 128-image stress
+assertion also passed locally (23.86 seconds including startup).
+
+[Hosted focused validation 34443587293](https://github.com/KeeprDigital/card-keepr/actions/runs/34443587293)
+ran the four changed files three times on Ubuntu / Node 22 at `5b134f54`:
+20/20 passed in every run (60 executions, no retries hiding failures). The
+routine image case took 3.37–3.43 seconds. The three independent supplemental
+refresh cases took 13.07–16.76 seconds including setup and teardown. These are
+small samples, not a claim of zero flakes.
+
+That report also identified the existing coverage-loss scenario at 25.62–26.01
+seconds against a 30-second body deadline. Its necessary 26-record published
+baseline was subsequently moved into scoped setup, preserving the threshold
+and all completeness assertions. All seven source-refresh cases passed again
+locally after that change. Full CI on the review head remains the authoritative
+merge evidence; a diagnostic success never substitutes for it.
