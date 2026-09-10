@@ -85,7 +85,7 @@ test.each([
   ["text/html", "<html>not an image</html>"],
   ["image/png", ""],
 ])("a planned image rejects invalid retained response %s", async (mediaType, body) => {
-  const id = "invalid-planned-image";
+  const id = `invalid-planned-image-${mediaType.replace("/", "-")}`;
   await retainResponse(id, "image", mediaType, utf8(body));
   await expect(parse(id)).rejects.toMatchObject({ code: "source_parse_failed" });
 });

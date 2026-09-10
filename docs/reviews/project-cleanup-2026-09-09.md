@@ -130,3 +130,12 @@ The two local workerd stack samples are
 `/tmp/card-keepr-cleanup-workerd-sample.txt` and
 `/tmp/card-keepr-cleanup-riftbound-workerd-sample.txt`. They are diagnostic process
 samples and do not establish a peak for an individual Worker isolate.
+
+## Baseline revalidation — 10 September 2026
+
+The cleanup was reconciled with the testing baseline merged in #296. Full CI
+[34424500438](https://github.com/KeeprDigital/card-keepr/actions/runs/34424500438)
+passed all nine jobs at `aa718c2714d838055a165f19c2e477bf0f683ea9`. The
+source-request role regression also passed all five focused cases after each
+parameterized case received a distinct request identity. Historical failures above
+remain historical evidence; this run establishes the current routine baseline.
