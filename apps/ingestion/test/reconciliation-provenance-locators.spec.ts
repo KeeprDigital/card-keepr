@@ -434,7 +434,7 @@ test("candidate inspection reports stable reconciliation matches rather than eve
       before: { id: entity.id },
       after: { id: entity.id },
     });
-    expect(["carry_forward", "evidence_only"]).toContain(entries[0]!.change);
+    expect(["carry_forward", "evidence_only"], JSON.stringify(entries[0])).toContain(entries[0]!.change);
   }
   expect(inspected.warnings ?? []).not.toContainEqual(
     expect.objectContaining({

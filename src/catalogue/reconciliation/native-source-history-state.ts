@@ -61,21 +61,27 @@ export class NativeSourceHistory {
       yield entry;
     }
   }
-  async forEntity(kind: "card" | "printing", entityId: string) {
-    // This reader opens the exact completed prefix, including its final observation.
+  async *entityRecords(kind: "card" | "printing", entityId: string) {
+    const group = canonicalJson([kind, entityId]);
     this.index.beginObservation();
-    const records: SourceHistoryRecord[] = [];
+    let count = 0;
     try {
-      for await (const record of this.index.matchingBeforeObservation(canonicalJson([kind, entityId]))) {
-        if (sourceHistoryGroup(record) !== canonicalJson([kind, entityId]))
-          throw new Error("Native source history group differs from its retained record.");
-        records.push(record);
+      for await (const entry of this.index.groupEntriesBeforeObservation(group)) {
+        if (sourceHistoryGroup(entry.value) !== group || (await sha256Text(entry.value.id)) !== entry.key)
+          throw new Error("Native source history group or key differs from its retained record.");
+        count++;
+        yield entry.value;
       }
     } finally {
       this.index.resumeAt(this.index.position - 1);
     }
-    if (records.length !== ((await this.entities.get(canonicalJson([kind, entityId]))) ?? 0))
+    if (count !== ((await this.entities.get(group)) ?? 0))
       throw new Error("Native source history entity prefix is missing records.");
+  }
+  async forEntity(kind: "card" | "printing", entityId: string, recordKind?: SourceHistoryRecord["kind"]) {
+    const records: SourceHistoryRecord[] = [];
+    for await (const record of this.entityRecords(kind, entityId))
+      if (!recordKind || record.kind === recordKind) records.push(record);
     return records;
   }
 }

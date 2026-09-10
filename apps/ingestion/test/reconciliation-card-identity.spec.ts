@@ -699,7 +699,7 @@ test("historical Gundam locators survive disappearance without retaining stale C
   });
   expect(usPrintingConflictAbandoned.response.status).toBe(200);
   expect(usPrintingConflictAbandoned.document.state).toBe("abandoned");
-}, 45_000);
+});
 
 test("historical Gundam locators permit formatting-equivalent Asia evidence after US disappearance", async () => {
   const history = nativeGundamHistory();
@@ -758,7 +758,7 @@ test("historical Gundam locators permit formatting-equivalent Asia evidence afte
     printed_rules_text: "Official printed rules",
   });
   await history.publish(asiaEquivalent, "historical-native-asiaEquivalent-publication");
-}, 45_000);
+});
 
 test("historical Gundam locators permit changed Asia facts after conflicting US evidence disappears", async () => {
   const history = nativeGundamHistory();
@@ -818,7 +818,7 @@ test("historical Gundam locators permit changed Asia facts after conflicting US 
   });
   expect(reverseConflictAsiaAbandoned.response.status).toBe(200);
   expect(reverseConflictAsiaAbandoned.document.state).toBe("abandoned");
-}, 45_000);
+});
 
 test("Gundam EN-ASIA Printing facts become canonical when formatting-equivalent EN-US evidence arrived first", async () => {
   const usRun = await collect("/reconciliation/gundam-printing-format-us-first", "gundam-printing-format-us-first", {

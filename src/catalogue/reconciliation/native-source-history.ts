@@ -110,7 +110,7 @@ export async function prepareNativeSourceHistory(
           throw new Error("Native source history predecessor chain contains a cycle.");
         const candidate = await sourceHistoryCandidateStatement(db, cursor.next).first<SourceHistoryCandidate>();
         requireCandidate(candidate, current.supported_game, true);
-        if (candidate.catalogue_revision_id !== cursor.boundary)
+        if (candidate.game_revision_id !== cursor.boundary)
           throw new Error("Native source history predecessor differs from its pinned game revision.");
         await visited.seed(candidate.id, true);
         const retained = await reconciliationCheckpoint<SharedCheckpoint>(

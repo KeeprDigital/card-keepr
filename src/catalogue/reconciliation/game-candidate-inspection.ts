@@ -291,6 +291,7 @@ function semantic(entry: Entry) {
     "source_url",
     "source_observations",
     "source_observation_ids",
+    "locator_evidence",
     "included",
     "provenance",
     "curated_provenance",

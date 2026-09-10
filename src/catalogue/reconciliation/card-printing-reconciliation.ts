@@ -1844,6 +1844,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       runId,
       {
         plans,
+        history: sourceHistory?.prior,
         cardScopes: { scopes: checkedCardScopes, priorCards, priorPrintings },
         hasPrintings: (official.positions.printings ?? 0) > 0,
         checkedLineages: checkedSourceLineages,

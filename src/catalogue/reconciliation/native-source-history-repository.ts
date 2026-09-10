@@ -8,13 +8,16 @@ export type SourceHistoryCandidate = {
   pin_id: string | null;
   predecessor_candidate_id: string | null;
   catalogue_revision_id: string | null;
+  game_revision_id: string | null;
 };
 export function sourceHistoryCandidateStatement(db: CatalogueStore, candidateId: string) {
   return repositoryStatements(db)
     .prepare(`SELECT c.id,c.preparation_id,c.supported_game,c.expected_game_revision_id,
-    pin.candidate_id AS pin_id,pin.predecessor_candidate_id,published.catalogue_revision_id
+    pin.candidate_id AS pin_id,pin.predecessor_candidate_id,published.catalogue_revision_id,member.game_revision_id
     FROM game_candidates c LEFT JOIN game_candidate_predecessors pin ON pin.candidate_id=c.id
     LEFT JOIN catalogue_candidate_publications published ON published.candidate_id=c.id
+    LEFT JOIN catalogue_composition_games member ON member.catalogue_revision_id=published.catalogue_revision_id
+      AND member.supported_game=c.supported_game
     WHERE c.id=?`)
     .bind(candidateId);
 }

@@ -155,7 +155,7 @@ export async function gundamPrintingLineages(
   }[]
 > {
   if (history) {
-    const records = await history.forEntity("printing", printingId);
+    const records = await history.forEntity("printing", printingId, "locator");
     return (["gundam-en-asia", "gundam-en-us"] as const).flatMap((source_lineage) => {
       const evidence = records.filter((record) => record.kind === "locator" && record.sourceLineage === source_lineage);
       return evidence.length
@@ -223,13 +223,16 @@ export async function gundamPrintingHasProductMembership(
   products: readonly string[],
   history?: NativeSourceHistory,
 ): Promise<boolean> {
-  if (history)
-    return (await history.forEntity("printing", printingId)).some(
-      (record) =>
+  if (history) {
+    for await (const record of history.entityRecords("printing", printingId))
+      if (
         record.kind === "membership" &&
         record.relationshipKind === "product" &&
-        products.includes(record.relationshipValue!),
-    );
+        products.includes(record.relationshipValue!)
+      )
+        return true;
+    return false;
+  }
   const row = await repositoryStatements(database)
     .prepare(`SELECT 1
     FROM reconciled_printing_memberships
@@ -370,7 +373,7 @@ export async function canonicalPrintingConflict(
   }
   const authorities = native
     ? {
-        results: (await native.history.forEntity("printing", printingId))
+        results: (await native.history.forEntity("printing", printingId, "locator"))
           .filter((record) => record.kind === "locator" && record.current)
           .map((record) => ({ source_lineage: record.sourceLineage })),
       }

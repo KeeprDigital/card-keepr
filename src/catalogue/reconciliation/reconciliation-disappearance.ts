@@ -1,3 +1,4 @@
+import type { NativeSourceHistory } from "./native-source-history-state";
 import type { SourceHistoryCursor } from "./native-source-history";
 import { checkedPrintingLineages, type CheckedCardScope } from "./scoped-disappearance";
 import type { CataloguePrinting } from "../shared";
@@ -52,6 +53,7 @@ export async function prepareDisappearanceWarnings(
   runId: string,
   sources: {
     plans: ReconciliationPlanState;
+    history?: NativeSourceHistory;
     cardScopes?: {
       scopes: readonly CheckedCardScope[];
       priorCards: ReconciliationCardState;
@@ -202,18 +204,46 @@ export async function prepareDisappearanceWarnings(
           canonicalJson([row.relationship_kind, row.relationship_value]),
         ),
       );
+      const priorMemberships = sources.history
+        ? (await sources.history.forEntity("printing", group.printingId))
+            .filter(
+              (record) =>
+                record.kind === "membership" && record.current && record.sourceLineage === group.sourceLineage,
+            )
+            .map((record) => ({
+              relationship_kind: record.relationshipKind!,
+              relationship_value: record.relationshipValue!,
+            }))
+            .sort((a, b) =>
+              a.relationship_kind < b.relationship_kind
+                ? -1
+                : a.relationship_kind > b.relationship_kind
+                  ? 1
+                  : a.relationship_value < b.relationship_value
+                    ? -1
+                    : a.relationship_value > b.relationship_value
+                      ? 1
+                      : 0,
+            )
+        : undefined;
       let firstInGroup = true;
       for (;;) {
         await budget(firstInGroup ? group : group.id);
         firstInGroup = false;
         let row: { relationship_kind: string; relationship_value: string } | null;
         try {
-          row = await printingRelationshipsForLineageStatement(database, {
-            printingId: group.printingId,
-            sourceLineage: group.sourceLineage,
-            afterKind: relationshipKind,
-            afterValue: relationshipValue,
-          }).first<typeof row>();
+          row = priorMemberships
+            ? (priorMemberships.find(
+                (item) =>
+                  item.relationship_kind > relationshipKind ||
+                  (item.relationship_kind === relationshipKind && item.relationship_value > relationshipValue),
+              ) ?? null)
+            : await printingRelationshipsForLineageStatement(database, {
+                printingId: group.printingId,
+                sourceLineage: group.sourceLineage,
+                afterKind: relationshipKind,
+                afterValue: relationshipValue,
+              }).first<typeof row>();
         } catch (cause) {
           throw new ReconciliationReducerStorageError(cause);
         }
@@ -241,7 +271,7 @@ export async function prepareDisappearanceWarnings(
   );
   const addGundamWarning = async (printingId: string) => {
     const lineages = new Set(
-      (await gundamPrintingLineages(database, printingId))
+      (await gundamPrintingLineages(database, printingId, sources.history))
         .filter(({ source_lineage, current }) => current === 1 && !sources.checkedLineages.includes(source_lineage))
         .map(({ source_lineage }) => source_lineage),
     );
@@ -270,7 +300,7 @@ export async function prepareDisappearanceWarnings(
         await budget(entry.value);
         const { printingId, compatibility } = entry.value;
         if (compatibility.source_lineage === "gundam-en-asia" || compatibility.source_lineage === "gundam-en-us") {
-          const visited = (await gundamPrintingLineages(database, printingId)).some(
+          const visited = (await gundamPrintingLineages(database, printingId, sources.history)).some(
             ({ source_lineage, current }) => current === 1 && sources.checkedLineages.includes(source_lineage),
           );
           if (!visited) await addGundamWarning(printingId);

@@ -1,3 +1,7 @@
+import {
+  NativeSourceHistory,
+  type SourceHistoryPosition,
+} from "../../../src/catalogue/reconciliation/native-source-history-state";
 import { expect, test } from "vitest";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import { publicationCheckpointStatement } from "../../../src/catalogue/reconciliation/game-publication-repository";
@@ -306,3 +310,66 @@ test("changed successors preserve current-plus-two queryability and historical r
     ),
   ).rejects.toThrow("Accepted private evidence snapshot is missing");
 }, 120_000);
+
+test("a game can prepare again after another game publishes and its own evidence is accepted unchanged", async () => {
+  const first = await prepared("/reconciliation/repeatable", "cross-game-first", "catrev_spine_000");
+  const firstPublished = await approveNativeCandidate(first, "cross-game-first-publish");
+  const gameRevision = requiredString(firstPublished.document, "resulting_revision_id");
+  const otherRun = await collect("/reconciliation/gundam-product-asia", "cross-game-other", {
+    game: "gundam",
+    lineage: "gundam-en-asia",
+    adapter: "fixture-gundam-en-asia-json@2",
+  });
+  const other = await prepareNativeCandidate(otherRun.id, "gundam", "catrev_spine_000", "cross-game-other-prepare");
+  const otherPublished = await approveNativeCandidate(other, "cross-game-other-publish");
+  const composition = requiredString(otherPublished.document, "resulting_revision_id");
+  expect(composition).not.toBe(gameRevision);
+  const repeated = await prepared("/reconciliation/repeatable", "cross-game-repeated", gameRevision);
+  const accepted = await approveNativeCandidate(repeated, "cross-game-repeated-publish");
+  expect(accepted.document.resulting_revision_id).toBe(composition);
+  const next = await prepared("/reconciliation/repeatable", "cross-game-next", gameRevision);
+  expect(next.state).toBe("sealed");
+  expect(await nativeCandidatePredecessor(testEnv.CATALOGUE_DB, String(next.id))).toBe(repeated.id);
+  expect(
+    (
+      await post(`/v1/game-candidates/${next.id}/abandon`, {
+        generation: next.generation,
+        idempotency_key: "cross-game-next-abandon",
+      })
+    ).document.state,
+  ).toBe("abandoned");
+});
+
+test("retained Printing history can cross the identity-match limit without losing observation evidence", async () => {
+  const candidate = await prepared("/reconciliation/repeatable", "lifetime-history", "catrev_spine_000");
+  const preparation = requiredString(candidate, "id");
+  const database = catalogueStore(testEnv.CATALOGUE_DB);
+  const checkpoint = await reconciliationCheckpoint<{ sourceHistory: { history: SourceHistoryPosition } }>(
+    database,
+    preparation,
+    "disappearance_warnings",
+  );
+  expect(checkpoint).not.toBeNull();
+  const history = new NativeSourceHistory(database, preparation, checkpoint!.value.sourceHistory.history);
+  for (let ordinal = 0; ordinal < 501; ordinal++)
+    await history.retain({
+      id: `lifetime-membership-${ordinal}`,
+      kind: "membership",
+      entityId: "lifetime-printing",
+      cardId: "lifetime-card",
+      sourceLineage: "one-piece-en",
+      identity: { kind: "card_number", value: "LIFETIME-001" },
+      relationshipKind: "product",
+      relationshipValue: "lifetime-product",
+      sourceObservationId: `observation-${ordinal}`,
+      first: { candidate: preparation },
+      last: { candidate: preparation },
+      missing: null,
+      current: true,
+    });
+  const retained = new NativeSourceHistory(database, preparation, history.cursor);
+  const evidence = await retained.forEntity("printing", "lifetime-printing");
+  expect(evidence).toHaveLength(501);
+  expect(new Set(evidence.map((record) => record.sourceObservationId)).size).toBe(501);
+  expect(await retained.forEntity("printing", "lifetime-printing", "locator")).toEqual([]);
+});
