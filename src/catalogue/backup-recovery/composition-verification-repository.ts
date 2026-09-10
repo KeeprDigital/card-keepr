@@ -3,6 +3,8 @@ import { type CatalogueStore, repositoryStatements } from "../shared";
 // These are database snapshot records, never a consumer export envelope.
 // Only schema-bounded private records use small pages; other tables retain one row.
 export const maximumPrivateSnapshotPageBytes = 1_048_576;
+export const maximumSchemaSnapshotPageRows = 32;
+export const maximumSchemaSnapshotPageBytes = 1_048_576;
 const privateSnapshotColumns = {
   reconciliation_checkpoints: ["preparation_id", "phase", "ordinal", "content", "sha256"],
   reconciliation_reducer_state: [
@@ -24,9 +26,14 @@ export const compositionSnapshotTables = [
   "catalogue_export_deletion_retries",
   "catalogue_composition_games",
   "catalogue_candidate_publications",
+  "game_candidate_semantic_receipts",
+  "game_candidate_predecessors",
+  "game_accepted_candidates",
+  "catalogue_acceptance_head",
   "game_catalogue_heads",
   "catalogue_query_revisions",
   "game_candidates",
+  "game_candidate_partitions",
   "game_publication_operations",
   "game_publication_actions",
   "publication_preparations",
@@ -94,13 +101,22 @@ export type CompositionVerificationQuery =
   | { kind: "composition-state"; revisionId: string }
   | { kind: "composition-page"; table: CompositionSnapshotTable; after: number }
   | { kind: "composition-schema"; after: string }
+  | { kind: "composition-accepted-roots" }
   | { kind: "foreign-keys" };
 export function compositionVerificationQuery(input: CompositionVerificationQuery) {
+  if (input.kind === "composition-accepted-roots") return acceptedEvidenceArtifactRootsQuery();
   if (input.kind === "composition-schema")
     return {
-      sql: `SELECT name,type,sql FROM sqlite_schema WHERE name>? AND sql IS NOT NULL
-      AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE '%_fts%'
-      AND name<>'d1_migrations' ORDER BY name LIMIT 1`,
+      sql: `WITH page AS (
+        SELECT name,type,sql FROM sqlite_schema WHERE name>? AND sql IS NOT NULL
+        AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE '%_fts%'
+        AND name<>'d1_migrations' ORDER BY name LIMIT ${maximumSchemaSnapshotPageRows}
+      ), sizes AS (
+        SELECT name,sum(length(CAST(json_object('name',name,'type',type,'sql',sql) AS BLOB)))
+          OVER (ORDER BY name) AS page_bytes FROM page
+      ) SELECT page.name,page.type,page.sql FROM page JOIN sizes USING(name)
+        WHERE sizes.page_bytes<=${maximumSchemaSnapshotPageBytes} OR page.name=(SELECT min(name) FROM page)
+        ORDER BY page.name`,
       params: [input.after],
     };
   if (input.kind === "foreign-keys") return { sql: "PRAGMA foreign_key_check", params: [] };
@@ -172,4 +188,30 @@ export function compositionArtifactRootsStatement(db: CatalogueStore, revisionId
  LEFT JOIN game_publication_operations o ON o.id=p.publication_operation_id
  WHERE m.catalogue_revision_id=? ORDER BY m.supported_game LIMIT 5`)
     .bind(revisionId);
+}
+
+export type AcceptedEvidenceArtifactRoot = {
+  supported_game: string;
+  candidate_id: string;
+  preparation_id: string;
+  manifest_digest: string;
+  root_digest: string;
+};
+
+function acceptedEvidenceArtifactRootsQuery() {
+  return {
+    sql: `SELECT head.supported_game,candidate.id AS candidate_id,
+    candidate.preparation_id,candidate.manifest_digest,prepared.root_digest
+    FROM game_accepted_candidates head JOIN game_candidates candidate ON candidate.id=head.candidate_id
+    LEFT JOIN publication_preparations prepared ON prepared.candidate_id=candidate.id
+      AND prepared.state='verified' AND prepared.manifest_digest=candidate.manifest_digest
+      AND prepared.generation=candidate.generation
+    WHERE candidate.state='published' ORDER BY head.supported_game LIMIT 5`,
+    params: [],
+  };
+}
+
+/** At most one current accepted private root per supported game, including same-revision evidence. */
+export function acceptedEvidenceArtifactRootsStatement(db: CatalogueStore) {
+  return repositoryStatements(db).prepare(acceptedEvidenceArtifactRootsQuery().sql);
 }

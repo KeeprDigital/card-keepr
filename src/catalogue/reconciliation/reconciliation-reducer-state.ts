@@ -84,13 +84,25 @@ export class ReconciliationReducerIndex<T> {
 
   /** Query only the predecessor view; call before this observation writes matching state. */
   async *matchingBeforeObservation(group: string, limit = { records: 500, bytes: 1048576 }): AsyncGenerator<T> {
+    let bytes = 0,
+      count = 0;
+    for await (const entry of this.groupEntriesBeforeObservation(group)) {
+      bytes += entry.bytes;
+      if (++count > limit.records || bytes > limit.bytes)
+        throw new Error("reconciliation_capacity_exceeded: one identity match has too many candidates.");
+      yield entry.value;
+    }
+  }
+
+  /** Stream lifetime history one verified row at a time, without an identity-match ceiling. */
+  async *groupEntriesBeforeObservation(
+    group: string,
+    after = "",
+  ): AsyncGenerator<{ key: string; value: T; bytes: number }> {
     if (this.ordinal <= 1) return;
     const groupDigest = await sha256Text(group);
-    let after = "";
-    let bytes = 0;
-    let count = 0;
     for (;;) {
-      const row: (StateRow & { key_digest: string }) | null = await storage(() =>
+      const row = await storage(() =>
         nextReducerGroupStateStatement(
           this.database,
           this.runId,
@@ -101,12 +113,13 @@ export class ReconciliationReducerIndex<T> {
         ).first<StateRow & { key_digest: string }>(),
       );
       if (!row) return;
-      bytes += new TextEncoder().encode(row.content).byteLength;
-      if (++count > limit.records || bytes > limit.bytes)
-        throw new Error("reconciliation_capacity_exceeded: one identity match has too many candidates.");
       if ((await sha256Text(row.content)) !== row.sha256)
         throw new Error("Reducer state failed integrity verification.");
-      yield (await restorePartitionedRecord(this.database, this.runId, JSON.parse(row.content))) as T;
+      yield {
+        key: row.key_digest,
+        value: (await restorePartitionedRecord(this.database, this.runId, JSON.parse(row.content))) as T,
+        bytes: new TextEncoder().encode(row.content).byteLength,
+      };
       after = row.key_digest;
     }
   }

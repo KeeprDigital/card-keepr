@@ -76,6 +76,7 @@ export type ObservationSet = {
 };
 
 export type Diagnostic = {
+  id: string;
   request_id: string;
   attempt_number: number;
   requested_at: string;

@@ -1,5 +1,5 @@
 import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
-import { expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { buildCatalogueExport } from "../../../src/catalogue/export";
 import { sourceFreshnessFromStorage } from "../../../src/catalogue/read";
 import {
@@ -11,13 +11,17 @@ import {
 } from "../../../src/catalogue/reconciliation";
 import { type CatalogueCandidate, catalogueRevisionIdentity, catalogueStore } from "../../../src/catalogue/shared";
 import ingestionWorker from "../src/index";
-import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
+import { recoverHistoricalPublication } from "./historical-publication-fixture";
+import { nativeCandidateRecords } from "./native-candidate-helpers";
+import {
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
+} from "./native-publication-helpers";
 import * as catalogueExportQueries from "./query-helpers/catalogue-export";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import * as reconciliationQueries from "./query-helpers/reconciliation";
 import {
-  approve,
   collect,
   collectRequests,
   exportComponentRecords,
@@ -30,6 +34,7 @@ import {
   requiredString,
   testEnv,
 } from "./reconciliation-helpers";
+import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 
 installReconciliationSuite();
 
@@ -683,12 +688,12 @@ test("an exact replay pauses retained work when Workflow pause-finalization itse
   expect(exactReplay.document).toEqual(recovered.document);
 });
 
-test("an empty published revision has an available projection and concurrent repair steps converge by CAS", async () => {
+test("an empty retained historical revision has an available projection and concurrent repair steps converge by CAS", async () => {
   const run = await collect("/reconciliation/complete-empty-lineage", "empty-query-revision");
   const reconciled = await reconcile(run.id);
   expect(reconciled.response.status).toBe(200);
   expect(reconciled.document.cards).toEqual([]);
-  const published = await approve(reconciled.document);
+  const published = await recoverHistoricalPublication(run.id, "historical-empty-query-revision", "empty-historical");
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
   await expect(
@@ -727,7 +732,7 @@ test("an empty published revision has an available projection and concurrent rep
   ).resolves.toMatchObject({ state: "available" });
 });
 
-test("retained immutable evidence publishes stable identities and warns when earlier membership disappears", async () => {
+test("retained historical materialization preserves identities, membership warnings and legacy read envelopes", async () => {
   const firstRun = await collect("/reconciliation/base", "reconcile-base");
   const first = await reconcile(firstRun.id);
   expect(first.response.status).toBe(200);
@@ -741,7 +746,7 @@ test("retained immutable evidence publishes stable identities and warns when ear
   const firstPrinting = requiredFirst(first.document, "printings");
   expect(firstCard.id).toMatch(/^card_[a-f0-9]{32}$/);
   expect(firstPrinting.id).toMatch(/^printing_[a-f0-9]{32}$/);
-  const firstPublished = await approve(first.document);
+  const firstPublished = await recoverHistoricalPublication(firstRun.id, "historical-membership-first");
   expect(firstPublished.response.status).toBe(200);
   const firstRevision = requiredString(firstPublished.document, "resulting_revision_id");
   expect(await exportComponentRecords(firstRevision, "relationships")).toContainEqual(
@@ -772,7 +777,7 @@ test("retained immutable evidence publishes stable identities and warns when ear
       },
     ],
   });
-  const secondPublished = await approve(second.document);
+  const secondPublished = await recoverHistoricalPublication(secondRun.id, "historical-membership-second");
   expect(secondPublished.response.status).toBe(200);
   const secondRevision = requiredString(secondPublished.document, "resulting_revision_id");
 
@@ -918,7 +923,7 @@ test("retained immutable evidence publishes stable identities and warns when ear
   const withdrawalRun = await collect("/reconciliation/withdrawn", "reconcile-withdrawn");
   const withdrawal = await reconcile(withdrawalRun.id);
   expect(withdrawal.response.status).toBe(200);
-  const withdrawalPublished = await approve(withdrawal.document);
+  const withdrawalPublished = await recoverHistoricalPublication(withdrawalRun.id, "historical-membership-withdrawal");
   const withdrawalRevision = requiredString(withdrawalPublished.document, "resulting_revision_id");
   const withdrawn = await get(`/v1/reconciliation/printings/${firstPrinting.id}`);
   expect(withdrawn.document).toMatchObject({
@@ -974,38 +979,41 @@ test("retained immutable evidence publishes stable identities and warns when ear
   });
 });
 
-test("parsed observation count warnings use the normative absolute threshold", async () => {
-  // The 25-record absolute floor needs only 1 -> 25 -> 50 observations.
-  // This crosses the same 24/25 boundary without publishing hundreds of cards.
-  const firstRun = await collect("/reconciliation/observation-count-1", "observation-count-first");
-  const first = await reconcile(firstRun.id);
-  expect(first.response.status).toBe(200);
-  expect((await approve(first.document)).response.status).toBe(200);
+describe.each([
+  { previous: 1, current: 25, warns: false },
+  { previous: 25, current: 50, warns: true },
+])("parsed observation count warnings from $previous to $current", ({ previous, current, warns }) => {
+  const caseKey = `observation-count-${previous}-${current}`;
+  let previousRevision: string;
+  beforeEach(async () => {
+    const run = await collect(`/reconciliation/observation-count-${previous}`, `${caseKey}-first`);
+    const seed = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", `${caseKey}-first-candidate`);
+    const published = await approveNativeCandidate(seed, `${caseKey}-first-publication`);
+    expect(published.response.status).toBe(200);
+    previousRevision = requiredString(published.document, "resulting_revision_id");
+  });
 
-  const secondRun = await collect("/reconciliation/observation-count-25", "observation-count-second");
-  const second = await reconcile(secondRun.id);
-  expect(second.response.status).toBe(200);
-  expect(second.document.warnings).not.toContainEqual(
-    expect.objectContaining({
-      code: "source_observation_count_changed",
-    }),
-  );
-  expect((await approve(second.document)).response.status).toBe(200);
-
-  const thirdRun = await collect("/reconciliation/observation-count-50", "observation-count-third");
-  const third = await reconcile(thirdRun.id);
-  expect(third.response.status).toBe(200);
-  expect(third.document.warnings).toContainEqual(
-    expect.objectContaining({
-      code: "source_observation_count_changed",
-      source_lineage: "one-piece-en",
-      request_id: "one-piece-en:discovery",
-      previous_count: 25,
-      current_count: 50,
-      absolute_delta: 25,
-      warning_threshold: 25,
-    }),
-  );
+  test("uses the normative absolute threshold", async () => {
+    const run = await collect(`/reconciliation/observation-count-${current}`, `${caseKey}-next`);
+    const candidate = await prepareNativeCandidate(run.id, "one-piece", previousRevision, `${caseKey}-next-candidate`);
+    const records = await nativeCandidateRecords(String(candidate.id));
+    const warnings = [...(records.warnings ?? []), ...(records.shared_warnings ?? [])];
+    if (!warns) {
+      expect(warnings).not.toContainEqual(expect.objectContaining({ code: "source_observation_count_changed" }));
+    } else {
+      expect(warnings).toContainEqual(
+        expect.objectContaining({
+          code: "source_observation_count_changed",
+          source_lineage: "one-piece-en",
+          request_id: "one-piece-en:discovery",
+          previous_count: 25,
+          current_count: 50,
+          absolute_delta: 25,
+          warning_threshold: 25,
+        }),
+      );
+    }
+  });
 });
 
 test("an interrupted reconciliation publication recovers the exact digest-bound candidate and export", async () => {
@@ -1116,7 +1124,7 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
 test("reserved recovery never adopts or cleans an existing published export prefix", async () => {
   const firstRun = await collect("/reconciliation/new-locator", "reservation-owner-existing-export");
   const firstReconciled = await reconcile(firstRun.id);
-  const firstPublished = await approve(firstReconciled.document);
+  const firstPublished = await recoverHistoricalPublication(firstRun.id, "historical-reservation-owner");
   expect(firstPublished.response.status).toBe(200);
   const existingRevision = requiredString(firstPublished.document, "resulting_revision_id");
   const existingManifest = requiredString(firstPublished.document, "export_manifest_digest");

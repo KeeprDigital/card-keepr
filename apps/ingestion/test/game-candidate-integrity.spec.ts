@@ -1,4 +1,9 @@
 import { expect, test } from "vitest";
+import { nativeCandidateRecords } from "./native-candidate-helpers";
+import {
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
+} from "./native-publication-helpers";
 import { replaceGameCandidateProvenance } from "./query-helpers/game-candidates";
 import {
   collect,
@@ -14,18 +19,11 @@ installReconciliationSuite();
 
 test("a sealed candidate retains its original collection provenance when another collection exists", async () => {
   const first = await collect("/reconciliation/base", "immutable-candidate-first");
-  const result = await reconcile(first.id);
-  expect(result.response.status).toBe(200);
-  const status = await get(`/v1/ingestion-runs/${first.id}/reconciliation`);
-  const candidates = status.document.candidates as { id: string }[];
-  const candidateId = candidates[0]!.id;
+  const candidate = await prepareNativeCandidate(first.id, "one-piece", "catrev_spine_000", "immutable-candidate");
+  const candidateId = requiredString(candidate, "id");
   const original = await get(`/v1/game-candidates/${candidateId}`);
   expect(original.document.ingestion_run_id).toBe(first.id);
-  const published = await post(`/v1/ingestion-runs/${first.id}/approval`, {
-    candidate_digest: requiredString(result.document, "candidate_digest"),
-    expected_current_revision_id: requiredString(result.document, "expected_current_revision_id"),
-    idempotency_key: "immutable-candidate-publish",
-  });
+  const published = await approveNativeCandidate(candidate, "immutable-candidate-publish");
   expect(published.response.status).toBe(200);
   const second = await collect("/reconciliation/base", "immutable-candidate-second");
   expect(second.id).not.toBe(first.id);
@@ -38,14 +36,13 @@ test("a sealed candidate retains its original collection provenance when another
 
 test("reusing a published collection retains native mapping ownership separately from published mappings", async () => {
   const run = await collect("/reconciliation/base", "native-mapping-published-source");
-  const reconciled = await reconcile(run.id);
-  const printingId = (reconciled.document.printings as { id: string }[])[0]!.id;
-  const published = await post(`/v1/ingestion-runs/${run.id}/approval`, {
-    candidate_digest: requiredString(reconciled.document, "candidate_digest"),
-    expected_current_revision_id: requiredString(reconciled.document, "expected_current_revision_id"),
-    idempotency_key: "native-mapping-publish-source",
-  });
+  const seed = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", "native-mapping-seed-candidate");
+  const records = await nativeCandidateRecords(requiredString(seed, "id"));
+  const printingId = (records.printings as { id: string }[])[0]!.id;
+  const published = await approveNativeCandidate(seed, "native-mapping-publish-source");
   expect(published.response.status).toBe(200);
+  const sourceAfterPublication = (await get(`/v1/ingestion-runs/${run.id}`)).document;
+  expect((await get(`/v1/game-candidates/${seed.id}`)).document).toMatchObject({ state: "published" });
   const original = (await get(`/v1/reconciliation/identities/${printingId}`)).document;
   const created = await post("/v1/game-candidates", {
     ingestion_run_id: run.id,
@@ -68,15 +65,13 @@ test("reusing a published collection retains native mapping ownership separately
     expect.objectContaining({ preparation_id: id, ingestion_run_id: run.id, publication_state: "sealed" }),
   ]);
   expect((await get(`/v1/reconciliation/identities/${printingId}`)).document).toEqual(original);
-  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "published" });
+  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toEqual(sourceAfterPublication);
 });
 
 test("candidate partition inspection rejects a mixed manifest pin and returns verified content identity", async () => {
   const run = await collect("/reconciliation/base", "inspection-pin");
-  await reconcile(run.id);
-  const status = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
-  const id = (status.document.candidates as { id: string }[])[0]!.id;
-  const candidate = (await get(`/v1/game-candidates/${id}`)).document;
+  const candidate = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", "inspection-pin-candidate");
+  const id = requiredString(candidate, "id");
   const wrong = await get(`/v1/game-candidates/${id}/partitions/0?manifest=${"0".repeat(64)}`);
   expect(wrong.response.status).toBe(409);
   const detail = await get(`/v1/game-candidates/${id}/partitions/0?manifest=${candidate.manifest_digest}`);
@@ -90,9 +85,13 @@ test("candidate partition inspection rejects a mixed manifest pin and returns ve
 
 test("owner inspection retains complete proposed values and semantic differences against its exact predecessor", async () => {
   const run = await collect("/reconciliation/base", "inspection-values");
-  await reconcile(run.id);
-  const status = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
-  const id = (status.document.candidates as { id: string }[])[0]!.id;
+  const candidate = await prepareNativeCandidate(
+    run.id,
+    "one-piece",
+    "catrev_spine_000",
+    "inspection-values-candidate",
+  );
+  const id = requiredString(candidate, "id");
   const pages = await get(`/v1/game-candidates/${id}/partitions`);
   const inspection = (pages.document.partitions as { kind: string; ordinal: number }[]).filter(
     (p) => p.kind === "inspection",
@@ -114,12 +113,8 @@ test("owner inspection retains complete proposed values and semantic differences
 for (const change of ["product", "release", "image", "evidence"]) {
   test(`synthetic ${change}-only refresh has complete native candidate inspection`, async () => {
     const base = await collect("/reconciliation/inspection-base", `inspection-${change}-base`);
-    const result = await reconcile(base.id);
-    const published = await post(`/v1/ingestion-runs/${base.id}/approval`, {
-      candidate_digest: result.document.candidate_digest,
-      expected_current_revision_id: result.document.expected_current_revision_id,
-      idempotency_key: `inspection-${change}-publish`,
-    });
+    const seed = await prepareNativeCandidate(base.id, "one-piece", "catrev_spine_000", `inspection-${change}-seed`);
+    const published = await approveNativeCandidate(seed, `inspection-${change}-publish`);
     expect(published.response.status).toBe(200);
     const next = await collect(`/reconciliation/inspection-${change}`, `inspection-${change}-next`);
     const created = await post("/v1/game-candidates", {
@@ -137,7 +132,6 @@ for (const change of ["product", "release", "image", "evidence"]) {
       candidate = (await get(`/v1/game-candidates/${id}`)).document;
     }
     expect(candidate).toMatchObject({ state: "sealed" });
-    const { nativeCandidateRecords } = await import("./native-candidate-helpers");
     const records = await nativeCandidateRecords(id);
     const differences = records.inspection!;
     const summary = await get(`/v1/game-candidates/${id}/inspection?manifest=${candidate.manifest_digest}`);
@@ -197,9 +191,8 @@ for (const change of ["product", "release", "image", "evidence"]) {
 test("owner image inspection verifies bytes and injected missing images fail closed", async () => {
   const { default: worker } = await import("../src/index");
   const run = await collect("/reconciliation/base", "inspection-image-download");
-  await reconcile(run.id);
-  const status = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
-  const id = (status.document.candidates as { id: string }[])[0]!.id;
+  const candidate = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", "inspection-image-candidate");
+  const id = requiredString(candidate, "id");
   const page = await get(`/v1/game-candidates/${id}/partitions`);
   const image = (page.document.partitions as { ordinal: number; kind: string }[]).find(
     (p) => p.kind === "printing_images",
@@ -222,9 +215,13 @@ test("owner image inspection verifies bytes and injected missing images fail clo
 test("injected corrupt inspection summary cannot report readiness", async () => {
   const { default: worker } = await import("../src/index");
   const run = await collect("/reconciliation/base", "inspection-corrupt-summary");
-  await reconcile(run.id);
-  const status = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
-  const id = (status.document.candidates as { id: string }[])[0]!.id;
+  const candidate = await prepareNativeCandidate(
+    run.id,
+    "one-piece",
+    "catrev_spine_000",
+    "inspection-corrupt-candidate",
+  );
+  const id = requiredString(candidate, "id");
   const statement = (original: D1PreparedStatement): D1PreparedStatement =>
     new Proxy(original, {
       get(target, property) {
@@ -258,18 +255,12 @@ test("injected corrupt inspection summary cannot report readiness", async () => 
 
 test("injected loss of a replaced before-image prevents a native inspection integrity receipt", async () => {
   const base = await collect("/reconciliation/deterministic-forward", "inspection-before-image-base");
-  const result = await reconcile(base.id);
-  const published = await post(`/v1/ingestion-runs/${base.id}/approval`, {
-    candidate_digest: result.document.candidate_digest,
-    expected_current_revision_id: result.document.expected_current_revision_id,
-    idempotency_key: "inspection-before-image-publish",
-  });
+  const seed = await prepareNativeCandidate(base.id, "one-piece", "catrev_spine_000", "inspection-before-image-seed");
+  const published = await approveNativeCandidate(seed, "inspection-before-image-publish");
   expect(published.response.status).toBe(200);
-  const status = await get(`/v1/ingestion-runs/${base.id}/reconciliation`);
-  const priorId = (status.document.candidates as { id: string }[])[0]!.id;
-  const { nativeCandidateRecords } = await import("./native-candidate-helpers");
+  const priorId = requiredString(seed, "id");
   const previous = await nativeCandidateRecords(priorId);
-  const printings = result.document.printings as { id: string }[];
+  const printings = previous.printings as { id: string }[];
   const correction = {
     game: "one-piece",
     entity_kind: "printing",
@@ -317,8 +308,9 @@ test("injected loss of a replaced before-image prevents a native inspection inte
 
 test("canonical legacy candidate JSON preserves before-images regardless of member order", async () => {
   const { canonicalJson } = await import("../../../src/catalogue/shared");
+  const { readIngestionRunsCandidateJson } = await import("./query-helpers/ingestion");
+  const { recoverHistoricalPublication } = await import("./historical-publication-fixture");
   const { seedRunFixtureStatement } = await import("./query-helpers/run-events");
-  const { nativeCandidateRecords } = await import("./native-candidate-helpers");
   const source = await collect("/reconciliation/base", "inspection-legacy-image-source");
   const reconciled = await reconcile(source.id);
   const status = await get(`/v1/ingestion-runs/${source.id}/reconciliation`);
@@ -353,12 +345,14 @@ test("canonical legacy candidate JSON preserves before-images regardless of memb
     idempotency_key: "inspection-legacy-image-retry",
   });
   expect(retried.response.status, JSON.stringify(retried.document)).toBe(201);
-  const published = await post(`/v1/ingestion-runs/${retried.document.id}/approval`, {
-    candidate_digest: retried.document.candidate_digest,
-    expected_current_revision_id: retried.document.expected_current_revision_id,
-    idempotency_key: "inspection-legacy-image-publish",
-  });
-  expect(published.response.status, JSON.stringify(published.document)).toBe(200);
+  const runId = requiredString(retried.document, "id");
+  const candidateJson = await readIngestionRunsCandidateJson(testEnv.CATALOGUE_DB)
+    .bind(runId)
+    .first<string>("candidate_json");
+  expect(candidateJson).not.toBeNull();
+  const historicalCandidate = JSON.parse(candidateJson!) as import("../../../src/catalogue/shared").CatalogueCandidate;
+  expect(candidateJson).toBe(canonicalJson(historicalCandidate));
+  const published = await recoverHistoricalPublication(runId, "inspection-legacy-image-publish");
   const next = await collect("/reconciliation/base", "inspection-legacy-image-next");
   const created = await post("/v1/game-candidates", {
     ingestion_run_id: next.id,

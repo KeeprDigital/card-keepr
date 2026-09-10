@@ -140,7 +140,11 @@ export function disappearedCardsStatement(
 }
 
 export function reconciledPrintingDocumentStatement(database: CatalogueStore, printingId: string): D1PreparedStatement {
-  return repositoryStatements(database).prepare("SELECT * FROM reconciled_printings WHERE id = ?").bind(printingId);
+  return repositoryStatements(database)
+    .prepare(`SELECT printing.* FROM reconciled_printings printing
+    JOIN reconciled_cards card ON card.id=printing.card_id WHERE printing.id=?
+    AND NOT EXISTS(SELECT 1 FROM game_accepted_candidates accepted WHERE accepted.supported_game=card.supported_game)`)
+    .bind(printingId);
 }
 
 export function reconciledPrintingLocatorsStatement(database: CatalogueStore, printingId: string): D1PreparedStatement {

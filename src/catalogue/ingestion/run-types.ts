@@ -5,14 +5,6 @@ export const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1_000;
 
 export const publicationLeaseMilliseconds = 5 * 60 * 1_000;
 
-export const maximumPublicationCandidateBytes = 16 * 1024 * 1024;
-
-export const maximumPublicationEntityBytes = 384 * 1024;
-
-export const maximumPublicationSearchMaterializationBytes = 24 * 1024 * 1024;
-
-export const maximumPublicationExportBytes = 32 * 1024 * 1024;
-
 export type RunRow = {
   id: string;
   state: IngestionRunState;

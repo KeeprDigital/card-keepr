@@ -1,16 +1,15 @@
-import { catalogueStore } from "../../../src/catalogue/shared";
-import { readSourceObservation } from "../../../src/catalogue/reconciliation/reconciliation-source-observation";
 import { expect, test } from "vitest";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
-import { canonicalJson, sha256 } from "../../../src/catalogue/shared";
-import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
-import * as curatedQueries from "./query-helpers/curated";
+import { catalogueRoutes } from "../../../src/catalogue/read";
+import { readSourceObservation } from "../../../src/catalogue/reconciliation/reconciliation-source-observation";
+import { canonicalJson, catalogueStore, sha256 } from "../../../src/catalogue/shared";
+import { routeTable } from "../../../src/http/routes";
+import { nativeCandidateRecords, waitForDispatchedNativeCandidates } from "./native-candidate-helpers";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import { currentGameMembers } from "./query-helpers/atomic-publication";
 import * as ingestionQueries from "./query-helpers/ingestion";
-import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
-import * as reconciliationQueries from "./query-helpers/reconciliation";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import {
-  approve,
   collect,
   exportComponentRecords,
   get,
@@ -20,10 +19,22 @@ import {
   requiredFirst,
   requiredString,
   testEnv,
-  waitForRunState,
 } from "./reconciliation-helpers";
 
 installReconciliationSuite();
+
+async function readPublished(path: string) {
+  const request = new Request(`https://card-keepr.invalid${path}`);
+  const response = await routeTable(catalogueRoutes)("GET", new URL(request.url).pathname, {
+    request,
+    env: { ...testEnv, CATALOGUE_DB: catalogueStore(testEnv.CATALOGUE_DB) },
+    requestId: "completeness-published-read",
+    base: { origin: "https://card-keepr.invalid", basePath: "" },
+  });
+  expect(response?.status).toBe(200);
+  if (!response) throw new Error(`Published route ${path} was absent`);
+  return response;
+}
 
 async function waitForNativeCandidate(runId: string): Promise<Record<string, unknown>> {
   const deadline = Date.now() + 15_000;
@@ -98,9 +109,9 @@ test("a complete zero-match blocks publication unless retained evidence proves a
     expected_current_revision_id: "catrev_spine_000",
     idempotency_key: "blocked-approval",
   });
-  expect(approval.response.status).toBe(409);
+  expect(approval.response.status).toBe(410);
   expect(approval.document).toMatchObject({
-    code: "run_not_awaiting_approval",
+    code: "run_approval_retired",
   });
 });
 
@@ -217,9 +228,9 @@ test.each([
   "publishes accepted $profile identity without one-printing assumptions",
   async ({ game, lineage, adapter, scenario, profile, identity, printingCount }) => {
     const run = await collect(`/reconciliation/${scenario}`, `reconcile-${scenario}`, { game, lineage, adapter });
-    const reconciled = await reconcile(run.id);
-    expect(reconciled.response.status).toBe(200);
-    const card = requiredFirst(reconciled.document, "cards");
+    const candidate = await prepareNativeCandidate(run.id, game, "catrev_spine_000", `prepare-${scenario}`);
+    const records = await nativeCandidateRecords(requiredString(candidate, "id"));
+    const card = requiredFirst(records, "cards");
     expect(card).toMatchObject({
       game,
       official_identity: {
@@ -228,13 +239,8 @@ test.each([
       },
       game_data: { profile },
     });
-    expect(Array.isArray(reconciled.document.printings) ? reconciled.document.printings : []).toHaveLength(
-      printingCount,
-    );
-    const published = await approve(reconciled.document);
-    if (published.response.status !== 200) {
-      throw new Error(JSON.stringify(published.document));
-    }
+    expect(records.printings ?? []).toHaveLength(printingCount);
+    const published = await approveNativeCandidate(candidate, `publish-${scenario}`);
     expect(published.response.status).toBe(200);
   },
 );
@@ -250,17 +256,22 @@ test("a partial-game publication carries an unselected curation and its immutabl
     `partial-curation-initial-${crypto.randomUUID()}`,
     digimonSource,
   );
-  const initialReconciled = await reconcile(initial.id);
-  const initialPublication = await approve(initialReconciled.document);
+  const initialCandidate = await prepareNativeCandidate(
+    initial.id,
+    "digimon",
+    "catrev_spine_000",
+    "partial-curation-initial",
+  );
+  const initialRecords = await nativeCandidateRecords(requiredString(initialCandidate, "id"));
+  const initialPublication = await approveNativeCandidate(initialCandidate, "partial-curation-initial-publish");
   expect(initialPublication.response.status).toBe(200);
   const initialRevision = requiredString(initialPublication.document, "resulting_revision_id");
-  const officialCard = requiredFirst(initialReconciled.document, "cards");
+  const officialCard = requiredFirst(initialRecords, "cards");
   const officialName = requiredString(officialCard, "name");
-  const retainedEvidence = await reconciliationQueries
-    .readReconciliationCandidatesSourceObservationId(testEnv.CATALOGUE_DB)
-    .bind(initial.id)
-    .first<{ source_observation_id: string }>();
-  expect(retainedEvidence?.source_observation_id).toMatch(/^srcobs_/u);
+  const identity = await get(`/v1/reconciliation/identities/${officialCard.id}?preparation_id=${initialCandidate.id}`);
+  expect(identity.response.status).toBe(200);
+  const retainedEvidence = requiredFirst(identity.document, "mappings");
+  expect(retainedEvidence.source_observation_id).toMatch(/^srcobs_/u);
   const proposal = {
     game: "digimon",
     target: {
@@ -274,13 +285,31 @@ test("a partial-game publication carries an unselected curation and its immutabl
     evidence: [
       {
         kind: "source_observation",
-        id: retainedEvidence!.source_observation_id,
+        id: requiredString(retainedEvidence, "source_observation_id"),
       },
     ],
     effective_interval: { from: null, to: null },
     reviewed_source_digest: await sha256(new TextEncoder().encode(canonicalJson(officialName))),
     supersedes_revision_id: null,
   };
+  const missingEvidenceProposal = {
+    ...proposal,
+    evidence: [
+      {
+        kind: "source_observation",
+        id: String(retainedEvidence.source_observation_id).replace(/_[0-9]+$/u, "_999999"),
+      },
+    ],
+  };
+  const missingEvidence = await post("/admin/v1/curated-revisions", {
+    environment: "production",
+    expected_current_revision_id: initialRevision,
+    proposal: missingEvidenceProposal,
+    proposal_digest: await sha256(new TextEncoder().encode(canonicalJson(missingEvidenceProposal))),
+    idempotency_key: "partial-curation-missing-observation",
+  });
+  expect(missingEvidence.response.status).toBe(422);
+  expect(missingEvidence.document.code).toBe("curated_revision_evidence_not_retained");
   const created = await post("/admin/v1/curated-revisions", {
     environment: "production",
     expected_current_revision_id: initialRevision,
@@ -296,42 +325,60 @@ test("a partial-game publication carries an unselected curation and its immutabl
     `partial-curation-apply-${crypto.randomUUID()}`,
     digimonSource,
   );
-  const curatedCandidate = await reconcile(curatedRun.id);
-  expect(requiredFirst(curatedCandidate.document, "cards")).toMatchObject({
+  const curatedCandidate = await prepareNativeCandidate(
+    curatedRun.id,
+    "digimon",
+    initialRevision,
+    "partial-curation-apply",
+  );
+  const curatedRecords = await nativeCandidateRecords(requiredString(curatedCandidate, "id"));
+  expect(requiredFirst(curatedRecords, "cards")).toMatchObject({
     name: "Owner-reviewed Digimon Name",
     curated_provenance: [{ curated_revision_id: curatedRevisionId }],
   });
-  const curatedPublication = await approve(curatedCandidate.document);
+  const curatedPublication = await approveNativeCandidate(curatedCandidate, "partial-curation-apply-publish");
   expect(curatedPublication.response.status).toBe(200);
   const curatedCatalogueRevision = requiredString(curatedPublication.document, "resulting_revision_id");
 
+  const ledgerBefore = await get(`/admin/v1/curated-revisions/${curatedRevisionId}`);
+  expect(ledgerBefore.response.status).toBe(200);
+  expect(ledgerBefore.document.events).toEqual(expect.arrayContaining([expect.any(Object)]));
+  const before = (await exportComponentRecords(curatedCatalogueRevision, "cards")).find(
+    ({ id }) => id === officialCard.id,
+  );
+  expect(before).toMatchObject({ id: officialCard.id, name: "Owner-reviewed Digimon Name" });
+
   const partialRun = await collect("/reconciliation/base", `partial-curation-one-piece-${crypto.randomUUID()}`);
-  const partialCandidate = await reconcile(partialRun.id);
-  const partialPublication = await approve(partialCandidate.document);
+  const partialCandidate = await prepareNativeCandidate(
+    partialRun.id,
+    "one-piece",
+    "catrev_spine_000",
+    "partial-curation-one-piece",
+  );
+  const partialPublication = await approveNativeCandidate(partialCandidate, "partial-curation-one-piece-publish");
   expect(partialPublication.response.status).toBe(200);
   const partialCatalogueRevision = requiredString(partialPublication.document, "resulting_revision_id");
-  const [before, after, ledger] = await Promise.all([
-    publishedCatalogueQueries
-      .readRevisionCardsDocumentJson(testEnv.CATALOGUE_DB)
-      .bind(curatedCatalogueRevision, requiredString(officialCard, "id"))
-      .first<{ document_json: string }>(),
-    publishedCatalogueQueries
-      .readRevisionCardsDocumentJson(testEnv.CATALOGUE_DB)
-      .bind(partialCatalogueRevision, requiredString(officialCard, "id"))
-      .first<{ document_json: string }>(),
-    curatedQueries
-      .readCatalogueCuratedProvenanceCuratedRevisionId(testEnv.CATALOGUE_DB)
-      .bind(partialCatalogueRevision, curatedRevisionId)
-      .first<{ curated_revision_id: string }>(),
-  ]);
-  expect(JSON.parse(after?.document_json ?? "{}")).toEqual(JSON.parse(before?.document_json ?? "{}"));
-  expect(JSON.parse(after?.document_json ?? "{}")).toMatchObject({
-    data: {
-      name: "Owner-reviewed Digimon Name",
-      curated_provenance: [{ curated_revision_id: curatedRevisionId }],
-    },
+  const after = (await exportComponentRecords(partialCatalogueRevision, "cards")).find(
+    ({ id }) => id === officialCard.id,
+  );
+  expect(after).toEqual(before);
+  const members = await currentGameMembers(testEnv.CATALOGUE_DB);
+  expect(members.results).toContainEqual(
+    expect.objectContaining({
+      supported_game: "digimon",
+      candidate_id: curatedCandidate.id,
+      game_revision_id: curatedCatalogueRevision,
+    }),
+  );
+  const carried = await nativeCandidateRecords(requiredString(curatedCandidate, "id"));
+  expect(requiredFirst(carried, "cards")).toMatchObject({
+    name: "Owner-reviewed Digimon Name",
+    curated_provenance: [{ curated_revision_id: curatedRevisionId }],
   });
-  expect(ledger).toEqual({ curated_revision_id: curatedRevisionId });
+  expect(carried).toEqual(curatedRecords);
+  const ledgerAfter = await get(`/admin/v1/curated-revisions/${curatedRevisionId}`);
+  expect(ledgerAfter.response.status).toBe(200);
+  expect(ledgerAfter.document).toEqual(ledgerBefore.document);
 }, 60_000);
 
 test("production adapters retain parser-bound coverage proof for reconciliation", async () => {
@@ -405,7 +452,7 @@ test("new collection rejects an unregistered adapter version while retained snap
 test("complete image evidence publishes an unidentified artwork once without collapsing a new locator", async () => {
   const collectVariant = async (
     variant: "base" | "base-reencoded" | "no-artwork-id" | "alternate" | "alternate-two",
-    expectedState = "awaiting_approval",
+    expectedState = "sealed",
   ) => {
     const requests = officialSourceDiscoveryRequests("digimon-en").map((sourceRequest) => ({
       ...sourceRequest,
@@ -423,33 +470,21 @@ test("complete image evidence publishes an unidentified artwork once without col
     });
     expect(started.response.status).toBe(201);
     const runId = requiredString(started.document, "id");
-    // This test exercises compatibility publication; production parents now prepare native candidates.
-    await collectFixtureEvidence(
-      testEnv.CATALOGUE_DB,
-      testEnv.EVIDENCE_OBJECTS,
-      testEnv.OFFICIAL_SOURCE_TRANSPORT,
-      runId,
-    );
-    await reconcile(runId, {}, 20_000);
-    const state = await waitForRunState(runId, expectedState, 20_000, 250);
-    if (expectedState === "failed") return state;
-    const candidate = await get(`/v1/ingestion-runs/${runId}/candidate`);
-    expect(candidate.response.status).toBe(200);
-    return candidate.document;
+    expect((await post(`/v1/ingestion-runs/${runId}/collection/resume`, {})).response.status).toBe(202);
+    const candidates = await waitForDispatchedNativeCandidates(runId, 1, 20_000, { digimon: expectedState });
+    return candidates[0]!;
   };
 
   const first = await collectVariant("base");
-  expect(first).toMatchObject({
-    diff: { printings: { added: [expect.any(String)] } },
-  });
-  const firstPrintingId = (first.diff as { printings: { added: string[] } }).printings.added[0]!;
-  expect((await approve(first)).response.status).toBe(200);
+  const firstRecords = await nativeCandidateRecords(requiredString(first, "id"));
+  expect(firstRecords.printings).toHaveLength(1);
+  const firstPrintingId = requiredString(requiredFirst(firstRecords, "printings"), "id");
+  expect((await approveNativeCandidate(first, "artwork-base")).response.status).toBe(200);
 
   const reencoded = await collectVariant("base-reencoded");
-  expect(reencoded).toMatchObject({
-    diff: { printings: { added: [] } },
-  });
-  expect((await approve(reencoded)).response.status).toBe(200);
+  const reencodedRecords = await nativeCandidateRecords(requiredString(reencoded, "id"));
+  expect(reencodedRecords.printings?.map(({ id }) => id)).toEqual([firstPrintingId]);
+  expect((await approveNativeCandidate(reencoded, "artwork-reencoded")).response.status).toBe(200);
 
   const locatorOnly = await collectVariant("no-artwork-id", "failed");
   expect(locatorOnly).toMatchObject({
@@ -458,20 +493,25 @@ test("complete image evidence publishes an unidentified artwork once without col
   });
 
   const second = await collectVariant("alternate");
-  expect(second).toMatchObject({
-    diff: { printings: { added: [expect.any(String)] } },
-  });
-  const secondPrintingId = (second.diff as { printings: { added: string[] } }).printings.added[0]!;
-  expect((await approve(second)).response.status).toBe(200);
+  const secondRecords = await nativeCandidateRecords(requiredString(second, "id"));
+  expect(secondRecords.printings).toHaveLength(2);
+  expect(secondRecords.printings?.map(({ id }) => id)).toContain(firstPrintingId);
+  const secondPrintingId = requiredString(secondRecords.printings!.find(({ id }) => id !== firstPrintingId)!, "id");
+  expect((await approveNativeCandidate(second, "artwork-alternate")).response.status).toBe(200);
 
   const third = await collectVariant("alternate-two");
-  expect(third).toMatchObject({
-    diff: { printings: { added: [expect.any(String)] } },
-  });
-  const thirdPrintingId = (third.diff as { printings: { added: string[] } }).printings.added[0]!;
+  const thirdRecords = await nativeCandidateRecords(requiredString(third, "id"));
+  expect(thirdRecords.printings).toHaveLength(3);
+  expect(thirdRecords.printings?.map(({ id }) => id)).toEqual(
+    expect.arrayContaining([firstPrintingId, secondPrintingId]),
+  );
+  const thirdPrintingId = requiredString(
+    thirdRecords.printings!.find(({ id }) => id !== firstPrintingId && id !== secondPrintingId)!,
+    "id",
+  );
   const targetPrintingIds = new Set([firstPrintingId, secondPrintingId, thirdPrintingId]);
   expect(targetPrintingIds.size).toBe(3);
-  const published = await approve(third);
+  const published = await approveNativeCandidate(third, "artwork-alternate-two");
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const [printings, images] = await Promise.all([
@@ -491,19 +531,29 @@ test("complete image evidence publishes an unidentified artwork once without col
       .map(({ width, height }) => `${width}x${height}`)
       .sort(),
   ).toEqual(["1x1", "2x2"]);
-  // Publication projects the content facts the api serves onto the revision
-  // row, so the read cluster never joins reconciled_printing_images
-  // (issue #98).
-  const projectedImages = await reconciliationQueries
-    .readRevisionPrintingImagesReconciledMediaTypeReconciledContentSha256(testEnv.CATALOGUE_DB)
-    .bind(revisionId)
-    .all<Record<string, string | number | null>>();
-  expect(projectedImages.results.length).toBeGreaterThanOrEqual(4);
-  for (const row of projectedImages.results) {
-    expect(row.media_type).toBe(row.reconciled_media_type);
-    expect(row.content_sha256).toBe(row.reconciled_content_sha256);
-    expect(row.content_byte_length).toBe(row.reconciled_content_byte_length);
-    expect(row.object_key).toBe(row.reconciled_object_key);
+  // Verify the actual consumer projection and streamed content against the
+  // immutable native export, without relying on legacy reconciliation rows.
+  for (const image of targetImages) {
+    const retainedImage = thirdRecords.printing_images!.find(({ id }) => id === image.id);
+    expect(retainedImage).toMatchObject({ id: image.id, content_sha256: image.content_sha256 });
+    const printingResponse = await readPublished(`/v1/printings/${image.printing_id}?revision=${revisionId}`);
+    const printingDocument = (await printingResponse.json()) as {
+      data: { printing_images: Record<string, unknown>[] };
+    };
+    const projected = printingDocument.data.printing_images.find(({ id }) => id === image.id);
+    expect(projected).toMatchObject({
+      id: image.id,
+      media_type: image.media_type,
+      content_sha256: image.content_sha256,
+      content_byte_length: retainedImage!.content_byte_length,
+      width: image.width,
+      height: image.height,
+    });
+    const content = await readPublished(`/v1/printing-images/${image.id}/content?revision=${revisionId}`);
+    expect(content.headers.get("content-type")).toBe(image.media_type);
+    const bytes = new Uint8Array(await content.arrayBuffer());
+    expect(bytes.byteLength).toBe(retainedImage!.content_byte_length);
+    expect(await sha256(bytes)).toBe(image.content_sha256);
   }
 }, 120_000);
 
@@ -570,33 +620,39 @@ test("the production Worker has no route capable of injecting synthetic fixture 
 
 test("one complete retained set can publish multiple Printings without collapsing their identities", async () => {
   const run = await collect("/reconciliation/multi-printing", "reconcile-multi-printing");
-  const reconciled = await reconcile(run.id);
-  expect(reconciled.response.status).toBe(200);
-  expect(reconciled.document.cards).toHaveLength(1);
-  expect(reconciled.document.printings).toHaveLength(2);
-  const printingIds = (reconciled.document.printings as Record<string, unknown>[]).map((printing) => printing.id);
+  const candidate = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", "prepare-multi-printing");
+  const records = await nativeCandidateRecords(requiredString(candidate, "id"));
+  expect(records.cards).toHaveLength(1);
+  expect(records.printings).toHaveLength(2);
+  const printingIds = records.printings!.map((printing) => printing.id);
   expect(new Set(printingIds).size).toBe(2);
-  const published = await approve(reconciled.document);
+  const published = await approveNativeCandidate(candidate, "publish-multi-printing");
   expect(published.response.status).toBe(200);
 });
 
 test("Product lifecycle aggregates every related Printing deterministically", async () => {
   const firstRun = await collect("/reconciliation/product-lifecycle-first", "reconcile-product-lifecycle-first");
-  const first = await reconcile(firstRun.id);
-  const firstPublished = await approve(first.document);
+  const first = await prepareNativeCandidate(firstRun.id, "one-piece", "catrev_spine_000", "prepare-lifecycle-first");
+  const firstPublished = await approveNativeCandidate(first, "publish-lifecycle-first");
   const firstRevision = requiredString(firstPublished.document, "resulting_revision_id");
 
   const multipleRun = await collect(
     "/reconciliation/product-lifecycle-multiple",
     "reconcile-product-lifecycle-multiple",
   );
-  const multiple = await reconcile(multipleRun.id);
-  const multiplePublished = await approve(multiple.document);
+  const multiple = await prepareNativeCandidate(
+    multipleRun.id,
+    "one-piece",
+    firstRevision,
+    "prepare-lifecycle-multiple",
+  );
+  const multiplePublished = await approveNativeCandidate(multiple, "publish-lifecycle-multiple");
   const latestRevision = requiredString(multiplePublished.document, "resulting_revision_id");
-  const product = (await exportComponentRecords(latestRevision, "products")).find(
+  const products = await exportComponentRecords(latestRevision, "products");
+  const product = products.find(
     (record) => record.game === "one-piece" && record.official_code === "product_lifecycle_shared",
   );
-  expect(product).toMatchObject({
+  expect(product, JSON.stringify(products)).toMatchObject({
     lifecycle: {
       first_revision_id: firstRevision,
       last_observed_revision_id: latestRevision,

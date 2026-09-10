@@ -1,37 +1,67 @@
 import { expect } from "vitest";
-import { get } from "./reconciliation-helpers";
+import { get, requiredString, testEnv } from "./reconciliation-helpers";
 
-export async function waitForNativeCandidates(
+/** Observe the operation returned by creation, never whichever candidate happens to share its collection. */
+export async function waitForNativeCandidate(id: string, expectedState = "sealed", timeoutMs = 8_000) {
+  const deadline = Date.now() + timeoutMs;
+  let observed: Record<string, unknown> = {};
+  do {
+    const header = await get(`/v1/game-candidates/${id}`);
+    expect(header.response.status, JSON.stringify(header.document)).toBe(200);
+    observed = header.document;
+    if (observed.state !== "preparing") {
+      expect(observed, JSON.stringify(observed)).toMatchObject({ id, state: expectedState });
+      return observed;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  } while (Date.now() < deadline);
+  throw new Error(`Native candidate ${id} remained preparing: ${JSON.stringify(observed)}`);
+}
+
+/** A wiring test must observe an actual parent dispatch receipt. This helper never creates missing candidates. */
+export async function waitForDispatchedNativeCandidates(
   runId: string,
   count: number,
   timeoutMs = 8_000,
   expectedStates: Record<string, string> = {},
 ) {
   const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const page = await get(`/v1/ingestion-runs/${runId}/game-candidates`);
-    expect(page.response.status).toBe(200);
-    const candidates = page.document.candidates as Record<string, unknown>[];
-    if (candidates.length === count) {
-      const headers = await Promise.all(
-        candidates.map(async ({ id }) => {
-          const header = await get(`/v1/game-candidates/${id}`);
-          expect(header.response.status).toBe(200);
-          return header.document;
+  const collection = await get(`/v1/ingestion-runs/${runId}`);
+  const workflow = collection.document.workflow as { parent_id?: string } | undefined;
+  if (!workflow?.parent_id)
+    throw new Error(`Collection ${runId} has no Workflow parent; request native preparation explicitly.`);
+  const parent = await testEnv.EVIDENCE_INGESTION_WORKFLOW.get(workflow.parent_id);
+  do {
+    const status = await parent.status();
+    if (status.status === "complete") {
+      const output = status.output as
+        | { ingestion_run_id?: string; game_preparations?: Record<string, unknown>[] }
+        | undefined;
+      if (!Array.isArray(output?.game_preparations))
+        throw new Error(
+          `Collection ${runId} completed without native dispatch; request native preparation explicitly.`,
+        );
+      expect(output.ingestion_run_id).toBe(runId);
+      expect(output.game_preparations).toHaveLength(count);
+      const candidates = await Promise.all(
+        output.game_preparations.map(async (receipt) => {
+          const candidate = await waitForNativeCandidate(
+            requiredString(receipt, "id"),
+            expectedStates[String(receipt.supported_game)] ?? "sealed",
+            Math.max(1, deadline - Date.now()),
+          );
+          expect(candidate).toMatchObject({ ingestion_run_id: runId, supported_game: receipt.supported_game });
+          return candidate;
         }),
       );
-      if (headers.every(({ state }) => state !== "preparing")) {
-        for (const header of headers)
-          expect(header).toMatchObject({
-            state: expectedStates[String(header.supported_game)] ?? "sealed",
-            ingestion_run_id: runId,
-          });
-        return headers;
-      }
+      expect(new Set(candidates.map(({ id }) => id)).size).toBe(count);
+      return candidates;
     }
+    if (["errored", "terminated"].includes(status.status))
+      throw new Error(`Collection parent ${workflow.parent_id} ${status.status}: ${JSON.stringify(status)}`);
     await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error(`collection ${runId} did not seal ${count} native candidates`);
+  } while (Date.now() < deadline);
+  throw new Error(`Collection ${runId} has not returned its native dispatch receipt.`);
 }
 
 export async function nativeCandidateRecords(candidateId: string) {

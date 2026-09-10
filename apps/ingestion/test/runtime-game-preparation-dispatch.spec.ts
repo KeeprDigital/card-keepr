@@ -1,10 +1,15 @@
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
-import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
-import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
-import { administrationRequest, installRuntimeSuite, waitForWorkflowStatus } from "./runtime-helpers";
-import { collect, reconcile, approve, post, get, requiredString } from "./reconciliation-helpers";
 import { canonicalJson, sha256Text } from "../../../src/catalogue/shared";
+import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
+import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
+import { nativeCandidateRecords } from "./native-candidate-helpers";
+import {
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
+} from "./native-publication-helpers";
+import { collect, get, post, requiredString } from "./reconciliation-helpers";
+import { administrationRequest, installRuntimeSuite, waitForWorkflowStatus } from "./runtime-helpers";
 
 installRuntimeSuite();
 
@@ -145,11 +150,16 @@ test("an occupied game slot does not prevent the collection parent from dispatch
 
 test("pending reconfirmation in the first game does not prevent the collection parent from dispatching the next game", async () => {
   const fusionSource = { game: "fusion-world", lineage: "fusion-world-en", adapter: "fixture-fusion-world-json@2" };
-  const seed = await reconcile(
-    (await collect("/reconciliation/profile-fusion-world", "pending-parent-seed", fusionSource)).id,
+  const source = await collect("/reconciliation/profile-fusion-world", "pending-parent-seed", fusionSource);
+  const seed = await prepareNativeCandidate(
+    source.id,
+    "fusion-world",
+    "catrev_spine_000",
+    "pending-parent-seed-candidate",
   );
-  const card = (seed.document.cards as { id: string; name: string }[])[0]!;
-  const published = await approve(seed.document);
+  const records = await nativeCandidateRecords(requiredString(seed, "id"));
+  const card = (records.cards as { id: string; name: string }[])[0]!;
+  const published = await approveNativeCandidate(seed, "pending-parent-seed-publication");
   expect(published.response.status).toBe(200);
   const predecessor = requiredString(published.document, "resulting_revision_id");
   const proposal = {

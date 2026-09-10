@@ -137,17 +137,17 @@ function publicDecision({ request_json: _request, idempotency_key: _key, ...deci
 /** Newly collected competing facts require the designated authority in their
  * area. Unselected and incomplete optional scopes contribute no new facts;
  * their accepted candidate facts carry forward without transferring authority. */
-export async function assertSelectedAuthoritiesCollected(
+export async function missingSelectedAuthorities(
   database: CatalogueStore,
   plans: readonly {
     supported_game: string;
     source_lineage: string;
     adapter_version: string;
   }[],
-  unchangedAcceptedLineages: ReadonlySet<string> = new Set(),
   runId?: string,
 ) {
   const { authorities } = await sourceAuthorities(database, runId);
+  const missing = [];
   for (const decision of authorities) {
     const area = decision.area === "corrected_card_content" ? "errata" : "catalogue";
     const applicable = plans.filter((plan) => {
@@ -159,11 +159,18 @@ export async function assertSelectedAuthoritiesCollected(
         adapterReconciliationAreas(requiredSourceAdapter(plan.adapter_version)).includes(area)
       );
     });
-    if (
-      applicable.length > 0 &&
-      !applicable.some((plan) => plan.source_lineage === decision.source_lineage) &&
-      !applicable.every((plan) => unchangedAcceptedLineages.has(plan.source_lineage))
-    ) {
+    if (applicable.length > 0 && !applicable.some((plan) => plan.source_lineage === decision.source_lineage))
+      missing.push({ decision, applicable });
+  }
+  return missing;
+}
+
+export function assertSelectedAuthoritiesCollected(
+  missing: Awaited<ReturnType<typeof missingSelectedAuthorities>>,
+  unchangedAcceptedLineages: ReadonlySet<string> = new Set(),
+) {
+  for (const { decision, applicable } of missing) {
+    if (!applicable.every((plan) => unchangedAcceptedLineages.has(plan.source_lineage))) {
       throw new Error(
         `Selected Source Authority ${decision.source_lineage} for ${decision.area} (${decision.locale}/${decision.release_region}) is absent. Collect the selected source or explicitly change authority; no fallback is permitted.`,
       );

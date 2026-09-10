@@ -1,3 +1,4 @@
+import { retainGamePredecessorStatement } from "./game-publication-no-change-repository";
 import { atomicRepositoryStatement, type CatalogueStore, repositoryStatements } from "../shared";
 import { curatedPreparationStartGuardStatement } from "../curated";
 
@@ -90,6 +91,7 @@ export function createGamePreparationStatement(
           SELECT id, id, ingestion_run_id, supported_game, expected_game_revision_id, created_at, deadline, state, generation
           FROM reconciliation_operations WHERE id = ?`)
         .bind(input.id),
+      retainGamePredecessorStatement(database, input.id),
       repositoryStatements(database)
         .prepare(`INSERT INTO game_reconciliation_requests
           (idempotency_key, preparation_id, request_json, workflow_params_json, workflow_instance_id) VALUES (?, ?, ?, ?, ?)`)

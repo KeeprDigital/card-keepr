@@ -1,3 +1,4 @@
+import { capacitySourceResponse } from "./capacity-workloads.ts";
 import { reconciliationSourceDocument } from "./reconciliation-documents.ts";
 import { onePieceCompleteOfficialSourceResponse } from "../../../acceptance/fixtures/one-piece-complete-official-source.mjs";
 import { transportOutcomeForPath, transportOutcomeForUserAgent } from "./failure-injection.ts";
@@ -27,6 +28,8 @@ const acceptanceRedirectLocation = "https://synthetic-source.invalid/success";
 /** @type {import("./scenario.ts").PublisherScenario} */
 export function acceptanceOfficialSourceScenario(context) {
   const { request, url } = context;
+  const capacity = capacitySourceResponse(url);
+  if (capacity !== null) return capacity;
   if (url.hostname === "shared-profile-source.invalid") {
     const document = reconciliationSourceDocument("shared-profile", "discovery", url.href);
     for (const record of document.cards) record.card.game_data.attributes.future_mechanic = "Retain for schema review";

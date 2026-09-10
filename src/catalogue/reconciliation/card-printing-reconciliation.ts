@@ -1,5 +1,12 @@
+import { prepareNativeSourceHistory } from "./native-source-history";
 import { type CheckedCardScope } from "./scoped-disappearance";
-import { nativePrintingsAtLocator, retainPrintingLocator } from "./native-printing-locators";
+import {
+  nativePrintingMatches,
+  nativePrintingsAtLocator,
+  nativePrintingLocatorKey,
+  nativePrintingLocatorStateKey,
+  retainPrintingLocator,
+} from "./native-printing-locators";
 import {
   nativePreparationFailureCode,
   type NativePreparationGuardState,
@@ -23,6 +30,7 @@ import {
   retainReconciliationCheckpoint,
   prepareCheckpointReadWindow,
 } from "./reconciliation-checkpoint";
+import type { NativePrintingIdentity } from "./prior-state-types";
 import { candidateAtRevision, type PriorStatePositions } from "./reconciliation-prior-state";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
 import { ReconciliationRecordCollection } from "./reconciliation-record-collection";
@@ -159,6 +167,7 @@ type OfficialReductionCursor = {
   admissions: { cards: number; printings: number };
   cardCheckTimes: [SupportedGame, string][];
   productCheckTimes: [SupportedGame, string][];
+  errataCheckTimes?: [SupportedGame, string][];
   productGames: SupportedGame[];
   publishedCardGames?: SupportedGame[];
   after: ReconciliationInputRecordCursor | null;
@@ -170,6 +179,8 @@ type OfficialReductionCursor = {
   errataAfter?: ReconciliationInputRecordCursor | null;
   processedErrata?: number;
   errataComplete?: boolean;
+  errataChecksAfter?: ReconciliationInputRecordCursor | null;
+  errataChecksComplete?: boolean;
 };
 
 export async function reconcileRetainedCardPrintingEvidence(
@@ -261,6 +272,18 @@ export async function reconcileRetainedCardPrintingEvidence(
     "prior_printings",
     (printing) => printing.card_id,
   );
+  const priorPrintingIdentities = new ReconciliationReducerIndex<NativePrintingIdentity>(
+    database,
+    runId,
+    "prior_printing_identities",
+    (identity) => identity.compatibility.card_id,
+  );
+  const priorPrintingLocators = new ReconciliationReducerIndex<NativePrintingIdentity>(
+    database,
+    runId,
+    "prior_printing_locators",
+    (identity) => nativePrintingLocatorKey(identity.locators[0]!),
+  );
   const printingImages = new ReconciliationReducerIndex<CataloguePrintingImage>(database, runId, "printing_images");
   const selectedGames = JSON.parse(run.selected_games_json) as SupportedGame[];
   const priorErrata = new ReconciliationErrataState(database, runId, "prior_errata");
@@ -278,6 +301,8 @@ export async function reconcileRetainedCardPrintingEvidence(
     priorCards: priorCards.position,
     printings: printings.position,
     priorPrintings: priorPrintings.position,
+    priorPrintingIdentities: priorPrintingIdentities.position,
+    priorPrintingLocators: priorPrintingLocators.position,
     printingImages: printingImages.position,
     priorProducts: priorProducts.positions,
     priorErrata: priorErrata.position,
@@ -288,6 +313,8 @@ export async function reconcileRetainedCardPrintingEvidence(
     priorCards.resumeAt(positions.priorCards);
     printings.resumeAt(positions.printings);
     priorPrintings.resumeAt(positions.priorPrintings);
+    priorPrintingIdentities.resumeAt(positions.priorPrintingIdentities ?? 0);
+    priorPrintingLocators.resumeAt(positions.priorPrintingLocators ?? 0);
     printingImages.resumeAt(positions.printingImages);
     priorProducts.resumeAt(positions.priorProducts);
     priorErrata.resumeAt(positions.priorErrata);
@@ -307,11 +334,15 @@ export async function reconcileRetainedCardPrintingEvidence(
               await priorCards.seed(card);
               await cards.seed(card);
             },
-            printing: async (printing) => {
+            printing: async (printing, identity) => {
               const card = await priorCards.get(printing.card_id);
               if (card && selectedGames.includes(card.game)) restoreCuratedEntitySourceFields(printing);
               await priorPrintings.seed(printing.id, printing);
               await printings.seed(printing.id, printing);
+              if (identity) await priorPrintingIdentities.seed(printing.id, identity);
+            },
+            printingLocator: async (identity) => {
+              await priorPrintingLocators.seed(nativePrintingLocatorStateKey(identity), identity);
             },
             image: async (image) => {
               await printingImages.seed(image.id, image);
@@ -451,13 +482,18 @@ export async function reconcileRetainedCardPrintingEvidence(
   const targetedPrintingIds = new ReconciliationReducerIndex<boolean>(database, runId, "erratum_target_printings");
   const cardCheckTimes = new Map<SupportedGame, string>(reduction?.value.cardCheckTimes);
   const productCheckTimes = new Map<SupportedGame, string>(reduction?.value.productCheckTimes);
+  const errataCheckTimes = new Map<SupportedGame, string>(reduction?.value.errataCheckTimes);
   const productGames = new Set<SupportedGame>(reduction?.value.productGames);
   const publishedCardGames = reduction ? (reduction.value.publishedCardGames ?? selectedGames) : [];
   if (!reduction) {
     // Pin only existence, including withdrawn identities. The preparation's
     // head fence prevents publication from changing this absence observation.
     for (const game of selectedGames)
-      if (await documentStorage(() => publishedCardPresentStatement(database, game).first()))
+      if (
+        await documentStorage(() =>
+          publishedCardPresentStatement(database, game, runId, run.expected_current_revision_id).first(),
+        )
+      )
         publishedCardGames.push(game);
   }
   type RetainedObservation = NormalizedReconciliationObservation;
@@ -483,6 +519,13 @@ export async function reconcileRetainedCardPrintingEvidence(
     sourceWarnings.resumeAt(reduction.value.warnings);
     diagnostics.resumeAt(reduction.value.diagnostics);
   }
+  let sourceHistory: Awaited<ReturnType<typeof prepareNativeSourceHistory>>;
+  try {
+    sourceHistory = await prepareNativeSourceHistory(database, runId, false, yieldAtCheckpoint);
+  } catch (error) {
+    if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
+    throw error;
+  }
   let reductionOrdinal = (reduction?.ordinal ?? -1) + 1;
   let processedObservations = reduction?.value.processedObservations ?? 0;
   let pendingSourceWarning = reduction?.value.pendingSourceWarning ?? null;
@@ -491,7 +534,13 @@ export async function reconcileRetainedCardPrintingEvidence(
   const saveReduction = async (
     after: ReconciliationInputRecordCursor | null,
     complete: boolean,
-    errata?: { errataAfter: ReconciliationInputRecordCursor | null; processedErrata: number; errataComplete: boolean },
+    errata?: {
+      errataAfter: ReconciliationInputRecordCursor | null;
+      processedErrata: number;
+      errataComplete: boolean;
+      errataChecksAfter: ReconciliationInputRecordCursor | null;
+      errataChecksComplete: boolean;
+    },
   ) => {
     const phase = errata ? "official_errata" : "official_reduction";
     const mappings = await sourceMappings.checkpoint();
@@ -515,6 +564,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       admissions: admittedEntities.cursor,
       cardCheckTimes: [...cardCheckTimes],
       productCheckTimes: [...productCheckTimes],
+      errataCheckTimes: [...errataCheckTimes],
       productGames: [...productGames],
       publishedCardGames,
       after,
@@ -697,10 +747,29 @@ export async function reconcileRetainedCardPrintingEvidence(
             }
           const provenCards: typeof exactUnnumberedCards = [];
           if (printing !== null) {
+            const locator = observation.locator;
+            if (locator === null) throw new Error("A Printing observation has no locator.");
             for (const card of exactUnnumberedCards) {
               consumeIdentityMatch();
               const expected = compatibilityFor(card.id, observation.sourceLineage, observation);
-              const compatible = await compatiblePrintings(database, expected);
+              const nativeMatches = await nativePrintingMatches(
+                database,
+                {
+                  preparationId: runId,
+                  revision: run.expected_current_revision_id,
+                  game: observation.supportedGame,
+                  through: priorPrintingIdentities.position,
+                  locatorThrough: priorPrintingLocators.position,
+                },
+                expected,
+                { locator, variantKey: observation.variantKey, reviewed: false },
+              );
+              const [located, compatible] =
+                nativeMatches ??
+                (await Promise.all([
+                  printingAtLocatorVariant(database, observation.sourceLineage, locator, observation.variantKey),
+                  compatiblePrintings(database, expected),
+                ]));
               const local: PrintingCompatibility[] = [];
               for await (const match of localPrintingCompatibility.matchingBeforeObservation(
                 compatibilityGroup(expected),
@@ -709,15 +778,6 @@ export async function reconcileRetainedCardPrintingEvidence(
                 consumeIdentityMatch();
                 if (isCompatible(match.compatibility, expected)) local.push(match.compatibility);
               }
-              const located =
-                observation.locator === null
-                  ? null
-                  : await printingAtLocatorVariant(
-                      database,
-                      observation.sourceLineage,
-                      observation.locator,
-                      observation.variantKey,
-                    );
               const mapped = located !== null && isCompatible(located, expected);
               if (
                 mapped ||
@@ -860,7 +920,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           proposedCard.game === "gundam" &&
           observation.sourceLineage === "gundam-en-us" &&
           carriedCard !== undefined &&
-          ((await gundamCardLineages(database, cardId)).some(
+          ((await gundamCardLineages(database, cardId, sourceHistory?.prior)).some(
             ({ source_lineage, current }) => source_lineage === "gundam-en-asia" && current === 1,
           ) ||
             (await localGundamCardLineages.get(cardId))?.includes("gundam-en-asia") === true);
@@ -880,10 +940,17 @@ export async function reconcileRetainedCardPrintingEvidence(
               ),
         };
         const publishedConflict = publishedCardGames.includes(proposedCard.game)
-          ? await canonicalCardConflict(database, cardId, proposedForComparison, observation.sourceLineage, {
-              effectiveRulesText: currentEffectiveAuthority,
-              confirmedPublisherNumber,
-            })
+          ? await canonicalCardConflict(
+              database,
+              cardId,
+              proposedForComparison,
+              observation.sourceLineage,
+              {
+                effectiveRulesText: currentEffectiveAuthority,
+                confirmedPublisherNumber,
+              },
+              sourceHistory ? { history: sourceHistory.prior, card: await priorCards.get(cardId) } : undefined,
+            )
           : null;
         let acceptedCanonicalCard = acceptedCard;
         try {
@@ -977,14 +1044,28 @@ export async function reconcileRetainedCardPrintingEvidence(
           // canonical-fact checks, without spending the ambiguous-match budget
           // scanning every other appearance of this Card.
           let reviewedPrintingId: string | null = admission?.decision?.printing?.id ?? reviewedCardPrintingId;
-          const [located, unfilteredDatabaseMatches, appearanceMatches, crossSourceCandidates] = await Promise.all([
-            printingAtLocatorVariant(database, observation.sourceLineage, locator, observation.variantKey),
-            reviewedPrintingId === null ? compatiblePrintings(database, compatibility) : Promise.resolve([]),
-            reviewedPrintingId === null ? printingsWithAppearance(database, compatibility) : Promise.resolve([]),
-            reviewedPrintingId !== null || observation.supportedGame === "gundam"
-              ? Promise.resolve([])
-              : crossSourcePrintingCandidates(database, compatibility),
-          ]);
+          const nativeMatches = await nativePrintingMatches(
+            database,
+            {
+              preparationId: runId,
+              revision: run.expected_current_revision_id,
+              game: observation.supportedGame,
+              through: priorPrintingIdentities.position,
+              locatorThrough: priorPrintingLocators.position,
+            },
+            compatibility,
+            { locator, variantKey: observation.variantKey, reviewed: reviewedPrintingId !== null },
+          );
+          const [located, unfilteredDatabaseMatches, appearanceMatches, crossSourceCandidates] =
+            nativeMatches ??
+            (await Promise.all([
+              printingAtLocatorVariant(database, observation.sourceLineage, locator, observation.variantKey),
+              reviewedPrintingId === null ? compatiblePrintings(database, compatibility) : Promise.resolve([]),
+              reviewedPrintingId === null ? printingsWithAppearance(database, compatibility) : Promise.resolve([]),
+              reviewedPrintingId !== null || observation.supportedGame === "gundam"
+                ? Promise.resolve([])
+                : crossSourcePrintingCandidates(database, compatibility),
+            ]));
           const databaseMatches = unfilteredDatabaseMatches;
           const matchIds = new Set(databaseMatches.map((match) => match.id));
           if (reviewedPrintingId === null) {
@@ -1043,7 +1124,9 @@ export async function reconcileRetainedCardPrintingEvidence(
             for (const matchId of matchIds) {
               consumeIdentityMatch();
               const observedLineages = new Set([
-                ...(await gundamPrintingLineages(database, matchId)).map(({ source_lineage }) => source_lineage),
+                ...(await gundamPrintingLineages(database, matchId, sourceHistory?.prior)).map(
+                  ({ source_lineage }) => source_lineage,
+                ),
                 ...((await localGundamPrintingProvenance.get(matchId)) ?? []),
               ]);
               if (
@@ -1055,7 +1138,12 @@ export async function reconcileRetainedCardPrintingEvidence(
               const localProducts = new Set((await localGundamProducts.get(matchId)) ?? []);
               if (
                 observation.memberships.products.some((product) => localProducts.has(product)) ||
-                (await gundamPrintingHasProductMembership(database, matchId, observation.memberships.products))
+                (await gundamPrintingHasProductMembership(
+                  database,
+                  matchId,
+                  observation.memberships.products,
+                  sourceHistory?.prior,
+                ))
               )
                 corroboratedCrossLocaleMatches.push(matchId);
             }
@@ -1188,12 +1276,15 @@ export async function reconcileRetainedCardPrintingEvidence(
             printingId,
             proposedPrinting,
             observation.sourceLineage,
+            sourceHistory
+              ? { history: sourceHistory.prior, printing: await priorPrintings.get(printingId) }
+              : undefined,
           );
           const retainAsiaPrintingAuthority =
             observation.supportedGame === "gundam" &&
             observation.sourceLineage === "gundam-en-us" &&
             carriedPrinting !== undefined &&
-            ((await gundamPrintingLineages(database, printingId)).some(
+            ((await gundamPrintingLineages(database, printingId, sourceHistory?.prior)).some(
               ({ source_lineage, current }) => source_lineage === "gundam-en-asia" && current === 1,
             ) ||
               (await localGundamPrintingProvenance.get(printingId))?.includes("gundam-en-asia") === true);
@@ -1437,12 +1528,47 @@ export async function reconcileRetainedCardPrintingEvidence(
     let scanned = 0;
     let reduced = 0;
     let bytes = 0;
+    let errataChecksAfter = errataReduction?.value.errataChecksAfter ?? null;
+    let errataChecksComplete = errataReduction?.value.errataChecksComplete ?? false;
     const saveErrata = (complete: boolean) =>
       saveReduction(reduction?.value.after ?? null, true, {
         errataAfter: after,
         processedErrata,
         errataComplete: complete,
+        errataChecksAfter,
+        errataChecksComplete,
       });
+    // A successful Errata surface check still counts when its retained record set is empty.
+    // Scan the frozen partition receipts through the same bounded durable phase.
+    if (!errataChecksComplete) {
+      let checked = 0,
+        checkedBytes = 0;
+      for await (const entry of verifiedReconciliationRecordEntries<{
+        supportedGame: SupportedGame;
+        capturedAt?: string;
+        reconciliationCapability?: string;
+      }>(database, runId, "partitions", errataChecksAfter)) {
+        if (checked > 0 && (checked === 8 || checkedBytes + entry.byteLength > 512000)) {
+          const next = await saveErrata(false);
+          if (yieldAtCheckpoint) return next;
+          checked = 0;
+          checkedBytes = 0;
+        }
+        const receipt = entry.value;
+        if (
+          receipt.reconciliationCapability === "errata" &&
+          receipt.capturedAt &&
+          (errataCheckTimes.get(receipt.supportedGame) ?? "") < receipt.capturedAt
+        )
+          errataCheckTimes.set(receipt.supportedGame, receipt.capturedAt);
+        checked++;
+        checkedBytes += entry.byteLength;
+        errataChecksAfter = entry.cursor;
+      }
+      errataChecksComplete = true;
+      const next = await saveErrata(false);
+      if (yieldAtCheckpoint) return next;
+    }
     if (dedicatedErrata > 0)
       for await (const entry of scannedReconciliationRecordEntries<
         Extract<RetainedObservation, { kind: "official_erratum" }>
@@ -1457,6 +1583,8 @@ export async function reconcileRetainedCardPrintingEvidence(
         const observation = entry.value;
         erratumUnit: {
           if (observation === null) break erratumUnit;
+          if ((errataCheckTimes.get(observation.supportedGame) ?? "") < observation.sourceCapturedAt)
+            errataCheckTimes.set(observation.supportedGame, observation.sourceCapturedAt);
           if (observation.target.type === "card" && !observation.appliesToParallelPrintings) {
             await diagnostics.push({
               code: "retained_evidence_invalid",
@@ -1619,7 +1747,10 @@ export async function reconcileRetainedCardPrintingEvidence(
   const observedProductGames = new Set<SupportedGame>();
   const observedProductLineages = new Set<string>();
   try {
-    for (const game of productGames) {
+    for (const game of new Set([
+      ...productGames,
+      ...(run.supported_game === null ? [] : [run.supported_game as SupportedGame]),
+    ])) {
       async function* inputs(after: ReconciliationInputRecordCursor | null): AsyncGenerator<ProductInputEntry> {
         for await (const entry of scannedReconciliationRecordEntries<
           Extract<RetainedObservation, { kind: "card_printing" }>
@@ -1664,7 +1795,15 @@ export async function reconcileRetainedCardPrintingEvidence(
         inputs,
         game,
         sourceWarnings,
-        { hasInputs: productCheckTimes.has(game), yieldAtCheckpoint },
+        {
+          hasInputs: productCheckTimes.has(game),
+          yieldAtCheckpoint,
+          ...(run.supported_game === null
+            ? {}
+            : {
+                membershipEvidence: { plans, checkedLineages: errataOnlyEvidence ? [] : [...completeLineages].sort() },
+              }),
+        },
       );
       productCatalogue = {
         draft: reconciled.draft,
@@ -1715,6 +1854,9 @@ export async function reconcileRetainedCardPrintingEvidence(
           area: "products-and-releases" as const,
           checked_at,
         })),
+      ...[...errataCheckTimes]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([game, checked_at]) => ({ game, area: "errata" as const, checked_at })),
     ],
     errata: [],
   };
@@ -1751,11 +1893,13 @@ export async function reconcileRetainedCardPrintingEvidence(
   const { draft: official, observedCards, observedPrintings } = assembled;
   const checkedSourceLineages = errataOnlyEvidence ? [] : [...completeLineages].sort();
   try {
+    sourceHistory = await prepareNativeSourceHistory(database, runId, true, yieldAtCheckpoint);
     await prepareDisappearanceWarnings(
       database,
       runId,
       {
         plans,
+        history: sourceHistory?.prior,
         cardScopes: { scopes: checkedCardScopes, priorCards, priorPrintings },
         hasPrintings: (official.positions.printings ?? 0) > 0,
         checkedLineages: checkedSourceLineages,
@@ -2151,6 +2295,16 @@ async function semanticDraftDocument(draft: ReconciliationCandidateState, metada
     "identity_corrections",
   ] as const) {
     if (!(kind in document)) continue;
+    if (kind === "identity_corrections") {
+      // Native predecessors retain an empty collection. Its absence and []
+      // express the same facts; keep the historical empty canonical form.
+      const corrections = draft.values(kind);
+      try {
+        if ((await corrections.next()).done) continue;
+      } finally {
+        await corrections.return(undefined);
+      }
+    }
     result[kind] = canonicalRecordSource(async function* (after) {
       for await (const entity of draft.values(kind, after)) {
         const value = semanticCatalogueCandidate({ ...shell, [kind]: [entity] });
@@ -2165,9 +2319,9 @@ function semanticCatalogueCandidate(candidate: CatalogueCandidate): Record<strin
   return {
     contract: candidate.contract,
     selected_games: candidate.selected_games,
-    ...(candidate.identity_corrections ? { identity_corrections: candidate.identity_corrections } : {}),
+    ...(candidate.identity_corrections?.length ? { identity_corrections: candidate.identity_corrections } : {}),
     cards: candidate.cards,
-    printings: candidate.printings,
+    printings: candidate.printings.map(({ locator_evidence: _locators, ...printing }) => printing),
     printing_images: (candidate.printing_images ?? []).map((image) => ({
       id: image.id,
       printing_id: image.printing_id,
@@ -2296,9 +2450,10 @@ async function requiredActiveParsingRun(database: CatalogueStore, runId: string)
   }
   return row;
 }
-import { ReconciliationTextStorageError } from "./reconciliation-text";
+
 import { documentStorage, ReconciliationDocumentStorageError } from "./reconciliation-document";
 import { ReconciliationNormalizationStorageError } from "./reconciliation-normalized";
+import { ReconciliationTextStorageError } from "./reconciliation-text";
 
 function isStorageOrCapacityFailure(error: unknown): boolean {
   return (

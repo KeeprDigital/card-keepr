@@ -2424,3 +2424,13 @@ test("source lifecycle CLI sends the explicit compare-and-set retirement decisio
   assert.equal(shown.code, 0, shown.stderr);
   assert.equal(JSON.parse(shown.stdout).state, "retired");
 });
+
+test("retired run approval explains the exact native publication transition without an administration request", async () => {
+  const result = await runCli(["run", "approve", "--run-id", "historical-run", "--json"], {});
+  assert.equal(result.code, 2);
+  const problem = JSON.parse(result.stdout || result.stderr);
+  assert.equal(problem.code, "run_approval_retired");
+  assert.match(problem.detail, /game-candidate inspect/u);
+  assert.match(problem.detail, /publication approve/u);
+  assert.match(problem.detail, /publication status/u);
+});

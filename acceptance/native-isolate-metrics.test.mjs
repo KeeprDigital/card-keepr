@@ -12,9 +12,7 @@ test("local isolate measurements read actual workerd heap and CPU profiles", asy
   t.after(() => rm(directory, { recursive: true, force: true }));
   const timeline = nativeOperationalTimeline();
   const runtime = new Miniflare({
-    handleRuntimeStdio: (stdout, stderr) => {
-      for (const stream of [stdout, stderr]) stream.on("data", (chunk) => timeline.observe(chunk.toString(), stream));
-    },
+    handleStructuredLogs: ({ message, level }) => timeline.observe(`${message}\n`, level),
     inspectorPort: 0,
     modules: true,
     compatibilityDate: "2026-07-29",

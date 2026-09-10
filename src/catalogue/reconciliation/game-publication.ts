@@ -1,3 +1,5 @@
+import { acceptUnchangedGamePublication } from "./game-publication-no-change";
+import { publicationUnchangedFactsStatement } from "./game-publication-no-change-repository";
 import { trackedStagingBucket } from "../shared";
 import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { inspectGameCandidate, inspectGameCandidateReadiness } from "./game-candidate";
@@ -161,6 +163,17 @@ export async function advanceGamePublication(
   const prepared = await publicationPreparationStatement(db, candidate.id).first<{ state: string }>();
   if (prepared?.state !== "verified") {
     await updatePublicationState(db, id, generation, "waiting_artifacts").run();
+    return inspectPublication(db, id);
+  }
+  const unchanged = await acceptUnchangedGamePublication(env, {
+    id,
+    candidateId: candidate.id,
+    generation,
+    clockOffsetMs,
+  });
+  if (unchanged) {
+    if (unchanged.state !== "published")
+      await updatePublicationState(db, id, generation, unchanged.state, unchanged.failure_code ?? null).run();
     return inspectPublication(db, id);
   }
   const publicExport = await publicExportPreparationStatement(db, candidate.id).first<{
@@ -367,4 +380,9 @@ export async function resumeGamePublication(
   }
   await dispatchGamePublication(env.RECONCILIATION_WORKFLOW, result);
   return result;
+}
+
+/** Classification avoids generating new public exports; the final guard rechecks the immutable receipts. */
+export async function gamePublicationHasUnchangedFacts(db: CatalogueStore, id: string): Promise<boolean> {
+  return (await publicationUnchangedFactsStatement(db, id).first<{ equal: number }>())?.equal === 1;
 }

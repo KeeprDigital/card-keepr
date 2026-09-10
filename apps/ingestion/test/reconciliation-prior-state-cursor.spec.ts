@@ -1,6 +1,6 @@
+import { recoverHistoricalPublication } from "./historical-publication-fixture";
 import { expect, test } from "vitest";
 import {
-  approve,
   collect,
   get,
   post,
@@ -86,14 +86,15 @@ test.each([
     name: "Synthetic reviewed Card 0",
   },
 ])(
-  "prior Cards from $base resume through durable returning groups ($interrupt)",
+  "retained historical Cards from $base resume through durable returning groups ($interrupt)",
   async ({ base, changed, count, expectedCards, name, interrupt = "" }) => {
     // Each case owns distinct immutable evidence keys, including across runtime resets.
     const caseKey = `${base}-${changed}-${interrupt}`;
     const prior = await collect(`/reconciliation/${base}`, `prior-state-base-${caseKey}`);
     const accepted = await reconcile(prior.id);
     expect(accepted.response.status).toBe(200);
-    expect((await approve(accepted.document)).response.status).toBe(200);
+    // This regression intentionally resumes the retained relational predecessor path.
+    expect((await recoverHistoricalPublication(prior.id, `historical-prior-${caseKey}`)).response.status).toBe(200);
     const run = await collect(
       `/reconciliation/${changed}`,
       `prior-state-changed-${caseKey}`,
@@ -377,8 +378,9 @@ test.each([
       expect(withdrawalCursors.some((count) => count > 0 && count < 32)).toBe(true);
       expect(withdrawalCursors).toContain(32);
       expect(Math.max(...withdrawalCalls)).toBeLessThanOrEqual(100);
-      const candidate = await get(`/v1/ingestion-runs/${run.id}/candidate`);
-      expect((await approve(candidate.document)).response.status).toBe(200);
+      expect((await recoverHistoricalPublication(run.id, `historical-withdrawal-${caseKey}`)).response.status).toBe(
+        200,
+      );
       const printing = (accepted.document.printings as { id: string }[])[0]!;
       expect((await get(`/v1/reconciliation/printings/${printing.id}`)).document).toMatchObject({
         lifecycle: { withdrawn: true },

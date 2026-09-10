@@ -13,6 +13,7 @@ const administrativeFields = new Set([
   "source_observation_pointer",
   "source_field_pointers",
   "relationship_evidence",
+  "membership_evidence",
   "locator_evidence",
   "source_buckets",
   "source_freshness",

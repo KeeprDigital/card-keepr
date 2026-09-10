@@ -1,8 +1,11 @@
 import { canonicalJson, StreamingSha256 } from "../shared";
 import {
   type CompositionVerificationQuery,
+  type AcceptedEvidenceArtifactRoot,
   compositionSnapshotTables,
   maximumPrivateSnapshotPageBytes,
+  maximumSchemaSnapshotPageRows,
+  maximumSchemaSnapshotPageBytes,
 } from "./composition-verification-repository";
 
 export type CompositionSnapshotEvidence = {
@@ -11,6 +14,7 @@ export type CompositionSnapshotEvidence = {
   publication_operation_id: string;
   ingestion_run_id: string;
   schema_migration_level: number;
+  accepted_evidence_roots?: AcceptedEvidenceArtifactRoot[];
   members: number;
   schema_sha256: string;
   tables: { table: string; rows: number; sha256: string }[];
@@ -36,17 +40,56 @@ export async function captureCompositionSnapshot(
     state.search_state !== "ready"
   )
     throw new Error("Composed catalogue invariants failed.");
+  let acceptedRoots: AcceptedEvidenceArtifactRoot[] | undefined;
+  if (state.migration_level >= 31) {
+    const rows = await query({ kind: "composition-accepted-roots" });
+    if (
+      rows.length !== state.members ||
+      new Set(rows.map((row) => row.supported_game)).size !== rows.length ||
+      rows.some(
+        (row) =>
+          ["supported_game", "candidate_id", "preparation_id"].some(
+            (field) => typeof row[field] !== "string" || row[field] === "",
+          ) ||
+          !/^[a-f0-9]{64}$/.test(String(row.manifest_digest)) ||
+          !/^[a-f0-9]{64}$/.test(String(row.root_digest)),
+      )
+    )
+      throw new Error("Accepted private evidence roots are unavailable or invalid.");
+    acceptedRoots = rows as AcceptedEvidenceArtifactRoot[];
+  }
   const schema = new StreamingSha256();
   let schemaAfter = "";
   for (;;) {
-    const [entry] = await query({ kind: "composition-schema", after: schemaAfter });
-    if (!entry) break;
-    if (typeof entry.name !== "string" || entry.name <= schemaAfter) throw new Error("Invalid schema snapshot cursor.");
-    schemaAfter = entry.name;
-    schema.update(new TextEncoder().encode(canonicalJson(entry) + "\n"));
+    const page = await query({ kind: "composition-schema", after: schemaAfter });
+    if (page.length === 0) break;
+    if (page.length > maximumSchemaSnapshotPageRows) throw new Error("Schema snapshot page exceeds its row budget.");
+    let pageBytes = 0;
+    for (const entry of page) {
+      if (typeof entry.name !== "string" || entry.name <= schemaAfter)
+        throw new Error("Invalid schema snapshot cursor.");
+      const encoded = new TextEncoder().encode(canonicalJson(entry));
+      pageBytes += encoded.byteLength;
+      if (pageBytes > maximumSchemaSnapshotPageBytes) throw new Error("Schema snapshot page exceeds its byte budget.");
+      schemaAfter = entry.name;
+      schema.update(encoded);
+      schema.update(new Uint8Array([10]));
+    }
   }
   const tables: CompositionSnapshotEvidence["tables"] = [];
   for (const table of compositionSnapshotTables) {
+    // Schema 30 snapshots predate accepted-evidence metadata and partition fingerprints.
+    if (
+      state.migration_level < 31 &&
+      [
+        "game_candidate_semantic_receipts",
+        "game_candidate_predecessors",
+        "game_accepted_candidates",
+        "catalogue_acceptance_head",
+        "game_candidate_partitions",
+      ].includes(table)
+    )
+      continue;
     const digest = new StreamingSha256();
     let after = 0,
       rows = 0;
@@ -76,6 +119,7 @@ export async function captureCompositionSnapshot(
     publication_operation_id: state.publication_operation_id,
     ingestion_run_id: state.ingestion_run_id,
     schema_migration_level: state.migration_level,
+    ...(acceptedRoots === undefined ? {} : { accepted_evidence_roots: acceptedRoots }),
     members: state.members,
     schema_sha256: schema.digestHex(),
     tables,

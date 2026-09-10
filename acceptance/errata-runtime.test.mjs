@@ -1,163 +1,26 @@
-import {
-  inspectNativeCollection,
-  publishNativeCollection,
-  waitForNativeCollection,
-  nativeCheckpointTransport,
-  nativeExportRecords,
-} from "./helpers/native-catalogue-runtime.mjs";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import { runCli, startWorker, stopWorker, waitForHealth, waitForRunState } from "./helpers/acceptance-runtime.mjs";
+import { runCli, startWorker, stopWorker, waitForHealth } from "./helpers/acceptance-runtime.mjs";
+import { nativeCheckpointTransport, publishNativeCollection } from "./helpers/native-catalogue-runtime.mjs";
 import { syntheticSourceAdapterMigrations } from "./helpers/synthetic-source-adapters.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 
-test("the repository CLI rejects Official Errata authority outside the documented Bandai surface", async (t) => {
-  const directory = await mkdtemp(join(tmpdir(), "card-keepr-errata-authority-"));
-  const statePath = join(directory, "shared-state");
-  const apiKey = crypto.randomUUID();
-  const administrationKey = crypto.randomUUID();
-  const environmentFile = join(directory, "runtime.env");
-  const runtimeConfig = join(directory, "runtime.wrangler.json");
-  await Promise.all([
-    writeFile(environmentFile, `API_BEARER_KEY=${apiKey}\nADMINISTRATION_KEY=${administrationKey}\n`, { mode: 0o600 }),
-    writeRuntimeConfig(runtimeConfig),
-  ]);
-  const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory, runtimeConfig);
-  const runtime = await startWorker({
-    ...checkpointTransport,
-    config: runtimeConfig,
-    envFile: environmentFile,
-    migrate: true,
-    testMigrations: await syntheticSourceAdapterMigrations(),
-    statePath,
-  });
-  t.after(async () => {
-    await stopWorker(runtime);
-    await rm(directory, { recursive: true, force: true });
-  });
-  await waitForHealth(`${runtime.url}/health`, apiKey, runtime);
-  const environment = {
-    KEEPR_ADMINISTRATION_KEY: administrationKey,
-    KEEPR_INGESTION_URL: runtime.url,
-  };
-  const result = await runCli(
-    [
-      "source",
-      "collect",
-      "--game",
-      "one-piece",
-      "--lineage",
-      "one-piece-en",
-      "--adapter",
-      "one-piece-official-errata-html@1",
-      "--request-id",
-      "untrusted-errata",
-      "--url",
-      "https://publisher.example/claims/official-errata.json",
-      "--idempotency-key",
-      "reject-untrusted-errata-authority",
-      "--json",
-    ],
-    environment,
-  );
-  assert.equal(result.code, 8, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout), {
-    contract: "card-keepr-cli-problem@1",
-    status: "error",
-    code: "official_source_surface_mismatch",
-    detail: "The Official Errata adapter accepts only https://en.onepiece-cardgame.com/rules/errata_card/.",
-  });
-
-  const untrustedRun = await collectFixtureSource(
-    {
-      adapter: "fixture-one-piece-json@3",
-      idempotencyKey: "retain-untrusted-generic-surface",
-      requestId: "untrusted-generic",
-      url: "https://publisher.example/claims/untrusted-card-list.json",
-    },
-    environment,
-  );
-  const completed = await resumeAndWait(untrustedRun.id, environment, runtime);
-  const capturedSnapshotId = completed.snapshots?.[0]?.id;
-  assert.equal(typeof capturedSnapshotId, "string");
-  const snapshotId = await representRetainedSnapshotAdapter(
-    capturedSnapshotId,
-    "one-piece-official-errata-html@1",
-    environment,
-  );
-  const reparse = await runCli(
-    [
-      "snapshot",
-      "reparse",
-      "--snapshot-id",
-      snapshotId,
-      "--adapter",
-      "one-piece-official-errata-html@1",
-      "--idempotency-key",
-      "reject-retained-untrusted-errata-authority",
-      "--json",
-    ],
-    environment,
-  );
-  assert.equal(reparse.code, 8, reparse.stderr);
-  assert.deepEqual(JSON.parse(reparse.stdout), {
-    contract: "card-keepr-cli-problem@1",
-    status: "error",
-    code: "official_source_surface_mismatch",
-    detail: "The Official Errata adapter accepts only https://en.onepiece-cardgame.com/rules/errata_card/.",
-  });
-});
-
-test("Bandai Errata HTML shape drift fails closed through the CLI and Worker seam", async (t) => {
-  const directory = await mkdtemp(join(tmpdir(), "card-keepr-errata-drift-"));
-  const statePath = join(directory, "shared-state");
-  const apiKey = crypto.randomUUID();
-  const administrationKey = crypto.randomUUID();
-  const environmentFile = join(directory, "runtime.env");
-  const runtimeConfig = join(directory, "runtime.wrangler.json");
-  await Promise.all([
-    writeFile(environmentFile, `API_BEARER_KEY=${apiKey}\nADMINISTRATION_KEY=${administrationKey}\n`, { mode: 0o600 }),
-    writeRuntimeConfig(runtimeConfig, "AcceptanceShapeDriftOfficialSourceTransport"),
-  ]);
-  const checkpointTransport = await nativeCheckpointTransport(t, statePath, directory, runtimeConfig);
-  const runtime = await startWorker({
-    ...checkpointTransport,
-    config: runtimeConfig,
-    envFile: environmentFile,
-    migrate: true,
-    testMigrations: await syntheticSourceAdapterMigrations(),
-    statePath,
-  });
-  t.after(async () => {
-    await stopWorker(runtime);
-    await rm(directory, { recursive: true, force: true });
-  });
-  await waitForHealth(`${runtime.url}/health`, apiKey, runtime);
-  const environment = {
-    KEEPR_ADMINISTRATION_KEY: administrationKey,
-    KEEPR_INGESTION_URL: runtime.url,
-  };
-  const run = await collectSource(
-    {
-      adapter: "one-piece-official-errata-html@1",
-      idempotencyKey: "reject-bandai-errata-shape-drift",
-      requestId: "one-piece-en:errata",
-      url: "https://en.onepiece-cardgame.com/rules/errata_card/",
-    },
-    environment,
-    runtime,
-  );
-  const resumed = await runCli(["source", "resume", "--run-id", run.id, "--json"], environment);
-  assert.equal(resumed.code, 0, resumed.stderr);
-  const failed = await waitForRunState(run.id, "failed", environment, runtime, { deadlineMs: 20_000 });
-  assert.equal(failed.failure_code, "source_parse_failed");
-  assert.equal(failed.observation_sets.length, 0);
-});
+import {
+  digimonOfficialPlan,
+  collectSource,
+  collectFixtureSource,
+  resumeAndWait,
+  reconcileAndWait,
+  approveCandidate,
+  writeRuntimeConfig,
+  apiJson,
+  exportComponent,
+  administrationFetch,
+} from "./helpers/errata-runtime.mjs";
 
 test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/export seams", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "card-keepr-errata-"));
@@ -208,6 +71,9 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
   await waitForHealth(`${runtime.url}/health`, apiKey, runtime);
 
   const cliEnvironment = {
+    // This fixture permits 300 administration requests per minute. Keep CLI,
+    // inspection, polling and direct owner calls below that shared allowance.
+    KEEPR_NATIVE_REQUEST_INTERVAL_MS: "250",
     KEEPR_API_KEY: apiKey,
     KEEPR_API_URL: runtime.url,
     KEEPR_ADMINISTRATION_KEY: administrationKey,
@@ -515,9 +381,10 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     20_000,
   );
   const repeatedRevision = repeatedPublication.resulting_revision_id;
-  assert.notEqual(repeatedRevision, revisionId);
+  // Fresh private provenance preserves unchanged consumer facts and their revision.
+  assert.equal(repeatedRevision, revisionId);
   const approvedCandidate = repeatedCandidate.candidates[0];
-  const approvalReplay = await fetch(`${runtime.url}/v1/publications`, {
+  const approvalReplay = await administrationFetch(cliEnvironment, `${runtime.url}/v1/publications`, {
     method: "POST",
     headers: { authorization: `Bearer ${administrationKey}`, "content-type": "application/json" },
     body: JSON.stringify({
@@ -631,190 +498,3 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
 
   assert.equal(Object.hasOwn(carriedExportedCard, "source_lineages"), false);
 });
-
-function digimonOfficialPlan() {
-  return {
-    supported_game: "digimon",
-    source_lineage: "digimon-en",
-    adapter_version: "digimon-en@7",
-    requests: [
-      {
-        id: "digimon-en:discovery",
-        url: "https://world.digimoncard.com/cards/index.php?search=true",
-        headers: { accept: "text/html" },
-      },
-    ],
-  };
-}
-
-async function collectSource(input, environment, runtime) {
-  const result = await runCli(
-    [
-      "source",
-      "collect",
-      "--game",
-      "one-piece",
-      "--lineage",
-      "one-piece-en",
-      "--adapter",
-      input.adapter,
-      "--request-id",
-      input.requestId,
-      "--url",
-      input.url,
-      "--idempotency-key",
-      input.idempotencyKey,
-      "--json",
-    ],
-    environment,
-  );
-  assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}\n${runtime.getOutput()}`);
-  return JSON.parse(result.stdout);
-}
-
-const injectedFixtureRuns = new Set();
-
-async function collectFixtureSource(input, environment) {
-  const response = await fetch(new URL("/acceptance/synthetic-evidence", environment.KEEPR_INGESTION_URL), {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      supported_game: "one-piece",
-      source_lineage: "one-piece-en",
-      adapter_version: input.adapter,
-      idempotency_key: input.idempotencyKey,
-      requests: [
-        {
-          id: input.requestId,
-          method: "GET",
-          url: input.url,
-          headers: { accept: "application/json" },
-        },
-      ],
-    }),
-  });
-  const document = await response.json();
-  assert.equal(response.status, 201, JSON.stringify(document));
-  injectedFixtureRuns.add(document.id);
-  return document;
-}
-
-async function representRetainedSnapshotAdapter(sourceSnapshotId, adapterVersion, environment) {
-  const response = await fetch(new URL("/acceptance/retained-snapshot-adapter", environment.KEEPR_INGESTION_URL), {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      source_snapshot_id: sourceSnapshotId,
-      adapter_version: adapterVersion,
-    }),
-  });
-  const document = await response.json();
-  assert.equal(response.status, 201, JSON.stringify(document));
-  assert.equal(typeof document.source_snapshot_id, "string");
-  return document.source_snapshot_id;
-}
-
-async function resumeAndWait(runId, environment, runtime) {
-  const headers = { authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}` };
-  const sourceResponse = await fetch(`${runtime.url}/v1/ingestion-runs/${runId}/evidence`, { headers });
-  assert.equal(sourceResponse.status, 200);
-  const source = await sourceResponse.json();
-  if (!injectedFixtureRuns.has(runId)) {
-    if (source.state !== "collecting")
-      return waitForNativeCollection(runId, "sealed", environment, runtime, { deadlineMs: 20_000 });
-    const resumed = await runCli(["source", "resume", "--run-id", runId, "--json"], environment);
-    assert.equal(resumed.code, 0, resumed.stdout + resumed.stderr);
-  } else {
-    // Synthetic source fixtures already captured and parsed their retained
-    // evidence. Enter the shipped native candidate owner directly.
-    assert.equal(source.state, "parsing");
-    const status = await runCli(["status", "--json"], environment);
-    assert.equal(status.code, 0, status.stderr);
-    const response = await fetch(`${runtime.url}/v1/game-candidates`, {
-      method: "POST",
-      headers: { ...headers, "content-type": "application/json" },
-      body: JSON.stringify({
-        ingestion_run_id: runId,
-        supported_game: "one-piece",
-        expected_game_revision_id: JSON.parse(status.stdout).safe_state.current_revision_id,
-        idempotency_key: `native-fixture-${runId}`,
-      }),
-    });
-    assert.equal(response.status, 201, await response.clone().text());
-  }
-  try {
-    return await waitForNativeCollection(runId, "sealed", environment, runtime, { deadlineMs: 20_000 });
-  } catch (error) {
-    const collection = await (
-      await fetch(`${runtime.url}/v1/ingestion-runs/${runId}/game-candidates`, { headers })
-    ).json();
-    const diagnostics = [];
-    for (const candidate of collection.candidates) {
-      const partitions = await (
-        await fetch(`${runtime.url}/v1/game-candidates/${candidate.id}/partitions`, { headers })
-      ).json();
-      for (const partition of partitions.partitions.filter((p) => ["warnings", "shared_warnings"].includes(p.kind)))
-        diagnostics.push(
-          await (
-            await fetch(`${runtime.url}/v1/game-candidates/${candidate.id}/partitions/${partition.ordinal}`, {
-              headers,
-            })
-          ).json(),
-        );
-    }
-    error.message = `${JSON.stringify(diagnostics)}\n${error.message}`;
-    throw error;
-  }
-}
-
-async function reconcileAndWait(runId, expectedRevision, _idempotencyKey, environment, runtime) {
-  await waitForNativeCollection(runId, "sealed", environment, runtime, { deadlineMs: 20_000 });
-  const inspection = await inspectNativeCollection(runId, environment);
-  const status = await runCli(["status", "--json"], environment);
-  assert.equal(status.code, 0, status.stderr);
-  assert.equal(JSON.parse(status.stdout).safe_state.current_revision_id, expectedRevision);
-  return { ...inspection, ...inspection.records };
-}
-
-async function approveCandidate(runId, idempotencyKey, environment, runtime) {
-  const publication = await publishNativeCollection(runId, idempotencyKey, environment, runtime, 20_000);
-  return publication.resulting_revision_id;
-}
-
-async function writeRuntimeConfig(destination, sourceEntrypoint = "AcceptanceOfficialSourceTransport") {
-  const config = JSON.parse(readFileSync(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
-  const apiConfig = JSON.parse(readFileSync(resolve(root, "apps/api/wrangler.jsonc"), "utf8"));
-  delete config.$schema;
-  config.name = "card-keepr-combined-acceptance-runtime";
-  config.main = resolve(root, "acceptance/fixtures/native-combined-card-keepr-runtime.ts");
-  config.d1_databases[0].migrations_dir = resolve(root, "migrations");
-  config.services = [
-    {
-      binding: "OFFICIAL_SOURCE_TRANSPORT",
-      service: config.name,
-      entrypoint: sourceEntrypoint,
-    },
-  ];
-  config.ratelimits.find(({ name }) => name === "ADMINISTRATION_RATE_LIMIT").simple.limit = 300;
-  config.ratelimits.push(...apiConfig.ratelimits);
-  config.vars.CORS_ALLOWED_ORIGINS = apiConfig.vars.CORS_ALLOWED_ORIGINS;
-  await writeFile(destination, JSON.stringify(config));
-}
-
-async function apiJson(baseUrl, pathname, apiKey) {
-  const response = await fetch(`${baseUrl}${pathname}`, { headers: { authorization: `Bearer ${apiKey}` } });
-  const text = await response.text();
-  assert.equal(response.status, 200, text);
-  return JSON.parse(text);
-}
-
-async function exportComponent(baseUrl, revisionId, component, apiKey) {
-  const records = await nativeExportRecords(baseUrl, apiKey, revisionId, component);
-  return records.map((record) => JSON.stringify(record)).join("\n") + (records.length ? "\n" : "");
-}

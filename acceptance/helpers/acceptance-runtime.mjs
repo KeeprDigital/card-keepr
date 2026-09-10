@@ -352,10 +352,14 @@ export async function stopWorker(worker) {
 // matching the --secrets-stdin-fd 3 contract the CLI documents. The
 // invocation is killed and reported after timeoutMs (default two minutes).
 export function runCli(arguments_, environment, { secrets, stdin, timeoutMs } = {}) {
+  const preload =
+    Number(environment?.KEEPR_NATIVE_REQUEST_INTERVAL_MS ?? 0) > 0
+      ? ["--import", resolve(root, "acceptance/helpers/native-cli-request-pacing.mjs")]
+      : [];
   return withNativeRequestPacing(environment, () =>
     runProcess(
       process.execPath,
-      [resolve(root, "cli/keepr.mjs"), ...arguments_],
+      [...preload, resolve(root, "cli/keepr.mjs"), ...arguments_],
       { ...processEnvironment("/tmp"), ...environment },
       { secrets, stdin, timeoutMs },
     ),

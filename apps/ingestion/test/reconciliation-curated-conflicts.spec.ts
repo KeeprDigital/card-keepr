@@ -1,28 +1,19 @@
 import { expect, test } from "vitest";
 import { canonicalJson, sha256Text } from "../../../src/catalogue/shared";
-import {
-  approve,
-  collect,
-  get,
-  installReconciliationSuite,
-  post,
-  reconcile,
-  requiredString,
-  testEnv,
-} from "./reconciliation-helpers";
+import { nativeCandidateRecords } from "./native-candidate-helpers";
+import { seedNativePredecessor, prepareNativeCandidate } from "./native-publication-helpers";
+import { collect, get, installReconciliationSuite, post, requiredString, testEnv } from "./reconciliation-helpers";
 import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 
-installReconciliationSuite();
+installReconciliationSuite({ directPreparation: true });
 
 test("all 32 changed Curated Revisions become reconfirmable with a bounded final transaction", async () => {
-  const seed = await reconcile(
-    (await collect("/reconciliation/curated-conflict-fanout-base", "curated-fanout-seed")).id,
-  );
-  expect(seed.response.status).toBe(200);
-  const cards = seed.document.cards as { id: string; name: string }[];
+  const source = await collect("/reconciliation/curated-conflict-fanout-base", "curated-fanout-seed");
+  const seed = await prepareNativeCandidate(source.id, "one-piece", "catrev_spine_000", "curated-fanout-candidate");
+  const cards = (await nativeCandidateRecords(String(seed.id))).cards as { id: string; name: string }[];
   expect(cards).toHaveLength(32);
-  const published = await approve(seed.document);
-  expect(published.response.status).toBe(200);
+  const published = await seedNativePredecessor(seed, "curated-fanout-publish");
+  expect(published.checkpoint).toBe("pending");
   const revisions: string[] = [];
   for (const card of cards) {
     const proposal = {
@@ -39,7 +30,7 @@ test("all 32 changed Curated Revisions become reconfirmable with a bounded final
     };
     const created = await post("/admin/v1/curated-revisions", {
       environment: "production",
-      expected_current_revision_id: published.document.resulting_revision_id,
+      expected_current_revision_id: published.revisionId,
       proposal,
       proposal_digest: await sha256Text(canonicalJson(proposal)),
       idempotency_key: `curated-fanout-${card.id}`,
@@ -177,7 +168,7 @@ test("all 32 changed Curated Revisions become reconfirmable with a bounded final
     const revision = before.revision as { event_version: number; pending_conflict: { digest: string } };
     const mutated = await post(`/admin/v1/curated-revisions/${id}/${action}`, {
       environment: "production",
-      expected_current_revision_id: published.document.resulting_revision_id,
+      expected_current_revision_id: published.revisionId,
       expected_event_version: revision.event_version,
       conflict_digest: revision.pending_conflict.digest,
       rationale: "Synthetic reviewed source change",

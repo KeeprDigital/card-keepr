@@ -37,7 +37,7 @@ export {
   sourceFreshnessFromStorage,
   sourceFreshnessKey,
   sourceFreshnessStorageScope,
-} from "./source-freshness";
+} from "../shared";
 
 export { compositionEntityResponse, compositionImageResponse } from "./composition-read";
 export { composedDocumentStatement } from "./composition-read-repository";

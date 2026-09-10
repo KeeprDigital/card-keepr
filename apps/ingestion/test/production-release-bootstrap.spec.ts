@@ -1,18 +1,23 @@
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
 import { beforeEach, expect, test } from "vitest";
-import { injectFixturePublication } from "./fixture-plan-injection";
+import {
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
+} from "./native-publication-helpers";
+import { collect } from "./reconciliation-helpers";
 import { administrationRequest } from "./runtime-helpers";
+import { installWorkflowIsolation } from "./workflow-isolation";
 
 const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
+installWorkflowIsolation();
 
 beforeEach(async () => {
   await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
 });
 
-// Storage persists across the tests in this file, so the single test that
-// publishes a revision also carries every assertion that needs an empty
-// catalogue first.
+// One journey checks the empty baseline and then the published catalogue,
+// so the Bootstrap Mode transition is observed within the same isolated test.
 test("a Bootstrap Mode Production Release names the Spine Revision", async () => {
   const intent = {
     ...(await bootstrapIntent("bootstrap-wrong")),
@@ -100,18 +105,13 @@ async function schemaMigrationLevel(): Promise<number> {
 }
 
 async function publishFixtureRevision(): Promise<string> {
-  const started = await injectFixturePublication(testEnv.CATALOGUE_DB, testEnv.CATALOGUE_EXPORTS, {
-    fixture: "first-catalogue",
-    selected_games: ["one-piece"],
-    idempotency_key: "bootstrap-first-catalogue",
-  });
-  const approved = await administrationRequest(`/v1/ingestion-runs/${String(started.id)}/approval`, "POST", {
-    candidate_digest: started.candidate_digest,
-    expected_current_revision_id: started.expected_current_revision_id,
-    idempotency_key: "bootstrap-first-catalogue-approval",
-  });
-  const document = (await approved.json()) as { state: string; resulting_revision_id: string };
-  expect(approved.status, JSON.stringify(document)).toBe(200);
-  expect(document.state).toBe("published");
-  return document.resulting_revision_id;
+  const collection = await collect("/reconciliation/base", "bootstrap-first-catalogue");
+  const candidate = await prepareNativeCandidate(
+    collection.id,
+    "one-piece",
+    "catrev_spine_000",
+    "bootstrap-first-candidate",
+  );
+  const published = await approveNativeCandidate(candidate, "bootstrap-first-catalogue-approval");
+  return String(published.document.resulting_revision_id);
 }

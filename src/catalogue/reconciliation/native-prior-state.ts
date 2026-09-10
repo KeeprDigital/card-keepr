@@ -1,6 +1,7 @@
-import type { CatalogueCandidate, CatalogueStore, SupportedGame } from "../shared";
+import type { CatalogueCandidate, CataloguePrinting, CatalogueStore, SupportedGame } from "../shared";
 import { verifiedCandidatePartition } from "./game-candidate-inspection";
 import { nativePredecessorGameCandidateStatement } from "./game-candidate-repository";
+import { nativePriorPrintingIdentity } from "./native-printing-locators";
 import type { PriorStateContinuation, PriorStatePositions, PriorStateSeed } from "./prior-state-types";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
@@ -11,6 +12,7 @@ type Cursor = {
   pass: number;
   partition: number;
   record: number;
+  locator?: number;
   positions: PriorStatePositions;
   complete: boolean;
 };
@@ -23,7 +25,7 @@ export async function nativeCandidateAtRevision(
   continuation: PriorStateContinuation,
 ) {
   if (games.length !== 1) return undefined;
-  const candidate = await nativePredecessorGameCandidateStatement(db, revision, games[0]!).first<{
+  const candidate = await nativePredecessorGameCandidateStatement(db, revision, games[0]!, continuation.runId).first<{
     id: string;
     preparation_id: string;
     partition_count: number;
@@ -84,7 +86,28 @@ export async function nativeCandidateAtRevision(
       candidate.preparation_id,
       partition.records[cursor.record]! as Parameters<typeof restorePartitionedRecord>[2],
     );
-    await handler(value as never);
+    if (partition.kind === "printings") {
+      const printing = value as CataloguePrinting;
+      const identity = await nativePriorPrintingIdentity(db, candidate.preparation_id, printing);
+      if (cursor.locator === undefined) {
+        await seed.printing(printing, identity);
+        if (identity?.locators.length) {
+          cursor.locator = 0;
+          await save();
+          continue;
+        }
+      } else {
+        if (!identity || cursor.locator >= identity.locators.length)
+          throw new Error("Native prior locator continuation changed its retained identity.");
+        await seed.printingLocator({ ...identity, locators: [identity.locators[cursor.locator]!] });
+        cursor.locator++;
+        if (cursor.locator < identity.locators.length) {
+          await save();
+          continue;
+        }
+        delete cursor.locator;
+      }
+    } else await handler(value as never);
     cursor.record++;
     await save();
   }

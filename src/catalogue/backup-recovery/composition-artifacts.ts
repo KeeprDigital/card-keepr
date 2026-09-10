@@ -1,13 +1,25 @@
+import type { CompositionSnapshotEvidence } from "./composition-verification";
 import { type CatalogueStore, sha256Text, StreamingSha256 } from "../shared";
-import { compositionArtifactRootsStatement } from "./composition-verification-repository";
+import {
+  compositionArtifactRootsStatement,
+  acceptedEvidenceArtifactRootsStatement,
+} from "./composition-verification-repository";
 
 type Reference = { object_key: string; sha256: string; byte_length: number };
+type PrivateRoot = {
+  candidate_id: string;
+  preparation_id: string;
+  manifest_digest: string;
+  supported_game: string;
+  root_digest: string;
+};
 /** Verify private evidence and the exact retained public bytes bound into the composition. */
 export async function verifyCompositionArtifacts(
   db: CatalogueStore,
   bucket: R2Bucket,
   images: R2Bucket,
   revisionId: string,
+  acceptedSnapshot?: Pick<CompositionSnapshotEvidence, "schema_migration_level" | "accepted_evidence_roots">,
 ) {
   const members = (
     await compositionArtifactRootsStatement(db, revisionId).all<{
@@ -32,16 +44,7 @@ export async function verifyCompositionArtifacts(
   if (!members.length) throw new Error("Published composition roots are unavailable.");
   await readRoot(bucket, members[0]!.composition_digest);
   for (const member of members) {
-    const root = await readRoot(bucket, member.root_digest);
-    if (
-      root.contract !== "card-keepr-game-publication-artifacts@1" ||
-      root.candidate_id !== member.candidate_id ||
-      root.preparation_id !== member.preparation_id ||
-      root.manifest_digest !== member.manifest_digest ||
-      root.supported_game !== member.supported_game
-    )
-      throw new Error("Publication root identity mismatch.");
-    await verifyReference(bucket, images, root.artifacts, 0);
+    await verifyPrivateRoot(bucket, images, member);
     if (
       member.public_state !== "verified" ||
       member.revision_id !== member.game_revision_id ||
@@ -81,6 +84,33 @@ export async function verifyCompositionArtifacts(
     const components = await verifyReference(bucket, images, publicRoot.artifacts, 0, undefined, true);
     if (components !== member.component_count) throw new Error("Public export component count mismatch.");
   }
+  if (acceptedSnapshot && acceptedSnapshot.schema_migration_level < 31) return;
+  const accepted = acceptedSnapshot
+    ? acceptedSnapshot.accepted_evidence_roots
+    : (await acceptedEvidenceArtifactRootsStatement(db).all<PrivateRoot>()).results;
+  if (!Array.isArray(accepted)) throw new Error("Accepted private evidence snapshot is missing.");
+  if (
+    accepted.length !== members.length ||
+    accepted.some((candidate) => !members.some((member) => member.supported_game === candidate.supported_game))
+  )
+    throw new Error("Accepted evidence composition membership mismatch.");
+  for (const candidate of accepted) {
+    if (!members.some((member) => member.candidate_id === candidate.candidate_id))
+      await verifyPrivateRoot(bucket, images, candidate);
+  }
+}
+
+async function verifyPrivateRoot(bucket: R2Bucket, images: R2Bucket, member: PrivateRoot) {
+  const root = await readRoot(bucket, member.root_digest);
+  if (
+    root.contract !== "card-keepr-game-publication-artifacts@1" ||
+    root.candidate_id !== member.candidate_id ||
+    root.preparation_id !== member.preparation_id ||
+    root.manifest_digest !== member.manifest_digest ||
+    root.supported_game !== member.supported_game
+  )
+    throw new Error("Publication root identity mismatch.");
+  await verifyReference(bucket, images, root.artifacts, 0);
 }
 async function readRoot(bucket: R2Bucket, digest: string, byteLength?: number) {
   if (typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest)) throw new Error("Invalid publication root digest.");

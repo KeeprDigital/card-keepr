@@ -1,3 +1,4 @@
+import { capacitySourceResponse } from "./capacity-workloads.ts";
 import { onePieceCompleteOfficialSourceResponse } from "../../../acceptance/fixtures/one-piece-complete-official-source.mjs";
 import { transportOutcomeForPath } from "./failure-injection.ts";
 import { isSyntheticOfficialSourceHost } from "./hostnames.ts";
@@ -725,6 +726,8 @@ export const workersPoolOfficialSourceScenario: PublisherScenario = (context) =>
 
 export const workersPoolSyntheticHostScenario: PublisherScenario = async (context) => {
   const { request, url } = context;
+  const capacity = capacitySourceResponse(url);
+  if (capacity !== null) return capacity;
   if (!isSyntheticOfficialSourceHost(url)) {
     return new Response("unknown synthetic Official Source", {
       status: 404,

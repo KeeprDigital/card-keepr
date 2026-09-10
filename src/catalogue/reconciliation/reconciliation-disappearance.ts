@@ -1,7 +1,10 @@
-import { checkedPrintingLineages, type CheckedCardScope } from "./scoped-disappearance";
 import type { CataloguePrinting } from "../shared";
-import type { ReconciliationCardState } from "./reconciliation-card-state";
 import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
+import type { SourceHistoryCursor } from "./native-source-history";
+import { type SourceHistoryCandidate, sourceHistoryCandidateStatement } from "./native-source-history-repository";
+import type { NativeSourceHistory } from "./native-source-history-state";
+import { type PublicLifecycleFact, priorPublicLifecycle } from "./publication-lifecycle-repository";
+import type { ReconciliationCardState } from "./reconciliation-card-state";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
 import type { ReconciliationErrataState } from "./reconciliation-errata-state";
@@ -10,8 +13,9 @@ import type { ReconciliationPlanState } from "./reconciliation-plan-state";
 import { printingRelationshipsForLineageStatement } from "./reconciliation-read-repository";
 import type { ReconciliationRecordSink } from "./reconciliation-record-collection";
 import { ReconciliationReducerIndex, ReconciliationReducerStorageError } from "./reconciliation-reducer-state";
-import { gundamAffectedPrintingIds, gundamPrintingLineages } from "./reconciliation-repository";
 import { membershipEntries } from "./reconciliation-relationships";
+import { gundamAffectedPrintingIds, gundamPrintingLineages } from "./reconciliation-repository";
+import { type CheckedCardScope, checkedPrintingLineages } from "./scoped-disappearance";
 
 type Group = {
   id: string;
@@ -27,12 +31,14 @@ type Stage =
   | "memberships"
   | "relationships"
   | "gundam_published"
+  | "gundam_native_warnings"
   | "gundam_local"
   | "printings"
   | "cards"
   | "errata"
   | "complete";
 type Cursor = {
+  sourceHistory?: SourceHistoryCursor;
   stage: Stage;
   after: string;
   lineage: number;
@@ -40,6 +46,8 @@ type Cursor = {
   relationshipValue: string;
   groups: number;
   scopedCards?: number;
+  relationshipWarnings?: number;
+  gundamLineages?: number;
   warnings: { position: number; count: number };
   processedRecords: number;
 };
@@ -50,6 +58,7 @@ export async function prepareDisappearanceWarnings(
   runId: string,
   sources: {
     plans: ReconciliationPlanState;
+    history?: NativeSourceHistory;
     cardScopes?: {
       scopes: readonly CheckedCardScope[];
       priorCards: ReconciliationCardState;
@@ -76,6 +85,17 @@ export async function prepareDisappearanceWarnings(
     runId,
     "scoped_prior_cards",
   );
+  const relationshipWarnings = new ReconciliationReducerIndex<boolean>(
+    database,
+    runId,
+    "disappearance_relationship_warnings",
+  );
+  const gundamLineages = new ReconciliationReducerIndex<{
+    printingId: string;
+    lineages: ("gundam-en-asia" | "gundam-en-us")[];
+  }>(database, runId, "disappearance_gundam_lineages");
+  gundamLineages.resumeAt(checkpoint?.value.gundamLineages ?? 0);
+  relationshipWarnings.resumeAt(checkpoint?.value.relationshipWarnings ?? 0);
   const firstUnscopedStage = sources.hasPrintings ? "memberships" : "relationships";
   let stage: Stage =
     checkpoint?.value.stage ?? (sources.cardScopes?.scopes.length ? "scoped_printings" : firstUnscopedStage);
@@ -85,7 +105,7 @@ export async function prepareDisappearanceWarnings(
   let relationshipValue = checkpoint?.value.relationshipValue ?? "";
   let processedRecords = checkpoint?.value.processedRecords ?? 0;
   let ordinal = (checkpoint?.ordinal ?? -1) + 1;
-  if (checkpoint) {
+  if (checkpoint?.value.stage) {
     groups.resumeAt(checkpoint.value.groups);
     scopedCards.resumeAt(checkpoint.value.scopedCards ?? 0);
     warnings.resumeAt(checkpoint.value.warnings);
@@ -93,6 +113,7 @@ export async function prepareDisappearanceWarnings(
   }
   const save = async () => {
     await retainReconciliationCheckpoint(database, runId, "disappearance_warnings", ordinal, {
+      ...(checkpoint?.value.sourceHistory ? { sourceHistory: checkpoint.value.sourceHistory } : {}),
       stage,
       after,
       lineage,
@@ -100,13 +121,15 @@ export async function prepareDisappearanceWarnings(
       relationshipValue,
       groups: groups.position,
       scopedCards: scopedCards.position,
+      relationshipWarnings: relationshipWarnings.position,
+      gundamLineages: gundamLineages.position,
       warnings: warnings.cursor,
       processedRecords,
     } satisfies Cursor);
     if (yieldAtCheckpoint) throw new ReconciliationContinuation({ phase: "disappearance_warnings", ordinal });
     ordinal++;
   };
-  if (!checkpoint) await save();
+  if (!checkpoint?.value.stage) await save();
   let records = 0,
     bytes = 0;
   const budget = async (value: unknown) => {
@@ -192,6 +215,40 @@ export async function prepareDisappearanceWarnings(
     }
     await finish("relationships");
   }
+  if (stage === "relationships" && sources.history) {
+    for await (const entry of sources.history.entries(after)) {
+      const record = entry.value;
+      await budget(record);
+      if (record.kind === "membership" && record.current) {
+        const groupId = await sha256Text(canonicalJson([record.entityId, record.sourceLineage]));
+        const group = await groups.get(groupId);
+        if (
+          group &&
+          !membershipEntries(group.memberships).some(
+            (membership) =>
+              membership.relationship_kind === record.relationshipKind &&
+              membership.relationship_value === record.relationshipValue,
+          )
+        ) {
+          const key = await sha256Text(canonicalJson([groupId, record.relationshipKind, record.relationshipValue]));
+          if (!(await relationshipWarnings.has(key))) {
+            await warnings.push({
+              code: "relationship_not_observed",
+              printing_id: record.entityId,
+              relationship_kind: record.relationshipKind,
+              relationship_value: record.relationshipValue,
+              detail:
+                "The relationship was not observed in this complete run; it remains historical and is not withdrawn.",
+            });
+            await relationshipWarnings.seed(key, true);
+          }
+        }
+      }
+      after = entry.key;
+      processedRecords++;
+    }
+    await finish("gundam_published");
+  }
   if (stage === "relationships") {
     for await (const group of groups.entityValues(after)) {
       const current = new Set(
@@ -238,7 +295,13 @@ export async function prepareDisappearanceWarnings(
   );
   const addGundamWarning = async (printingId: string) => {
     const lineages = new Set(
-      (await gundamPrintingLineages(database, printingId))
+      (sources.history
+        ? ((await gundamLineages.get(printingId))?.lineages ?? []).map((source_lineage) => ({
+            source_lineage,
+            current: 1,
+          }))
+        : await gundamPrintingLineages(database, printingId)
+      )
         .filter(({ source_lineage, current }) => current === 1 && !sources.checkedLineages.includes(source_lineage))
         .map(({ source_lineage }) => source_lineage),
     );
@@ -252,6 +315,36 @@ export async function prepareDisappearanceWarnings(
           "The Gundam Printing is currently observed on only one English surface; publication retains that provenance for owner review.",
       });
   };
+  if (stage === "gundam_published" && sources.history) {
+    if (hasGundam)
+      for await (const entry of sources.history.entries(after)) {
+        await budget(entry.value);
+        const record = entry.value;
+        if (
+          record.kind === "locator" &&
+          record.current &&
+          (record.sourceLineage === "gundam-en-asia" || record.sourceLineage === "gundam-en-us")
+        ) {
+          const prior = await gundamLineages.get(record.entityId);
+          if (!prior?.lineages.includes(record.sourceLineage))
+            await gundamLineages.seed(record.entityId, {
+              printingId: record.entityId,
+              lineages: [...(prior?.lineages ?? []), record.sourceLineage],
+            });
+        }
+        after = entry.key;
+      }
+    await finish("gundam_native_warnings");
+  }
+  if (stage === "gundam_native_warnings") {
+    for await (const entry of gundamLineages.latestEntries(after)) {
+      await budget(entry.value);
+      if (entry.value.lineages.some((sourceLineage) => sources.checkedLineages.includes(sourceLineage)))
+        await addGundamWarning(entry.value.printingId);
+      after = entry.key;
+    }
+    await finish("gundam_local");
+  }
   if (stage === "gundam_published") {
     if (hasGundam)
       for await (const id of gundamAffectedPrintingIds(database, sources.checkedLineages, after)) {
@@ -267,9 +360,13 @@ export async function prepareDisappearanceWarnings(
         await budget(entry.value);
         const { printingId, compatibility } = entry.value;
         if (compatibility.source_lineage === "gundam-en-asia" || compatibility.source_lineage === "gundam-en-us") {
-          const visited = (await gundamPrintingLineages(database, printingId)).some(
-            ({ source_lineage, current }) => current === 1 && sources.checkedLineages.includes(source_lineage),
-          );
+          const visited = sources.history
+            ? ((await gundamLineages.get(printingId))?.lineages ?? []).some((value) =>
+                sources.checkedLineages.includes(value),
+              )
+            : (await gundamPrintingLineages(database, printingId)).some(
+                ({ source_lineage, current }) => current === 1 && sources.checkedLineages.includes(source_lineage),
+              );
           if (!visited) await addGundamWarning(printingId);
         }
         after = entry.key;
@@ -281,6 +378,45 @@ export async function prepareDisappearanceWarnings(
     ["cards", "card", "errata"],
   ] as const) {
     if (stage !== expected) continue;
+    if (sources.history) {
+      const candidate = await sourceHistoryCandidateStatement(database, runId).first<SourceHistoryCandidate>();
+      if (!candidate) throw new Error("Native disappearance history lost its candidate.");
+      for (; lineage < sources.checkedLineages.length; lineage++) {
+        const sourceLineage = sources.checkedLineages[lineage]!;
+        for await (const entry of sources.history.entries(after)) {
+          await budget(entry.value);
+          const record = entry.value;
+          const key = `missing:${kind}:${sourceLineage}:${record.entityId}`;
+          if (
+            record.kind === (kind === "card" ? "card" : "locator") &&
+            record.current &&
+            record.sourceLineage === sourceLineage &&
+            !(await relationshipWarnings.has(key))
+          ) {
+            const prior = await priorPublicLifecycle(
+              database,
+              candidate.expected_game_revision_id,
+              candidate.supported_game,
+              kind === "card" ? "cards" : "printings",
+              record.entityId,
+              runId,
+            ).first<PublicLifecycleFact>();
+            if (prior?.withdrawn !== 1 && !(await sources.plans.hasObserved(kind, record.entityId, sourceLineage)))
+              await warnings.push({
+                code: "record_not_observed",
+                [kind === "card" ? "card_id" : "printing_id"]: record.entityId,
+                detail: `The ${kind === "card" ? "Card" : "Printing"} was not observed in this complete run; it remains historical and is not withdrawn.`,
+              });
+            await relationshipWarnings.seed(key, true);
+          }
+          after = entry.key;
+          processedRecords++;
+        }
+        after = "";
+      }
+      await finish(next);
+      continue;
+    }
     for (; lineage < sources.checkedLineages.length; lineage++) {
       for await (const entry of sources.plans.previousObservationEntries(
         kind,

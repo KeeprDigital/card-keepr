@@ -19,11 +19,14 @@ import {
   maximumCatalogueExportObjectBytes,
   maximumExportComponentBytes,
   maximumExportRecordBytes,
+  membershipDistributionContextId as distributionContextExportId,
+  membershipRelationshipId as relationshipExportId,
   type SupportedGame,
   sha256,
   sha256Text,
   utf8,
 } from "../shared";
+export { membershipDistributionContextId as distributionContextExportId } from "../shared";
 import { verifyComponentExportRecord, verifyExportManifest } from "./retained-export-validation";
 
 const componentDefinitions = [
@@ -633,40 +636,8 @@ function uniqueById<T extends { id: string }>(values: readonly T[]): T[] {
   );
 }
 
-async function relationshipExportId(
-  game: SupportedGame,
-  printingId: string,
-  relationship: RelationshipEvidence,
-  targetId: string,
-): Promise<string> {
-  return `relationship_${await sha256Text(
-    canonicalJson({
-      game,
-      printing_id: printingId,
-      source_lineage: relationship.source_lineage,
-      relationship_kind: relationship.relationship_kind,
-      relationship_value: relationship.relationship_value,
-      target_id: targetId,
-    }),
-  )}`;
-}
-
 async function productExportId(game: SupportedGame, officialCode: string): Promise<string> {
   return `product_${await sha256Text(canonicalJson({ game, official_code: officialCode }))}`;
-}
-
-export async function distributionContextExportId(
-  game: SupportedGame,
-  sourceLineage: string,
-  label: string,
-): Promise<string> {
-  return `distribution_context_${await sha256Text(
-    canonicalJson({
-      game,
-      source_lineage: sourceLineage,
-      label,
-    }),
-  )}`;
 }
 
 function supportedGameExport(game: SupportedGame) {

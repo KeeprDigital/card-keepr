@@ -101,7 +101,7 @@ export { recordIngestionWorkflowProgress } from "./workflow-progress";
 
 export { retainedSourceEvidenceGuardStatement } from "./source-plan-repository";
 
-export { assertSelectedAuthoritiesCollected, sourceAuthorities } from "./source-authority";
+export { assertSelectedAuthoritiesCollected, missingSelectedAuthorities, sourceAuthorities } from "./source-authority";
 
 export {
   beginEvidenceCleanup,

@@ -51,6 +51,7 @@ test("owner cleanup persists the exact thirty-day eligibility boundary and resum
   const path = "/v1/ingestion-runs/cleanup_boundary/evidence-cleanup";
   const early = await request(path, "2026-08-30T23:59:59.999Z", { idempotency_key: "cleanup_boundary" });
   expect(early.status).toBe(409);
+  expect(await early.json()).toMatchObject({ code: "evidence_cleanup_not_eligible" });
   const due = await request(path, "2026-08-31T00:00:00.000Z", { idempotency_key: "cleanup_boundary" });
   expect(due.status).toBe(202);
   const intent = (await due.json()) as { id: string; retention_days: number; eligible_at: string; state: string };

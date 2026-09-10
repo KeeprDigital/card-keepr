@@ -1,3 +1,4 @@
+import type { VerifiedPrintingImage } from "./reconciliation-images";
 import { createHash } from "node:crypto";
 import {
   type CatalogueCard,
@@ -146,6 +147,7 @@ const withdrawalFields = new Set(["entity", "state", "effective_at", "evidence"]
 export function parseReconciliationObservation(
   sourceObservationId: string,
   value: unknown,
+  verifiedImages?: ReadonlyMap<string, VerifiedPrintingImage>,
 ): ParsedReconciliationObservation {
   const record = requiredRecord(value, "Source Observation value");
   if (record.kind === "official_erratum") {
@@ -315,6 +317,7 @@ export function parseReconciliationObservation(
     artworkFingerprint,
     profile,
     canonicalCardAttributes,
+    verifiedImages,
   );
   return {
     kind: "card_printing",
@@ -599,6 +602,7 @@ function appearanceEvidence(
   artworkFingerprint: string,
   profile: string,
   cardAttributes: Record<string, unknown>,
+  verifiedImages?: ReadonlyMap<string, VerifiedPrintingImage>,
 ): {
   complete: boolean;
   images: Omit<CataloguePrintingImage, "id" | "printing_id" | "object_key">[];
@@ -623,6 +627,33 @@ function appearanceEvidence(
       return { complete: false, images: [] };
     }
     declaredRoles.add(item.role);
+    // The normalizer supplies these only after retained bytes are verified.
+    // Source JSON cannot grant itself this capability by naming an object key.
+    const verified = verifiedImages?.get(item.source_url);
+    if (verified !== undefined) {
+      if (
+        !verified.media_type.startsWith("image/") ||
+        !Number.isInteger(verified.width) ||
+        verified.width < 1 ||
+        !Number.isInteger(verified.height) ||
+        verified.height < 1 ||
+        !Number.isSafeInteger(verified.content_byte_length) ||
+        verified.content_byte_length < 1 ||
+        !/^[a-f0-9]{64}$/u.test(verified.content_sha256)
+      )
+        return { complete: false, images: [] };
+      captured.push({
+        media_type: verified.media_type,
+        width: verified.width,
+        height: verified.height,
+        content_sha256: verified.content_sha256,
+        content_byte_length: verified.content_byte_length,
+        role: item.role,
+        source_url: item.source_url,
+      });
+      capturedRoles.add(item.role);
+      continue;
+    }
     if (
       typeof item.media_type === "string" &&
       item.media_type.startsWith("image/") &&

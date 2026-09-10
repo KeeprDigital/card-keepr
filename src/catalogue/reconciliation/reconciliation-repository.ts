@@ -5,6 +5,8 @@ import {
   canonicalJson,
   repositoryStatements,
 } from "../shared";
+import { gamePredecessorCandidateSql } from "./game-candidate-predecessor-repository";
+import type { NativeSourceHistory } from "./native-source-history-state";
 import type { PrintingCompatibility } from "./reconciliation-model";
 
 export type ReconciledCardRow = {
@@ -47,10 +49,17 @@ export async function existingCard(
     .first<ReconciledCardRow>();
 }
 
-export function publishedCardPresentStatement(database: CatalogueStore, game: string) {
+export function publishedCardPresentStatement(
+  database: CatalogueStore,
+  game: string,
+  preparation: string,
+  revision: string,
+) {
   return repositoryStatements(database)
-    .prepare("SELECT 1 AS present FROM reconciled_cards WHERE supported_game = ? LIMIT 1")
-    .bind(game);
+    .prepare(`SELECT 1 AS present FROM reconciled_cards WHERE supported_game = ?1
+      UNION ALL SELECT 1 FROM publication_read_entities WHERE kind='cards'
+        AND candidate_id=${gamePredecessorCandidateSql("?3", "?1", "?2")} LIMIT 1`)
+    .bind(game, preparation, revision);
 }
 
 export async function compatiblePrintings(
@@ -145,6 +154,7 @@ export async function printingsAtLocator(
 export async function gundamPrintingLineages(
   database: CatalogueStore,
   printingId: string,
+  history?: NativeSourceHistory,
 ): Promise<
   {
     printing_id: string;
@@ -152,6 +162,15 @@ export async function gundamPrintingLineages(
     current: number;
   }[]
 > {
+  if (history) {
+    const records = await history.forEntity("printing", printingId, "locator");
+    return (["gundam-en-asia", "gundam-en-us"] as const).flatMap((source_lineage) => {
+      const evidence = records.filter((record) => record.kind === "locator" && record.sourceLineage === source_lineage);
+      return evidence.length
+        ? [{ printing_id: printingId, source_lineage, current: Number(evidence.some((record) => record.current)) }]
+        : [];
+    });
+  }
   const rows = await repositoryStatements(database)
     .prepare(
       `SELECT printing_id, source_lineage, MAX(current) AS current
@@ -172,6 +191,7 @@ export async function gundamPrintingLineages(
 export async function gundamCardLineages(
   database: CatalogueStore,
   cardId: string,
+  history?: NativeSourceHistory,
 ): Promise<
   {
     card_id: string;
@@ -179,6 +199,15 @@ export async function gundamCardLineages(
     current: number;
   }[]
 > {
+  if (history) {
+    const records = await history.forEntity("card", cardId);
+    return (["gundam-en-asia", "gundam-en-us"] as const).flatMap((source_lineage) => {
+      const evidence = records.filter((record) => record.sourceLineage === source_lineage);
+      return evidence.length
+        ? [{ card_id: cardId, source_lineage, current: Number(evidence.some((record) => record.current)) }]
+        : [];
+    });
+  }
   const rows = await repositoryStatements(database)
     .prepare(
       `SELECT card_id, source_lineage, MAX(current) AS current
@@ -200,7 +229,18 @@ export async function gundamPrintingHasProductMembership(
   database: CatalogueStore,
   printingId: string,
   products: readonly string[],
+  history?: NativeSourceHistory,
 ): Promise<boolean> {
+  if (history) {
+    for await (const record of history.entityRecords("printing", printingId))
+      if (
+        record.kind === "membership" &&
+        record.relationshipKind === "product" &&
+        products.includes(record.relationshipValue!)
+      )
+        return true;
+    return false;
+  }
   const row = await repositoryStatements(database)
     .prepare(`SELECT 1
     FROM reconciled_printing_memberships
@@ -236,19 +276,24 @@ export async function canonicalCardConflict(
   authority: { effectiveRulesText: boolean; confirmedPublisherNumber?: boolean } = {
     effectiveRulesText: false,
   },
+  native?: { history: NativeSourceHistory; card: CatalogueCard | undefined },
 ): Promise<string | null> {
-  const row = await repositoryStatements(database)
-    .prepare(
-      `SELECT card.document_json
+  const row = native
+    ? native.card
+      ? { document_json: "" }
+      : null
+    : await repositoryStatements(database)
+        .prepare(
+          `SELECT card.document_json
        FROM catalogue_state AS state
        JOIN revision_cards AS card
          ON card.catalogue_revision_id = state.current_revision_id
        WHERE state.singleton = 1 AND card.card_id = ?`,
-    )
-    .bind(cardId)
-    .first<{ document_json: string }>();
+        )
+        .bind(cardId)
+        .first<{ document_json: string }>();
   if (row === null) return null;
-  const current = revisionDocumentData(row.document_json);
+  const current = native?.card ?? revisionDocumentData(row.document_json);
   const currentCanonical = {
     game: current.game,
     official_identity:
@@ -272,14 +317,20 @@ export async function canonicalCardConflict(
   ) {
     return null;
   }
-  const authorities = await repositoryStatements(database)
-    .prepare(
-      `SELECT DISTINCT source_lineage
+  const authorities = native
+    ? {
+        results: (await native.history.forEntity("card", cardId))
+          .filter((record) => record.current)
+          .map((record) => ({ source_lineage: record.sourceLineage })),
+      }
+    : await repositoryStatements(database)
+        .prepare(
+          `SELECT DISTINCT source_lineage
        FROM reconciled_card_observations
        WHERE card_id = ? AND current = 1`,
-    )
-    .bind(cardId)
-    .all<{ source_lineage: string }>();
+        )
+        .bind(cardId)
+        .all<{ source_lineage: string }>();
   if (authorities.results.length === 0) return null;
   if (
     sourceLineage === "gundam-en-us" &&
@@ -302,19 +353,24 @@ export async function canonicalPrintingConflict(
   printingId: string,
   proposed: PrintingFacts,
   sourceLineage: string,
+  native?: { history: NativeSourceHistory; printing: CataloguePrinting | undefined },
 ): Promise<string | null> {
-  const row = await repositoryStatements(database)
-    .prepare(
-      `SELECT printing.document_json
+  const row = native
+    ? native.printing
+      ? { document_json: "" }
+      : null
+    : await repositoryStatements(database)
+        .prepare(
+          `SELECT printing.document_json
        FROM catalogue_state AS state
        JOIN revision_printings AS printing
          ON printing.catalogue_revision_id = state.current_revision_id
        WHERE state.singleton = 1 AND printing.printing_id = ?`,
-    )
-    .bind(printingId)
-    .first<{ document_json: string }>();
+        )
+        .bind(printingId)
+        .first<{ document_json: string }>();
   if (row === null) return null;
-  const current = revisionDocumentData(row.document_json) as CataloguePrinting;
+  const current = native?.printing ?? (revisionDocumentData(row.document_json) as CataloguePrinting);
   const currentCanonical: PrintingFacts = {
     rarity: current.rarity,
     printed_rules_text: current.printed_rules_text,
@@ -323,14 +379,20 @@ export async function canonicalPrintingConflict(
   if (!substantiveFactsConflict(currentCanonical, proposed)) {
     return null;
   }
-  const authorities = await repositoryStatements(database)
-    .prepare(
-      `SELECT DISTINCT source_lineage
+  const authorities = native
+    ? {
+        results: (await native.history.forEntity("printing", printingId, "locator"))
+          .filter((record) => record.kind === "locator" && record.current)
+          .map((record) => ({ source_lineage: record.sourceLineage })),
+      }
+    : await repositoryStatements(database)
+        .prepare(
+          `SELECT DISTINCT source_lineage
        FROM reconciled_printing_locators
        WHERE printing_id = ? AND current = 1`,
-    )
-    .bind(printingId)
-    .all<{ source_lineage: string }>();
+        )
+        .bind(printingId)
+        .all<{ source_lineage: string }>();
   if (authorities.results.length === 0) return null;
   if (
     (sourceLineage === "gundam-en-asia" || sourceLineage === "gundam-en-us") &&

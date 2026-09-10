@@ -1,4 +1,5 @@
 import { type CatalogueStore, repositoryStatements } from "../shared";
+import { acceptedRevisionBackupSql } from "./accepted-backup-repository";
 // Named prepared statements; callers retain execution and atomic batch composition.
 
 export function administrationSourceFreshnessStatement(database: CatalogueStore): D1PreparedStatement {
@@ -40,9 +41,10 @@ export function currentRevisionVerifiedBackupStatement(
 ): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(`SELECT idempotency_key, d1_bookmark, manifest_sha256
-     FROM catalogue_backup_attempts
+     FROM catalogue_backup_attempts AS backup
      WHERE state = 'verified' AND catalogue_revision_id = ?
        AND d1_bookmark IS NOT NULL AND manifest_sha256 IS NOT NULL
+       AND ${acceptedRevisionBackupSql("backup.catalogue_revision_id")}
      ORDER BY completed_at DESC LIMIT 1`)
     .bind(revisionId);
 }
@@ -67,6 +69,7 @@ export function retainedRevisionInspectionStatement(database: CatalogueStore): D
          WHERE backup.catalogue_revision_id = retained.revision_id
            AND backup.state = 'verified' AND backup.d1_bookmark IS NOT NULL
            AND backup.manifest_sha256 IS NOT NULL
+           AND ${acceptedRevisionBackupSql("retained.revision_id")}
        ) THEN 1 ELSE 0 END AS recovery_verified
      FROM retained LEFT JOIN catalogue_exports AS export
        ON export.catalogue_revision_id = retained.revision_id

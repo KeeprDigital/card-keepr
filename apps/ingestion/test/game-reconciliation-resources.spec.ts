@@ -1,19 +1,14 @@
 import { expect, test } from "vitest";
-import worker from "../src/index";
 import type { ReconciliationWorkflowParams } from "../../../src/catalogue/reconciliation";
-import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
-import {
-  approve,
-  reconcile,
-  post,
-  collect,
-  get,
-  installReconciliationSuite,
-  requiredString,
-  testEnv,
-} from "./reconciliation-helpers";
-
 import { canonicalJson, sha256Text } from "../../../src/catalogue/shared";
+import worker from "../src/index";
+import { nativeCandidateRecords } from "./native-candidate-helpers";
+import {
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
+} from "./native-publication-helpers";
+import { collect, get, installReconciliationSuite, post, requiredString, testEnv } from "./reconciliation-helpers";
+import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 
 installReconciliationSuite();
 
@@ -36,17 +31,18 @@ test.each([
   let injectedFailures = 0;
   let predecessor = "catrev_spine_000";
   if (fixture === "capacity-product-identity-fanout") {
-    const seed = await reconcile((await collect(`/reconciliation/${fixture}-base`, "product-identity-seed")).id);
-    const published = await approve(seed.document);
+    const source = await collect(`/reconciliation/${fixture}-base`, "product-identity-seed");
+    const seed = await prepareNativeCandidate(source.id, "one-piece", predecessor, "product-identity-candidate");
+    const published = await approveNativeCandidate(seed, "product-identity-publication");
     expect(published.response.status, JSON.stringify(published.document)).toBe(200);
     predecessor = requiredString(published.document, "resulting_revision_id");
   }
   if (fixture === "curated-text-target") {
-    const seed = await reconcile(
-      (await collect("/reconciliation/curated-text-target-base", "curated-resource-seed")).id,
-    );
-    const card = (seed.document.cards as { id: string; name: string }[])[0]!;
-    const published = await approve(seed.document);
+    const source = await collect("/reconciliation/curated-text-target-base", "curated-resource-seed");
+    const seed = await prepareNativeCandidate(source.id, "one-piece", predecessor, "curated-resource-candidate");
+    const records = await nativeCandidateRecords(requiredString(seed, "id"));
+    const card = (records.cards as { id: string; name: string }[])[0]!;
+    const published = await approveNativeCandidate(seed, "curated-resource-publication");
     expect(published.response.status).toBe(200);
     predecessor = requiredString(published.document, "resulting_revision_id");
     const proposal = {

@@ -1,3 +1,4 @@
+import { acceptedRevisionBackupSql } from "./accepted-backup-repository";
 import {
   atomicRepositoryStatement,
   administrationOutcomeGuardStatement,
@@ -115,7 +116,8 @@ export function populatedGate(
          AND EXISTS (SELECT 1 FROM catalogue_backup_attempts AS backup
            WHERE backup.idempotency_key = ? AND backup.catalogue_revision_id = ?
              AND backup.state = 'verified' AND backup.d1_bookmark = ?
-             AND backup.manifest_sha256 IS NOT NULL)
+             AND backup.manifest_sha256 IS NOT NULL
+             AND ${acceptedRevisionBackupSql("backup.catalogue_revision_id")})
          AND 3 = (WITH RECURSIVE retained(revision_id,depth) AS (
            SELECT catalogue.current_revision_id,0 UNION ALL
            SELECT revision.expected_previous_revision_id,retained.depth+1
@@ -128,7 +130,8 @@ export function populatedGate(
            WHERE export.verified=1 AND export.maintenance_state='available'
              AND EXISTS (SELECT 1 FROM catalogue_backup_attempts AS backup
                WHERE backup.catalogue_revision_id=retained.revision_id AND backup.state='verified'
-                 AND backup.d1_bookmark IS NOT NULL AND backup.manifest_sha256 IS NOT NULL))
+                 AND backup.d1_bookmark IS NOT NULL AND backup.manifest_sha256 IS NOT NULL
+             AND ${acceptedRevisionBackupSql("backup.catalogue_revision_id")}))
          AND EXISTS (SELECT 1 FROM catalogue_query_revisions
            WHERE catalogue_revision_id = ? AND state = 'archived')
      ) THEN 1 ELSE json_extract('invalid', '$') END`,
