@@ -22,7 +22,7 @@ if (
       Number(match[1]) > Number(match[2])))
 ) {
   console.error(
-    "usage: node scripts/acceptance-tier.mjs [default|smoke|runtime|extended|benchmark] [scenario|--all] [--shard=1/3] [--list]",
+    "usage: node scripts/acceptance-tier.mjs [default|smoke|extended|benchmark] [scenario|--all] [--shard=1/3] [--list]",
   );
   process.exit(2);
 }

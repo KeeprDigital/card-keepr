@@ -17,7 +17,7 @@ runtime-neutral.
 Run it from the repository root:
 
 ```sh
-npm run prototype:game-contracts
+node prototype/v1-game-profiles-source-adapters/cli.mjs
 ```
 
 Choose scenarios to inspect the source observations, resulting canonical
