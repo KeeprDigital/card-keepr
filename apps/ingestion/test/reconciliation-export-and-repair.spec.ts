@@ -210,6 +210,10 @@ test("heterogeneous empty plans inspect and publish every lineage independently 
   const printingId = String(seededRecords.printings![0]!.id);
   const seedPublication = await approveNativeCandidate(seeded, "mixed-plan-empty-seed-publication");
   expect(seedPublication.response.status).toBe(200);
+  const gameHeads = {
+    "one-piece": "catrev_spine_000",
+    "fusion-world": requiredString(seedPublication.document, "resulting_revision_id"),
+  };
 
   const inspectOrder = async (lineages: readonly ("one-piece" | "fusion-world")[], suffix: string, publish = false) => {
     const started = await postFixtureEvidence({
@@ -242,7 +246,7 @@ test("heterogeneous empty plans inspect and publish every lineage independently 
       const candidate = await prepareNativeCandidate(
         runId,
         game,
-        game === "fusion-world" ? String(seedPublication.document.resulting_revision_id) : "catrev_spine_000",
+        gameHeads[game],
         `mixed-plan-${suffix}-${game}-candidate`,
       );
       const inspected = await get(
@@ -259,6 +263,7 @@ test("heterogeneous empty plans inspect and publish every lineage independently 
       if (publish) {
         const published = await approveNativeCandidate(candidate, `mixed-plan-${suffix}-${game}-publication`);
         expect(published.response.status).toBe(200);
+        gameHeads[game] = requiredString(published.document, "resulting_revision_id");
         if (game === "fusion-world") {
           const revisionId = requiredString(published.document, "resulting_revision_id");
           const lifecycle = await get(`/v1/reconciliation/printings/${printingId}`);
@@ -276,15 +281,12 @@ test("heterogeneous empty plans inspect and publish every lineage independently 
           });
         }
       } else {
-        // The original owner rejection declines both independently reviewed games.
-        expect(
-          (
-            await post(`/v1/game-candidates/${candidate.id}/abandon`, {
-              generation: candidate.generation,
-              idempotency_key: `reject-mixed-plan-empty-lineage-${suffix}-${game}`,
-            })
-          ).response.status,
-        ).toBe(200);
+        const abandoned = await post(`/v1/game-candidates/${candidate.id}/abandon`, {
+          generation: candidate.generation,
+          idempotency_key: `abandon-mixed-${game}-${suffix}`,
+        });
+        expect(abandoned.response.status, JSON.stringify(abandoned.document)).toBe(200);
+        expect(abandoned.document.state).toBe("abandoned");
       }
     }
     result.cards.sort();
@@ -299,14 +301,20 @@ test("heterogeneous empty plans inspect and publish every lineage independently 
   expect(forward.printings).toContain(printingId);
 }, 45_000);
 
-test("historical Card search repair permits only retained revisions and revalidates unfinished replay claims", async () => {
+test("Card search repair permits only retained revisions and revalidates unfinished replay claims", async () => {
+  let gameHead = "catrev_spine_000";
   const publishScenario = async (sequence: number) => {
     const run = await collect(`/reconciliation/search-repair-retention-${sequence}`, `repair-retention-${sequence}`);
-    const reconciled = await reconcile(run.id);
-    expect(reconciled.response.status).toBe(200);
-    const published = await recoverHistoricalPublication(run.id, `retained-search-repair-${run.id}`);
+    const candidate = await prepareNativeCandidate(
+      run.id,
+      "one-piece",
+      gameHead,
+      `repair-retention-candidate-${sequence}`,
+    );
+    const published = await approveNativeCandidate(candidate, `repair-retention-publish-${sequence}`);
     expect(published.response.status).toBe(200);
-    return requiredString(published.document, "resulting_revision_id");
+    gameHead = requiredString(published.document, "resulting_revision_id");
+    return gameHead;
   };
   const revisionLineage = () =>
     publishedCatalogueQueries.inspectCatalogueState(testEnv.CATALOGUE_DB).all<{ revision_id: string; depth: number }>();
@@ -363,12 +371,16 @@ test("historical Card search repair permits only retained revisions and revalida
   });
 }, 60_000);
 
-test("historical Card search repair binds exact target/current/idempotency and fails stale or conflicting requests closed", async () => {
-  const run = await collect("/reconciliation/complete-empty-lineage", "guarded-search-repair-published-target");
-  const reconciled = await reconcile(run.id);
-  expect(reconciled.response.status).toBe(200);
-  const published = await recoverHistoricalPublication(run.id, `retained-search-repair-${run.id}`);
-  expect(published.response.status).toBe(200);
+test("Card search repair binds exact target/current/idempotency and fails stale or conflicting requests closed", async () => {
+  // Actual backup verification requires a representative retained record.
+  const run = await collect("/reconciliation/base", "guarded-search-repair-published-target");
+  const candidate = await prepareNativeCandidate(
+    run.id,
+    "one-piece",
+    "catrev_spine_000",
+    "guarded-search-repair-candidate",
+  );
+  const published = await approveNativeCandidate(candidate, "guarded-search-repair-publish");
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const request = {
     target_revision_id: revisionId,
@@ -401,12 +413,14 @@ test("historical Card search repair binds exact target/current/idempotency and f
   expect(stale.document).toMatchObject({ code: "current_revision_mismatch" });
 }, 60_000);
 
-test("retained publication and bounded Card search repair need no obsolete gram table and replay only their completed result", async () => {
+test("retained legacy publication and bounded Card search repair need no obsolete gram table and replay only their completed result", async () => {
   await cardSearchQueries.dropObsoleteCardSearchTerms(testEnv.CATALOGUE_DB).run();
-  const run = await collect("/reconciliation/complete-empty-lineage", "bounded-25-card-search-repair");
+  // Retain real nonempty publication/restore evidence before adding the repair-only legacy rows.
+  const run = await collect("/reconciliation/base", "bounded-25-card-search-repair");
   const reconciled = await reconcile(run.id);
   expect(reconciled.response.status).toBe(200);
-  const published = await recoverHistoricalPublication(run.id, `retained-search-repair-${run.id}`);
+  // Explicit retained legacy projection seam; current publication never populates revision_cards.
+  const published = await recoverHistoricalPublication(run.id, "bounded-legacy-search-repair");
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const cards = Array.from({ length: 30 }, (_, index) => {
@@ -481,7 +495,8 @@ test("Card search repair rejects an oversized legacy Card before materializing i
   const run = await collect("/reconciliation/base", "oversized-legacy-search-repair");
   const reconciled = await reconcile(run.id);
   expect(reconciled.response.status).toBe(200);
-  const published = await recoverHistoricalPublication(run.id, `retained-search-repair-${run.id}`);
+  // Explicit retained legacy projection seam; current publication never populates revision_cards.
+  const published = await recoverHistoricalPublication(run.id, "oversized-legacy-search-repair");
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const oversizedCardId = "card_oversized_legacy_search_repair";
