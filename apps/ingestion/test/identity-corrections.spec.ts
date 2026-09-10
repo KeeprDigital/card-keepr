@@ -306,178 +306,198 @@ test("Card split requires reviewed catalogue Printing assignments and preserves 
   expect(printings.some((p) => p.card_id === original.card.id)).toBe(false);
 });
 
-test("reviewed known-number merge preserves a source Printing through corrected evidence and subsequent refresh", async () => {
-  const before = await prepareIdentityFixture(
-    "/reconciliation/identity-correction-before",
-    "known-before",
-    "catrev_spine_000",
-  );
-  const card = (before.records.cards as Record<string, unknown>[])[0]!;
-  const printing = (before.records.printings as { id: string }[])[0]!;
-  const beforePublished = await approveNativeCandidate(before.candidate, "known-before-native-publication");
-  const created = await post("/v1/entity-proposals", {
-    game: "one-piece",
-    source_lineage: "owner",
-    reference: "known-corrected-card",
-    content: { card: { ...card, official_identity: { kind: "card_number", value: "OP94-002" } } },
-    evidence: { attestation: "Synthetic owner inspection of corrected number" },
-    idempotency_key: "known-card",
-  });
-  const admitted = await post(`/v1/entity-proposals/${created.document.id}/decisions`, {
-    action: "admit",
-    expected_generation: "0",
-    rationale: "Synthetic replacement Card",
-    idempotency_key: "known-card-admit",
-  });
-  expect(admitted.response.status, JSON.stringify(admitted.document)).toBe(200);
-  const target = (admitted.document.history as { decision: { card: { id: string } } }[])[0]!.decision.card.id;
-  const published = await publishIdentityFixture(
-    "/reconciliation/identity-correction-before",
-    "known-target-publish",
-    String(beforePublished.document.resulting_revision_id),
-  );
-  const proposal = {
-    game: "one-piece",
-    entity_kind: "card",
-    action: "merge",
-    source_ids: [card.id],
-    replacement_ids: [target],
-    printing_assignments: {},
-    expected_current_revision_id: published.document.resulting_revision_id,
-    rationale: "Owner establishes equivalence across known numbers",
-    evidence: { attestation: "Synthetic inspection confirms the existing Printing depicts the corrected Card" },
-  };
-  const validation = await post("/v1/identity-corrections/validate", proposal);
-  expect(validation.response.status).toBe(200);
-  expect(
-    (
-      await post("/v1/identity-corrections", {
-        ...proposal,
-        review_digest: validation.document.review_digest,
-        idempotency_key: "known-merge",
-      })
-    ).response.status,
-  ).toBe(201);
-  const acceptedPreparations = [String(before.candidate.id), String(published.candidate.id)];
-  let knownPredecessor = String(published.document.resulting_revision_id);
-  for (const key of ["known-corrected", "known-refreshed"]) {
-    const accepted = await publishIdentityFixture(
-      "/reconciliation/identity-correction-renumbered",
-      key,
-      knownPredecessor,
+describe("reviewed known-number merge preserves a source Printing through corrected evidence and subsequent refresh", () => {
+  async function seedReviewedMerge() {
+    const before = await prepareIdentityFixture(
+      "/reconciliation/identity-correction-before",
+      "known-before",
+      "catrev_spine_000",
     );
-    knownPredecessor = String(accepted.document.resulting_revision_id);
-    acceptedPreparations.push(String(accepted.candidate.id));
-    expect(accepted.response.status, JSON.stringify(accepted.document)).toBe(200);
-    const records = await exportComponentRecords(String(accepted.document.resulting_revision_id), "printings");
-    expect(records).toEqual([expect.objectContaining({ id: printing.id, card_id: target })]);
+    const card = (before.records.cards as Record<string, unknown>[])[0]!;
+    const printing = (before.records.printings as { id: string }[])[0]!;
+    const beforePublished = await approveNativeCandidate(before.candidate, "known-before-native-publication");
+    const created = await post("/v1/entity-proposals", {
+      game: "one-piece",
+      source_lineage: "owner",
+      reference: "known-corrected-card",
+      content: { card: { ...card, official_identity: { kind: "card_number", value: "OP94-002" } } },
+      evidence: { attestation: "Synthetic owner inspection of corrected number" },
+      idempotency_key: "known-card",
+    });
+    const admitted = await post(`/v1/entity-proposals/${created.document.id}/decisions`, {
+      action: "admit",
+      expected_generation: "0",
+      rationale: "Synthetic replacement Card",
+      idempotency_key: "known-card-admit",
+    });
+    expect(admitted.response.status, JSON.stringify(admitted.document)).toBe(200);
+    const target = (admitted.document.history as { decision: { card: { id: string } } }[])[0]!.decision.card.id;
+    const published = await publishIdentityFixture(
+      "/reconciliation/identity-correction-before",
+      "known-target-publish",
+      String(beforePublished.document.resulting_revision_id),
+    );
+    const proposal = {
+      game: "one-piece",
+      entity_kind: "card",
+      action: "merge",
+      source_ids: [card.id],
+      replacement_ids: [target],
+      printing_assignments: {},
+      expected_current_revision_id: published.document.resulting_revision_id,
+      rationale: "Owner establishes equivalence across known numbers",
+      evidence: { attestation: "Synthetic inspection confirms the existing Printing depicts the corrected Card" },
+    };
+    const validation = await post("/v1/identity-corrections/validate", proposal);
+    expect(validation.response.status).toBe(200);
+    expect(
+      (
+        await post("/v1/identity-corrections", {
+          ...proposal,
+          review_digest: validation.document.review_digest,
+          idempotency_key: "known-merge",
+        })
+      ).response.status,
+    ).toBe(201);
+    return { before, published, printing, target };
   }
-  const contradicted = await reconcile(
-    (await collect("/reconciliation/identity-correction-renumbered-contradictory", "known-contradiction")).id,
-  );
-  expect(contradicted.response.status).toBe(409);
-  expect(contradicted.document.diagnostics).toEqual(
-    expect.arrayContaining([expect.objectContaining({ code: "printing_match_contradictory" })]),
-  );
-  const mappings: Record<string, unknown>[] = [];
-  for (const preparationId of acceptedPreparations) {
-    const inspected = await get(`/v1/reconciliation/identities/${printing.id}?preparation_id=${preparationId}`);
-    expect(inspected.response.status).toBe(200);
-    const retained = inspected.document.mappings as Record<string, unknown>[];
-    expect(retained).toEqual(expect.arrayContaining([expect.objectContaining({ preparation_id: preparationId })]));
-    expect(inspected.document.next_cursor).toBeNull();
-    mappings.push(...retained);
-  }
-  expect(mappings.length).toBeGreaterThanOrEqual(3);
+  let fixture: Awaited<ReturnType<typeof seedReviewedMerge>>;
+  beforeEach(async () => {
+    fixture = await seedReviewedMerge();
+  });
+  test("retains Printing identity and history through corrected publication and refresh", async () => {
+    const { before, published, printing, target } = fixture;
+    const acceptedPreparations = [String(before.candidate.id), String(published.candidate.id)];
+    let knownPredecessor = String(published.document.resulting_revision_id);
+    for (const key of ["known-corrected", "known-refreshed"]) {
+      const accepted = await publishIdentityFixture(
+        "/reconciliation/identity-correction-renumbered",
+        key,
+        knownPredecessor,
+      );
+      knownPredecessor = String(accepted.document.resulting_revision_id);
+      acceptedPreparations.push(String(accepted.candidate.id));
+      expect(accepted.response.status, JSON.stringify(accepted.document)).toBe(200);
+      const records = await exportComponentRecords(String(accepted.document.resulting_revision_id), "printings");
+      expect(records).toEqual([expect.objectContaining({ id: printing.id, card_id: target })]);
+    }
+    const contradicted = await reconcile(
+      (await collect("/reconciliation/identity-correction-renumbered-contradictory", "known-contradiction")).id,
+    );
+    expect(contradicted.response.status).toBe(409);
+    expect(contradicted.document.diagnostics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "printing_match_contradictory" })]),
+    );
+    const mappings: Record<string, unknown>[] = [];
+    for (const preparationId of acceptedPreparations) {
+      const inspected = await get(`/v1/reconciliation/identities/${printing.id}?preparation_id=${preparationId}`);
+      expect(inspected.response.status).toBe(200);
+      const retained = inspected.document.mappings as Record<string, unknown>[];
+      expect(retained).toEqual(expect.arrayContaining([expect.objectContaining({ preparation_id: preparationId })]));
+      expect(inspected.document.next_cursor).toBeNull();
+      mappings.push(...retained);
+    }
+    expect(mappings.length).toBeGreaterThanOrEqual(3);
+  });
 });
 
-test("new Printing discovered after a Card split can receive an append-only owner assignment", async () => {
-  const source = await prepareIdentityFixture(
-    "/reconciliation/identity-correction-before",
-    "late-seed",
-    "catrev_spine_000",
-  );
-  const original = (source.records.cards as { id: string }[])[0]!;
-  const originalPrinting = (source.records.printings as { id: string }[])[0]!;
-  const sourcePublished = await approveNativeCandidate(source.candidate, "late-seed-native-publication");
-  const left = await admitSyntheticPrinting("late-left"),
-    right = await admitSyntheticPrinting("late-right");
-  const seeded = await publishIdentityFixture(
-    "/reconciliation/identity-correction-before",
-    "late-targets",
-    String(sourcePublished.document.resulting_revision_id),
-  );
-  const proposal = {
-    game: "one-piece",
-    entity_kind: "card",
-    action: "split",
-    source_ids: [original.id],
-    replacement_ids: [left.card.id, right.card.id],
-    printing_assignments: { [originalPrinting.id]: left.card.id },
-    expected_current_revision_id: seeded.document.resulting_revision_id,
-    rationale: "Synthetic conflated Card split",
-    evidence: { attestation: "Synthetic reviewed variants" },
-  };
-  const validation = await post("/v1/identity-corrections/validate", proposal);
-  expect(validation.response.status).toBe(200);
-  const decision = await post("/v1/identity-corrections", {
-    ...proposal,
-    review_digest: validation.document.review_digest,
-    idempotency_key: "late-split",
+describe("new Printing discovered after a Card split can receive an append-only owner assignment", () => {
+  async function seedPublishedSplit() {
+    const source = await prepareIdentityFixture(
+      "/reconciliation/identity-correction-before",
+      "late-seed",
+      "catrev_spine_000",
+    );
+    const original = (source.records.cards as { id: string }[])[0]!;
+    const originalPrinting = (source.records.printings as { id: string }[])[0]!;
+    const sourcePublished = await approveNativeCandidate(source.candidate, "late-seed-native-publication");
+    const left = await admitSyntheticPrinting("late-left"),
+      right = await admitSyntheticPrinting("late-right");
+    const seeded = await publishIdentityFixture(
+      "/reconciliation/identity-correction-before",
+      "late-targets",
+      String(sourcePublished.document.resulting_revision_id),
+    );
+    const proposal = {
+      game: "one-piece",
+      entity_kind: "card",
+      action: "split",
+      source_ids: [original.id],
+      replacement_ids: [left.card.id, right.card.id],
+      printing_assignments: { [originalPrinting.id]: left.card.id },
+      expected_current_revision_id: seeded.document.resulting_revision_id,
+      rationale: "Synthetic conflated Card split",
+      evidence: { attestation: "Synthetic reviewed variants" },
+    };
+    const validation = await post("/v1/identity-corrections/validate", proposal);
+    expect(validation.response.status).toBe(200);
+    const decision = await post("/v1/identity-corrections", {
+      ...proposal,
+      review_digest: validation.document.review_digest,
+      idempotency_key: "late-split",
+    });
+    expect(decision.response.status).toBe(201);
+    const splitPublished = await publishIdentityFixture(
+      "/reconciliation/identity-correction-before",
+      "late-split-publish",
+      String(seeded.document.resulting_revision_id),
+    );
+    return { originalPrinting, left, right, proposal, decision, splitPublished };
+  }
+  let fixture: Awaited<ReturnType<typeof seedPublishedSplit>>;
+  beforeEach(async () => {
+    fixture = await seedPublishedSplit();
   });
-  expect(decision.response.status).toBe(201);
-  const splitPublished = await publishIdentityFixture(
-    "/reconciliation/identity-correction-before",
-    "late-split-publish",
-    String(seeded.document.resulting_revision_id),
-  );
-  const discovery = await prepareIdentityFixture(
-    "/reconciliation/identity-correction-discovered",
-    "late-discovered",
-    String(splitPublished.document.resulting_revision_id),
-  );
-  const exclusion = (
-    [...(discovery.records.warnings ?? []), ...(discovery.records.shared_warnings ?? [])] as {
-      code: string;
-      printing_id: string;
-    }[]
-  ).find((w) => w.code === "identity_correction_exclusion")!;
-  expect(exclusion).toBeDefined();
-  const published = await approveNativeCandidate(discovery.candidate, "late-discovered-native-publication");
-  expect(published.response.status, JSON.stringify(published.document)).toBe(200);
-  const assignment = {
-    ...proposal,
-    action: "assign",
-    replacement_ids: [right.card.id],
-    printing_assignments: { [exclusion.printing_id]: right.card.id },
-    expected_current_revision_id: published.document.resulting_revision_id,
-    rationale: "Owner identifies the newly observed Printing as the right Card",
-  };
-  const reviewed = await post("/v1/identity-corrections/validate", assignment);
-  expect(reviewed.response.status, JSON.stringify(reviewed.document)).toBe(200);
-  expect((reviewed.document.reviewed as Record<string, unknown>).assignment_evidence).toEqual([
-    expect.objectContaining({
-      preparation_id: discovery.candidate.id,
-      printing_id: exclusion.printing_id,
-    }),
-  ]);
-  const assigned = await post("/v1/identity-corrections", {
-    ...assignment,
-    review_digest: reviewed.document.review_digest,
-    idempotency_key: "late-assign",
-  });
-  expect(assigned.response.status, JSON.stringify(assigned.document)).toBe(201);
-  const final = await publishIdentityFixture(
-    "/reconciliation/identity-correction-discovered",
-    "late-assigned-refresh",
-    String(published.document.resulting_revision_id),
-  );
-  expect(final.response.status, JSON.stringify(final.document)).toBe(200);
-  expect(await exportComponentRecords(String(final.document.resulting_revision_id), "printings")).toEqual(
-    expect.arrayContaining([expect.objectContaining({ id: exclusion.printing_id, card_id: right.card.id })]),
-  );
-  expect((await get(`/v1/identity-corrections/${decision.document.id}`)).document.printing_assignments).toEqual({
-    [originalPrinting.id]: left.card.id,
+  test("records the new assignment without rewriting the earlier split", async () => {
+    const { originalPrinting, left, right, proposal, decision, splitPublished } = fixture;
+    const discovery = await prepareIdentityFixture(
+      "/reconciliation/identity-correction-discovered",
+      "late-discovered",
+      String(splitPublished.document.resulting_revision_id),
+    );
+    const exclusion = (
+      [...(discovery.records.warnings ?? []), ...(discovery.records.shared_warnings ?? [])] as {
+        code: string;
+        printing_id: string;
+      }[]
+    ).find((w) => w.code === "identity_correction_exclusion")!;
+    expect(exclusion).toBeDefined();
+    const published = await approveNativeCandidate(discovery.candidate, "late-discovered-native-publication");
+    expect(published.response.status, JSON.stringify(published.document)).toBe(200);
+    const assignment = {
+      ...proposal,
+      action: "assign",
+      replacement_ids: [right.card.id],
+      printing_assignments: { [exclusion.printing_id]: right.card.id },
+      expected_current_revision_id: published.document.resulting_revision_id,
+      rationale: "Owner identifies the newly observed Printing as the right Card",
+    };
+    const reviewed = await post("/v1/identity-corrections/validate", assignment);
+    expect(reviewed.response.status, JSON.stringify(reviewed.document)).toBe(200);
+    expect((reviewed.document.reviewed as Record<string, unknown>).assignment_evidence).toEqual([
+      expect.objectContaining({
+        preparation_id: discovery.candidate.id,
+        printing_id: exclusion.printing_id,
+      }),
+    ]);
+    const assigned = await post("/v1/identity-corrections", {
+      ...assignment,
+      review_digest: reviewed.document.review_digest,
+      idempotency_key: "late-assign",
+    });
+    expect(assigned.response.status, JSON.stringify(assigned.document)).toBe(201);
+    const final = await publishIdentityFixture(
+      "/reconciliation/identity-correction-discovered",
+      "late-assigned-refresh",
+      String(published.document.resulting_revision_id),
+    );
+    expect(final.response.status, JSON.stringify(final.document)).toBe(200);
+    expect(await exportComponentRecords(String(final.document.resulting_revision_id), "printings")).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: exclusion.printing_id, card_id: right.card.id })]),
+    );
+    expect((await get(`/v1/identity-corrections/${decision.document.id}`)).document.printing_assignments).toEqual({
+      [originalPrinting.id]: left.card.id,
+    });
   });
 });
 
