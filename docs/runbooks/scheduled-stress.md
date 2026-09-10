@@ -4,6 +4,12 @@
 03:17 UTC and on `workflow_dispatch`. Nobody watches a scheduled run, so the
 workflow reports its own failures and its liveness must be checked by hand.
 
+The default is two bounded checks: per-host concurrency/pacing and a 60-request
+throughput window. It runs one file at a time with a five-minute job cap. The
+full nine-file capacity suite is manual only: choose `suite: full` in the
+workflow or run `npm run test:stress:full` locally; its job cap is 45 minutes.
+Manual and scheduled runs have separate cancellation groups.
+
 ## Failure reporting
 
 When the `stress` job fails, the `report-failure` job opens a GitHub issue

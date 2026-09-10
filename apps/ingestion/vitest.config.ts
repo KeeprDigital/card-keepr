@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-pool-workers";
+import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin";
 import { configDefaults, defineConfig } from "vitest/config";
 import {
   cloudflareApiMock,
@@ -72,6 +72,7 @@ export default defineConfig({
     }),
   ],
   test: {
+    maxWorkers: stressSuite ? 1 : 2,
     include: stressSuite ? ["apps/ingestion/test/**/*.stress.spec.ts"] : ["apps/ingestion/test/**/*.spec.ts"],
     exclude: stressSuite ? [...configDefaults.exclude] : [...configDefaults.exclude, "**/*.stress.spec.ts"],
     hookTimeout: 30_000,

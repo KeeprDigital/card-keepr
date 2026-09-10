@@ -36,6 +36,7 @@ test("native publication: the owner publishes a complete One Piece catalogue for
   delete config.$schema;
   config.main = resolve(root, "apps/ingestion/src/index.ts");
   config.d1_databases[0].migrations_dir = resolve(root, "migrations");
+  config.ratelimits[0].simple.limit = 300;
   config.services = [
     {
       binding: "OFFICIAL_SOURCE_TRANSPORT",
@@ -69,7 +70,6 @@ test("native publication: the owner publishes a complete One Piece catalogue for
     KEEPR_INGESTION_URL: ingestion.url,
     KEEPR_ADMINISTRATION_KEY: administrationKey,
     // Keep the production 30/minute limit; reserve room for CLI actions and status polling.
-    KEEPR_NATIVE_REQUEST_INTERVAL_MS: "4000",
   };
   const collected = await runCli(
     ["source", "collect", "--plan-file", planPath, "--idempotency-key", "one-piece-complete-collect", "--json"],

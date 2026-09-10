@@ -119,7 +119,8 @@ test("explicit reinstatement preserves the withdrawn Printing identity and attri
 }, 30_000);
 
 test("unexplained substantial coverage loss blocks completeness rather than becoming ordinary disappearance", async () => {
-  const full = await refresh([sourcePlan("one-piece-en", "observation-count-100")]);
+  // 26 -> 1 reaches the 25-record coverage-loss boundary.
+  const full = await refresh([sourcePlan("one-piece-en", "observation-count-26")]);
   expect(full.state).toBe("awaiting_approval");
   expect((await approve(full.result.document)).response.status).toBe(200);
   const loss = await refresh([sourcePlan("one-piece-en", "base")]);

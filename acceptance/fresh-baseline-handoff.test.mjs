@@ -60,24 +60,38 @@ const canonical = (value) =>
         )
     : value;
 
+// Export the immutable baseline once. Rebuilding two disk-backed databases for
+// every injected phase failure dominated this suite's I/O on GitHub runners.
+const baseline = await (async () => {
+  const directory = await mkdtemp(join(tmpdir(), "keepr-fresh-baseline-template-"));
+  const path = join(directory, "template.sqlite");
+  try {
+    const template = new DatabaseSync(path);
+    try {
+      for (const sql of migrations) template.exec(sql);
+      queries.lowerBaselineLevel(template);
+      for (const sql of runtime.prepareCardSearchForD1ExportStatements) template.exec(sql);
+    } finally {
+      template.close();
+    }
+    const exported = execFileSync("/usr/bin/sqlite3", [path, ".dump"], {
+      maxBuffer: 16 * 1024 * 1024,
+      encoding: "utf8",
+    });
+    return `${exported}\n${runtime.reconstructCardSearchAfterD1RestoreStatements.join(";\n")};`;
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+})();
+
 async function setup(t) {
   const directory = await mkdtemp(join(tmpdir(), "keepr-fresh-baseline-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const source = new DatabaseSync(join(directory, "source.sqlite"));
+  const source = new DatabaseSync(":memory:");
   for (const sql of migrations) source.exec(sql);
-  const template = new DatabaseSync(join(directory, "template.sqlite"));
-  for (const sql of migrations) template.exec(sql);
-  queries.lowerBaselineLevel(template);
-  for (const sql of runtime.prepareCardSearchForD1ExportStatements) template.exec(sql);
-  template.close();
-  // Real SQL export/import of a local test fold. This is synthetic protocol
-  // evidence; it is not the final #136 fold, a provider export, or live readiness.
-  const exportedBaseline = execFileSync("/usr/bin/sqlite3", [join(directory, "template.sqlite"), ".dump"], {
-    maxBuffer: 16 * 1024 * 1024,
-    encoding: "utf8",
-  });
-  const baseline = `${exportedBaseline}\n${runtime.reconstructCardSearchAfterD1RestoreStatements.join(";\n")};`;
-  const destination = new DatabaseSync(join(directory, "destination.sqlite"));
+  // Independent real SQLite databases isolate each failure/restart case. The
+  // explicit restoration test below still backs up to disk and reopens it.
+  const destination = new DatabaseSync(":memory:");
   t.after(() => {
     source.close();
     destination.close();

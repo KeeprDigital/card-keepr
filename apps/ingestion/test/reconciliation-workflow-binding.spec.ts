@@ -975,12 +975,14 @@ test("retained immutable evidence publishes stable identities and warns when ear
 });
 
 test("parsed observation count warnings use the normative absolute threshold", async () => {
-  const firstRun = await collect("/reconciliation/observation-count-100", "observation-count-first");
+  // The 25-record absolute floor needs only 1 -> 25 -> 50 observations.
+  // This crosses the same 24/25 boundary without publishing hundreds of cards.
+  const firstRun = await collect("/reconciliation/observation-count-1", "observation-count-first");
   const first = await reconcile(firstRun.id);
   expect(first.response.status).toBe(200);
   expect((await approve(first.document)).response.status).toBe(200);
 
-  const secondRun = await collect("/reconciliation/observation-count-124", "observation-count-second");
+  const secondRun = await collect("/reconciliation/observation-count-25", "observation-count-second");
   const second = await reconcile(secondRun.id);
   expect(second.response.status).toBe(200);
   expect(second.document.warnings).not.toContainEqual(
@@ -990,7 +992,7 @@ test("parsed observation count warnings use the normative absolute threshold", a
   );
   expect((await approve(second.document)).response.status).toBe(200);
 
-  const thirdRun = await collect("/reconciliation/observation-count-149", "observation-count-third");
+  const thirdRun = await collect("/reconciliation/observation-count-50", "observation-count-third");
   const third = await reconcile(thirdRun.id);
   expect(third.response.status).toBe(200);
   expect(third.document.warnings).toContainEqual(
@@ -998,8 +1000,8 @@ test("parsed observation count warnings use the normative absolute threshold", a
       code: "source_observation_count_changed",
       source_lineage: "one-piece-en",
       request_id: "one-piece-en:discovery",
-      previous_count: 124,
-      current_count: 149,
+      previous_count: 25,
+      current_count: 50,
       absolute_delta: 25,
       warning_threshold: 25,
     }),

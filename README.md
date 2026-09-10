@@ -19,6 +19,10 @@ health routes are therefore `https://card.keepr.digital/api/health` and
 the same prefixes. Requests outside a mount receive `404` before
 authentication.
 
+Contributors and coding agents: read the [testing approach](docs/testing.md)
+before selecting checks, adding tests, or changing CI. Start with the
+[testing and verification commands](#testing-and-verification) below.
+
 ## Local development
 
 Install dependencies, create the two local secret files, and start both
@@ -242,7 +246,7 @@ retained as diagnostics only. Authenticated content routes stream retained
 objects at `/v1/source-snapshots/{id}/content` and
 `/v1/source-observation-sets/{id}/content`.
 
-## Verification
+## Testing and verification
 
 ```sh
 npm run types:check
@@ -251,13 +255,23 @@ npm test
 npm run deploy:dry-run
 ```
 
-`npm test` runs three layers. `test:domain` is plain node Vitest over
-`test/domain/`: parsers, reconciliation identity, export, and
-contract checks that import `src/catalogue` directly and finish in about a
-second. `test:workers` runs `apps/*/test` inside the Workers pool with D1,
-R2, and Workflows bindings. `test:acceptance` boots real `wrangler`
-processes for `acceptance/`. A new test belongs in the lowest layer that can
-express it.
+`npm test` is the fast everyday check: domain tests, API Worker tests, and small
+external CLI / native publication-and-restore smoke tests. Use
+the affected integration file for focused feedback while changing ingestion.
+Before marking a PR ready, run `npm run test:full` when practical, or use the
+ready-PR CI run for the full result; it adds all ingestion integration
+and routine acceptance tests. CI runs quick checks on drafts and full regression
+checks on ready PRs and pushes to `main`, with three shards for each large suite.
+
+Full catalogue journeys (`npm run test:acceptance:extended -- <scenario>`) and benchmarks
+(`npm run test:benchmark -- <scenario>`) are separate investigations.
+`npm run test:stress` runs the small weekly pacing checks;
+`npm run test:stress:full` explicitly selects all Worker capacity tests. The normal checks have no
+6 GiB disk-space requirement. See [the testing guide](docs/testing.md) for the
+commands, coverage, budgets, CI triggers, and rules for adding tests.
+
+When updating test dependencies, keep Vitest within the Cloudflare plugin's
+declared peer range. The current plugin supports Vitest 4.1, not Vitest 5.
 
 Pull requests and `main` run these checks without production credentials or
 remote mutation. Production changes are dispatched only by the guarded
