@@ -1670,7 +1670,10 @@ export async function reconcileRetainedCardPrintingEvidence(
   const observedProductGames = new Set<SupportedGame>();
   const observedProductLineages = new Set<string>();
   try {
-    for (const game of productGames) {
+    for (const game of new Set([
+      ...productGames,
+      ...(run.supported_game === null ? [] : [run.supported_game as SupportedGame]),
+    ])) {
       async function* inputs(after: ReconciliationInputRecordCursor | null): AsyncGenerator<ProductInputEntry> {
         for await (const entry of scannedReconciliationRecordEntries<
           Extract<RetainedObservation, { kind: "card_printing" }>
@@ -1715,7 +1718,15 @@ export async function reconcileRetainedCardPrintingEvidence(
         inputs,
         game,
         sourceWarnings,
-        { hasInputs: productCheckTimes.has(game), yieldAtCheckpoint },
+        {
+          hasInputs: productCheckTimes.has(game),
+          yieldAtCheckpoint,
+          ...(run.supported_game === null
+            ? {}
+            : {
+                membershipEvidence: { plans, checkedLineages: errataOnlyEvidence ? [] : [...completeLineages].sort() },
+              }),
+        },
       );
       productCatalogue = {
         draft: reconciled.draft,

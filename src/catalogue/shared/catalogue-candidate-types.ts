@@ -178,6 +178,8 @@ export type CatalogueProduct = CuratedProvenanceBearing & {
   provenance: Record<string, string[]>;
   disagreements: ProductDisagreement[];
   source_observations?: ProductSourceObservation[];
+  /** Private receipt of derived membership evidence; never a typed Product source observation. */
+  membership_evidence?: { sha256: string; count: number };
 };
 
 export type CatalogueRelease = CuratedProvenanceBearing & {

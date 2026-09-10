@@ -48,6 +48,12 @@ export async function preparePublicLifecycle(
       )
         withdrawal = selected;
     }
+  } else if (kind === "products" && value.membership_evidence !== undefined) {
+    const receipt = value.membership_evidence as { sha256: string; count: number };
+    if (!/^[a-f0-9]{64}$/.test(receipt.sha256) || !Number.isSafeInteger(receipt.count) || receipt.count < 1)
+      throw new PublicationIntegrityError("publication_observation_corrupt");
+    observationDigest = receipt.sha256;
+    observed = value.observed === true && observationDigest !== prior?.observation_digest;
   } else {
     observationDigest = await sha256Text(
       canonicalJson(value.source_observations ?? value.source_observation_ids ?? value.provenance ?? []),
