@@ -19,6 +19,9 @@ const root = resolve(import.meta.dirname, "../..");
 test("D1 backup export restores the reconstructible Card FTS index", async () => {
   const directory = await mkdtemp(join(tmpdir(), "card-keepr-fts-restore-"));
   const source = new DatabaseSync(join(directory, "source.sqlite"));
+  // This disposable fixture checks logical SQL export/reconstruction, not crash durability.
+  // Avoid forcing the host disk to sync each of the thousands of migration DDL statements.
+  source.exec("PRAGMA synchronous = OFF");
   let restored;
   try {
     await applyMigrations(source);
