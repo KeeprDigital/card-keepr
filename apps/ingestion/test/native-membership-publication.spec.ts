@@ -3,10 +3,7 @@ import { catalogueStore } from "../../../src/catalogue/shared";
 import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
 import { ReconciliationReducerIndex } from "../../../src/catalogue/reconciliation/reconciliation-reducer-state";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
-import {
-  approveNativeCandidateThroughBinding as approveNativeCandidate,
-  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
-} from "./native-publication-helpers";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import {
   collect,
   exportComponentRecords,
@@ -17,6 +14,8 @@ import {
 
 installReconciliationSuite();
 
+// These assertions cover stored membership history. Control Workflow scheduling
+// while retaining real publication and verified SQL backup/restore for every revision.
 test("native membership-derived Product lifecycle includes every related Printing", async () => {
   const firstRun = await collect("/reconciliation/product-lifecycle-first", "membership-product-first");
   const first = await prepareNativeCandidate(firstRun.id, "one-piece", "catrev_spine_000", "membership-first-prepare");
