@@ -1,3 +1,4 @@
+import { collectNativeFixtureSource } from "./helpers/native-catalogue-runtime.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -60,36 +61,8 @@ test("owner CLI admission remains administrative until publication and serves or
     assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
     return JSON.parse(result.stdout);
   };
-  const collectNativeSource = async (lineage, adapter, url, key) => {
-    const path = join(directory, `${key}-source-plan.json`);
-    await writeFile(
-      path,
-      JSON.stringify({
-        plans: [
-          {
-            supported_game: "one-piece",
-            source_lineage: lineage,
-            adapter_version: adapter,
-            requests: [{ id: `${lineage}:discovery`, url }],
-          },
-        ],
-      }),
-    );
-    const run = await cli(["source", "collect", "--plan-file", path, "--idempotency-key", key]);
-    assert.equal(run.state, "parsing");
-    const prepared = await fetch(`${ingestion.url}/v1/game-candidates`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}`, "content-type": "application/json" },
-      body: JSON.stringify({
-        ingestion_run_id: run.id,
-        supported_game: "one-piece",
-        expected_game_revision_id: "catrev_spine_000",
-        idempotency_key: `${key}-candidate`,
-      }),
-    });
-    assert.equal(prepared.status, 201, await prepared.clone().text());
-    return run;
-  };
+  const collectNativeSource = (lineage, adapter, url, key) =>
+    collectNativeFixtureSource(directory, environment, lineage, adapter, url, key);
 
   const proposalPath = join(directory, "proposal.json");
   const decisionPath = join(directory, "decision.json");

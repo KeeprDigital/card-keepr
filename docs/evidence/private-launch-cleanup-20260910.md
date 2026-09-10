@@ -24,7 +24,20 @@ Native acceptance uses real SQL export/import and backup verification. The synth
 
 ## Validation status
 
-The corrected owner-admission, nested/tabular source and mixed-game SQL import journeys pass. The Erratum CLI/HTTP/export journey passes. Types, lint and catalogue boundary/cycle checks pass locally. The consolidated branch still requires final targeted regression results, independent review and full CI before merge. This section will be replaced with the final commit and CI evidence when those checks complete.
+The actual main baseline is green at `1998ab53`. Integration is a separate gate. [Run 34429179293](https://github.com/KeeprDigital/card-keepr/actions/runs/34429179293) at `6c20bc72` passed checks (including API), domain and acceptance shard 3, but failed formatting and two file-wide acceptance deadlines. All three ingestion jobs reached their twelve-minute caps after reporting test failures. Those results must not be described as a green integration.
+
+Follow-up corrections preserve the thirty-second ingestion and two-minute acceptance limits:
+
+- The identity CLI fixture uses the same finite 300/minute administration allowance and 250ms pacing as the other native owner journeys. It passes in 32.5 seconds locally.
+- Independent Erratum authority/shape scenarios now have their own file, with shared fixture helpers. Their assertions are unchanged. The complete retained Erratum CLI/HTTP/export journey passes in 73.6 seconds; all four selected acceptance tests pass together.
+- SourceBucket provenance again checks the matching Printing membership's relationship identity, observation ID, currentness and last-observed revision.
+- Administration history has explicit 1,024-record/1 MiB response bounds and returns `409 source_history_capacity_exceeded` above either bound. Retained lifetime evidence is unchanged. Regression coverage includes the response boundaries and continued access to retained evidence.
+- Gundam warnings build a two-lineage summary per Printing in a checkpointed scan, then emit warnings with a separate durable cursor. No nested lifetime scan remains in that warning path.
+- Selected semantic suites opt into the existing direct preparation driver with real HTTP owner logic and D1/R2. This controls preparation scheduling only; publication, SQL export/import and backup retain real bindings. Dedicated scheduling and acceptance coverage remain separate. This applies the layer separation already required by `docs/testing.md`.
+
+The targeted history selection passed six tests, the controlled-preparation comparison passed three scenarios, and the shared owner/source helper passed all three journeys. Two independent review axes found the history corrections and controlled semantic fixture boundary acceptable. Types, lint and catalogue boundaries passed locally before the controlled-driver change; its typecheck also passed. Final required checks on the complete resulting branch remain the merge gate, followed by checks on the actual main commit. The live PR checks are the authoritative final result.
+
+The dependency audit found no production dependency advisories. A compatible `fast-uri` patch updates the lockfile from 3.1.4 to 3.1.7. Remaining development-tool advisories concern the installed Cloudflare/Miniflare dependency chain; the automated proposed major/alpha replacements are not applied as part of cleanup.
 
 ## Launch work intentionally left open
 

@@ -21,7 +21,7 @@ import {
   waitForRunState,
 } from "./reconciliation-helpers";
 
-installReconciliationSuite();
+installReconciliationSuite({ directPreparation: true });
 
 test("streamed catalogue gzip is byte-identical to the checked-in golden bytes", async () => {
   const built = await buildCatalogueExport(

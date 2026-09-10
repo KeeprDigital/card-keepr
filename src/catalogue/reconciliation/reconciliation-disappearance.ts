@@ -31,6 +31,7 @@ type Stage =
   | "memberships"
   | "relationships"
   | "gundam_published"
+  | "gundam_native_warnings"
   | "gundam_local"
   | "printings"
   | "cards"
@@ -46,6 +47,7 @@ type Cursor = {
   groups: number;
   scopedCards?: number;
   relationshipWarnings?: number;
+  gundamLineages?: number;
   warnings: { position: number; count: number };
   processedRecords: number;
 };
@@ -88,6 +90,11 @@ export async function prepareDisappearanceWarnings(
     runId,
     "disappearance_relationship_warnings",
   );
+  const gundamLineages = new ReconciliationReducerIndex<{
+    printingId: string;
+    lineages: ("gundam-en-asia" | "gundam-en-us")[];
+  }>(database, runId, "disappearance_gundam_lineages");
+  gundamLineages.resumeAt(checkpoint?.value.gundamLineages ?? 0);
   relationshipWarnings.resumeAt(checkpoint?.value.relationshipWarnings ?? 0);
   const firstUnscopedStage = sources.hasPrintings ? "memberships" : "relationships";
   let stage: Stage =
@@ -115,6 +122,7 @@ export async function prepareDisappearanceWarnings(
       groups: groups.position,
       scopedCards: scopedCards.position,
       relationshipWarnings: relationshipWarnings.position,
+      gundamLineages: gundamLineages.position,
       warnings: warnings.cursor,
       processedRecords,
     } satisfies Cursor);
@@ -287,7 +295,13 @@ export async function prepareDisappearanceWarnings(
   );
   const addGundamWarning = async (printingId: string) => {
     const lineages = new Set(
-      (await gundamPrintingLineages(database, printingId, sources.history))
+      (sources.history
+        ? ((await gundamLineages.get(printingId))?.lineages ?? []).map((source_lineage) => ({
+            source_lineage,
+            current: 1,
+          }))
+        : await gundamPrintingLineages(database, printingId)
+      )
         .filter(({ source_lineage, current }) => current === 1 && !sources.checkedLineages.includes(source_lineage))
         .map(({ source_lineage }) => source_lineage),
     );
@@ -306,18 +320,29 @@ export async function prepareDisappearanceWarnings(
       for await (const entry of sources.history.entries(after)) {
         await budget(entry.value);
         const record = entry.value;
-        const key = `gundam:${record.entityId}`;
         if (
           record.kind === "locator" &&
           record.current &&
-          sources.checkedLineages.includes(record.sourceLineage) &&
-          !(await relationshipWarnings.has(key))
+          (record.sourceLineage === "gundam-en-asia" || record.sourceLineage === "gundam-en-us")
         ) {
-          await addGundamWarning(record.entityId);
-          await relationshipWarnings.seed(key, true);
+          const prior = await gundamLineages.get(record.entityId);
+          if (!prior?.lineages.includes(record.sourceLineage))
+            await gundamLineages.seed(record.entityId, {
+              printingId: record.entityId,
+              lineages: [...(prior?.lineages ?? []), record.sourceLineage],
+            });
         }
         after = entry.key;
       }
+    await finish("gundam_native_warnings");
+  }
+  if (stage === "gundam_native_warnings") {
+    for await (const entry of gundamLineages.latestEntries(after)) {
+      await budget(entry.value);
+      if (entry.value.lineages.some((sourceLineage) => sources.checkedLineages.includes(sourceLineage)))
+        await addGundamWarning(entry.value.printingId);
+      after = entry.key;
+    }
     await finish("gundam_local");
   }
   if (stage === "gundam_published") {
@@ -335,9 +360,13 @@ export async function prepareDisappearanceWarnings(
         await budget(entry.value);
         const { printingId, compatibility } = entry.value;
         if (compatibility.source_lineage === "gundam-en-asia" || compatibility.source_lineage === "gundam-en-us") {
-          const visited = (await gundamPrintingLineages(database, printingId, sources.history)).some(
-            ({ source_lineage, current }) => current === 1 && sources.checkedLineages.includes(source_lineage),
-          );
+          const visited = sources.history
+            ? ((await gundamLineages.get(printingId))?.lineages ?? []).some((value) =>
+                sources.checkedLineages.includes(value),
+              )
+            : (await gundamPrintingLineages(database, printingId)).some(
+                ({ source_lineage, current }) => current === 1 && sources.checkedLineages.includes(source_lineage),
+              );
           if (!visited) await addGundamWarning(printingId);
         }
         after = entry.key;

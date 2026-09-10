@@ -5,7 +5,7 @@ import { approveNativeCandidate, prepareNativeCandidate } from "./native-publica
 import { collect, get, installReconciliationSuite, post, requiredString, testEnv } from "./reconciliation-helpers";
 import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 
-installReconciliationSuite();
+installReconciliationSuite({ directPreparation: true });
 
 test("all 32 changed Curated Revisions become reconfirmable with a bounded final transaction", async () => {
   const source = await collect("/reconciliation/curated-conflict-fanout-base", "curated-fanout-seed");

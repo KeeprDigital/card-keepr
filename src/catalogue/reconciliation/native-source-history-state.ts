@@ -1,4 +1,4 @@
-import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
+import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { ReconciliationReducerIndex } from "./reconciliation-reducer-state";
 import type { RelationshipKind } from "./reconciliation-relationships";
 
@@ -82,6 +82,22 @@ export class NativeSourceHistory {
     const records: SourceHistoryRecord[] = [];
     for await (const record of this.entityRecords(kind, entityId))
       if (!recordKind || record.kind === recordKind) records.push(record);
+    return records;
+  }
+  /** Bound the existing non-paginated administration response, never retained history or preparation. */
+  async administrationRecords(kind: "card" | "printing", entityId: string) {
+    const records: SourceHistoryRecord[] = [];
+    let bytes = 0;
+    for await (const record of this.entityRecords(kind, entityId)) {
+      bytes += new TextEncoder().encode(canonicalJson(record)).byteLength;
+      if (records.length === 1024 || bytes > 1048576)
+        throw new AdministrationProblem(
+          409,
+          "source_history_capacity_exceeded",
+          "Administration history exceeds 1024 records or 1048576 bytes; retained evidence remains intact.",
+        );
+      records.push(record);
+    }
     return records;
   }
 }

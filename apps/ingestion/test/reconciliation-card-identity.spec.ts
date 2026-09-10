@@ -20,7 +20,7 @@ import {
   testEnv,
 } from "./reconciliation-helpers";
 
-installReconciliationSuite();
+installReconciliationSuite({ directPreparation: true });
 
 test("a structurally complete non-DON Card may have zero catalogued Printings", async () => {
   const run = await collect("/reconciliation/card-without-printing", "reconcile-card-without-printing");

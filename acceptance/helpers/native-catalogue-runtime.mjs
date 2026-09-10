@@ -264,3 +264,35 @@ export async function loadNativeExport(baseUrl, apiKey, revisionId, requestInter
   } while (after);
   return records;
 }
+
+/** Collect a single retained fixture plan and enter the shipped native candidate owner. */
+export async function collectNativeFixtureSource(directory, environment, lineage, adapter, url, key) {
+  const path = resolve(directory, `${key}-source-plan.json`);
+  await writeFile(
+    path,
+    JSON.stringify({
+      plans: [
+        {
+          supported_game: "one-piece",
+          source_lineage: lineage,
+          adapter_version: adapter,
+          requests: [{ id: `${lineage}:discovery`, url }],
+        },
+      ],
+    }),
+  );
+  const run = await cli(["source", "collect", "--plan-file", path, "--idempotency-key", key], environment);
+  assert.equal(run.state, "parsing");
+  const prepared = await fetch(`${environment.KEEPR_INGESTION_URL}/v1/game-candidates`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      ingestion_run_id: run.id,
+      supported_game: "one-piece",
+      expected_game_revision_id: "catrev_spine_000",
+      idempotency_key: `${key}-candidate`,
+    }),
+  });
+  assert.equal(prepared.status, 201, await prepared.clone().text());
+  return run;
+}

@@ -1,3 +1,5 @@
+import ingestionWorker from "../src/index";
+import { nativePreparationDriver } from "./native-preparation-driver";
 import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { afterEach, beforeEach, expect } from "vitest";
@@ -18,10 +20,13 @@ export const testEnv = env as Env & {
 
 let requestSequence = 0;
 
-export function installReconciliationSuite(): void {
+let preparationDriver: ReturnType<typeof nativePreparationDriver> | undefined;
+
+export function installReconciliationSuite(options: { directPreparation?: boolean } = {}): void {
   installWorkflowIsolation();
 
   beforeEach(async () => {
+    preparationDriver = options.directPreparation ? nativePreparationDriver(testEnv) : undefined;
     await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
   });
 
@@ -192,18 +197,20 @@ export async function request(
   response: Response;
   document: Record<string, unknown>;
 }> {
-  const rpcResponse = await exports.default.fetch(
-    new Request(`https://card-keepr.invalid${pathname}`, {
-      method: body === undefined ? "GET" : "POST",
-      headers: {
-        authorization: "Bearer vitest-administration-key",
-        "cf-connecting-ip": `203.0.113.${(requestSequence++ % 250) + 1}`,
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
-        ...extraHeaders,
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    }),
-  );
+  const requested = new Request(`https://card-keepr.invalid${pathname}`, {
+    method: body === undefined ? "GET" : "POST",
+    headers: {
+      authorization: "Bearer vitest-administration-key",
+      "cf-connecting-ip": `203.0.113.${(requestSequence++ % 250) + 1}`,
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+      ...extraHeaders,
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const rpcResponse = preparationDriver
+    ? await ingestionWorker.fetch(requested, preparationDriver.environment)
+    : await exports.default.fetch(requested);
+  await preparationDriver?.drain();
   const status = rpcResponse.status;
   const document = (await rpcResponse.json()) as Record<string, unknown>;
   return {

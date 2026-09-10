@@ -16,7 +16,7 @@ import {
 } from "./reconciliation-helpers";
 import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 
-installReconciliationSuite();
+installReconciliationSuite({ directPreparation: true });
 
 test.each(["release", "relationships"])(
   "a curated %s lookup returns bounded progress across unrelated entities",

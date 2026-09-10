@@ -1,3 +1,4 @@
+import { nativePrintingHistory } from "../../../src/catalogue/reconciliation/native-printing-history";
 import { expect, test } from "vitest";
 import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
 import { catalogueStore } from "../../../src/catalogue/shared";
@@ -25,7 +26,7 @@ import {
   waitForRunState,
 } from "./reconciliation-helpers";
 
-installReconciliationSuite();
+installReconciliationSuite({ directPreparation: true });
 
 test("fresh native provenance retains the consumer revision and export for semantic no-change", async () => {
   const firstRun = await collect("/reconciliation/repeatable", "native-repeatable-first");
@@ -115,7 +116,16 @@ test("locator and SourceBucket evidence refresh without minting Catalogue Revisi
     state: "published",
     resulting_revision_id: revisionId,
   });
-  expect(JSON.stringify(sourceBucket.records)).toContain("srcobs_");
+  const retainedBucket = await nativePrintingHistory(catalogueStore(testEnv.CATALOGUE_DB), printingId);
+  expect(retainedBucket?.memberships).toContainEqual(
+    expect.objectContaining({
+      relationship_kind: "source_bucket",
+      relationship_value: "secondary-card-list",
+      source_observation_id: expect.stringMatching(/^srcobs_/),
+      last_observed_revision_id: revisionId,
+      current: 1,
+    }),
+  );
   const lifecycle = await get(`/v1/reconciliation/printings/${printingId}`);
   expect(lifecycle.document).toMatchObject({
     locators: {

@@ -463,11 +463,15 @@ test("historical publication recovery stays readable while its degraded backup b
   // The earlier real backup is verified; remove only the injected degraded flag
   // and prove the identical, fully prepared approval now passes its reservation.
   await ingestionQueries
-    .setOperationStateRecoveryHealthForRecoveryHealthGatesFixtureEvidenceInjectionReconciliationBeforeMutation(testEnv.CATALOGUE_DB)
+    .setOperationStateRecoveryHealthForRecoveryHealthGatesFixtureEvidenceInjectionReconciliationBeforeMutation(
+      testEnv.CATALOGUE_DB,
+    )
     .run();
   const allowed = await post("/v1/publications", {
-    candidate_id: secondCandidate.id, manifest_digest: secondCandidate.manifest_digest,
-    expected_game_revision_id: revisionId, generation: secondCandidate.generation,
+    candidate_id: secondCandidate.id,
+    manifest_digest: secondCandidate.manifest_digest,
+    expected_game_revision_id: revisionId,
+    generation: secondCandidate.generation,
     idempotency_key: "blocked-native-approval",
   });
   expect(allowed.response.status, JSON.stringify(allowed.document)).toBe(202);

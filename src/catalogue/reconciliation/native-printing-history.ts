@@ -35,7 +35,7 @@ export async function nativePrintingHistory(db: CatalogueStore, printingId: stri
   const cursor = checkpoint?.value.sourceHistory;
   if (cursor?.version !== 1 || cursor.stage !== "complete" || cursor.current !== row.candidate_id)
     throw new Error("Native Printing administration requires complete retained source history.");
-  const records = await new NativeSourceHistory(db, row.preparation_id, cursor.history).forEntity(
+  const records = await new NativeSourceHistory(db, row.preparation_id, cursor.history).administrationRecords(
     "printing",
     printingId,
   );

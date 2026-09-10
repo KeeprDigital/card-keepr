@@ -372,4 +372,29 @@ test("retained Printing history can cross the identity-match limit without losin
   expect(evidence).toHaveLength(501);
   expect(new Set(evidence.map((record) => record.sourceObservationId)).size).toBe(501);
   expect(await retained.forEntity("printing", "lifetime-printing", "locator")).toEqual([]);
+  expect(await retained.administrationRecords("printing", "lifetime-printing")).toHaveLength(501);
+  for (let ordinal = 501; ordinal < 1024; ordinal++)
+    await retained.retain({
+      ...evidence[0]!,
+      id: `lifetime-membership-${ordinal}`,
+      sourceObservationId: `observation-${ordinal}`,
+    });
+  expect(await retained.administrationRecords("printing", "lifetime-printing")).toHaveLength(1024);
+  await retained.retain({ ...evidence[0]!, id: "lifetime-membership-1024", sourceObservationId: "observation-1024" });
+  await expect(retained.administrationRecords("printing", "lifetime-printing")).rejects.toMatchObject({
+    code: "source_history_capacity_exceeded",
+  });
+  let retainedCount = 0;
+  for await (const _record of retained.entityRecords("printing", "lifetime-printing")) retainedCount++;
+  expect(retainedCount).toBe(1025);
+
+  // The response byte ceiling is independent of the count ceiling, and does not truncate stored evidence.
+  const large = { ...evidence[0]!, entityId: "wide-history", relationshipValue: "x".repeat(400000) };
+  for (let ordinal = 0; ordinal < 2; ordinal++) await retained.retain({ ...large, id: `wide-${ordinal}` });
+  expect(await retained.administrationRecords("printing", "wide-history")).toHaveLength(2);
+  await retained.retain({ ...large, id: "wide-2" });
+  await expect(retained.administrationRecords("printing", "wide-history")).rejects.toMatchObject({
+    code: "source_history_capacity_exceeded",
+  });
+  expect(await retained.forEntity("printing", "wide-history")).toHaveLength(3);
 });

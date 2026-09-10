@@ -36,6 +36,8 @@ test("owner CLI publishes a reviewed split and authenticated consumers retain th
   delete config.$schema;
   config.main = join(root, "acceptance/fixtures/native-combined-card-keepr-runtime.ts");
   config.d1_databases[0].migrations_dir = join(root, "migrations");
+  // Finite journey allowance, shared by CLI, polling and owner inspection requests.
+  config.ratelimits.find(({ name }) => name === "ADMINISTRATION_RATE_LIMIT").simple.limit = 300;
   config.services = [{ binding: "OFFICIAL_SOURCE_TRANSPORT", service: "card-keepr-synthetic-official-source" }];
   const configPath = join(directory, "ingestion.json");
   await writeFile(configPath, JSON.stringify(config));
@@ -64,8 +66,8 @@ test("owner CLI publishes a reviewed split and authenticated consumers retain th
   const environment = {
     KEEPR_INGESTION_URL: ingestion.url,
     KEEPR_ADMINISTRATION_KEY: key,
-    // Preserve this fixture's 30/minute guard across CLI and inspection calls.
-    KEEPR_NATIVE_REQUEST_INTERVAL_MS: "2500",
+    // Pace the complete journey below its 300/minute fixture allowance.
+    KEEPR_NATIVE_REQUEST_INTERVAL_MS: "250",
   };
   const cli = async (args) => {
     const result = await runCli([...args, "--json"], environment);
