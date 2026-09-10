@@ -223,7 +223,7 @@ export async function prepareSourceSelection(
       }
       await tick();
     }
-    await assertSelectedAuthoritiesCollected(database, selectedPlans, unchanged, runId);
+    assertSelectedAuthoritiesCollected(absent, unchanged);
     await advance("roots");
   }
   if (cursor.stage === "roots") {
