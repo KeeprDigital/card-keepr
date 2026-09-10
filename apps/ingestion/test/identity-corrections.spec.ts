@@ -3,10 +3,7 @@ import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/
 import { catalogueStore } from "../../../src/catalogue/shared";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
 import { retainNativePreparation } from "./native-preparation-fixture";
-import {
-  approveNativeCandidate,
-  prepareNativeCandidateDirect as prepareNativeCandidate,
-} from "./native-publication-helpers";
+import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import { retainLegacyCorrectionPin } from "./query-helpers/legacy-decision-pins";
 import {
   collect,

@@ -3,7 +3,10 @@ import { compositionEntityResponse } from "../../../src/catalogue/read";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
-import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import {
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
+} from "./native-publication-helpers";
 import { mutateNativeProductOfficialCode, nativeProductIdentity } from "./query-helpers/native-product-history";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import * as reconciliationQueries from "./query-helpers/reconciliation";

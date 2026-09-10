@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
-import { approveNativeCandidate } from "./native-publication-helpers";
+import { approveNativeCandidateThroughBinding as approveNativeCandidate } from "./native-publication-helpers";
 import { get, installReconciliationSuite } from "./reconciliation-helpers";
 import { administrationRequest, resumeCollection, waitForEvidenceRun } from "./runtime-helpers";
 

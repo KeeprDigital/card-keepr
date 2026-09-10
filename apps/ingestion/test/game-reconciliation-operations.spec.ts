@@ -5,8 +5,8 @@ import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-p
 import worker from "../src/index";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
 import {
-  approveNativeCandidate,
-  prepareNativeCandidateDirect as prepareNativeCandidate,
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidate,
 } from "./native-publication-helpers";
 import {
   collect,

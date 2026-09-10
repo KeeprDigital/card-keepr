@@ -18,7 +18,10 @@ import { fixtureCandidate } from "../../../test/support/catalogue-fixture";
 import { fixturePublicationSourceId } from "../../../test/support/fixture-publication";
 import ingestionWorker from "../src/index";
 import { injectFixturePublication } from "./fixture-plan-injection";
-import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import {
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
+} from "./native-publication-helpers";
 import * as catalogueExportQueries from "./query-helpers/catalogue-export";
 import {
   countDeletionResponseQueriesDatabase,

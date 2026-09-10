@@ -4,7 +4,10 @@ import { canonicalJson, sha256Text } from "../../../src/catalogue/shared";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
-import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import {
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
+} from "./native-publication-helpers";
 import { collect, get, post, requiredString } from "./reconciliation-helpers";
 import { administrationRequest, installRuntimeSuite, waitForWorkflowStatus } from "./runtime-helpers";
 

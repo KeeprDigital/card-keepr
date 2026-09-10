@@ -4,7 +4,10 @@ import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters
 import { compositionEntityResponse } from "../../../src/catalogue/read";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
-import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import {
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
+} from "./native-publication-helpers";
 import {
   collect,
   collectRequests,

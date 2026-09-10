@@ -1,6 +1,9 @@
 import { expect, test } from "vitest";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
-import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import {
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
+} from "./native-publication-helpers";
 import { publicComponents } from "./query-helpers/atomic-publication";
 import { readCatalogueExportsManifestKey } from "./query-helpers/catalogue-export";
 import {

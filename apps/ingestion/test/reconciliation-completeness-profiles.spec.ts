@@ -5,7 +5,10 @@ import { readSourceObservation } from "../../../src/catalogue/reconciliation/rec
 import { canonicalJson, catalogueStore, sha256 } from "../../../src/catalogue/shared";
 import { routeTable } from "../../../src/http/routes";
 import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
-import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import {
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
+} from "./native-publication-helpers";
 import { currentGameMembers } from "./query-helpers/atomic-publication";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";

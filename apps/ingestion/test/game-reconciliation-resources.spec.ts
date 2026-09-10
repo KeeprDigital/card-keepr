@@ -3,7 +3,10 @@ import type { ReconciliationWorkflowParams } from "../../../src/catalogue/reconc
 import { canonicalJson, sha256Text } from "../../../src/catalogue/shared";
 import worker from "../src/index";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
-import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
+import {
+  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
+} from "./native-publication-helpers";
 import { collect, get, installReconciliationSuite, post, requiredString, testEnv } from "./reconciliation-helpers";
 import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
 
