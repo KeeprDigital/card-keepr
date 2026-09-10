@@ -1,10 +1,11 @@
+import { postWithControlledPreparation } from "./reconciliation-helpers";
 import { beforeEach, describe, expect, test } from "vitest";
 import type { SourceHistoryCursor } from "../../../src/catalogue/reconciliation/native-source-history";
 import { NativeSourceHistory } from "../../../src/catalogue/reconciliation/native-source-history-state";
 import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
 import { ReconciliationPlanState } from "../../../src/catalogue/reconciliation/reconciliation-plan-state";
 import { catalogueStore } from "../../../src/catalogue/shared";
-import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
+import { nativeCandidateRecords, waitForNativeCandidate } from "./native-candidate-helpers";
 import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import { currentGameMembers } from "./query-helpers/atomic-publication";
 import { nativeDiagnosticRecords } from "./query-helpers/native-diagnostic-records";
@@ -1331,14 +1332,14 @@ test("equal unknown Card facts and distinct artwork require identity review, not
 });
 
 async function prepareFailedNativeIdentity(runId: string, game: string, predecessor: string, key: string) {
-  const created = await post("/v1/game-candidates", {
+  const created = await postWithControlledPreparation("/v1/game-candidates", {
     ingestion_run_id: runId,
     supported_game: game,
     expected_game_revision_id: predecessor,
     idempotency_key: key,
   });
   expect(created.response.status, JSON.stringify(created.document)).toBe(201);
-  const [candidate] = await waitForNativeCandidates(runId, 1, 15_000, { [game]: "failed" });
+  const candidate = await waitForNativeCandidate(String(created.document.id), "failed", 15_000);
   return candidate!;
 }
 
@@ -1346,14 +1347,14 @@ async function prepareIdentityEvidence(runId: string, game: string, state: strin
   const members = await currentGameMembers(testEnv.CATALOGUE_DB);
   const predecessor =
     members.results.find((member) => member.supported_game === game)?.game_revision_id ?? "catrev_spine_000";
-  const created = await post("/v1/game-candidates", {
+  const created = await postWithControlledPreparation("/v1/game-candidates", {
     ingestion_run_id: runId,
     supported_game: game,
     expected_game_revision_id: predecessor,
     idempotency_key: `identity-${runId}`,
   });
   expect(created.response.status, JSON.stringify(created.document)).toBe(201);
-  const [header] = await waitForNativeCandidates(runId, 1, 15_000, { [game]: state });
+  const header = await waitForNativeCandidate(String(created.document.id), state, 15_000);
   const records = await nativeCandidateRecords(String(header!.id));
   const diagnostics = state === "failed" ? await nativeDiagnosticRecords(testEnv.CATALOGUE_DB, String(header!.id)) : [];
   return { header: header!, records, diagnostics };

@@ -1,11 +1,22 @@
 import { expect, test } from "vitest";
 import {
+  seedNativePredecessor,
   approveNativeCandidate as approveControlledNativeCandidate,
   prepareNativeCandidate as prepareControlledNativeCandidate,
   approveNativeCandidateThroughBinding as approveNativeCandidate,
   prepareNativeCandidateThroughBinding as prepareNativeCandidate,
 } from "./native-publication-helpers";
-import { collect, get, installReconciliationSuite, post } from "./reconciliation-helpers";
+import {
+  collect,
+  get,
+  installReconciliationSuite,
+  post,
+  postWithControlledPublication,
+  testEnv,
+} from "./reconciliation-helpers";
+
+import { waitForDispatchedNativeCandidates, waitForNativeCandidate } from "./native-candidate-helpers";
+import { nativeNoChangeState } from "./query-helpers/native-no-change";
 
 const workflowIsolation = installReconciliationSuite();
 
@@ -112,5 +123,77 @@ test.each(["binding", "controlled"] as const)(
       expect(dispatched.reconciliation).toBeGreaterThan(0);
       expect(dispatched.backup).toBeGreaterThan(0);
     }
+  },
+);
+
+test.each(["base", "withdrawn"])(
+  "preparation predecessor retains a pending checkpoint and blocks a %s successor publication",
+  async (scenario) => {
+    const before = await workflowIsolation.instanceCounts();
+    const source = await collect("/reconciliation/base", "predecessor-contract");
+    await expect(waitForDispatchedNativeCandidates(source.id, 1)).rejects.toThrow("has no Workflow parent");
+    const first = await prepareControlledNativeCandidate(
+      source.id,
+      "one-piece",
+      "catrev_spine_000",
+      "predecessor-first",
+    );
+    const seed = await seedNativePredecessor(first, "predecessor-seed");
+    const head = await nativeNoChangeState(testEnv.CATALOGUE_DB);
+    expect(head).toMatchObject({
+      accepted_candidate: seed.candidateId,
+      current_revision_id: seed.revisionId,
+      acceptance_operation: seed.publicationId,
+    });
+    const successorSource =
+      scenario === "base" ? source : await collect(`/reconciliation/${scenario}`, "predecessor-successor");
+    const successor = await prepareControlledNativeCandidate(
+      successorSource.id,
+      "one-piece",
+      seed.revisionId,
+      "predecessor-second",
+    );
+    expect(successor.id).not.toBe(first.id);
+    expect(await waitForNativeCandidate(String(successor.id))).toEqual(successor);
+    // A second candidate for the same run must not cause selection of the already published one.
+    if (scenario === "base") expect(successor.ingestion_run_id).toBe(first.ingestion_run_id);
+    const approved = await post("/v1/publications", {
+      candidate_id: successor.id,
+      manifest_digest: successor.manifest_digest,
+      expected_game_revision_id: seed.revisionId,
+      generation: successor.generation,
+      idempotency_key: "predecessor-blocked-successor",
+    });
+    expect(approved.response.status).toBe(202);
+    const artifacts = await postWithControlledPublication(
+      `/v1/game-candidates/${successor.id}/publication-preparation/start`,
+      {
+        manifest_digest: successor.manifest_digest,
+        generation: successor.generation,
+        sequence: 0,
+        idempotency_key: "predecessor-successor-artifacts",
+      },
+    );
+    expect(artifacts.response.status).toBe(202);
+    let publicState: unknown;
+    for (let sequence = 0; sequence < 50; sequence++) {
+      const result = await post(`/v1/publications/${approved.document.id}/export-preparation/advance`, {
+        generation: successor.generation,
+        idempotency_key: `predecessor-public-${sequence}`,
+      });
+      expect(result.response.status, JSON.stringify(result.document)).toBe(200);
+      publicState = result.document.state;
+      if (publicState !== "preparing") break;
+    }
+    expect(publicState).toBe("verified");
+    const advanced = await post(`/v1/publications/${approved.document.id}/advance`, {
+      generation: successor.generation,
+    });
+    expect(advanced.document.state, JSON.stringify(advanced.document)).toBe("waiting_backup");
+    expect(await nativeNoChangeState(testEnv.CATALOGUE_DB)).toEqual(head);
+    const backup = await get(`/v1/backups/${seed.backupAttemptId}`);
+    expect(backup.document).toMatchObject({ state: "pending", manifest_sha256: null, d1_bookmark: null });
+    const after = await workflowIsolation.instanceCounts();
+    expect(after).toEqual(before);
   },
 );

@@ -1,3 +1,4 @@
+import { advanceAcceptedSource, type AcceptedSourceCursor } from "./unchanged-native-source";
 import {
   type CatalogueStore,
   type ObjectMemberCursor,
@@ -9,13 +10,13 @@ import { requiredSourceAdapter, sourceAdapterForCoverage } from "../adapters";
 import {
   isOptionalSourceOutage,
   assertSelectedAuthoritiesCollected,
+  missingSelectedAuthorities,
   type EvidencePlanRequest,
   evidencePlanForRequest,
   parseEvidencePlans,
   toleratesRequestFailure,
 } from "../source-evidence";
 import {
-  unchangedAcceptedSourceStatement,
   reconciliationCollectionPlansStatement,
   reconciliationCollectionPlanChunkStatement,
   reconciliationObservationSetsStatement,
@@ -58,6 +59,7 @@ type Cursor = {
   plan: number;
   request: number;
   lineage: string;
+  acceptedSource?: AcceptedSourceCursor;
   collection: null | {
     plan: CollectionPlanRow;
     stage: "hash" | "requests";
@@ -196,15 +198,29 @@ export async function prepareSourceSelection(
   }
   const selectedPlans = plans.filter((plan) => !omitted.has(plan.source_lineage));
   if (cursor.stage === "authorities") {
+    const absent = await documentStorage(() => missingSelectedAuthorities(database, selectedPlans, runId));
+    const required = new Set(
+      absent.flatMap(({ applicable }) => applicable.map(({ source_lineage }) => source_lineage)),
+    );
     for (; cursor.plan < selectedPlans.length; ) {
       const plan = selectedPlans[cursor.plan]!;
-      if (
-        await documentStorage(() =>
-          unchangedAcceptedSourceStatement(database, runId, plan.source_lineage, plan.adapter_version).first(),
-        )
-      )
-        unchanged.add(plan.source_lineage);
-      cursor.plan++;
+      if (!required.has(plan.source_lineage)) {
+        cursor.plan++;
+        await tick();
+        continue;
+      }
+      cursor.acceptedSource = await advanceAcceptedSource(
+        database,
+        runId,
+        plan.source_lineage,
+        plan.adapter_version,
+        cursor.acceptedSource,
+      );
+      if (cursor.acceptedSource.stage === "complete") {
+        if (cursor.acceptedSource.unchanged) unchanged.add(plan.source_lineage);
+        delete cursor.acceptedSource;
+        cursor.plan++;
+      }
       await tick();
     }
     await assertSelectedAuthoritiesCollected(database, selectedPlans, unchanged, runId);

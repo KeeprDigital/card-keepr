@@ -1,4 +1,4 @@
-import { waitForNativeCandidates, nativeCandidateRecords } from "./native-candidate-helpers";
+import { waitForDispatchedNativeCandidates, nativeCandidateRecords } from "./native-candidate-helpers";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import * as reconciliationQueries from "./query-helpers/reconciliation";
 import { env } from "cloudflare:workers";
@@ -88,7 +88,7 @@ test("synthetic production transport captures Gundam pages and reconciles one co
   const resumed = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(resumed.status).toBe(202);
   await resumed.body?.cancel();
-  const [native] = await waitForNativeCandidates(run.id, 1, 45_000);
+  const [native] = await waitForDispatchedNativeCandidates(run.id, 1, 45_000);
   const completed = await waitForEvidenceRun(run.id, "parsing", 45_000);
   if (completed.state === "failed") {
     const failures = await sourceEvidenceQueries.readSourceRequestsRequestIdUrl(env.CATALOGUE_DB).bind(run.id).all();
@@ -218,7 +218,7 @@ test("synthetic Gundam graph resumes within a listing page's locator group", asy
   const resumed = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(resumed.status).toBe(202);
   await resumed.body?.cancel();
-  const [native] = await waitForNativeCandidates(run.id, 1, 90_000);
+  const [native] = await waitForDispatchedNativeCandidates(run.id, 1, 90_000);
   expect(await waitForEvidenceRun(run.id, "parsing", 90_000)).toMatchObject({
     state: "parsing",
     failure_code: null,

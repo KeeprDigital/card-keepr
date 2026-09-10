@@ -1,6 +1,7 @@
+import { postWithControlledPreparation } from "./reconciliation-helpers";
 import { expect, test } from "vitest";
 import { collect, get, post, installReconciliationSuite, testEnv } from "./reconciliation-helpers";
-import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
+import { nativeCandidateRecords, waitForNativeCandidate } from "./native-candidate-helpers";
 import { admitSyntheticCurrentCheckpoint, publicationStateSnapshot } from "./query-helpers/atomic-publication";
 import { catalogueStore, type CataloguePrinting } from "../../../src/catalogue/shared";
 import { ReconciliationReducerIndex } from "../../../src/catalogue/reconciliation/reconciliation-reducer-state";
@@ -9,14 +10,14 @@ import { nativePrintingsAtLocator } from "../../../src/catalogue/reconciliation/
 installReconciliationSuite();
 
 async function prepare(runId: string, revision: string, state = "sealed") {
-  const created = await post("/v1/game-candidates", {
+  const created = await postWithControlledPreparation("/v1/game-candidates", {
     ingestion_run_id: runId,
     supported_game: "one-piece",
     expected_game_revision_id: revision,
     idempotency_key: `native-errata-${runId}`,
   });
   expect(created.response.status, JSON.stringify(created.document)).toBe(201);
-  return (await waitForNativeCandidates(runId, 1, 8000, { "one-piece": state }))[0]!;
+  return await waitForNativeCandidate(String(created.document.id), state);
 }
 
 async function publish(candidate: Record<string, unknown>) {

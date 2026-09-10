@@ -242,3 +242,33 @@ export function reconciliationCollectionPlanChunkStatement(
     FROM official_source_collection_plans WHERE ingestion_run_id = (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?) AND source_lineage = ?`)
     .bind(offset, preparationId, lineage);
 }
+
+export function currentSourceDigestStatement(
+  db: CatalogueStore,
+  preparation: string,
+  lineage: string,
+  adapter: string,
+  request: string,
+) {
+  return repositoryStatements(db)
+    .prepare(`SELECT snapshot.content_digest
+    FROM source_requests request JOIN source_snapshots snapshot ON snapshot.id=request.source_snapshot_id
+    WHERE request.ingestion_run_id=(SELECT ingestion_run_id FROM reconciliation_operations WHERE id=?1)
+      AND snapshot.source_lineage=?2 AND snapshot.adapter_version=?3 AND request.request_id=?4
+      AND request.request_role<>'image'`)
+    .bind(preparation, lineage, adapter, request);
+}
+
+export function currentSourceRequestCountStatement(
+  db: CatalogueStore,
+  preparation: string,
+  lineage: string,
+  adapter: string,
+) {
+  return repositoryStatements(db)
+    .prepare(`SELECT count(*) AS count
+    FROM source_requests request JOIN source_snapshots snapshot ON snapshot.id=request.source_snapshot_id
+    WHERE request.ingestion_run_id=(SELECT ingestion_run_id FROM reconciliation_operations WHERE id=?1)
+      AND snapshot.source_lineage=?2 AND snapshot.adapter_version=?3 AND request.request_role<>'image'`)
+    .bind(preparation, lineage, adapter);
+}

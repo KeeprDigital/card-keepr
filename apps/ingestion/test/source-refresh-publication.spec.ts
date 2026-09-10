@@ -1,8 +1,11 @@
 import { expect, test } from "vitest";
-import { nativeCandidateRecords, waitForNativeCandidates } from "./native-candidate-helpers";
-import { approveNativeCandidateThroughBinding as approveNativeCandidate } from "./native-publication-helpers";
-import { get, installReconciliationSuite } from "./reconciliation-helpers";
-import { administrationRequest, resumeCollection, waitForEvidenceRun } from "./runtime-helpers";
+import { nativeCandidateRecords } from "./native-candidate-helpers";
+import { approveNativeCandidate, prepareNativeEvidence } from "./native-publication-helpers";
+import { get, installReconciliationSuite, postFixtureEvidence, testEnv } from "./reconciliation-helpers";
+import { administrationRequest } from "./runtime-helpers";
+
+import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
+import { currentGameMembers } from "./query-helpers/atomic-publication";
 
 installReconciliationSuite();
 // Synthetic source evidence and injected outages; no real-source equivalence claim.
@@ -23,20 +26,29 @@ function sourcePlan(lineage: string, scenario: string, optional = false) {
     ],
   };
 }
-async function refresh(plans: ReturnType<typeof sourcePlan>[], expectedState = "sealed") {
-  const response = await administrationRequest("/v1/ingestion-runs/evidence", "POST", {
-    plans,
-    idempotency_key: crypto.randomUUID(),
-  });
-  expect(response.status).toBe(201);
-  const { id } = await response.json<{ id: string }>();
-  await resumeCollection(id);
-  const collection = await waitForEvidenceRun(id);
+async function refresh(plans: ReturnType<typeof sourcePlan>[], expectedState: "sealed" | "failed" = "sealed") {
+  const started = await postFixtureEvidence({ plans, idempotency_key: crypto.randomUUID() });
+  const id = String(started.document.id);
+  const collection = await collectFixtureEvidence(
+    testEnv.CATALOGUE_DB,
+    testEnv.EVIDENCE_OBJECTS,
+    testEnv.OFFICIAL_SOURCE_TRANSPORT,
+    id,
+  );
   if (collection.state === "failed") {
     expect(expectedState).toBe("failed");
     return { id, collection, candidate: undefined, records: undefined };
   }
-  const [candidate] = await waitForNativeCandidates(id, 1, 15_000, { "one-piece": expectedState });
+  const members = await currentGameMembers(testEnv.CATALOGUE_DB);
+  const predecessor =
+    members.results.find((member) => member.supported_game === "one-piece")?.game_revision_id ?? "catrev_spine_000";
+  const candidate = await prepareNativeEvidence({
+    runId: id,
+    game: "one-piece",
+    predecessor,
+    key: `refresh-${id}`,
+    expectedState,
+  });
   return {
     id,
     collection,
@@ -111,6 +123,17 @@ test("official-only and optional-outage refreshes preserve accepted supplemental
     content_captured_at: string;
   }[];
   expect(checks[0]!.successful_checked_at > checks[0]!.content_captured_at).toBe(true);
+  // The optional outage's unselected request cannot replace the accepted source proof.
+  const afterOutage = await refresh([sourcePlan("limitless-one-piece-en", "source-refresh-supplemental")]);
+  expect(afterOutage.candidate!.state).toBe("sealed");
+  expect(
+    (
+      await administrationRequest(`/v1/game-candidates/${afterOutage.candidate!.id}/abandon`, "POST", {
+        generation: afterOutage.candidate!.generation,
+        idempotency_key: "after-outage-proof-inspected",
+      })
+    ).status,
+  ).toBe(200);
   const competing = await refresh([sourcePlan("limitless-one-piece-en", "base")], "failed");
   expect(competing.candidate?.state ?? competing.collection.state).toBe("failed");
 }, 30_000);
