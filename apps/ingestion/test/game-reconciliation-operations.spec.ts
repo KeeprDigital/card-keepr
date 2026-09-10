@@ -403,7 +403,7 @@ test("abandonment releases only its game slot and a new intent creates a fresh c
 });
 
 test("a native source change retains reconfirmable curated diagnostics without failing the collection", async () => {
-  const originalSource = await collect("/reconciliation/curated-conflict-fanout-base", "native-curated-seed");
+  const originalSource = await collect("/reconciliation/base", "native-curated-seed");
   const seed = await prepareNativeCandidate(
     originalSource.id,
     "one-piece",
@@ -433,7 +433,7 @@ test("a native source change retains reconfirmable curated diagnostics without f
   });
   expect(revision.response.status).toBe(201);
   const revisionId = requiredString(revision.document, "curated_revision_id");
-  const run = await collect("/reconciliation/curated-conflict-fanout-changed", "native-curated-next");
+  const run = await collect("/reconciliation/curated-draft-source-changed", "native-curated-next");
   const created = await post("/v1/game-candidates", {
     ingestion_run_id: run.id,
     supported_game: "one-piece",

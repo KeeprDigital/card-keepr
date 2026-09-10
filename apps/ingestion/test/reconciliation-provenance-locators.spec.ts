@@ -1,5 +1,5 @@
 import { nativePrintingHistory } from "../../../src/catalogue/reconciliation/native-printing-history";
-import { expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
@@ -535,70 +535,77 @@ test("historical locator bindings reactivate only for the same Printing and expo
   );
 }, 30_000);
 
-test("locator variant evolution preserves effective-dated suffix history across disappearance and reactivation", async () => {
-  const firstRun = await collect("/reconciliation/locator-variant-v1", "locator-variant-v1");
-  const first = await prepareEvidence(firstRun.id);
-  const printingId = requiredString(requiredFirst(first.records, "printings"), "id");
-  const firstRevision = requiredString((await publishEvidence(first)).document, "resulting_revision_id");
-  const secondRun = await collect("/reconciliation/locator-variant-v2", "locator-variant-v2");
-  const second = await prepareEvidence(secondRun.id);
-  expect(requiredFirst(second.records, "printings")).toMatchObject({
-    id: printingId,
-  });
-  const secondRevision = requiredString((await publishEvidence(second)).document, "resulting_revision_id");
-  const evolved = await get(`/v1/reconciliation/printings/${printingId}`);
-  expect(evolved.document.locators).toMatchObject({
-    current: [
-      expect.objectContaining({
-        locator: "/official/locator-variant/stable",
-        variant_key: "suffix-b",
-        first_revision_id: secondRevision,
-        current: true,
-      }),
-    ],
-    historical: [
-      expect.objectContaining({
-        locator: "/official/locator-variant/stable",
-        variant_key: "suffix-a",
-        first_revision_id: firstRevision,
-        last_observed_revision_id: firstRevision,
-        current: false,
-        last_missing_revision_id: secondRevision,
-      }),
-    ],
-  });
-  const missingRun = await collect("/reconciliation/complete-empty-lineage", "locator-variant-missing");
-  const missing = await prepareEvidence(missingRun.id);
-  const missingRevision = requiredString((await publishEvidence(missing)).document, "resulting_revision_id");
-  const reactivatedRun = await collect("/reconciliation/locator-variant-v1", "locator-variant-reactivate-v1");
-  const reactivated = await prepareEvidence(reactivatedRun.id);
-  const reactivatedRevision = requiredString((await publishEvidence(reactivated)).document, "resulting_revision_id");
-  const lifecycle = await get(`/v1/reconciliation/printings/${printingId}`);
-  expect(lifecycle.document.locators).toMatchObject({
-    current: [
-      expect.objectContaining({
-        variant_key: "suffix-a",
-        first_revision_id: firstRevision,
-        last_observed_revision_id: reactivatedRevision,
-        last_missing_revision_id: null,
-      }),
-    ],
-    historical: [
-      expect.objectContaining({
-        variant_key: "suffix-b",
-        first_revision_id: secondRevision,
-        last_observed_revision_id: secondRevision,
-        current: false,
-        last_missing_revision_id: missingRevision,
-      }),
-    ],
-  });
-  expect(await exportComponentRecords(reactivatedRevision, "printings")).toContainEqual(
-    expect.objectContaining({
+describe("locator variant evolution", () => {
+  let printingId: string;
+  let firstRevision: string;
+  let secondRevision: string;
+  beforeEach(async () => {
+    const firstRun = await collect("/reconciliation/locator-variant-v1", "locator-variant-v1");
+    const first = await prepareEvidence(firstRun.id);
+    printingId = requiredString(requiredFirst(first.records, "printings"), "id");
+    firstRevision = requiredString((await publishEvidence(first)).document, "resulting_revision_id");
+    const secondRun = await collect("/reconciliation/locator-variant-v2", "locator-variant-v2");
+    const second = await prepareEvidence(secondRun.id);
+    expect(requiredFirst(second.records, "printings")).toMatchObject({
       id: printingId,
-    }),
-  );
-}, 20_000);
+    });
+    secondRevision = requiredString((await publishEvidence(second)).document, "resulting_revision_id");
+  });
+  test("preserves effective-dated suffix history across disappearance and reactivation", async () => {
+    const evolved = await get(`/v1/reconciliation/printings/${printingId}`);
+    expect(evolved.document.locators).toMatchObject({
+      current: [
+        expect.objectContaining({
+          locator: "/official/locator-variant/stable",
+          variant_key: "suffix-b",
+          first_revision_id: secondRevision,
+          current: true,
+        }),
+      ],
+      historical: [
+        expect.objectContaining({
+          locator: "/official/locator-variant/stable",
+          variant_key: "suffix-a",
+          first_revision_id: firstRevision,
+          last_observed_revision_id: firstRevision,
+          current: false,
+          last_missing_revision_id: secondRevision,
+        }),
+      ],
+    });
+    const missingRun = await collect("/reconciliation/complete-empty-lineage", "locator-variant-missing");
+    const missing = await prepareEvidence(missingRun.id);
+    const missingRevision = requiredString((await publishEvidence(missing)).document, "resulting_revision_id");
+    const reactivatedRun = await collect("/reconciliation/locator-variant-v1", "locator-variant-reactivate-v1");
+    const reactivated = await prepareEvidence(reactivatedRun.id);
+    const reactivatedRevision = requiredString((await publishEvidence(reactivated)).document, "resulting_revision_id");
+    const lifecycle = await get(`/v1/reconciliation/printings/${printingId}`);
+    expect(lifecycle.document.locators).toMatchObject({
+      current: [
+        expect.objectContaining({
+          variant_key: "suffix-a",
+          first_revision_id: firstRevision,
+          last_observed_revision_id: reactivatedRevision,
+          last_missing_revision_id: null,
+        }),
+      ],
+      historical: [
+        expect.objectContaining({
+          variant_key: "suffix-b",
+          first_revision_id: secondRevision,
+          last_observed_revision_id: secondRevision,
+          current: false,
+          last_missing_revision_id: missingRevision,
+        }),
+      ],
+    });
+    expect(await exportComponentRecords(reactivatedRevision, "printings")).toContainEqual(
+      expect.objectContaining({
+        id: printingId,
+      }),
+    );
+  }, 20_000);
+});
 
 test("Card search keeps exactly the current and two preceding distinct Catalogue Revisions hot", async () => {
   const status = await get("/v1/status");

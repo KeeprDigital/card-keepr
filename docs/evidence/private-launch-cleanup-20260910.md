@@ -60,3 +60,13 @@ The dependency audit found no production dependency advisories. A compatible `fa
 - #136 and #151: final migration freeze and promotion remain launch-stage work.
 
 The audit and recovery archive are at `/Users/marcus/Developer/card-keepr-worktrees/repo-audit-20260910/`. Local execution logs are at `/tmp/card-keepr-resume-20260910/`.
+
+## Remaining hosted ingestion diagnosis
+
+Full run [34431922408](https://github.com/KeeprDigital/card-keepr/actions/runs/34431922408) at `16237103` passed lint, checks/API, domain and all acceptance groups. Ingestion shard 1 completed with 257 passes and four timeouts; shard 3 completed with 262 passes and one obsolete no-change revision assertion. Shard 2 recorded two timing failures and stopped making progress before its job cap. This remains a failed run.
+
+Focused hosted run [34432861414](https://github.com/KeeprDigital/card-keepr/actions/runs/34432861414) reproduced all six timing failures without the rest of the suite. Its host samples show ample available memory; these results do not support treating those six as random suite interference. The separate progress-stall selection is a distinct investigation.
+
+The existing tests now separate independent locale orders and the absolute observation-count deltas of 24 and 25, with distinct case identities. Published predecessor fixtures move into scoped setup hooks, keeping real owner operations and verified SQL backup/import. The single-card reconfirmation test uses the existing single-card changed-source fixture; the 32-card fanout regression remains separate. The no-change caller test now requires the unchanged consumer revision and a distinct verified backup attempt. Deadlines, retries, CI configuration and the earlier testing baseline remain unchanged.
+
+Local affected selections passed: four no-change/locale cases, five threshold/lookup/reconfirmation cases, and three lifecycle/history cases. Types and formatting passed. These targeted results do not replace hosted verification or certify the complete integration.
