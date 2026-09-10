@@ -12,6 +12,7 @@ export const syntheticCapacityTiers = [
   { id: "tier-2", printings: 100_000, images: 200_000, imageBytes: 50 * 1024 ** 3, structuredBytes: 1024 ** 3 },
 ] as const;
 export const syntheticCapacityWorkloads: readonly CapacityWorkload[] = [
+  { id: "2-images", printings: 2, images: 2, imageBytes: 2 * 100 * 1024, structuredBytes: 16 * 1024 },
   { id: "128-images", printings: 128, images: 128, imageBytes: 128 * 100 * 1024, structuredBytes: 1024 ** 2 },
   ...syntheticCapacityTiers,
 ];
@@ -213,8 +214,8 @@ export function capacityImageResponse(workload: CapacityWorkload, index: number)
 }
 
 export function capacitySourceResponse(url: URL): Response | null {
-  const page = /^\/reconciliation\/capacity-(tier-[12]|128-images)-page-([0-9]+)$/u.exec(url.pathname);
-  const image = /^\/images\/capacity-(tier-[12]|128-images)-([0-9]+)\.png$/u.exec(url.pathname);
+  const page = /^\/reconciliation\/capacity-(tier-[12]|2-images|128-images)-page-([0-9]+)$/u.exec(url.pathname);
+  const image = /^\/images\/capacity-(tier-[12]|2-images|128-images)-([0-9]+)\.png$/u.exec(url.pathname);
   if (page === null && image === null) return null;
   try {
     if (page) return Response.json(capacityPageDocument(syntheticCapacityTier(page[1]!), Number(page[2])));

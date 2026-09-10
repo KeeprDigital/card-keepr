@@ -117,14 +117,14 @@ test("an optional source outage retains its failed attempt without blocking the 
   expect(result.diagnostics).toContainEqual(expect.objectContaining({ http_status: 404 }));
 });
 
-test("99 of 100 required captures cannot publish or claim a successful scope check", async () => {
+test("a missing required capture after a full batch cannot publish or claim a successful scope check", async () => {
   const response = await administrationRequest("/v1/ingestion-runs/evidence", "POST", {
     ...plan,
-    idempotency_key: "partial-required-100",
-    requests: Array.from({ length: 100 }, (_, index) => ({
+    idempotency_key: "partial-required-after-batch",
+    requests: Array.from({ length: 9 }, (_, index) => ({
       id: `one-piece-en:${index === 0 ? "discovery" : `page${index}`}`,
       url:
-        index === 99
+        index === 8
           ? "https://official-source.invalid/missing-required"
           : `https://official-source.invalid/reconciliation/base?p=${index}`,
     })),
@@ -137,8 +137,8 @@ test("99 of 100 required captures cannot publish or claim a successful scope che
     state: "failed",
     source_coverage: [
       {
-        planned_requests: 100,
-        observed_requests: 99,
+        planned_requests: 9,
+        observed_requests: 8,
         successful_checked_at: null,
         status: "incomplete",
       },
@@ -146,7 +146,7 @@ test("99 of 100 required captures cannot publish or claim a successful scope che
   });
   const subset = await administrationRequest("/v1/ingestion-runs/evidence", "POST", {
     ...plan,
-    subset: "first-99-pages",
+    subset: "first-eight-pages",
     idempotency_key: "unproven-narrower-scope",
   });
   expect(subset.status).toBe(422);

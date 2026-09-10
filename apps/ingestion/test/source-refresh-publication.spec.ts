@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
 import { approveNativeCandidate, prepareNativeEvidence } from "./native-publication-helpers";
 import { get, installReconciliationSuite, postFixtureEvidence, testEnv } from "./reconciliation-helpers";
@@ -62,81 +62,104 @@ async function publishRefresh(run: Awaited<ReturnType<typeof refresh>>) {
   return approveNativeCandidate(run.candidate, `refresh-publication-${run.id}`);
 }
 
-test("official-only and optional-outage refreshes preserve accepted supplemental Printings and their check dates", async () => {
-  const intake = await refresh([
-    sourcePlan("one-piece-en", "base"),
-    sourcePlan("limitless-one-piece-en", "source-refresh-supplemental"),
-  ]);
-  // Preserve the original owner decision to decline this intake before admitting
-  // supplemental evidence: native candidates use explicit abandonment.
-  expect(
-    (
-      await administrationRequest(`/v1/game-candidates/${intake.candidate!.id}/abandon`, "POST", {
-        generation: intake.candidate!.generation,
-        idempotency_key: "inspect-supplemental-intake",
-      })
-    ).status,
-  ).toBe(200);
-  const proposals = await get("/v1/entity-proposals?game=one-piece");
-  const proposal = (proposals.document.proposals as { id: string }[])[0]!;
-  expect(
-    (
-      await administrationRequest(`/v1/entity-proposals/${proposal.id}/decisions`, "POST", {
-        action: "admit",
-        expected_generation: "0",
-        rationale: "Owner reviewed retained synthetic supplemental evidence",
-        idempotency_key: "admit-supplemental-refresh-fixture",
-      })
-    ).status,
-  ).toBe(200);
-  const initial = await refresh([
-    sourcePlan("one-piece-en", "base"),
-    sourcePlan("limitless-one-piece-en", "source-refresh-supplemental"),
-  ]);
-  expect(initial.candidate!.state).toBe("sealed");
-  const printings = initial.records!.printings!.map((printing) => String(printing.id));
-  expect(printings).toHaveLength(2);
-  const initialPublication = await publishRefresh(initial);
-  expect(initialPublication.response.status).toBe(200);
-  const initialRevision = initialPublication.document.resulting_revision_id;
-  const initialChecks = await get(`/v1/ingestion-runs/${initial.id}/evidence`);
-  const official = await refresh([sourcePlan("one-piece-en", "base")]);
-  expect(official.candidate!.state).toBe("sealed");
-  expect((await publishRefresh(official)).document.resulting_revision_id).toBe(initialRevision);
-  for (const id of printings) expect((await get(`/v1/reconciliation/printings/${id}`)).response.status).toBe(200);
-  const supplemental = await refresh([sourcePlan("limitless-one-piece-en", "source-refresh-supplemental")]);
-  expect(supplemental.candidate!.state).toBe("sealed");
-  expect((await publishRefresh(supplemental)).document.resulting_revision_id).toBe(initialRevision);
-  const outage = await refresh([
-    sourcePlan("one-piece-en", "base"),
-    sourcePlan("limitless-one-piece-en", "outage", true),
-  ]);
-  expect([...(outage.records!.warnings ?? []), ...(outage.records!.shared_warnings ?? [])]).toContainEqual(
-    expect.objectContaining({ code: "optional_source_carried_forward", source_lineage: "limitless-one-piece-en" }),
+describe("refreshing accepted supplemental evidence", () => {
+  let initial: Awaited<ReturnType<typeof refresh>>;
+  let printings: string[];
+  let initialRevision: unknown;
+  let initialChecks: Awaited<ReturnType<typeof get>>;
+
+  // Every case owns a fresh, genuinely published and backup-verified predecessor.
+  // Setup has its own hook deadline; no case depends on a previous test's writes.
+  beforeEach(async () => {
+    const intake = await refresh([
+      sourcePlan("one-piece-en", "base"),
+      sourcePlan("limitless-one-piece-en", "source-refresh-supplemental"),
+    ]);
+    // Preserve the original owner decision to decline this intake before admitting
+    // supplemental evidence: native candidates use explicit abandonment.
+    expect(
+      (
+        await administrationRequest(`/v1/game-candidates/${intake.candidate!.id}/abandon`, "POST", {
+          generation: intake.candidate!.generation,
+          idempotency_key: "inspect-supplemental-intake",
+        })
+      ).status,
+    ).toBe(200);
+    const proposals = await get("/v1/entity-proposals?game=one-piece");
+    const proposal = (proposals.document.proposals as { id: string }[])[0]!;
+    expect(
+      (
+        await administrationRequest(`/v1/entity-proposals/${proposal.id}/decisions`, "POST", {
+          action: "admit",
+          expected_generation: "0",
+          rationale: "Owner reviewed retained synthetic supplemental evidence",
+          idempotency_key: "admit-supplemental-refresh-fixture",
+        })
+      ).status,
+    ).toBe(200);
+    initial = await refresh([
+      sourcePlan("one-piece-en", "base"),
+      sourcePlan("limitless-one-piece-en", "source-refresh-supplemental"),
+    ]);
+    expect(initial.candidate!.state).toBe("sealed");
+    printings = initial.records!.printings!.map((printing) => String(printing.id));
+    expect(printings).toHaveLength(2);
+    const initialPublication = await publishRefresh(initial);
+    expect(initialPublication.response.status).toBe(200);
+    initialRevision = initialPublication.document.resulting_revision_id;
+    initialChecks = await get(`/v1/ingestion-runs/${initial.id}/evidence`);
+  });
+
+  test.each(["official-only", "supplemental-only", "optional-outage"])(
+    "%s refresh preserves accepted Printings and their source proof",
+    async (scenario) => {
+      const plans =
+        scenario === "supplemental-only"
+          ? [sourcePlan("limitless-one-piece-en", "source-refresh-supplemental")]
+          : [
+              sourcePlan("one-piece-en", "base"),
+              ...(scenario === "optional-outage" ? [sourcePlan("limitless-one-piece-en", "outage", true)] : []),
+            ];
+      const refreshed = await refresh(plans);
+      expect(refreshed.candidate!.state).toBe("sealed");
+      if (scenario === "optional-outage") {
+        expect([...(refreshed.records!.warnings ?? []), ...(refreshed.records!.shared_warnings ?? [])]).toContainEqual(
+          expect.objectContaining({
+            code: "optional_source_carried_forward",
+            source_lineage: "limitless-one-piece-en",
+          }),
+        );
+      }
+      expect((await publishRefresh(refreshed)).document.resulting_revision_id).toBe(initialRevision);
+      for (const id of printings) expect((await get(`/v1/reconciliation/printings/${id}`)).response.status).toBe(200);
+      expect((await get(`/v1/ingestion-runs/${initial.id}/evidence`)).document.source_coverage).toEqual(
+        initialChecks.document.source_coverage,
+      );
+      if (scenario === "official-only") {
+        const checks = (await get(`/v1/ingestion-runs/${refreshed.id}/evidence`)).document.source_coverage as {
+          successful_checked_at: string;
+          content_captured_at: string;
+        }[];
+        expect(checks[0]!.successful_checked_at > checks[0]!.content_captured_at).toBe(true);
+      }
+      if (scenario === "optional-outage") {
+        // The outage cannot replace the accepted proof or admit a competing scope.
+        const afterOutage = await refresh([sourcePlan("limitless-one-piece-en", "source-refresh-supplemental")]);
+        expect(afterOutage.candidate!.state).toBe("sealed");
+        expect(
+          (
+            await administrationRequest(`/v1/game-candidates/${afterOutage.candidate!.id}/abandon`, "POST", {
+              generation: afterOutage.candidate!.generation,
+              idempotency_key: "after-outage-proof-inspected",
+            })
+          ).status,
+        ).toBe(200);
+        const competing = await refresh([sourcePlan("limitless-one-piece-en", "base")], "failed");
+        expect(competing.candidate?.state ?? competing.collection.state).toBe("failed");
+      }
+    },
   );
-  expect((await publishRefresh(outage)).document.resulting_revision_id).toBe(initialRevision);
-  expect((await get(`/v1/ingestion-runs/${initial.id}/evidence`)).document.source_coverage).toEqual(
-    initialChecks.document.source_coverage,
-  );
-  const checks = (await get(`/v1/ingestion-runs/${official.id}/evidence`)).document.source_coverage as {
-    successful_checked_at: string;
-    content_captured_at: string;
-  }[];
-  expect(checks[0]!.successful_checked_at > checks[0]!.content_captured_at).toBe(true);
-  // The optional outage's unselected request cannot replace the accepted source proof.
-  const afterOutage = await refresh([sourcePlan("limitless-one-piece-en", "source-refresh-supplemental")]);
-  expect(afterOutage.candidate!.state).toBe("sealed");
-  expect(
-    (
-      await administrationRequest(`/v1/game-candidates/${afterOutage.candidate!.id}/abandon`, "POST", {
-        generation: afterOutage.candidate!.generation,
-        idempotency_key: "after-outage-proof-inspected",
-      })
-    ).status,
-  ).toBe(200);
-  const competing = await refresh([sourcePlan("limitless-one-piece-en", "base")], "failed");
-  expect(competing.candidate?.state ?? competing.collection.state).toBe("failed");
-}, 30_000);
+});
 
 test("explicit reinstatement preserves the withdrawn Printing identity and attributable history", async () => {
   const withdrawn = await refresh([sourcePlan("one-piece-en", "withdrawn")]);

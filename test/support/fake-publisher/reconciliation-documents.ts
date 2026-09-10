@@ -5,7 +5,7 @@ import { capacityPageDocument, syntheticCapacityTier } from "./capacity-workload
 // https://<scenario>-official-source.invalid/reconciliation/<scenario>. Every
 // document is a pure function of the scenario, surface, and request URL.
 export function reconciliationSourceDocument(scenario: string, surface: string, requestUrl: string) {
-  const capacity = /^capacity-(tier-[12]|128-images)-page-([0-9]+)$/u.exec(scenario);
+  const capacity = /^capacity-(tier-[12]|2-images|128-images)-page-([0-9]+)$/u.exec(scenario);
   if (capacity) return capacityPageDocument(syntheticCapacityTier(capacity[1]!), Number(capacity[2]));
   if (scenario.startsWith("inspection-")) {
     const observation = printingObservation({

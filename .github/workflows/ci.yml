@@ -126,7 +126,15 @@ jobs:
           key: node-modules-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.node.outputs.node-version }}-${{ hashFiles('package-lock.json', 'package.json', '.npmrc') }}
       - if: steps.node-modules.outputs.cache-hit != 'true'
         run: npm ci
-      - run: bash scripts/ci-test.sh npm run test:workers:ingestion -- --shard=${{ matrix.shard }}/3
+      - run: bash scripts/ci-test.sh npm run test:workers:ingestion -- --shard=${{ matrix.shard }}/3 --silent=passed-only --reporter=default --reporter=json --outputFile.json=test-results/ingestion.json
+      # Preserve per-test timings and failure details from this exact shard. A
+      # failed run should be diagnosable without creating a diagnostic workflow.
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ingestion-results-${{ matrix.shard }}
+          path: test-results/ingestion.json
+          retention-days: 7
 
   # Routine acceptance only; full publisher/recovery journeys are explicit opt-in.
   # The shared runner caps each shard at two concurrent test files.

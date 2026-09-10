@@ -26,6 +26,48 @@ ready-PR CI run provide the full result. Also run `npm run lint` and
 `npm run typecheck` for the changes. A passing quick check is feedback for
 iteration; the full CI checks are the merge/release standard.
 
+## Strategy: test transitions, then wiring
+
+The maintenance cost of a test is part of its design. Correctness should depend
+on explicit inputs, ordering and durable outcomes. A timeout is a hang detector,
+not an assertion about hosted CPU or disk speed. The September reassessment and
+its evidence are in [testing-reassessment.md](testing-reassessment.md).
+
+For ordinary changes, use this decision order:
+
+1. Prove a rule directly in the domain suite when storage is irrelevant.
+2. Prove a storage transition with real D1/R2 and controlled execution. Put its
+   independently verified starting state in a scoped `beforeEach`; each test
+   owns fresh state. Setup keeps the existing hook deadline. A hook timeout still
+   fails CI and must be fixed, not retried or given an ever larger allowance.
+3. Use real Workflow bindings when dispatch, events, contention, termination or
+   recovery of a platform instance is the assertion. Ordinary preparation and
+   publication setup uses the controlled helpers. Keep dedicated binding proofs
+   in routine CI; do not replay all business cases through the scheduler.
+4. Use a small HTTP/CLI journey for process wiring and publication/restore. A
+   multi-stage history is appropriate when the interaction between those stages
+   is itself the regression; independent cases should not share one deadline.
+5. Put volume measurements in stress/benchmark coverage. Keep the same behavioral
+   assertions at a small input size in routine CI. Preserve actual boundaries:
+   a stream must cross a chunk boundary, pagination must cross a page, and a
+   batch failure must happen after a full batch.
+
+Do not respond to a timeout by adding another overlapping test or another
+fixture mode. First identify the transition it protects and the unnecessary
+setup around it. Reuse the existing drivers and fixtures. Prefer deleting or
+shrinking duplicate work once a narrower test preserves its contract. When
+independent cases need separate setup, accept that isolation can add total work;
+it should reduce the work inside any one assertion deadline.
+
+The native image publication assertion is shared by the routine two-image test
+and the opt-in 128-image stress test. Both verify real streamed storage,
+publication, serving bytes and export references. Two distinct 100 KiB images
+still cross the 64 KiB transport chunk boundary. The required-capture regression
+uses nine requests to cross the eight-request batch boundary. Source refresh
+cases each start from a fresh, fully published and backup-verified predecessor.
+No-change publication rules use controlled execution; caller-retirement and
+Workflow-binding tests retain the platform wiring proof.
+
 ## Test boundaries
 
 The suite has three responsibilities. Keep each assertion at the narrowest
@@ -173,7 +215,7 @@ owner-operated repository. Force pushes and branch deletion are disabled. The se
 requires every job to succeed on the exact deployed main commit.
 
 Changes to job IDs or matrix sizes must also update that gate and its contract
-test. This cleanup preserves their existing names.
+test. The reassessment preserves their existing names and all routine test selection.
 
 ## Resource and duration policy
 
@@ -299,3 +341,20 @@ three shards per large suite until successful hosted durations justify a change.
 Extended and benchmark commands require an explicit scenario or `--all`.
 `--list` is always safe and does not boot services. See the acceptance README for
 scenario names and the capacity probe's required report destination.
+
+Ingestion CI retains a JSON result for each shard for seven days, with test names,
+failures and durations. Successful tests suppress operational log output in CI;
+failed tests retain it. Download `ingestion-results-N` from the failed run, select
+the affected file, and diagnose at that scope before returning to full CI.
+These reports improve diagnosis; quieter reporting is not a timing fix.
+
+The separate [focused diagnostic workflow](../.github/workflows/test-suite-diagnostics.yml)
+accepts exact Worker test files and one or three runs. Any failed repetition
+fails the job. It is never release evidence. For example:
+
+```sh
+gh workflow run test-suite-diagnostics.yml --ref <branch> \
+  -f worker=ingestion \
+  -f files='apps/ingestion/test/source-refresh-publication.spec.ts apps/ingestion/test/native-printing-images.spec.ts' \
+  -f repeats=3
+```
