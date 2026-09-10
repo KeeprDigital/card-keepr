@@ -106,7 +106,8 @@ test. This cleanup preserves their existing names.
   Worker integration is still more expensive than domain tests.
 - Ingestion, acceptance and draft smoke CI use a disposable tmpfs capped at
   512 MiB per runner for temporary Worker databases. This bounds its extra storage
-  memory and avoids slow temporary database writes on hosted disks. It does not change local storage settings,
+  memory and avoids slow temporary database writes on hosted disks. Space is
+  allocated as files grow, not reserved up front. It does not change local storage settings,
   storage isolation, transactions, or SQL export/restore assertions. The mount
   is removed when the test step exits; hosted machines are disposable.
 - Routine acceptance tests time out after two minutes; ingestion tests and Worker
@@ -143,16 +144,22 @@ runners):
 - All three acceptance shards passed in 2m37s–3m49s, including setup.
 - The bounded stress job passed in 1m13s, including a clean install.
 - Ingestion's first shard fell from 8m25s on disk to 4m47s with capped tmpfs.
-  The next full run completed its three shards in 4m47s–6m47s, with one remaining
-  oversized warning-threshold fixture timing out. That fixture was reduced from
-  373 to 76 observations while preserving the 24/25-record threshold boundary.
+  Early full-run samples completed their ingestion shards in roughly five to
+  seven minutes. Timing-sensitive fixtures found during those runs were reduced:
+  the warning boundary uses 76 observations instead of 373, and the coverage-loss
+  boundary publishes 26 records instead of 100.
 - A focused comparison of the same two publication tests took 26s with one
   worker and 16s with two. This supports retaining two workers; it is a small
   sample, not a claim that every test benefits equally from concurrency.
 
-The [hosted suite run](https://github.com/KeeprDigital/card-keepr/actions/runs/34416927409)
+The [initial hosted measurements](https://github.com/KeeprDigital/card-keepr/actions/runs/34416927409)
 and [concurrency comparison](https://github.com/KeeprDigital/card-keepr/actions/runs/34417355093)
-record these measurements. GitHub documents each standard public Linux runner
+record those samples. The subsequent
+[focused verification](https://github.com/KeeprDigital/card-keepr/actions/runs/34418972137)
+passed three consecutive runs of the five affected Worker tests (61–63 seconds
+per run) and the six affected acceptance tests (106–107 seconds per run). These
+focused repeats diagnosed reliability; they are not permanent retry settings
+or substitutes for the complete merge checks. GitHub documents each standard public Linux runner
 as a separate VM with four CPUs and 16 GB RAM in its
 [runner specification](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 Tmpfs's size option limits storage allocation; see the
@@ -177,8 +184,14 @@ Tmpfs's size option limits storage allocation; see the
 5. Add one regression at the responsible layer for a bug. Repeat a case across
    layers only when each test proves a different contract. Move a slow test out
    of routine coverage only after retaining a bounded test of the same behaviour.
-6. Run the affected file first, then the appropriate quick/full check. Investigate
-   failures instead of repeatedly retrying them or loosening assertions.
+6. Keep setup identities distinct between independent parameterized cases, and
+   still dispose Workflows and reset storage between tests. Publication helpers
+   should read only the candidate identities/manifests they need; reading every
+   data partition belongs in assertions that inspect those records.
+7. Run the affected file first, then the appropriate quick/full check. For a CI-only
+   failure, reproduce it in a small hosted selection, fix the cause, and repeat
+   that selection before returning to the full suite. Do not use repeated full
+   runs, larger timeouts, higher rate limits, or automatic retries to chase green.
 
 Keep Vitest in the installed Cloudflare plugin's peer dependency range. The
 current `@cloudflare/vitest-plugin` supports Vitest 4.1; Vitest 5 fails before
