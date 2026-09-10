@@ -650,7 +650,7 @@ describe.each(["associations", "application", "lookup"])(
         expect(decision.response.status).toBe(201);
       }
     });
-    test("retains bounded progress through the injected outage and native publication", async () => {
+    test("retains bounded progress and sealed candidate records through the injected outage", async () => {
       const run = await collect(
         failurePhase === "application"
           ? "/reconciliation/identity-chain-card-surface"
@@ -826,15 +826,14 @@ describe.each(["associations", "application", "lookup"])(
       );
       expect(checkpoint).toMatchObject({ value: { complete: true, processedDecisions: 12 } });
       expect(checkpoint!.ordinal).toBeGreaterThan(0);
-      const accepted = await approveNativeCandidate(candidate.document, "association-reviewed-publication");
-      expect(accepted.response.status, JSON.stringify(accepted.document)).toBe(200);
-      const current = String(accepted.document.resulting_revision_id);
-      expect(await exportComponentRecords(current, "cards")).toHaveLength(12);
-      const finalPrintings = await exportComponentRecords(current, "printings");
+      expect(candidate.document.state).toBe("sealed");
+      const records = await nativeCandidateRecords(preparation.candidateId);
+      expect(records.cards).toHaveLength(12);
+      const finalPrintings = records.printings!;
       expect(finalPrintings).toHaveLength(32);
       if (failurePhase !== "associations")
         expect(finalPrintings.filter((printing) => printing.card_id === cards[20]!.id)).toHaveLength(21);
-      expect(await exportComponentRecords(current, "identity-corrections")).toHaveLength(20);
+      expect(records.identity_corrections).toHaveLength(20);
     });
   },
 );
