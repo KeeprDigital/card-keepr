@@ -165,13 +165,11 @@ export async function missingSelectedAuthorities(
   return missing;
 }
 
-export async function assertSelectedAuthoritiesCollected(
-  database: CatalogueStore,
-  plans: Parameters<typeof missingSelectedAuthorities>[1],
+export function assertSelectedAuthoritiesCollected(
+  missing: Awaited<ReturnType<typeof missingSelectedAuthorities>>,
   unchangedAcceptedLineages: ReadonlySet<string> = new Set(),
-  runId?: string,
 ) {
-  for (const { decision, applicable } of await missingSelectedAuthorities(database, plans, runId)) {
+  for (const { decision, applicable } of missing) {
     if (!applicable.every((plan) => unchangedAcceptedLineages.has(plan.source_lineage))) {
       throw new Error(
         `Selected Source Authority ${decision.source_lineage} for ${decision.area} (${decision.locale}/${decision.release_region}) is absent. Collect the selected source or explicitly change authority; no fallback is permitted.`,

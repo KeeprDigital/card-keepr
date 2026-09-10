@@ -15,8 +15,9 @@ import { injectFixtureEvidencePlan, injectFixturePublication } from "./fixture-p
 import { recoverHistoricalPublication } from "./historical-publication-fixture";
 import { nativeCandidateRecords, waitForNativeCandidate } from "./native-candidate-helpers";
 import {
-  approveNativeCandidateThroughBinding as approveNativeCandidate,
+  approveNativeCandidate,
   prepareNativeCandidate,
+  seedNativePredecessor,
   waitForVerifiedPublicationBackup,
 } from "./native-publication-helpers";
 import * as ingestionQueries from "./query-helpers/ingestion";
@@ -668,14 +669,14 @@ describe("Errata rules-text lifecycle", () => {
   test("a non-parallel Official Erratum fails closed unless it targets one exact Printing", async () => {
     const seedRun = await collect("/reconciliation/dedicated-printing-erratum-seed", "seed-nonparallel-card-erratum");
     const seed = await prepareNativeCandidate(seedRun.id, "one-piece", "catrev_spine_000", "nonparallel-erratum-seed");
-    const published = await approveNativeCandidate(seed, "nonparallel-erratum-seed-publication");
+    const published = await seedNativePredecessor(seed, "nonparallel-erratum-seed-publication");
 
     const run = await collect(
       "/reconciliation/dedicated-card-nonparallel-erratum",
       "reject-nonparallel-card-erratum",
       syntheticOfficialErrataSource,
     );
-    const failed = await prepareFailedErrataCandidate(run.id, String(published.document.resulting_revision_id));
+    const failed = await prepareFailedErrataCandidate(run.id, String(published.revisionId));
     expect((failed.outcome as Record<string, unknown>).diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -764,7 +765,7 @@ describe("Errata rules-text lifecycle", () => {
       .printings!.map((printing) => requiredString(printing as Record<string, unknown>, "id"))
       .sort();
     expect(printingIds).toHaveLength(2);
-    const published = await approveNativeCandidate(seed, "ambiguous-erratum-seed-publication");
+    const published = await seedNativePredecessor(seed, "ambiguous-erratum-seed-publication");
     for (const id of printingIds) {
       const retained = await get(`/v1/reconciliation/printings/${id}`);
       expect(retained.response.status).toBe(200);
@@ -777,10 +778,7 @@ describe("Errata rules-text lifecycle", () => {
       "ambiguous-dedicated-printing-erratum",
       syntheticOfficialErrataSource,
     );
-    const ambiguous = await prepareFailedErrataCandidate(
-      ambiguousRun.id,
-      String(published.document.resulting_revision_id),
-    );
+    const ambiguous = await prepareFailedErrataCandidate(ambiguousRun.id, String(published.revisionId));
     expect((ambiguous.outcome as Record<string, unknown>).diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -795,7 +793,7 @@ describe("Errata rules-text lifecycle", () => {
       "missing-dedicated-printing-erratum",
       syntheticOfficialErrataSource,
     );
-    const missing = await prepareFailedErrataCandidate(missingRun.id, String(published.document.resulting_revision_id));
+    const missing = await prepareFailedErrataCandidate(missingRun.id, String(published.revisionId));
     expect((missing.outcome as Record<string, unknown>).diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

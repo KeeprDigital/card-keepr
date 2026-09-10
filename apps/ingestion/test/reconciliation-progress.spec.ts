@@ -1,9 +1,6 @@
 import { expect, test } from "vitest";
 import { nativeCandidateRecords, waitForDispatchedNativeCandidates } from "./native-candidate-helpers";
-import {
-  approveNativeCandidateThroughBinding as approveNativeCandidate,
-  prepareNativeCandidate,
-} from "./native-publication-helpers";
+import { approveNativeCandidate, prepareNativeCandidate, seedNativePredecessor } from "./native-publication-helpers";
 import {
   collect,
   get,
@@ -1324,9 +1321,9 @@ test.each(productFaultCases)(
         "catrev_spine_000",
         `${caseKey}-seed-candidate`,
       );
-      const published = await approveNativeCandidate(seed, `${caseKey}-seed-publish`);
-      expect(published.response.status).toBe(200);
-      const revision = requiredString(published.document, "resulting_revision_id");
+      const published = await seedNativePredecessor(seed, `${caseKey}-seed-publish`);
+      expect(published.checkpoint).toBe("pending");
+      const revision = published.revisionId;
       priorDocument = {
         products: await exportComponentRecords(revision, "products"),
         distribution_contexts: await exportComponentRecords(revision, "distribution-contexts"),
@@ -1638,9 +1635,9 @@ test("a Product reducer committed tombstone replays without restoring a curated 
   const { reconcileProductReleaseState } = await import("../../../src/catalogue/reconciliation/product-release-state");
   const seedRun = await collect("/reconciliation/product-typed-relationships", "tombstone-seed");
   const seed = await prepareNativeCandidate(seedRun.id, "one-piece", "catrev_spine_000", "tombstone-seed-candidate");
-  const published = await approveNativeCandidate(seed, "tombstone-seed-publish");
-  expect(published.response.status).toBe(200);
-  const revision = requiredString(published.document, "resulting_revision_id");
+  const published = await seedNativePredecessor(seed, "tombstone-seed-publish");
+  expect(published.checkpoint).toBe("pending");
+  const revision = published.revisionId;
   const cards = await exportComponentRecords(revision, "cards");
   const printings = await exportComponentRecords(revision, "printings");
   const { reconciliationSourceDocument } = await import(
@@ -1701,7 +1698,7 @@ test("a Product reducer committed tombstone replays without restoring a curated 
     (
       await post("/admin/v1/curated-revisions", {
         environment: "production",
-        expected_current_revision_id: published.document.resulting_revision_id,
+        expected_current_revision_id: published.revisionId,
         proposal,
         proposal_digest: await sha256Text(canonicalJson(proposal)),
         idempotency_key: "tombstone-curated-create",
@@ -2031,8 +2028,8 @@ test("persistent curated comparison records every changed source field before fa
   const seedRun = await collect("/reconciliation/base", "curated-conflicts-seed");
   const seed = await prepareNativeCandidate(seedRun.id, "one-piece", "catrev_spine_000", "curated-conflicts-candidate");
   const card = requiredFirst(await nativeCandidateRecords(requiredString(seed, "id")), "cards");
-  const published = await approveNativeCandidate(seed, "curated-conflicts-publish");
-  expect(published.response.status).toBe(200);
+  const published = await seedNativePredecessor(seed, "curated-conflicts-publish");
+  expect(published.checkpoint).toBe("pending");
   const revisions: string[] = [];
   for (const field of ["name", "effective_rules_text"]) {
     const proposal = {
@@ -2049,7 +2046,7 @@ test("persistent curated comparison records every changed source field before fa
     };
     const created = await post("/admin/v1/curated-revisions", {
       environment: "production",
-      expected_current_revision_id: published.document.resulting_revision_id,
+      expected_current_revision_id: published.revisionId,
       proposal,
       proposal_digest: await sha256Text(canonicalJson(proposal)),
       idempotency_key: `curated-conflicts-${field}`,
@@ -2270,7 +2267,7 @@ test.each(retainedStateNamespaces)(
       `errata-state-candidate-${namespace}`,
     );
     const seedRecords = await nativeCandidateRecords(requiredString(seed, "id"));
-    expect((await approveNativeCandidate(seed, `errata-state-publish-${namespace}`)).response.status).toBe(200);
+    expect((await seedNativePredecessor(seed, `errata-state-publish-${namespace}`)).checkpoint).toBe("pending");
     const run = await collect("/reconciliation/errata-card-rules-text", `errata-state-next-${namespace}`);
     const statements = new WeakMap<object, { sql: string; values: unknown[] }>();
     let unavailable = true;

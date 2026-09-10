@@ -119,3 +119,6 @@ The first complete source-refresh rerun passed five tests in 30.86 seconds local
 
 
 All 45 tests across the seven directly affected local families passed together in 118.00 seconds, including the two metadata-fault guards, both pending-backup gates, source refresh, identity correction faults, curated lookup/conflicts and game-operation preparation. Full typecheck, lint, formatting, catalogue dependency cycles and import boundaries also pass. Independent Standards and Spec review findings were corrected and re-reviewed with no further actionable findings. Hosted affected-family verification is the next gate.
+
+
+The final caller audit also found unnecessary binding-backed publication in the Erratum rules and Product reducer progress families. Six setup locations (including parameterized fault cases) now use the same pending predecessor seam. Their actual multi-publication histories keep complete verified publication; injected preparation faults and clock-controlled publication switches are unchanged. All 86 tests in those two files pass locally in 127.09 seconds. Authority eligibility and validation reuse one captured read, keeping transient database errors separate from the pure authority rule. Hosted verification of these last affected paths precedes the full PR run.
