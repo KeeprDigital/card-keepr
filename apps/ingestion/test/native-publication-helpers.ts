@@ -77,7 +77,7 @@ async function publishCandidate(
   extraHeaders: Record<string, string> = {},
   submit: typeof postThroughWorkflowBindings,
 ) {
-  const id = requiredString(candidate, "id");
+  const ownerMeasureStart=Date.now(); const id = requiredString(candidate, "id");
   const manifest = requiredString(candidate, "manifest_digest");
   const inspected = await get(`/v1/game-candidates/${id}/inspection?manifest=${manifest}`);
   expect(inspected.response.status, JSON.stringify(inspected.document)).toBe(200);
@@ -93,7 +93,7 @@ async function publishCandidate(
     sequence: 0,
     idempotency_key: `${key}-artifacts`,
   });
-  expect(prepared.response.status, JSON.stringify(prepared.document)).toBe(202);
+  (globalThis as unknown as { profile253: unknown[] }).profile253.push({scope:"owner",phase:"private",milliseconds:Date.now()-ownerMeasureStart}); console.info("[PROFILE-253-owner]", "private", Date.now()-ownerMeasureStart);expect(prepared.response.status, JSON.stringify(prepared.document)).toBe(202);
   const artifacts = await observeUntil(preparationPath, (state) => state !== "preparing", timeoutMs);
   expect(artifacts.document.state, JSON.stringify(artifacts.document)).toBe("verified");
   const approved = await submit(
@@ -107,7 +107,7 @@ async function publishCandidate(
     },
     extraHeaders,
   );
-  expect(approved.response.status, JSON.stringify(approved.document)).toBe(202);
+  (globalThis as unknown as { profile253: unknown[] }).profile253.push({scope:"owner",phase:"public-and-backup",milliseconds:Date.now()-ownerMeasureStart}); console.info("[PROFILE-253-owner]", "public-and-backup", Date.now()-ownerMeasureStart);expect(approved.response.status, JSON.stringify(approved.document)).toBe(202);
   expect(approved.document).toMatchObject({
     candidate_id: id,
     manifest_digest: manifest,
