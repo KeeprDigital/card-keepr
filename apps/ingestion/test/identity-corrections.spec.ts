@@ -21,11 +21,11 @@ installReconciliationSuite();
 async function prepareIdentityFixture(path: string, key: string, predecessor: string) {
   const source = await collect(path, key);
   const candidate = await prepareNativeCandidate(source.id, "one-piece", predecessor, `${key}-native-candidate`);
-  return { candidate, records: await nativeCandidateRecords(String(candidate.id)) };
+  return candidate;
 }
 
 async function publishIdentityFixture(path: string, key: string, predecessor: string) {
-  const { candidate } = await prepareIdentityFixture(path, key, predecessor);
+  const candidate = await prepareIdentityFixture(path, key, predecessor);
   return { ...(await approveNativeCandidate(candidate, `${key}-native-publication`)), candidate };
 }
 
@@ -308,11 +308,15 @@ test("Card split requires reviewed catalogue Printing assignments and preserves 
 
 describe("reviewed known-number merge preserves a source Printing through corrected evidence and subsequent refresh", () => {
   async function seedReviewedMerge() {
-    const before = await prepareIdentityFixture(
+    const beforeCandidate = await prepareIdentityFixture(
       "/reconciliation/identity-correction-before",
       "known-before",
       "catrev_spine_000",
     );
+    const before = {
+      candidate: beforeCandidate,
+      records: await nativeCandidateRecords(String(beforeCandidate.id), ["cards", "printings"]),
+    };
     const card = (before.records.cards as Record<string, unknown>[])[0]!;
     const printing = (before.records.printings as { id: string }[])[0]!;
     const beforePublished = await approveNativeCandidate(before.candidate, "known-before-native-publication");
@@ -403,11 +407,15 @@ describe("reviewed known-number merge preserves a source Printing through correc
 
 describe("new Printing discovered after a Card split can receive an append-only owner assignment", () => {
   async function seedPublishedSplit() {
-    const source = await prepareIdentityFixture(
+    const sourceCandidate = await prepareIdentityFixture(
       "/reconciliation/identity-correction-before",
       "late-seed",
       "catrev_spine_000",
     );
+    const source = {
+      candidate: sourceCandidate,
+      records: await nativeCandidateRecords(String(sourceCandidate.id), ["cards", "printings"]),
+    };
     const original = (source.records.cards as { id: string }[])[0]!;
     const originalPrinting = (source.records.printings as { id: string }[])[0]!;
     const sourcePublished = await approveNativeCandidate(source.candidate, "late-seed-native-publication");
@@ -450,11 +458,15 @@ describe("new Printing discovered after a Card split can receive an append-only 
   });
   test("records the new assignment without rewriting the earlier split", async () => {
     const { originalPrinting, left, right, proposal, decision, splitPublished } = fixture;
-    const discovery = await prepareIdentityFixture(
+    const discoveryCandidate = await prepareIdentityFixture(
       "/reconciliation/identity-correction-discovered",
       "late-discovered",
       String(splitPublished.document.resulting_revision_id),
     );
+    const discovery = {
+      candidate: discoveryCandidate,
+      records: await nativeCandidateRecords(String(discoveryCandidate.id), ["warnings", "shared_warnings"]),
+    };
     const exclusion = (
       [...(discovery.records.warnings ?? []), ...(discovery.records.shared_warnings ?? [])] as {
         code: string;
@@ -638,7 +650,7 @@ describe.each(["associations", "application", "lookup"])(
     let published: Awaited<ReturnType<typeof seedNativePredecessor>>;
     let cards: Awaited<ReturnType<typeof exportComponentRecords>>;
     beforeEach(async () => {
-      const { candidate } = await prepareIdentityFixture(
+      const candidate = await prepareIdentityFixture(
         "/reconciliation/curated-conflict-fanout-base",
         `association-${failurePhase}-seed`,
         "catrev_spine_000",
@@ -843,7 +855,11 @@ describe.each(["associations", "application", "lookup"])(
       expect(checkpoint).toMatchObject({ value: { complete: true, processedDecisions: 12 } });
       expect(checkpoint!.ordinal).toBeGreaterThan(0);
       expect(candidate.document.state).toBe("sealed");
-      const records = await nativeCandidateRecords(preparation.candidateId);
+      const records = await nativeCandidateRecords(preparation.candidateId, [
+        "cards",
+        "printings",
+        "identity_corrections",
+      ]);
       expect(records.cards).toHaveLength(12);
       const finalPrintings = records.printings!;
       expect(finalPrintings).toHaveLength(32);

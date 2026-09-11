@@ -1,8 +1,3 @@
-> Historical evidence-sidecar and tournament-eligibility prototype behavior is
-> superseded by ADRs 0013–0014 and issue #217. The API/export schemas and OpenAPI
-> in this directory are current runtime contracts, updated in place. Historical
-> scenario fixtures and CLI demonstrations are not the consumer specification.
-
 # PROTOTYPE — completed lifecycle, evidence, and export-deletion contracts
 
 This throwaway prototype asks:
@@ -25,21 +20,10 @@ Choose a scenario, advance it one event at a time, and inspect the complete
 relevant state and rejected transitions. The terminal shell is disposable; the
 pure state machine is in `administration.mjs`.
 
-The proposed handoff artifacts are:
+The maintained OpenAPI, API/export schemas, administration contract and
+serialization rules now live in [contracts/](../../contracts/README.md).
+The CLI reads those schemas from that directory for its syntax check; its
+historical scenario behavior does not define the current consumer contract.
 
-- `openapi.json` — OpenAPI 3.1 contract for the authenticated `/v1` read API;
-- `schemas/api.schema.json` — exact JSON response resource shapes, including
-  shared lifecycle and Product/Release evidence sidecars;
-- `schemas/catalogue-export-manifest-v5.schema.json` and
-  `schemas/catalogue-export-record-v5.schema.json` — Catalogue Export schemas;
-- `SERIALIZATION.md` — deterministic NDJSON, ordering, digest, and gzip rules;
-- `ADMINISTRATION.md` and `schemas/administration.schema.json` — administration
-  API/CLI commands, guards, states, and transitions, including two-step
-  Catalogue Export deletion; and
-- `CONTRACT.md` — the cross-artifact decisions and acceptance checklist.
-
-The accepted v1 Game Profile and source-adapter definitions remain in
-`../v1-game-profiles-source-adapters/`.
-
-This directory is a primary-source discussion artifact. It is not an
-implementation starter and must not be merged into `main`.
+The original proposal remains in [CONTRACT.md](CONTRACT.md). This directory is
+retained as discussion history and is excluded from normal lint and formatting.

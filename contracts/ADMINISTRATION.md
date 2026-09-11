@@ -34,31 +34,31 @@ operation accepted but not yet terminal.
 
 ## Commands
 
-| CLI command | Mutation | Required preconditions or bindings |
-| --- | --- | --- |
-| `keepr status` | no | none |
-| `keepr run start` | yes | exact Supported Games; no active run; recovery not blocked |
-| `keepr run show` | no | run identity |
-| `keepr run reconcile` | yes | exact run identity; expected current Catalogue Revision; idempotency key; production confirmation after resolving the production run and its bound revision; starts or observes the bound reconciliation Workflow |
-| `keepr candidate inspect` | no | run in `awaiting_approval` |
-| `keepr run approve` | yes | run identity, candidate digest, expected current revision, unexpired candidate, verified current backup |
-| `keepr run reject` | yes | run identity and candidate digest |
-| `keepr run retry` | yes | terminal source run; creates a new linked run |
-| `keepr backup status` | no | Catalogue Revision identity |
-| `keepr backup create` | yes | expected current Catalogue Revision; idle ingestion; exact production target; idempotency key |
-| `keepr backup retry` | yes | current revision; exact failed attempt and export/backup digest |
-| `keepr catalogue-export deletion prepare` | no | exact Catalogue Revision, manifest digest, expected current revision |
-| `keepr catalogue-export deletion confirm` | yes | unexpired plan and plan digest; exact Catalogue Revision, manifest digest, expected current revision, typed confirmation, idempotency key |
-| `keepr catalogue-export deletion status` | no | deletion identity |
-| `keepr catalogue-export deletion retry` | yes | failed deletion identity; unchanged target and object-set digest; idle mutation gates |
-| `keepr recovery begin` | yes | target Catalogue Revision or bookmark; ingestion and release idle |
-| `keepr recovery verify` | yes | recovery operation and restored target digest |
-| `keepr recovery accept` | yes | verified recovery operation and expected restored revision |
-| `keepr release production` | yes | manual dispatch; production target; expected current revision; ingestion idle; recovery healthy |
-| `keepr credential rotate` | yes | credential class; replacement supplied out of band |
-| `keepr credential verify` | yes | rotation identity and harmless class-specific probe |
-| `keepr credential revoke-old` | yes | verified replacement and exact old credential fingerprint |
-| `keepr catalogue search repair` | yes | exact target among the current Catalogue Revision and its two immediate predecessors; expected current Catalogue Revision; idempotency key; production confirmation after resolving production status; one bounded repair step |
+| CLI command                               | Mutation | Required preconditions or bindings                                                                                                                                                                                             |
+| ----------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `keepr status`                            | no       | none                                                                                                                                                                                                                           |
+| `keepr run start`                         | yes      | exact Supported Games; no active run; recovery not blocked                                                                                                                                                                     |
+| `keepr run show`                          | no       | run identity                                                                                                                                                                                                                   |
+| `keepr run reconcile`                     | yes      | exact run identity; expected current Catalogue Revision; idempotency key; production confirmation after resolving the production run and its bound revision; starts or observes the bound reconciliation Workflow              |
+| `keepr candidate inspect`                 | no       | run in `awaiting_approval`                                                                                                                                                                                                     |
+| `keepr run approve`                       | yes      | run identity, candidate digest, expected current revision, unexpired candidate, verified current backup                                                                                                                        |
+| `keepr run reject`                        | yes      | run identity and candidate digest                                                                                                                                                                                              |
+| `keepr run retry`                         | yes      | terminal source run; creates a new linked run                                                                                                                                                                                  |
+| `keepr backup status`                     | no       | Catalogue Revision identity                                                                                                                                                                                                    |
+| `keepr backup create`                     | yes      | expected current Catalogue Revision; idle ingestion; exact production target; idempotency key                                                                                                                                  |
+| `keepr backup retry`                      | yes      | current revision; exact failed attempt and export/backup digest                                                                                                                                                                |
+| `keepr catalogue-export deletion prepare` | no       | exact Catalogue Revision, manifest digest, expected current revision                                                                                                                                                           |
+| `keepr catalogue-export deletion confirm` | yes      | unexpired plan and plan digest; exact Catalogue Revision, manifest digest, expected current revision, typed confirmation, idempotency key                                                                                      |
+| `keepr catalogue-export deletion status`  | no       | deletion identity                                                                                                                                                                                                              |
+| `keepr catalogue-export deletion retry`   | yes      | failed deletion identity; unchanged target and object-set digest; idle mutation gates                                                                                                                                          |
+| `keepr recovery begin`                    | yes      | target Catalogue Revision or bookmark; ingestion and release idle                                                                                                                                                              |
+| `keepr recovery verify`                   | yes      | recovery operation and restored target digest                                                                                                                                                                                  |
+| `keepr recovery accept`                   | yes      | verified recovery operation and expected restored revision                                                                                                                                                                     |
+| `keepr release production`                | yes      | manual dispatch; production target; expected current revision; ingestion idle; recovery healthy                                                                                                                                |
+| `keepr credential rotate`                 | yes      | credential class; replacement supplied out of band                                                                                                                                                                             |
+| `keepr credential verify`                 | yes      | rotation identity and harmless class-specific probe                                                                                                                                                                            |
+| `keepr credential revoke-old`             | yes      | verified replacement and exact old credential fingerprint                                                                                                                                                                      |
+| `keepr catalogue search repair`           | yes      | exact target among the current Catalogue Revision and its two immediate predecessors; expected current Catalogue Revision; idempotency key; production confirmation after resolving production status; one bounded repair step |
 
 The ingestion Workflow owns automatic collection, parsing, reconciliation,
 candidate finalization, publication, export verification, expiry, and backup
@@ -253,7 +253,8 @@ administration key uses a harmless authenticated status probe. Cloudflare
 operation tokens and the GitHub-held deployment token use class-specific
 least-privilege probes in their owning boundary.
 
-`administration.mjs` is the executable reference transition table. Any
-production implementation must accept every transition it accepts, reject
-every transition it rejects with the same stable code, and preserve the same
-terminal-state and concurrency invariants.
+The maintained implementation and its behavioral tests must preserve the
+transitions, stable rejection codes, terminal-state and concurrency invariants
+defined here and in the applicable ADRs. The state machine under `prototype/`
+is historical discussion material; it does not override this contract or later
+architecture decisions.

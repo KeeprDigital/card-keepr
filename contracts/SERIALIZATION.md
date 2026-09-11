@@ -39,10 +39,10 @@ A consumer that wants the live bytes behind an identifier applies these route
 templates to its own configured API base (`PUBLIC_BASE_URL`, which carries
 the mount path, for example `https://card.keepr.digital/api`):
 
-| Identifier | Route template |
-| --- | --- |
-| Manifest component `name` | `{PUBLIC_BASE_URL}/v1/catalogue-exports/{revision}/components/{name}` |
-| Printing-image record `id` | `{PUBLIC_BASE_URL}/v1/printing-images/{id}/content` |
+| Identifier                 | Route template                                                        |
+| -------------------------- | --------------------------------------------------------------------- |
+| Manifest component `name`  | `{PUBLIC_BASE_URL}/v1/catalogue-exports/{revision}/components/{name}` |
+| Printing-image record `id` | `{PUBLIC_BASE_URL}/v1/printing-images/{id}/content`                   |
 
 `{revision}` is the manifest's `catalogue_revision.id`. Moving the API to
 another host or mount changes the consumer's base URL and nothing in any

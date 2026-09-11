@@ -46,6 +46,25 @@ function withOverrides(overrides: Record<string, unknown>): Env {
   }) as Env;
 }
 
+test("an unexpected readiness rejection returns a sanitized administration failure", async () => {
+  const response = await authenticated(
+    "/health",
+    withOverrides({
+      CF_VERSION_METADATA: {
+        get id() {
+          throw new Error(secret);
+        },
+        tag: "",
+        timestamp: "",
+      },
+    }),
+  );
+  expect(response.status).toBe(500);
+  const body = await response.text();
+  expect(body).not.toContain(secret);
+  expect(JSON.parse(body)).toMatchObject({ status: 500, code: "internal_error" });
+});
+
 test("liveness answers without an administration key and reports only status and runtime", async () => {
   const response = await anonymous("/healthz");
   expect(response.status).toBe(200);

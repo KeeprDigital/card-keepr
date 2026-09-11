@@ -118,12 +118,7 @@ const run = {
 };
 
 test("guarded reconciliation and bounded search repair are normative administration commands", async () => {
-  const schema = JSON.parse(
-    await readFile(
-      resolve(root, "prototype/formalize-implementation-contracts/schemas/administration.schema.json"),
-      "utf8",
-    ),
-  );
+  const schema = JSON.parse(await readFile(resolve(root, "contracts/schemas/administration.schema.json"), "utf8"));
   assert.deepEqual(schema.$defs.ReconciliationCommandRequest.required, [
     "expected_current_revision_id",
     "idempotency_key",
@@ -148,10 +143,7 @@ test("guarded reconciliation and bounded search repair are normative administrat
     "confirmation_recovery_id",
     "idempotency_key",
   ]);
-  const contract = await readFile(
-    resolve(root, "prototype/formalize-implementation-contracts/ADMINISTRATION.md"),
-    "utf8",
-  );
+  const contract = await readFile(resolve(root, "contracts/ADMINISTRATION.md"), "utf8");
   assert.match(contract, /never executes reconciliation inline/);
   assert.match(contract, /one resumable, byte-bounded repair step/);
   assert.match(contract, /backup create.*starts or observes.*Workflow/s);

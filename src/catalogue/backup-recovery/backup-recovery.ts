@@ -892,7 +892,7 @@ async function verifyRestoredCatalogueQueries(
           representativeCardId: expected.representative_card_id,
           searchText: expected.representative_search_text,
         });
-  let representativeDocuments = false;
+  let representativeDocuments: boolean;
   try {
     representativeDocuments = await validRepresentativeDocuments(row, expected, input.expectedRepresentativeDocuments);
   } catch {

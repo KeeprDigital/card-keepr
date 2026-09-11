@@ -56,7 +56,7 @@ export async function reconstructCardSearchAfterD1Restore(database: CatalogueSto
       .cardSearchExportLeaseOwnerStatement(database)
       .first<{ owner_token: string | null }>();
     if (owner?.owner_token !== ownerToken) {
-      throw new Error("Card search FTS export lease owner changed.");
+      throw new Error("Card search FTS export lease owner changed.", { cause: error });
     }
     throw error;
   }

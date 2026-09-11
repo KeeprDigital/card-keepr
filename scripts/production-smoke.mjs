@@ -186,7 +186,7 @@ function validateInput(input) {
     if (decoded.revision_id !== input.staleRevisionId) throw new Error("stale_revision_mismatch");
   } catch (error) {
     if (error?.message === "stale_revision_mismatch") throw error;
-    throw new Error("invalid_stale_cursor");
+    throw new Error("invalid_stale_cursor", { cause: error });
   }
 }
 

@@ -29,7 +29,7 @@ export async function profileNativeIsolates(runtime, destination, local, { sampl
           "error",
           (error) => {
             clearTimeout(timer);
-            reject(error);
+            reject(new Error("Inspector connection failed", { cause: error }));
           },
           { once: true },
         );

@@ -376,7 +376,7 @@ async function assertProductGroupBudget(values: readonly unknown[]): Promise<voi
   let bytes = 0;
   if (values.length > 500)
     throw new Error("reconciliation_capacity_exceeded: one Product has too many evidence records.");
-  for await (const chunk of canonicalValueChunks(values)) {
+  for (const chunk of canonicalValueChunks(values)) {
     bytes += new TextEncoder().encode(chunk).byteLength;
     if (bytes > 1048576) throw new Error("reconciliation_capacity_exceeded: one Product evidence group exceeds 1 MiB.");
   }

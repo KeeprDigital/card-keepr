@@ -1,0 +1,178 @@
+{
+  "summary": {
+    "changed": 0,
+    "unchanged": 9,
+    "matches": 0,
+    "duration": 9219125,
+    "errors": 7,
+    "warnings": 1,
+    "infos": 0,
+    "skipped": 0,
+    "suggestedFixesSkipped": 0,
+    "diagnosticsNotPrinted": 0,
+    "scannerDuration": 300535917
+  },
+  "diagnostics": [
+    {
+      "severity": "warning",
+      "message": "Don't focus the test.",
+      "category": "lint/suspicious/noFocusedTests",
+      "location": {
+        "path": "lint-trial/probes/assertions.spec.ts",
+        "start": {
+          "line": 2,
+          "column": 6
+        },
+        "end": {
+          "line": 2,
+          "column": 10
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "error",
+      "message": "Do not export from a test file.",
+      "category": "lint/suspicious/noExportsInTest",
+      "location": {
+        "path": "lint-trial/probes/assertions.test.mjs",
+        "start": {
+          "line": 8,
+          "column": 1
+        },
+        "end": {
+          "line": 10,
+          "column": 2
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "error",
+      "message": "The key target was already declared.",
+      "category": "lint/suspicious/noDuplicateObjectKeys",
+      "location": {
+        "path": "lint-trial/probes/duplicate.json",
+        "start": {
+          "line": 1,
+          "column": 3
+        },
+        "end": {
+          "line": 1,
+          "column": 11
+        }
+      },
+      "advices": [
+        {
+          "start": {
+            "line": 1,
+            "column": 24
+          },
+          "end": {
+            "line": 1,
+            "column": 32
+          },
+          "text": "If a key is defined multiple times, only the last definition takes effect. Previous definitions are ignored."
+        }
+      ]
+    },
+    {
+      "severity": "error",
+      "message": "The key target was already declared.",
+      "category": "lint/suspicious/noDuplicateObjectKeys",
+      "location": {
+        "path": "lint-trial/probes/duplicate.jsonc",
+        "start": {
+          "line": 3,
+          "column": 3
+        },
+        "end": {
+          "line": 3,
+          "column": 11
+        }
+      },
+      "advices": [
+        {
+          "start": {
+            "line": 4,
+            "column": 3
+          },
+          "end": {
+            "line": 4,
+            "column": 11
+          },
+          "text": "If a key is defined multiple times, only the last definition takes effect. Previous definitions are ignored."
+        }
+      ]
+    },
+    {
+      "severity": "error",
+      "message": "A \"floating\" Promise was found, meaning it is not properly handled and could lead to ignored errors or unexpected behavior.",
+      "category": "lint/nursery/noFloatingPromises",
+      "location": {
+        "path": "lint-trial/probes/worker.ts",
+        "start": {
+          "line": 4,
+          "column": 3
+        },
+        "end": {
+          "line": 4,
+          "column": 16
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "error",
+      "message": "A \"floating\" Promise was found, meaning it is not properly handled and could lead to ignored errors or unexpected behavior.",
+      "category": "lint/nursery/noFloatingPromises",
+      "location": {
+        "path": "lint-trial/probes/worker.ts",
+        "start": {
+          "line": 5,
+          "column": 3
+        },
+        "end": {
+          "line": 5,
+          "column": 19
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "error",
+      "message": "This function returns a Promise, but no return value was expected.",
+      "category": "lint/nursery/noMisusedPromises",
+      "location": {
+        "path": "lint-trial/probes/worker.ts",
+        "start": {
+          "line": 12,
+          "column": 16
+        },
+        "end": {
+          "line": 12,
+          "column": 66
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "error",
+      "message": "The switch statement is not exhaustive.",
+      "category": "lint/nursery/useExhaustiveSwitchCases",
+      "location": {
+        "path": "lint-trial/probes/worker.ts",
+        "start": {
+          "line": 20,
+          "column": 3
+        },
+        "end": {
+          "line": 23,
+          "column": 4
+        }
+      },
+      "advices": []
+    }
+  ],
+  "command": "lint"
+}

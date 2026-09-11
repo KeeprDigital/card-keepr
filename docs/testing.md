@@ -25,13 +25,13 @@ records the failures, decisions and validation behind this strategy.
 
 Choose the narrowest boundary that proves the behavior:
 
-| Boundary | Exercise for real | Control or omit |
-| --- | --- | --- |
-| Domain | Parsers, identity and business rules | Worker startup, storage and scheduling |
-| Storage transition | D1/R2, transactions, fences and owner intent | Scheduling through the existing direct Workflow drivers |
-| Platform binding | Dispatch, events, contention, termination or recovery of an instance | Unrelated setup and large datasets |
-| Acceptance | Selected HTTP/CLI journeys, process wiring and export/restore | Offline publisher fixtures and bounded data |
-| Capacity | Volume, throughput and resource measurements | Select explicitly through stress or benchmark commands |
+| Boundary           | Exercise for real                                                    | Control or omit                                         |
+| ------------------ | -------------------------------------------------------------------- | ------------------------------------------------------- |
+| Domain             | Parsers, identity and business rules                                 | Worker startup, storage and scheduling                  |
+| Storage transition | D1/R2, transactions, fences and owner intent                         | Scheduling through the existing direct Workflow drivers |
+| Platform binding   | Dispatch, events, contention, termination or recovery of an instance | Unrelated setup and large datasets                      |
+| Acceptance         | Selected HTTP/CLI journeys, process wiring and export/restore        | Offline publisher fixtures and bounded data             |
+| Capacity           | Volume, throughput and resource measurements                         | Select explicitly through stress or benchmark commands  |
 
 For ordinary rule and storage tests, prepare a verified starting state in a
 scoped `beforeEach` and exercise one transition in the body. Every test owns fresh
@@ -59,14 +59,14 @@ uses nine requests to cross an eight-request batch.
 
 Collection, preparation, publication and backup are separate contracts:
 
-| Needed state | Helper | Guarantee |
-| --- | --- | --- |
-| Retained evidence | `collect`, `collectFixtureEvidence` | Real capture/parsing and D1/R2; no implicit native preparation |
-| Candidate rules/persistence | `prepareNativeCandidate`, `prepareNativeEvidence` | Explicit run, game, predecessor and returned candidate ID; controlled preparation reaches the expected terminal state |
-| Published predecessor for preparation only | `seedNativePredecessor` | Real owner approval, artifacts and published storage; backup is queued and **pending** |
-| Complete publication or multi-revision history | `approveNativeCandidate` | Controlled production publication plus real SQL export/import and verified backup |
-| Actual scheduling or interruption | Explicit `ThroughBinding` helpers | Platform instances with normal disposal |
-| Automatic native dispatch | `waitForDispatchedNativeCandidates` | Parent `game_preparations` receipt followed by those exact candidate IDs |
+| Needed state                                   | Helper                                            | Guarantee                                                                                                             |
+| ---------------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Retained evidence                              | `collect`, `collectFixtureEvidence`               | Real capture/parsing and D1/R2; no implicit native preparation                                                        |
+| Candidate rules/persistence                    | `prepareNativeCandidate`, `prepareNativeEvidence` | Explicit run, game, predecessor and returned candidate ID; controlled preparation reaches the expected terminal state |
+| Published predecessor for preparation only     | `seedNativePredecessor`                           | Real owner approval, artifacts and published storage; backup is queued and **pending**                                |
+| Complete publication or multi-revision history | `approveNativeCandidate`                          | Controlled production publication plus real SQL export/import and verified backup                                     |
+| Actual scheduling or interruption              | Explicit `ThroughBinding` helpers                 | Platform instances with normal disposal                                                                               |
+| Automatic native dispatch                      | `waitForDispatchedNativeCandidates`               | Parent `game_preparations` receipt followed by those exact candidate IDs                                              |
 
 `seedNativePredecessor` is only for a next transition that stops at preparation.
 Its typed result says `checkpoint: "pending"`; it never fabricates verification.
@@ -91,22 +91,24 @@ run a small hosted selection before full CI for a shared helper change.
 [command reference](commands.md) also covers development, formatting, generated
 files and the renamed commands.
 
-| Command | Coverage / use |
-| --- | --- |
-| `pnpm test` | Everyday domain, API and two acceptance smoke paths |
-| `pnpm run test:full` | All routine domain, API, ingestion and acceptance |
-| `pnpm run test:domain` | Runtime-free rules and contracts |
-| `pnpm run test:api` | API routes, authentication, reads and bindings |
-| `pnpm run test:ingestion` | D1/R2/Workflow transitions, concurrency and recovery |
-| `pnpm run test:acceptance` | Routine HTTP/CLI, migrations, provider failures and SQL restore |
-| `pnpm run test:acceptance:smoke` | Small CLI and publication/restore paths |
-| `pnpm run test:acceptance:extended <scenario>` | Explicit long recovery or retained-data journey |
-| `pnpm run test:benchmark <scenario>` | Explicit capacity/profiling experiment |
-| `pnpm run test:stress` | Two bounded production-pacing checks used weekly |
-| `pnpm run test:stress:full` | All ingestion capacity experiments, explicit opt-in |
+| Command                                        | Coverage / use                                                  |
+| ---------------------------------------------- | --------------------------------------------------------------- |
+| `pnpm test`                                    | Everyday domain, API and two acceptance smoke paths             |
+| `pnpm run test:full`                           | All routine domain, API, ingestion and acceptance               |
+| `pnpm run test:domain`                         | Runtime-free rules and contracts                                |
+| `pnpm run test:api`                            | API routes, authentication, reads and bindings                  |
+| `pnpm run test:ingestion`                      | D1/R2/Workflow transitions, concurrency and recovery            |
+| `pnpm run test:acceptance`                     | Routine HTTP/CLI, migrations, provider failures and SQL restore |
+| `pnpm run test:acceptance:smoke`               | Small CLI and publication/restore paths                         |
+| `pnpm run test:acceptance:extended <scenario>` | Explicit long recovery or retained-data journey                 |
+| `pnpm run test:benchmark <scenario>`           | Explicit capacity/profiling experiment                          |
+| `pnpm run test:stress`                         | Two bounded production-pacing checks used weekly                |
+| `pnpm run test:stress:full`                    | All ingestion capacity experiments, explicit opt-in             |
 
 Vitest accepts file filters and `-t 'test name'`. Acceptance commands accept
-`--list` and `--shard=1/3`. Extended/benchmark commands require a scenario
+an exact filename or scenario name (for example `pnpm run test:acceptance http-fixture`),
+`--list` and `--shard=1/3`. Selection stays within the chosen tier.
+Extended/benchmark commands require a scenario
 or `--all`; listing never boots services. Selection lives in
 `acceptance/helpers/test-tiers.mjs`, with a contract test proving that routine
 files appear exactly once across three shards. New acceptance files enter routine
@@ -117,14 +119,14 @@ are deliberately separate. Weekly source recapture checks publisher freshness.
 
 ## CI and resource policy
 
-| Event | Checks |
-| --- | --- |
+| Event                                                    | Checks                                                                                       |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | Draft PR opened, updated, reopened or converted to draft | Lint/format, types, generated files, boundaries/cycles, build dry run, domain, API and smoke |
-| Ready PR opened, updated, reopened or marked ready | Full checks, even if marking ready adds no commit |
-| Push to `main` or manual `ci` dispatch | Full checks on the resulting or selected commit |
-| Weekly/default manual `stress` | Two bounded pacing tests; five-minute job cap |
-| Manual `stress` with `suite: full` | All capacity tests; 45-minute cap; no merge/release gate |
-| Manual focused diagnostics | Selected files; diagnostic evidence only |
+| Ready PR opened, updated, reopened or marked ready       | Full checks, even if marking ready adds no commit                                            |
+| Push to `main` or manual `ci` dispatch                   | Full checks on the resulting or selected commit                                              |
+| Weekly/default manual `stress`                           | Two bounded pacing tests; five-minute job cap                                                |
+| Manual `stress` with `suite: full`                       | All capacity tests; 45-minute cap; no merge/release gate                                     |
+| Manual focused diagnostics                               | Selected files; diagnostic evidence only                                                     |
 
 [ci.yml](../.github/workflows/ci.yml) retains three ingestion and three acceptance
 shards. Each has an independent runner and at most two concurrent files. Local
@@ -180,7 +182,11 @@ reset. Cloudflare documents [per-file isolation and explicit disposal](https://d
   controlled fixtures should complete explicitly rather than wait for scheduling.
 - Keep independent case identities distinct and reset storage between tests.
   Helpers should read only required identities/manifests; inspect all partitions
-  only when their records are the assertion.
+  only when their records are the assertion. Use
+  `nativeCandidateRecords(id, ["cards", "printings"])` to hydrate selected kinds;
+  omit the selection for whole-candidate comparisons. Header-only setup should
+  not load candidate records at all. Selected reads still traverse every page of
+  partition metadata and verify each requested partition through the real API.
 - Run the affected file first. For CI-only failures, use a focused hosted
   selection, fix the cause, then repeat that selection before full validation.
   Do not chase green with repeated full runs, larger timeouts, rate-limit changes

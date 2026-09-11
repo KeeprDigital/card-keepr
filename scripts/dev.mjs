@@ -20,15 +20,7 @@ const projects = [
 const children = projects.map((project) => {
   const child = spawn(
     wrangler,
-    [
-      "dev",
-      "--config",
-      project.config,
-      "--port",
-      project.port,
-      "--inspector-port",
-      project.inspectorPort,
-    ],
+    ["dev", "--config", project.config, "--port", project.port, "--inspector-port", project.inspectorPort],
     {
       cwd: root,
       env: {
@@ -40,9 +32,7 @@ const children = projects.map((project) => {
   );
   child.once("exit", (code, signal) => {
     if (!stopping) {
-      process.stderr.write(
-        `${project.name} Worker stopped (${signal ?? `exit ${code}`})\n`,
-      );
+      process.stderr.write(`${project.name} Worker stopped (${signal ?? `exit ${code}`})\n`);
       stop(code ?? 1);
     }
   });
@@ -50,6 +40,7 @@ const children = projects.map((project) => {
 });
 
 let stopping = false;
+/** @param {number} exitCode */
 function stop(exitCode) {
   if (stopping) return;
   stopping = true;

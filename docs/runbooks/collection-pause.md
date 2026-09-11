@@ -40,13 +40,13 @@ Both forms carry the same material facts. The `collection` block reports:
 
 ## Pause reasons
 
-| `pause_reason` | Meaning | Action |
-| --- | --- | --- |
-| `source_request_capacity_exhausted` | Admitting a discovered batch would exceed the Source Adapter Version's Request Capacity. Nothing was inserted or failed. | Extend capacity, then resume. |
-| `source_transport_retries_exhausted` | One Source Request exhausted its bounded transport retries on a recoverable failure. | Resume once the Official Source recovers. |
-| `source_storage_retries_exhausted` | One Source Request exhausted its bounded R2 persistence retries. | Resume once storage recovers. |
-| `source_workflow_stalled` / `source_workflow_errored` / `source_workflow_terminated` / `source_workflow_unavailable` | The collection Workflow stopped driving the run; a host pacing wait against its persisted deadline or a durable Retry-After wait is never a stall. | Resume; a new Workflow Attempt is recorded. |
-| `owner_requested` | The owner paused the collecting run with `source pause`. Nothing failed; the current Workflow Attempt was abandoned. | Resume (a new Workflow Attempt is recorded) or terminate. |
+| `pause_reason`                                                                                                       | Meaning                                                                                                                                            | Action                                                    |
+| -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `source_request_capacity_exhausted`                                                                                  | Admitting a discovered batch would exceed the Source Adapter Version's Request Capacity. Nothing was inserted or failed.                           | Extend capacity, then resume.                             |
+| `source_transport_retries_exhausted`                                                                                 | One Source Request exhausted its bounded transport retries on a recoverable failure.                                                               | Resume once the Official Source recovers.                 |
+| `source_storage_retries_exhausted`                                                                                   | One Source Request exhausted its bounded R2 persistence retries.                                                                                   | Resume once storage recovers.                             |
+| `source_workflow_stalled` / `source_workflow_errored` / `source_workflow_terminated` / `source_workflow_unavailable` | The collection Workflow stopped driving the run; a host pacing wait against its persisted deadline or a durable Retry-After wait is never a stall. | Resume; a new Workflow Attempt is recorded.               |
+| `owner_requested`                                                                                                    | The owner paused the collecting run with `source pause`. Nothing failed; the current Workflow Attempt was abandoned.                               | Resume (a new Workflow Attempt is recorded) or terminate. |
 
 Genuine integrity failures (redirects, identity collisions, malformed
 discovery, parser contract failures, completeness contradictions) remain
@@ -65,14 +65,14 @@ failure of an image records that one Source Request as `failed` under a
 class-specific code and collection continues. Storage (R2) retry
 exhaustion still pauses the run for every role.
 
-| Image `failure_code` | Meaning |
-| --- | --- |
-| `source_image_retries_exhausted` | The image's bounded transport retries ran out on recoverable failures (timeouts, network errors, 429 or 5xx responses). |
-| `source_image_not_found` | The Official Source answered 404 or 410: the file is gone. |
-| `source_image_rejected` | The Official Source answered another non-retryable status (for example 400 or 403). |
-| `source_image_redirected` | The Official Source answered with a redirect. Redirects are recorded, never followed: following one would silently change the evidence origin. |
-| `source_image_revalidation_rejected` | A 304 response did not match the retained Source Snapshot's validator and representation. |
-| `source_image_body_contract` | The response body violated its own contract (for example an invalid or contradicted `content-length`) on every bounded attempt. |
+| Image `failure_code`                 | Meaning                                                                                                                                        |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source_image_retries_exhausted`     | The image's bounded transport retries ran out on recoverable failures (timeouts, network errors, 429 or 5xx responses).                        |
+| `source_image_not_found`             | The Official Source answered 404 or 410: the file is gone.                                                                                     |
+| `source_image_rejected`              | The Official Source answered another non-retryable status (for example 400 or 403).                                                            |
+| `source_image_redirected`            | The Official Source answered with a redirect. Redirects are recorded, never followed: following one would silently change the evidence origin. |
+| `source_image_revalidation_rejected` | A 304 response did not match the retained Source Snapshot's validator and representation.                                                      |
+| `source_image_body_contract`         | The response body violated its own contract (for example an invalid or contradicted `content-length`) on every bounded attempt.                |
 
 None of these codes pauses or fails the run. The run completes collection,
 parses, and reconciles with the gap recorded explicitly: the Catalogue
@@ -192,7 +192,6 @@ refresh them. The run's stall clock includes productive collection work and
 persisted pacing/retry deadlines. Parent barrier polling cannot conceal a child
 that stopped making progress. A transient Workflow API outage does not trigger
 recovery: retry the administration request once the control plane is available.
-
 
 ## Resume waits for superseded Workflow Attempts
 

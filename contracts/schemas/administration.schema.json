@@ -82,10 +82,7 @@
     "ReconciliationCommandRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "expected_current_revision_id",
-        "idempotency_key"
-      ],
+      "required": ["expected_current_revision_id", "idempotency_key"],
       "properties": {
         "expected_current_revision_id": { "$ref": "#/$defs/OpaqueId" },
         "idempotency_key": { "$ref": "#/$defs/OpaqueId" }
@@ -94,11 +91,7 @@
     "CatalogueSearchRepairCommandRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "target_revision_id",
-        "expected_current_revision_id",
-        "idempotency_key"
-      ],
+      "required": ["target_revision_id", "expected_current_revision_id", "idempotency_key"],
       "properties": {
         "target_revision_id": { "$ref": "#/$defs/OpaqueId" },
         "expected_current_revision_id": { "$ref": "#/$defs/OpaqueId" },
@@ -108,10 +101,7 @@
     "CatalogueBackupCommandRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "expected_current_revision_id",
-        "idempotency_key"
-      ],
+      "required": ["expected_current_revision_id", "idempotency_key"],
       "properties": {
         "expected_current_revision_id": { "$ref": "#/$defs/OpaqueId" },
         "idempotency_key": { "$ref": "#/$defs/OpaqueId" }
@@ -156,12 +146,7 @@
     "CatalogueRecoveryAcceptCommandRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "expected_restored_revision_id",
-        "target_digest",
-        "confirmation_recovery_id",
-        "idempotency_key"
-      ],
+      "required": ["expected_restored_revision_id", "target_digest", "confirmation_recovery_id", "idempotency_key"],
       "properties": {
         "expected_restored_revision_id": { "$ref": "#/$defs/OpaqueId" },
         "target_digest": { "$ref": "#/$defs/Sha256" },
@@ -234,11 +219,7 @@
     "Approval": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "approved_at",
-        "candidate_digest",
-        "expected_current_revision_id"
-      ],
+      "required": ["approved_at", "candidate_digest", "expected_current_revision_id"],
       "properties": {
         "approved_at": { "$ref": "#/$defs/TimestampMs" },
         "candidate_digest": { "$ref": "#/$defs/Sha256" },
@@ -248,25 +229,12 @@
     "BackupAttempt": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "catalogue_revision_id",
-        "state",
-        "manifest_digest",
-        "linked_attempt_id"
-      ],
+      "required": ["id", "catalogue_revision_id", "state", "manifest_digest", "linked_attempt_id"],
       "properties": {
         "id": { "$ref": "#/$defs/OpaqueId" },
         "catalogue_revision_id": { "$ref": "#/$defs/OpaqueId" },
         "state": {
-          "enum": [
-            "pending",
-            "exporting",
-            "restoring_verification",
-            "verifying",
-            "verified",
-            "failed"
-          ]
+          "enum": ["pending", "exporting", "restoring_verification", "verifying", "verified", "failed"]
         },
         "manifest_digest": {
           "oneOf": [{ "$ref": "#/$defs/Sha256" }, { "type": "null" }]
@@ -315,11 +283,7 @@
       "required": ["code", "severity", "detail"],
       "properties": {
         "code": {
-          "enum": [
-            "current_catalogue_revision",
-            "catalogue_consumers_may_depend",
-            "authenticated_urls_will_return_410"
-          ]
+          "enum": ["current_catalogue_revision", "catalogue_consumers_may_depend", "authenticated_urls_will_return_410"]
         },
         "severity": { "enum": ["blocking", "warning"] },
         "detail": { "type": "string", "minLength": 1 }
@@ -408,24 +372,11 @@
     "RecoveryOperation": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "state",
-        "target_revision_id",
-        "target_digest",
-        "linked_operation_id"
-      ],
+      "required": ["id", "state", "target_revision_id", "target_digest", "linked_operation_id"],
       "properties": {
         "id": { "$ref": "#/$defs/OpaqueId" },
         "state": {
-          "enum": [
-            "preparing",
-            "restoring",
-            "validating",
-            "awaiting_acceptance",
-            "accepted",
-            "failed"
-          ]
+          "enum": ["preparing", "restoring", "validating", "awaiting_acceptance", "accepted", "failed"]
         },
         "target_revision_id": { "$ref": "#/$defs/OpaqueId" },
         "target_digest": { "$ref": "#/$defs/Sha256" },
@@ -438,25 +389,11 @@
     "ProductionRelease": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "state",
-        "environment",
-        "expected_current_revision_id",
-        "workflow_dispatch_id"
-      ],
+      "required": ["id", "state", "environment", "expected_current_revision_id", "workflow_dispatch_id"],
       "properties": {
         "id": { "$ref": "#/$defs/OpaqueId" },
         "state": {
-          "enum": [
-            "requested",
-            "preflight",
-            "migrating",
-            "deploying",
-            "smoke_testing",
-            "succeeded",
-            "failed"
-          ]
+          "enum": ["requested", "preflight", "migrating", "deploying", "smoke_testing", "succeeded", "failed"]
         },
         "environment": { "const": "production" },
         "expected_current_revision_id": { "$ref": "#/$defs/OpaqueId" },
@@ -467,13 +404,7 @@
     "CredentialRotation": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "credential_class",
-        "state",
-        "old_fingerprint",
-        "replacement_fingerprint"
-      ],
+      "required": ["id", "credential_class", "state", "old_fingerprint", "replacement_fingerprint"],
       "properties": {
         "id": { "$ref": "#/$defs/OpaqueId" },
         "credential_class": {
@@ -486,11 +417,7 @@
           ]
         },
         "state": {
-          "enum": [
-            "replacement_installed",
-            "replacement_verified",
-            "old_revoked"
-          ]
+          "enum": ["replacement_installed", "replacement_verified", "old_revoked"]
         },
         "old_fingerprint": { "type": "string", "minLength": 1 },
         "replacement_fingerprint": { "type": "string", "minLength": 1 }

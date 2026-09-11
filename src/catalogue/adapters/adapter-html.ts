@@ -239,7 +239,7 @@ export function digivolutionRequirements(values: readonly string[]): {
 }[] {
   return values.map((value, index) => {
     const normalized = value.normalize("NFC").trim();
-    const cost = normalized.match(/(?::|\bcost\s*)\s*(\d+)\s*$/iu)?.[1];
+    const cost = normalized.match(/(?::|\bcost)\s*(\d+)\s*$/iu)?.[1];
     if (cost === undefined) {
       throw new AdapterParseFailure(`Unrecognized official Digimon digivolution requirement: ${value}`);
     }

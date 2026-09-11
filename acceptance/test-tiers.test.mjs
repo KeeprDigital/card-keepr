@@ -52,6 +52,24 @@ test("CI shards run every routine file exactly once without reintroducing expens
   assert.deepEqual(sharded.sort(), list("default"));
 });
 
+test("focused acceptance selects one routine file without admitting expensive or unknown scenarios", () => {
+  assert.deepEqual(list("default", "http-fixture"), ["http-fixture.test.mjs"]);
+  assert.deepEqual(list("default", "acceptance/http-fixture.test.mjs"), ["http-fixture.test.mjs"]);
+  assert.deepEqual(list("smoke", "source-evidence-cli.test.mjs"), ["source-evidence-cli.test.mjs"]);
+  for (const args of [
+    ["default", "native-sqlite-export"],
+    ["default", "riftbound-catalogue"],
+    ["default", "../package.json"],
+    ["default", "typo"],
+    ["smoke", "http-fixture"],
+  ]) {
+    assert.throws(
+      () => list(...args),
+      (error) => error.status === 2,
+    );
+  }
+});
+
 test("smoke retains the two everyday paths within routine coverage and unknown tiers fail", () => {
   const smoke = selectAcceptanceFiles(files, "smoke");
   assert.deepEqual(smoke, ["riftbound-bounded-intake.test.mjs", "source-evidence-cli.test.mjs"]);

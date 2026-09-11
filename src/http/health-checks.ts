@@ -246,7 +246,7 @@ function isInstanceNotFound(error: unknown): boolean {
 
 export function checkPublicBase(base: PublicBase, request: Request): PublicBaseCheck {
   const configured = `${base.origin}${base.basePath}`;
-  let arrived = false;
+  let arrived: boolean;
   try {
     arrived = new URL(request.url).origin === base.origin;
   } catch {

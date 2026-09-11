@@ -2,11 +2,9 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "./helpers/cli-http.mjs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import test from "node:test";
 import { runCli as sharedRunCli } from "./helpers/acceptance-runtime.mjs";
-
-const root = resolve(import.meta.dirname, "..");
 
 test("CLI validates a proposal file against an explicit Catalogue Revision", async (t) => {
   const proposal = fixtureProposal();

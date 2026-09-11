@@ -9,10 +9,17 @@ if (args.some((arg) => arg !== "--check" && arg !== since) || since === "--since
 }
 
 const root = resolve(import.meta.dirname, "..");
+/** @param {...string} parameters */
 const git = (...parameters) => execFileSync("git", parameters, { cwd: root, encoding: "utf8" });
-const base = git("merge-base", "HEAD", since?.slice("--since=".length) ?? "main").trim();
-// Biome's --changed selects committed changes only. Include working-tree edits
-// and new files so the local command checks what the developer is about to commit.
+const hasUpstream =
+  spawnSync("git", ["show-ref", "--verify", "--quiet", "refs/remotes/origin/main"], { cwd: root }).status === 0;
+const base = git(
+  "merge-base",
+  "HEAD",
+  since?.slice("--since=".length) ?? (hasUpstream ? "origin/main" : "main"),
+).trim();
+// Format branch changes, working-tree edits and new files so the local command
+// checks what the developer is about to commit without reformatting the whole tree.
 const files = [
   ...new Set([
     ...git("diff", "--name-only", "--diff-filter=ACMR", "-z", base, "--").split("\0"),
@@ -26,11 +33,12 @@ if (files.length === 0) {
 }
 
 const child = spawnSync(
-  resolve(root, "node_modules/.bin/biome"),
+  resolve(root, "node_modules/.bin/prettier"),
   [
-    "format",
-    "--no-errors-on-unmatched",
-    ...(args.includes("--check") ? [] : ["--write"]),
+    "--ignore-unknown",
+    "--no-error-on-unmatched-pattern",
+    args.includes("--check") ? "--check" : "--write",
+    "--",
     ...files.map((file) => resolve(root, file)),
   ],
   { cwd: root, stdio: "inherit" },

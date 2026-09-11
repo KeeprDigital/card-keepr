@@ -74,7 +74,7 @@ export const curatedFieldDocumentSchema = {
   properties: { schema: { enum: orderedSchemas.map((_, index) => index) }, value: {} },
   allOf: orderedSchemas.map(([, schema], index) => ({
     if: { properties: { schema: { const: index } }, required: ["schema"] },
-    // biome-ignore lint/suspicious/noThenProperty: this is the JSON Schema conditional keyword, not a Promise.
+    // This is the JSON Schema conditional keyword, not a Promise.
     then: { properties: { value: schema } },
   })),
 };

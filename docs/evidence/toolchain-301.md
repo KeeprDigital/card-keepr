@@ -13,18 +13,18 @@ The final target is Node 26.8.2, Corepack 0.36.0 and pnpm 12.3.4. Corepack
 generated the committed package-manager integrity hash. The lockfile was
 imported from the baseline npm lock before removing it.
 
-| Component | Retained resolution |
-| --- | --- |
-| Biome | 2.5.12 |
-| TypeScript | 7.0.2 |
-| Cloudflare Vitest plugin | 1.1.6 |
-| Vitest / runner / snapshot | 4.1.11 |
-| Vite (now declared directly for acceptance imports) | 8.2.2 |
-| Wrangler | 4.130.0 |
-| Direct acceptance Miniflare / workerd | 4.20260730.0 / 1.20260730.1 |
-| Plugin/Wrangler Miniflare / workerd | 5.20260908.0-alpha / 1.20260908.1 |
-| Direct / plugin esbuild | 0.28.2 / 0.28.1 |
-| Direct entities / parse5's entities | 8.1.0 / 8.0.0 |
+| Component                                           | Retained resolution               |
+| --------------------------------------------------- | --------------------------------- |
+| Biome                                               | 2.5.12                            |
+| TypeScript                                          | 7.0.2                             |
+| Cloudflare Vitest plugin                            | 1.1.6                             |
+| Vitest / runner / snapshot                          | 4.1.11                            |
+| Vite (now declared directly for acceptance imports) | 8.2.2                             |
+| Wrangler                                            | 4.130.0                           |
+| Direct acceptance Miniflare / workerd               | 4.20260730.0 / 1.20260730.1       |
+| Plugin/Wrangler Miniflare / workerd                 | 5.20260908.0-alpha / 1.20260908.1 |
+| Direct / plugin esbuild                             | 0.28.2 / 0.28.1                   |
+| Direct entities / parse5's entities                 | 8.1.0 / 8.0.0                     |
 
 No dependency ranges were forced or simulator generations unified. pnpm uses
 strict peer checks, strict build approval and an allowlist for esbuild/workerd.
@@ -60,19 +60,19 @@ Create these files at a maintained repository path in the trial:
 {
   // Conflicting target values must be rejected.
   "target": "staging",
-  "target": "production"
+  "target": "production",
 }
 ```
 
 Observed results:
 
-| Invocation | Result |
-| --- | --- |
-| `corepack pnpm exec biome lint vp-duplicate.json vp-duplicate.jsonc` | Exit 1; two `lint/suspicious/noDuplicateObjectKeys` errors |
-| `corepack pnpm exec vp lint vp-duplicate.json vp-duplicate.jsonc` | No files found to lint; neither duplicate analyzed |
-| `corepack pnpm exec vp fmt vp-duplicate.json vp-duplicate.jsonc`, then the same with `--check` | Check exits 0 with both duplicate keys still present |
-| `corepack pnpm exec vp lint --no-error-on-unmatched-pattern vp-duplicate.json vp-duplicate.jsonc` | Exit 0, no duplicate diagnostics |
-| `corepack pnpm exec vp check vp-duplicate.json vp-duplicate.jsonc` | Formatting passes; lint cannot start because it selects zero files |
+| Invocation                                                                                        | Result                                                             |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `corepack pnpm exec biome lint vp-duplicate.json vp-duplicate.jsonc`                              | Exit 1; two `lint/suspicious/noDuplicateObjectKeys` errors         |
+| `corepack pnpm exec vp lint vp-duplicate.json vp-duplicate.jsonc`                                 | No files found to lint; neither duplicate analyzed                 |
+| `corepack pnpm exec vp fmt vp-duplicate.json vp-duplicate.jsonc`, then the same with `--check`    | Check exits 0 with both duplicate keys still present               |
+| `corepack pnpm exec vp lint --no-error-on-unmatched-pattern vp-duplicate.json vp-duplicate.jsonc` | Exit 0, no duplicate diagnostics                                   |
+| `corepack pnpm exec vp check vp-duplicate.json vp-duplicate.jsonc`                                | Formatting passes; lint cannot start because it selects zero files |
 
 Oxlint's supported inputs are JS/TS and framework script blocks. Its JS plugin
 support does not accept custom parsers, so an ESLint JSON parser plugin is not
@@ -89,19 +89,19 @@ are not claimed as completed here.
 Because Biome is retained at the exact existing version, JS/TS and JSON/JSONC
 coverage, imports, severities and suppressions remain identical:
 
-| Existing policy | Result |
-| --- | --- |
-| Recommended lint preset | Unchanged, across the maintained tree |
-| `style/noNonNullAssertion` | Still off |
-| `correctness/noVoidTypeReturn` | Still warning |
-| `suspicious/noControlCharactersInRegex`, `noImplicitAnyLet`, `useIterableCallbackReturn` | Still warnings |
-| JSON/JSONC syntax and duplicate object keys | Retained through Biome lint |
-| JSON Schema `then` suppression in curated field schemas | Unchanged |
-| Constructible function suppression in curated native target test | Unchanged |
-| Prototype, captured fixtures, generated Worker declarations and Ajv exclusions | Unchanged |
-| Lockfile exclusion | Renamed from npm to pnpm lockfile |
-| Import handling | Existing lint rules retained; no import-organizing command added |
-| Formatting | Same settings and script; merge-base plus working tree and untracked files |
+| Existing policy                                                                          | Result                                                                     |
+| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Recommended lint preset                                                                  | Unchanged, across the maintained tree                                      |
+| `style/noNonNullAssertion`                                                               | Still off                                                                  |
+| `correctness/noVoidTypeReturn`                                                           | Still warning                                                              |
+| `suspicious/noControlCharactersInRegex`, `noImplicitAnyLet`, `useIterableCallbackReturn` | Still warnings                                                             |
+| JSON/JSONC syntax and duplicate object keys                                              | Retained through Biome lint                                                |
+| JSON Schema `then` suppression in curated field schemas                                  | Unchanged                                                                  |
+| Constructible function suppression in curated native target test                         | Unchanged                                                                  |
+| Prototype, captured fixtures, generated Worker declarations and Ajv exclusions           | Unchanged                                                                  |
+| Lockfile exclusion                                                                       | Renamed from npm to pnpm lockfile                                          |
+| Import handling                                                                          | Existing lint rules retained; no import-organizing command added           |
+| Formatting                                                                               | Same settings and script; merge-base plus working tree and untracked files |
 
 No blanket suppression, `void` insertion or repository-wide reformat was applied.
 The five-project compiler check, generated artifacts, boundaries/cycles, two

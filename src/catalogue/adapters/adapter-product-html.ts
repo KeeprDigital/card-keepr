@@ -123,7 +123,7 @@ function liveOfficialProductTitle(html: string, fields: ProductDetailFields, sou
 }
 
 function liveInlineOfficialReleaseDate(html: string): string | null {
-  const match = html.match(/Release Date:\s*([^<]+)</iu);
+  const match = html.match(/Release Date:([^<]+)</iu);
   if (match === null) return null;
   const value = htmlText(match[1]!);
   return value.length === 0 ? null : value;
@@ -143,7 +143,7 @@ function liveOfficialReleaseDateEvidence(value: string): {
     .replace(/\s+/gu, " ")
     .trim();
   let region: "EN-OCEANIA" | null = null;
-  const scoped = normalized.match(/^Europe\/Oceania:\s*(.*)$/iu);
+  const scoped = normalized.match(/^Europe\/Oceania:(.*)$/iu);
   if (scoped !== null) {
     region = "EN-OCEANIA";
     normalized = scoped[1]!.trim();

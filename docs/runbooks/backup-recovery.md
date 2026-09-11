@@ -120,10 +120,10 @@ Retain the target values above independently of the live database. Refresh
 `CURRENT_REVISION` from status immediately before starting recovery. Ingestion and
 Production Release must be idle. Choose one method:
 
-| Method | Restore action | Evidence retained |
-| --- | --- | --- |
-| `time_travel` | Restore the bound production D1 to the exact backup bookmark | Original database identity, restored bookmark, and provider-returned undo bookmark |
-| `replacement_database` | Import the retained SQL into a replacement D1 | Original/retained database and replacement database identities |
+| Method                 | Restore action                                               | Evidence retained                                                                  |
+| ---------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `time_travel`          | Restore the bound production D1 to the exact backup bookmark | Original database identity, restored bookmark, and provider-returned undo bookmark |
+| `replacement_database` | Import the retained SQL into a replacement D1                | Original/retained database and replacement database identities                     |
 
 ```sh
 pnpm --silent run keepr status --json > current-status.json

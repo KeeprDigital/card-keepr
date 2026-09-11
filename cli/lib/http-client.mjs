@@ -1,4 +1,10 @@
-/** One transport for the CLI and release tools. Callers own response contracts. */
+/**
+ * One transport for the CLI and release tools. Callers own response contracts.
+ * @param {string | URL} input
+ * @param {RequestInit} [options]
+ * @param {typeof globalThis.fetch} [fetchImpl]
+ * @returns {Promise<Response>}
+ */
 export function request(input, options = {}, fetchImpl = globalThis.fetch) {
   const url = new URL(input);
   const headers = new Headers(options.headers);

@@ -49,21 +49,10 @@
       "pattern": "^[a-f0-9]{64}$"
     },
     "SupportedGame": {
-      "enum": [
-        "one-piece",
-        "fusion-world",
-        "digimon",
-        "gundam",
-        "riftbound"
-      ]
+      "enum": ["one-piece", "fusion-world", "digimon", "gundam", "riftbound"]
     },
     "Locale": {
-      "enum": [
-        "EN-OCEANIA",
-        "EN-ASIA",
-        "EN-US",
-        "unknown"
-      ]
+      "enum": ["EN-OCEANIA", "EN-ASIA", "EN-US", "unknown"]
     },
     "Date": {
       "type": "string",
@@ -95,11 +84,7 @@
     "Lifecycle": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "first_revision_id",
-        "last_observed_revision_id",
-        "withdrawn"
-      ],
+      "required": ["first_revision_id", "last_observed_revision_id", "withdrawn"],
       "properties": {
         "first_revision_id": {
           "$ref": "#/$defs/OpaqueId"
@@ -118,9 +103,7 @@
             {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "revision_id"
-              ],
+              "required": ["revision_id"],
               "properties": {
                 "revision_id": {
                   "$ref": "#/$defs/OpaqueId"
@@ -134,12 +117,7 @@
     "RelationshipLifecycle": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "first_revision_id",
-        "last_observed_revision_id",
-        "current",
-        "last_missing_revision_id"
-      ],
+      "required": ["first_revision_id", "last_observed_revision_id", "current", "last_missing_revision_id"],
       "properties": {
         "first_revision_id": {
           "$ref": "#/$defs/OpaqueId"
@@ -167,10 +145,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "kind",
-            "value"
-          ],
+          "required": ["kind", "value"],
           "properties": {
             "kind": {
               "const": "card_number"
@@ -184,10 +159,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "kind",
-            "value"
-          ],
+          "required": ["kind", "value"],
           "properties": {
             "kind": {
               "const": "publisher_name"
@@ -201,10 +173,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "kind",
-            "value"
-          ],
+          "required": ["kind", "value"],
           "properties": {
             "kind": {
               "const": "functional_designation"
@@ -217,10 +186,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "kind",
-            "value"
-          ],
+          "required": ["kind", "value"],
           "properties": {
             "kind": {
               "const": "unknown"
@@ -235,10 +201,7 @@
     "GameData": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "profile",
-        "attributes"
-      ],
+      "required": ["profile", "attributes"],
       "properties": {
         "profile": {
           "type": "string",
@@ -253,10 +216,7 @@
     "Rarity": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "normalized",
-        "raw"
-      ],
+      "required": ["normalized", "raw"],
       "properties": {
         "normalized": {
           "$ref": "#/$defs/NullableText"
@@ -269,14 +229,7 @@
     "SupportedGameRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "type",
-        "id",
-        "key",
-        "name",
-        "supported_locales",
-        "game_profile"
-      ],
+      "required": ["type", "id", "key", "name", "supported_locales", "game_profile"],
       "properties": {
         "type": {
           "const": "supported_game"
@@ -308,12 +261,7 @@
     "GameProfileRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "type",
-        "profile",
-        "game",
-        "schema"
-      ],
+      "required": ["type", "profile", "game", "schema"],
       "properties": {
         "type": {
           "const": "game_profile"
@@ -333,16 +281,7 @@
     "CardRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "type",
-        "id",
-        "game",
-        "official_identity",
-        "name",
-        "effective_rules_text",
-        "game_data",
-        "lifecycle"
-      ],
+      "required": ["type", "id", "game", "official_identity", "name", "effective_rules_text", "game_data", "lifecycle"],
       "properties": {
         "type": {
           "const": "card"
@@ -374,11 +313,7 @@
     "PrintingProductProjection": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "official_code",
-        "name"
-      ],
+      "required": ["id", "official_code", "name"],
       "properties": {
         "id": {
           "$ref": "#/$defs/OpaqueId"
@@ -423,24 +358,13 @@
     "PrintingDistributionContextProjection": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "kind",
-        "label",
-        "product_id"
-      ],
+      "required": ["id", "kind", "label", "product_id"],
       "properties": {
         "id": {
           "$ref": "#/$defs/OpaqueId"
         },
         "kind": {
-          "enum": [
-            "product",
-            "tournament_pack",
-            "winner_prize",
-            "promotion",
-            "other"
-          ]
+          "enum": ["product", "tournament_pack", "winner_prize", "promotion", "other"]
         },
         "label": {
           "type": "string",
@@ -474,15 +398,7 @@
     "PrintingRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "type",
-        "id",
-        "card_id",
-        "rarity",
-        "printed_rules_text",
-        "game_data",
-        "lifecycle"
-      ],
+      "required": ["type", "id", "card_id", "rarity", "printed_rules_text", "game_data", "lifecycle"],
       "properties": {
         "type": {
           "const": "printing"
@@ -529,16 +445,7 @@
     "PrintingImageRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "type",
-        "id",
-        "printing_id",
-        "role",
-        "media_type",
-        "width",
-        "height",
-        "content_sha256"
-      ],
+      "required": ["type", "id", "printing_id", "role", "media_type", "width", "height", "content_sha256"],
       "properties": {
         "type": {
           "const": "printing_image"
@@ -550,11 +457,7 @@
           "$ref": "#/$defs/OpaqueId"
         },
         "role": {
-          "enum": [
-            "front",
-            "back",
-            "other"
-          ]
+          "enum": ["front", "back", "other"]
         },
         "media_type": {
           "type": "string",
@@ -576,14 +479,7 @@
     "ProductRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "type",
-        "id",
-        "game",
-        "official_code",
-        "name",
-        "lifecycle"
-      ],
+      "required": ["type", "id", "game", "official_code", "name", "lifecycle"],
       "properties": {
         "type": {
           "const": "product"
@@ -608,15 +504,7 @@
     "ReleaseRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "type",
-        "id",
-        "product_id",
-        "event_key",
-        "region",
-        "date",
-        "status"
-      ],
+      "required": ["type", "id", "product_id", "event_key", "region", "date", "status"],
       "properties": {
         "type": {
           "const": "release"
@@ -636,19 +524,10 @@
         "date": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "precision",
-            "value"
-          ],
+          "required": ["precision", "value"],
           "properties": {
             "precision": {
-              "enum": [
-                "day",
-                "month",
-                "quarter",
-                "year",
-                "unknown"
-              ]
+              "enum": ["day", "month", "quarter", "year", "unknown"]
             },
             "value": {
               "$ref": "#/$defs/NullableText"
@@ -658,10 +537,7 @@
         "status": {
           "oneOf": [
             {
-              "enum": [
-                "announced",
-                "released"
-              ]
+              "enum": ["announced", "released"]
             },
             {
               "type": "null"
@@ -673,14 +549,7 @@
     "DistributionContextRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "type",
-        "id",
-        "game",
-        "kind",
-        "label",
-        "product_id"
-      ],
+      "required": ["type", "id", "game", "kind", "label", "product_id"],
       "properties": {
         "type": {
           "const": "distribution_context"
@@ -692,13 +561,7 @@
           "$ref": "#/$defs/SupportedGame"
         },
         "kind": {
-          "enum": [
-            "product",
-            "tournament_pack",
-            "winner_prize",
-            "promotion",
-            "other"
-          ]
+          "enum": ["product", "tournament_pack", "winner_prize", "promotion", "other"]
         },
         "label": {
           "type": "string",
@@ -740,10 +603,7 @@
           "$ref": "#/$defs/SupportedGame"
         },
         "target_type": {
-          "enum": [
-            "card",
-            "printing"
-          ]
+          "enum": ["card", "printing"]
         },
         "target_id": {
           "$ref": "#/$defs/OpaqueId"
@@ -756,10 +616,7 @@
           "minLength": 1
         },
         "corrected_value": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "minLength": 1
         }
       }
@@ -767,15 +624,7 @@
     "RelationshipRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "type",
-        "id",
-        "kind",
-        "from",
-        "to",
-        "relationship_value",
-        "lifecycle"
-      ],
+      "required": ["type", "id", "kind", "from", "to", "relationship_value", "lifecycle"],
       "properties": {
         "type": {
           "const": "relationship"
@@ -795,10 +644,7 @@
         "from": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "type",
-            "id"
-          ],
+          "required": ["type", "id"],
           "properties": {
             "type": {
               "type": "string",
@@ -812,10 +658,7 @@
         "to": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "type",
-            "id"
-          ],
+          "required": ["type", "id"],
           "properties": {
             "type": {
               "type": "string",
@@ -936,10 +779,7 @@
                 "to": {
                   "properties": {
                     "type": {
-                      "enum": [
-                        "card",
-                        "printing"
-                      ]
+                      "enum": ["card", "printing"]
                     }
                   }
                 }
@@ -952,14 +792,7 @@
     "IdentityCorrectionRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "type",
-        "id",
-        "game",
-        "entity_kind",
-        "action",
-        "replacement_ids"
-      ],
+      "required": ["type", "id", "game", "entity_kind", "action", "replacement_ids"],
       "properties": {
         "type": {
           "const": "identity_correction"
@@ -971,16 +804,10 @@
           "$ref": "#/$defs/SupportedGame"
         },
         "entity_kind": {
-          "enum": [
-            "card",
-            "printing"
-          ]
+          "enum": ["card", "printing"]
         },
         "action": {
-          "enum": [
-            "merge",
-            "split"
-          ]
+          "enum": ["merge", "split"]
         },
         "replacement_ids": {
           "type": "array",

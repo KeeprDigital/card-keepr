@@ -8,6 +8,8 @@ sideEffectsCache: false
 allowBuilds:
   esbuild: true
   workerd: true
+  # Reviewed native binding/version preparation for the TS import resolver.
+  unrs-resolver: true
 # Keep the parser edge distinct from the direct entities@8.1.0 dependency.
 overrides:
   "parse5>entities": 8.0.0

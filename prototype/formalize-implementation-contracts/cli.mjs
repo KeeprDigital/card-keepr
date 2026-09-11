@@ -16,7 +16,7 @@ for (const file of [
   "schemas/catalogue-export-record-v5.schema.json",
   "schemas/administration.schema.json"
 ]) {
-  JSON.parse(readFileSync(join(here, file), "utf8"));
+  JSON.parse(readFileSync(join(here, "../../contracts", file), "utf8"));
 }
 
 let selected = null;

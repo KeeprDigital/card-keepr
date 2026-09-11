@@ -13,7 +13,7 @@ if (
   args.some((arg) => arg !== "--list" && arg !== "--all" && arg !== shardArg && arg !== scenario) ||
   (scenario && args.filter((arg) => !arg.startsWith("--")).length !== 1) ||
   (scenario && args.includes("--all")) ||
-  (!investigation && (scenario || args.includes("--all"))) ||
+  (!investigation && args.includes("--all")) ||
   (shardArg &&
     (!match ||
       !Number.isSafeInteger(Number(match[1])) ||
@@ -29,7 +29,8 @@ if (
 const root = resolve(import.meta.dirname, "..");
 let files = selectAcceptanceFiles(await readdir(resolve(root, "acceptance")), tier);
 if (scenario) {
-  const filename = scenario.endsWith(".test.mjs") ? scenario : `${scenario}.test.mjs`;
+  const name = scenario.replace(/^acceptance\//u, "");
+  const filename = name.endsWith(".test.mjs") ? name : `${name}.test.mjs`;
   if (!files.includes(filename)) {
     console.error(`Unknown ${tier} scenario: ${scenario}. Use --list to see available scenarios.`);
     process.exit(2);

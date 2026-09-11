@@ -54,7 +54,7 @@ function portFree(port) {
   return new Promise((resolveFree, rejectFree) => {
     const server = createServer();
     server.unref();
-    server.once("error", (error) => {
+    server.once("error", (/** @type {Error} */ error) => {
       if (error.code === "EADDRINUSE" || error.code === "EACCES") {
         resolveFree(false);
         return;
@@ -517,7 +517,7 @@ export function runProcess(command, arguments_, environment, { secrets, stdin, t
         if (!hasExited(child)) child.kill("SIGKILL");
       }, 5_000).unref();
     }, timeoutMs);
-    child.once("error", (error) => {
+    child.once("error", (/** @type {Error} */ error) => {
       clearTimeout(timer);
       rejectExit(error);
     });

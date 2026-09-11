@@ -29,10 +29,7 @@
     "catalogue_revision": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "content_sha256"
-      ],
+      "required": ["id", "content_sha256"],
       "properties": {
         "id": {
           "$ref": "#/$defs/OpaqueId"
@@ -70,15 +67,10 @@
     "page": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "next_cursor"
-      ],
+      "required": ["next_cursor"],
       "properties": {
         "next_cursor": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         }
       }
     }
@@ -100,13 +92,7 @@
       "pattern": "Z$"
     },
     "SupportedGame": {
-      "enum": [
-        "one-piece",
-        "fusion-world",
-        "digimon",
-        "gundam",
-        "riftbound"
-      ]
+      "enum": ["one-piece", "fusion-world", "digimon", "gundam", "riftbound"]
     },
     "Component": {
       "type": "object",

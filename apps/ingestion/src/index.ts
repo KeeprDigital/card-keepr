@@ -43,10 +43,7 @@ const dispatch = routeTable<
 const logOptions = { routeSegments: routeSegments(routes, ["/health", "/healthz"]) };
 
 export { CatalogueBackupWorkflow } from "./backup-workflow";
-export {
-  EvidenceHostWorkflow,
-  EvidenceIngestionWorkflow,
-} from "./evidence-workflows";
+export { EvidenceHostWorkflow, EvidenceIngestionWorkflow } from "./evidence-workflows";
 export { OfficialSourceTransport } from "./official-source-transport";
 export { ReconciliationWorkflow } from "./reconciliation-workflow";
 
@@ -74,7 +71,7 @@ async function handleIngestionRequest(
 
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") {
-      return readinessResponse("ingestion", ingestionCapabilities, {
+      return await readinessResponse("ingestion", ingestionCapabilities, {
         database: env.CATALOGUE_DB,
         configuredDatabaseId: env.CATALOGUE_D1_DATABASE_ID,
         buckets: {

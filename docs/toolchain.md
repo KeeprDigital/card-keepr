@@ -1,9 +1,18 @@
 # Toolchain
 
-The supported interface is Corepack-managed pnpm. Biome remains the formatter
-and linter after the conditional Vite+ trial in [issue #301](https://github.com/KeeprDigital/card-keepr/issues/301).
-Vite+ is not an installed dependency. The [trial record](evidence/toolchain-301.md)
-explains the JSON/JSONC lint blocker and the limits of the compatibility evidence.
+The supported interface is Corepack-managed pnpm. ESLint owns `lint`; Prettier
+owns `format` and `format:check`. `check` and the existing CI lint job enforce the
+focused correctness rules and changed-file formatting policy.
+Biome and Vite+ are not installed dependencies. The
+[removal record](evidence/biome-removal.md) follows the
+[typed ESLint/Prettier evaluation](evidence/eslint-303.md) and its
+[staged implementation](evidence/eslint-migration.md).
+
+Formatting is incremental: a file adopts Prettier when changed on the branch,
+staged, edited or newly created. The comparison base defaults to `origin/main`
+when available, then local `main`; `--since=REF` overrides it. Do not run a repository-wide reformat.
+`.prettierignore` preserves generated output, retained fixtures and prototypes;
+ESLint independently excludes those files from its whole-tree scan.
 
 ## Installation and ownership
 
@@ -40,12 +49,15 @@ available through npm's transitive dependency hoisting.
 
 The scoped `parse5>entities` override stays at 8.0.0, while the direct `entities`
 dependency stays at 8.1.0. Strict peer validation remains enabled. Only esbuild
-and workerd may run dependency build scripts, including both retained versions
-of each. A new unapproved build script fails installation through `strictDepBuilds`;
+and workerd, plus the reviewed `unrs-resolver` binding preparation hook, may run
+dependency build scripts. Both retained esbuild/workerd versions remain pinned.
+A new unapproved build script fails installation through `strictDepBuilds`;
 review its purpose before changing `allowBuilds`. Do not disable the
 guard or silently skip a native dependency's required setup.
 
-CI's shared setup script installs Corepack into a temporary runner directory and
+All six workflows use [.github/actions/setup-toolchain/action.yml](../.github/actions/setup-toolchain/action.yml)
+after checkout for Node selection, dependency caching and frozen installation.
+Its shared setup script installs Corepack into a temporary runner directory and
 adds its pnpm shim to the job PATH. It does not replace the runner's global tools.
 All six workflows cache the pnpm store, keyed by OS, architecture, exact Node and
 pnpm versions, lockfile, manifest, settings and the Corepack setup script. Every
@@ -80,6 +92,42 @@ inherit the selected Node, pnpm PATH and environment, including `TMPDIR`,
 still owns the disposable tmpfs and its exit cleanup. No environment filtering
 or task scheduler has been introduced.
 
+## Typed lint and editor setup
+
+`tsc` remains TypeScript 7.0.2 through `@typescript/native`. The `typescript`
+package aliases the supported TS6 compatibility API used by typescript-eslint;
+`pnpm exec tsc6 --version` reports 6.0.3. The Worker projects share compiler options
+through `tsconfig.base.json`, retaining separate generated bindings and test types.
+`pnpm run typecheck` also checks the explicit JavaScript files in
+`tsconfig.tooling.json`: configuration parsing, HTTP transport, development process
+management, formatting, D1 release queries and release-state SQL. That project
+enables strict `checkJs` with Node types and JSDoc; it does not load Worker globals.
+Extend its file list as another operational boundary is annotated and verified.
+Supplemental projects under `eslint/` explicitly own shared Worker source, Node
+JavaScript, API support, and six implementations with adjacent declarations.
+
+Install the workspace's recommended ESLint, Prettier and TypeScript native VS Code
+extensions. Run **TypeScript: Select TypeScript Version**, then **Use Custom
+Version** for the listed TS7 7.0.2 package. The extension requires this one-time
+selection before honoring workspace SDK settings. Its current resolver does not
+follow the scoped alias correctly, so the configured additional location names
+pnpm's exact pinned package directory; update it when upgrading TS7. The workspace also
+configures per-language Prettier formatting and explicit ESLint problem fixes.
+Format Document and ordinary `pnpm run format` now use the same Prettier settings.
+
+`pnpm run lint` performs an uncached whole-tree scan. Typed diagnostic caches
+must not be treated as proof that changed imported declarations were rechecked.
+VS Code reproduced stale typed diagnostics after an imported function changed its
+return type; even Revalidate All Open Files retained the old result. Use **ESLint:
+Restart ESLint Server** after such changes and run the uncached CLI check before
+review. This is a [documented upstream limitation](https://typescript-eslint.io/troubleshooting/typed-linting/#editor-eslint-reports-become-out-of-date-after-file-changes).
+The migration-only lint probes and their package/CI gate have been retired.
+The custom changed-file formatter is covered by `acceptance/format.test.mjs`
+in routine acceptance. Unsafe-flow rules apply
+first to bounded JSON input and the annotated shared CLI/release HTTP transport.
+The remaining unannotated JavaScript is covered by lint but remains outside full
+compiler checking.
+
 ## Before another Vite+ trial
 
 Use a disposable worktree and pin a concrete release; Vite+ is beta and updates
@@ -91,12 +139,12 @@ metadata, not an old recommendation. At minimum:
    Follow the documented Vite core alias rules for pnpm and inspect any peer
    exception; never disable peer validation to hide an incompatible graph.
 2. Reproduce the JSON and JSONC duplicate-key failures in the trial record.
-   Account for lint semantics independently of formatting and map the complete
-   Biome recommended preset, severity overrides, two suppressions and exclusions
-   before removing Biome. Avoid a permanent hybrid or a bespoke replacement
-   JSON linter merely to make the migration pass.
+   Account for lint semantics independently of formatting and map the maintained
+   ESLint rules, reviewed exceptions and exclusions before replacing ESLint.
+   Avoid a permanent hybrid or a bespoke replacement JSON linter merely to make
+   the migration pass.
 3. Verify typed lint with both valid and invalid imported, D1 and R2 promises.
-   Resolve real diagnostics deliberately. Keep TypeScript 7 and prove all five
+   Resolve real diagnostics deliberately. Keep TypeScript 7 and prove all
    existing compiler projects and options, retaining the explicit compiler task
    wherever Vite+'s check does not cover them.
 4. Run focused domain, API, ingestion and Node acceptance smoke, then full

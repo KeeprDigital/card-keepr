@@ -1,5 +1,9 @@
 # Proposed formalized implementation contracts
 
+> Historical proposal. Maintained API, export and administration documents
+> now live in [contracts/](../../contracts/README.md). The filenames below
+> describe the original handoff; the prototype state machine remains historical.
+
 Contract family: `card-keepr-implementation-contracts@1.1`
 
 This family is the proposed answer to “Formalize the implementation contracts.”

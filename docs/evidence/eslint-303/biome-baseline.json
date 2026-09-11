@@ -1,0 +1,1071 @@
+{
+  "summary": {
+    "changed": 0,
+    "unchanged": 859,
+    "matches": 0,
+    "duration": 318536667,
+    "errors": 0,
+    "warnings": 35,
+    "infos": 22,
+    "skipped": 0,
+    "suggestedFixesSkipped": 0,
+    "diagnosticsNotPrinted": 0,
+    "scannerDuration": 6292500
+  },
+  "diagnostics": [
+    {
+      "severity": "info",
+      "message": "Template literals are preferred over string concatenation.",
+      "category": "lint/style/useTemplate",
+      "location": {
+        "path": "acceptance/curated-native-runtime.test.mjs",
+        "start": {
+          "line": 75,
+          "column": 9
+        },
+        "end": {
+          "line": 83,
+          "column": 17
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "info",
+      "message": "Template literals are preferred over string concatenation.",
+      "category": "lint/style/useTemplate",
+      "location": {
+        "path": "acceptance/helpers/acceptance-runtime.mjs",
+        "start": {
+          "line": 217,
+          "column": 19
+        },
+        "end": {
+          "line": 217,
+          "column": 110
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "info",
+      "message": "Template literals are preferred over string concatenation.",
+      "category": "lint/style/useTemplate",
+      "location": {
+        "path": "acceptance/helpers/acceptance-runtime.mjs",
+        "start": {
+          "line": 459,
+          "column": 25
+        },
+        "end": {
+          "line": 459,
+          "column": 105
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "info",
+      "message": "Template literals are preferred over string concatenation.",
+      "category": "lint/style/useTemplate",
+      "location": {
+        "path": "acceptance/helpers/native-isolate-metrics.mjs",
+        "start": {
+          "line": 154,
+          "column": 11
+        },
+        "end": {
+          "line": 177,
+          "column": 19
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "info",
+      "message": "Template literals are preferred over string concatenation.",
+      "category": "lint/style/useTemplate",
+      "location": {
+        "path": "acceptance/native-capacity-metrics.test.mjs",
+        "start": {
+          "line": 68,
+          "column": 5
+        },
+        "end": {
+          "line": 77,
+          "column": 14
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "info",
+      "message": "The computed expression can be simplified without the use of a string literal.",
+      "category": "lint/complexity/useLiteralKeys",
+      "location": {
+        "path": "acceptance/one-piece-two-source.test.mjs",
+        "start": {
+          "line": 65,
+          "column": 24
+        },
+        "end": {
+          "line": 65,
+          "column": 36
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "info",
+      "message": "Template literals are preferred over string concatenation.",
+      "category": "lint/style/useTemplate",
+      "location": {
+        "path": "acceptance/one-piece-two-source.test.mjs",
+        "start": {
+          "line": 610,
+          "column": 58
+        },
+        "end": {
+          "line": 610,
+          "column": 97
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "info",
+      "message": "Template literals are preferred over string concatenation.",
+      "category": "lint/style/useTemplate",
+      "location": {
+        "path": "acceptance/reconciliation-capacity-probe.test.mjs",
+        "start": {
+          "line": 91,
+          "column": 5
+        },
+        "end": {
+          "line": 106,
+          "column": 13
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "info",
+      "message": "Template literals are preferred over string concatenation.",
+      "category": "lint/style/useTemplate",
+      "location": {
+        "path": "acceptance/riftbound-catalogue.test.mjs",
+        "start": {
+          "line": 1023,
+          "column": 63
+        },
+        "end": {
+          "line": 1023,
+          "column": 111
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "info",
+      "message": "Template literals are preferred over string concatenation.",
+      "category": "lint/style/useTemplate",
+      "location": {
+        "path": "apps/ingestion/test/source-record-intake.spec.ts",
+        "start": {
+          "line": 520,
+          "column": 13
+        },
+        "end": {
+          "line": 520,
+          "column": 41
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "info",
+      "message": "Template literals are preferred over string concatenation.",
+      "category": "lint/style/useTemplate",
+      "location": {
+        "path": "apps/ingestion/test/source-record-intake.spec.ts",
+        "start": {
+          "line": 521,
+          "column": 20
+        },
+        "end": {
+          "line": 521,
+          "column": 48
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "info",
+      "message": "Template literals are preferred over string concatenation.",
+      "category": "lint/style/useTemplate",
+      "location": {
+        "path": "apps/ingestion/test/source-record-intake.spec.ts",
+        "start": {
+          "line": 523,
+          "column": 8
+        },
+        "end": {
+          "line": 523,
+          "column": 39
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "info",
+      "message": "Template literals are preferred over string concatenation.",
+      "category": "lint/style/useTemplate",
+      "location": {
+        "path": "src/catalogue/adapters/one-piece-adapter.ts",
+        "start": {
+          "line": 129,
+          "column": 62
+        },
+        "end": {
+          "line": 129,
+          "column": 101
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "info",
+      "message": "Template literals are preferred over string concatenation.",
+      "category": "lint/style/useTemplate",
+      "location": {
+        "path": "src/catalogue/backup-recovery/composition-verification.ts",
+        "start": {
+          "line": 110,
+          "column": 48
+        },
+        "end": {
+          "line": 110,
+          "column": 76
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "info",
+      "message": "Prefer Array#indexOf() over Array#findIndex() when looking for the index of an item.",
+      "category": "lint/complexity/useIndexOf",
+      "location": {
+        "path": "src/catalogue/ingestion/run-document-codec.ts",
+        "start": {
+          "line": 101,
+          "column": 23
+        },
+        "end": {
+          "line": 101,
+          "column": 86
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "info",
+      "message": "Prefer Array#indexOf() over Array#findIndex() when looking for the index of an item.",
+      "category": "lint/complexity/useIndexOf",
+      "location": {
+        "path": "src/catalogue/ingestion/run-document-codec.ts",
+        "start": {
+          "line": 503,
+          "column": 20
+        },
+        "end": {
+          "line": 503,
+          "column": 83
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "info",
+      "message": "Template literals are preferred over string concatenation.",
+      "category": "lint/style/useTemplate",
+      "location": {
+        "path": "src/catalogue/reconciliation/product-release-catalogue.ts",
+        "start": {
+          "line": 609,
+          "column": 11
+        },
+        "end": {
+          "line": 609,
+          "column": 113
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "info",
+      "message": "Template literals are preferred over string concatenation.",
+      "category": "lint/style/useTemplate",
+      "location": {
+        "path": "test/domain/canonical-serialization.spec.ts",
+        "start": {
+          "line": 46,
+          "column": 5
+        },
+        "end": {
+          "line": 46,
+          "column": 28
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "info",
+      "message": "Template literals are preferred over string concatenation.",
+      "category": "lint/style/useTemplate",
+      "location": {
+        "path": "test/domain/canonical-serialization.spec.ts",
+        "start": {
+          "line": 47,
+          "column": 5
+        },
+        "end": {
+          "line": 47,
+          "column": 34
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "info",
+      "message": "Template literals are preferred over string concatenation.",
+      "category": "lint/style/useTemplate",
+      "location": {
+        "path": "test/domain/card-search-recovery.test.mjs",
+        "start": {
+          "line": 86,
+          "column": 10
+        },
+        "end": {
+          "line": 86,
+          "column": 87
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "info",
+      "message": "Template literals are preferred over string concatenation.",
+      "category": "lint/style/useTemplate",
+      "location": {
+        "path": "test/domain/official-source-raw-contract-gundam.test.mjs",
+        "start": {
+          "line": 157,
+          "column": 56
+        },
+        "end": {
+          "line": 157,
+          "column": 86
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "info",
+      "message": "Template literals are preferred over string concatenation.",
+      "category": "lint/style/useTemplate",
+      "location": {
+        "path": "test/support/canonical-encoding-probe.mjs",
+        "start": {
+          "line": 41,
+          "column": 5
+        },
+        "end": {
+          "line": 59,
+          "column": 13
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "This variable root is unused.",
+      "category": "lint/correctness/noUnusedVariables",
+      "location": {
+        "path": "acceptance/curated-revisions-cli.test.mjs",
+        "start": {
+          "line": 9,
+          "column": 7
+        },
+        "end": {
+          "line": 9,
+          "column": 11
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "This variable root is unused.",
+      "category": "lint/correctness/noUnusedVariables",
+      "location": {
+        "path": "acceptance/errata-authority-runtime.test.mjs",
+        "start": {
+          "line": 10,
+          "column": 7
+        },
+        "end": {
+          "line": 10,
+          "column": 11
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "This variable root is unused.",
+      "category": "lint/correctness/noUnusedVariables",
+      "location": {
+        "path": "acceptance/errata-runtime.test.mjs",
+        "start": {
+          "line": 10,
+          "column": 7
+        },
+        "end": {
+          "line": 10,
+          "column": 11
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "The comma operator is disallowed.",
+      "category": "lint/complexity/noCommaOperator",
+      "location": {
+        "path": "acceptance/helpers/native-recovery-cloudflare.mjs",
+        "start": {
+          "line": 120,
+          "column": 53
+        },
+        "end": {
+          "line": 120,
+          "column": 54
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "This import is unused.",
+      "category": "lint/correctness/noUnusedImports",
+      "location": {
+        "path": "apps/ingestion/test/reconciliation-card-identity.spec.ts",
+        "start": {
+          "line": 12,
+          "column": 13
+        },
+        "end": {
+          "line": 12,
+          "column": 34
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "This import is unused.",
+      "category": "lint/correctness/noUnusedImports",
+      "location": {
+        "path": "apps/ingestion/test/reconciliation-product-identity.spec.ts",
+        "start": {
+          "line": 10,
+          "column": 13
+        },
+        "end": {
+          "line": 10,
+          "column": 34
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "Several of these imports are unused.",
+      "category": "lint/correctness/noUnusedImports",
+      "location": {
+        "path": "apps/ingestion/test/reconciliation-product-identity.spec.ts",
+        "start": {
+          "line": 19,
+          "column": 3
+        },
+        "end": {
+          "line": 21,
+          "column": 16
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "This variable firstReconciled is unused.",
+      "category": "lint/correctness/noUnusedVariables",
+      "location": {
+        "path": "apps/ingestion/test/reconciliation-workflow-binding.spec.ts",
+        "start": {
+          "line": 1126,
+          "column": 9
+        },
+        "end": {
+          "line": 1126,
+          "column": 24
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "",
+      "category": "lint",
+      "location": {
+        "path": "docs/validation/issue-233-measurements/issue-233-methods-1001-structured.json",
+        "start": {
+          "line": 0,
+          "column": 0
+        },
+        "end": {
+          "line": 0,
+          "column": 0
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "This function publicationText is unused.",
+      "category": "lint/correctness/noUnusedVariables",
+      "location": {
+        "path": "src/catalogue/adapters/bandai-adapter-runtime.ts",
+        "start": {
+          "line": 1225,
+          "column": 10
+        },
+        "end": {
+          "line": 1225,
+          "column": 25
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "Unexpected control character in a regular expression.",
+      "category": "lint/suspicious/noControlCharactersInRegex",
+      "location": {
+        "path": "src/catalogue/adapters/digimon-adapter.ts",
+        "start": {
+          "line": 632,
+          "column": 12
+        },
+        "end": {
+          "line": 632,
+          "column": 13
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "The function should not return a value because its return type is void.",
+      "category": "lint/correctness/noVoidTypeReturn",
+      "location": {
+        "path": "src/catalogue/adapters/one-piece-official-errata-html.ts",
+        "start": {
+          "line": 754,
+          "column": 5
+        },
+        "end": {
+          "line": 754,
+          "column": 41
+        }
+      },
+      "advices": [
+        {
+          "start": {
+            "line": 751,
+            "column": 1
+          },
+          "end": {
+            "line": 765,
+            "column": 2
+          },
+          "text": "'void' signals the absence of value. The returned value is likely to be ignored by the caller."
+        }
+      ]
+    },
+    {
+      "severity": "warning",
+      "message": "The function should not return a value because its return type is void.",
+      "category": "lint/correctness/noVoidTypeReturn",
+      "location": {
+        "path": "src/catalogue/adapters/one-piece-official-errata-html.ts",
+        "start": {
+          "line": 771,
+          "column": 5
+        },
+        "end": {
+          "line": 771,
+          "column": 41
+        }
+      },
+      "advices": [
+        {
+          "start": {
+            "line": 767,
+            "column": 1
+          },
+          "end": {
+            "line": 777,
+            "column": 2
+          },
+          "text": "'void' signals the absence of value. The returned value is likely to be ignored by the caller."
+        }
+      ]
+    },
+    {
+      "severity": "warning",
+      "message": "The function should not return a value because its return type is void.",
+      "category": "lint/correctness/noVoidTypeReturn",
+      "location": {
+        "path": "src/catalogue/adapters/one-piece-official-errata-html.ts",
+        "start": {
+          "line": 795,
+          "column": 5
+        },
+        "end": {
+          "line": 795,
+          "column": 87
+        }
+      },
+      "advices": [
+        {
+          "start": {
+            "line": 779,
+            "column": 1
+          },
+          "end": {
+            "line": 797,
+            "column": 2
+          },
+          "text": "'void' signals the absence of value. The returned value is likely to be ignored by the caller."
+        }
+      ]
+    },
+    {
+      "severity": "warning",
+      "message": "This variable implicitly has the any type.",
+      "category": "lint/suspicious/noImplicitAnyLet",
+      "location": {
+        "path": "src/catalogue/backup-recovery/backup-recovery.ts",
+        "start": {
+          "line": 568,
+          "column": 13
+        },
+        "end": {
+          "line": 568,
+          "column": 21
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "This function catalogueCardsAtRevision is unused.",
+      "category": "lint/correctness/noUnusedVariables",
+      "location": {
+        "path": "src/catalogue/curated/curated-revisions.ts",
+        "start": {
+          "line": 1969,
+          "column": 16
+        },
+        "end": {
+          "line": 1969,
+          "column": 40
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "This callback passed to forEach() iterable method should not return a value.",
+      "category": "lint/suspicious/useIterableCallbackReturn",
+      "location": {
+        "path": "src/catalogue/read/read.ts",
+        "start": {
+          "line": 458,
+          "column": 6
+        },
+        "end": {
+          "line": 458,
+          "column": 13
+        }
+      },
+      "advices": [
+        {
+          "start": {
+            "line": 458,
+            "column": 33
+          },
+          "end": {
+            "line": 458,
+            "column": 57
+          },
+          "text": "Either remove this return or remove the returned value."
+        }
+      ]
+    },
+    {
+      "severity": "warning",
+      "message": "Unexpected label.",
+      "category": "lint/suspicious/noConfusingLabels",
+      "location": {
+        "path": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+        "start": {
+          "line": 622,
+          "column": 7
+        },
+        "end": {
+          "line": 622,
+          "column": 22
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "This callback passed to forEach() iterable method should not return a value.",
+      "category": "lint/suspicious/useIterableCallbackReturn",
+      "location": {
+        "path": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+        "start": {
+          "line": 1084,
+          "column": 68
+        },
+        "end": {
+          "line": 1084,
+          "column": 75
+        }
+      },
+      "advices": [
+        {
+          "start": {
+            "line": 1084,
+            "column": 88
+          },
+          "end": {
+            "line": 1084,
+            "column": 104
+          },
+          "text": "Either remove this return or remove the returned value."
+        }
+      ]
+    },
+    {
+      "severity": "warning",
+      "message": "This callback passed to forEach() iterable method should not return a value.",
+      "category": "lint/suspicious/useIterableCallbackReturn",
+      "location": {
+        "path": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+        "start": {
+          "line": 1154,
+          "column": 44
+        },
+        "end": {
+          "line": 1154,
+          "column": 51
+        }
+      },
+      "advices": [
+        {
+          "start": {
+            "line": 1154,
+            "column": 65
+          },
+          "end": {
+            "line": 1154,
+            "column": 89
+          },
+          "text": "Either remove this return or remove the returned value."
+        }
+      ]
+    },
+    {
+      "severity": "warning",
+      "message": "Unexpected label.",
+      "category": "lint/suspicious/noConfusingLabels",
+      "location": {
+        "path": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+        "start": {
+          "line": 1584,
+          "column": 9
+        },
+        "end": {
+          "line": 1584,
+          "column": 20
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "This callback passed to forEach() iterable method should not return a value.",
+      "category": "lint/suspicious/useIterableCallbackReturn",
+      "location": {
+        "path": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+        "start": {
+          "line": 2392,
+          "column": 12
+        },
+        "end": {
+          "line": 2392,
+          "column": 19
+        }
+      },
+      "advices": [
+        {
+          "start": {
+            "line": 2392,
+            "column": 33
+          },
+          "end": {
+            "line": 2392,
+            "column": 54
+          },
+          "text": "Either remove this return or remove the returned value."
+        }
+      ]
+    },
+    {
+      "severity": "warning",
+      "message": "All these imports are only used as types.",
+      "category": "lint/style/useImportType",
+      "location": {
+        "path": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+        "start": {
+          "line": 2,
+          "column": 8
+        },
+        "end": {
+          "line": 2,
+          "column": 63
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "Several of these imports are unused.",
+      "category": "lint/correctness/noUnusedImports",
+      "location": {
+        "path": "src/catalogue/reconciliation/card-printing-reconciliation.ts",
+        "start": {
+          "line": 85,
+          "column": 3
+        },
+        "end": {
+          "line": 85,
+          "column": 13
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "Unexpected label.",
+      "category": "lint/suspicious/noConfusingLabels",
+      "location": {
+        "path": "src/catalogue/reconciliation/entity-admission-pins.ts",
+        "start": {
+          "line": 199,
+          "column": 7
+        },
+        "end": {
+          "line": 199,
+          "column": 16
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "Change to an optional chain.",
+      "category": "lint/complexity/useOptionalChain",
+      "location": {
+        "path": "src/catalogue/reconciliation/publication-preparation.ts",
+        "start": {
+          "line": 697,
+          "column": 7
+        },
+        "end": {
+          "line": 697,
+          "column": 48
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "Change to an optional chain.",
+      "category": "lint/complexity/useOptionalChain",
+      "location": {
+        "path": "src/catalogue/reconciliation/publication-preparation.ts",
+        "start": {
+          "line": 769,
+          "column": 5
+        },
+        "end": {
+          "line": 770,
+          "column": 32
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "void is confusing inside a union type.",
+      "category": "lint/suspicious/noConfusingVoidType",
+      "location": {
+        "path": "src/catalogue/reconciliation/reconciliation-candidate-store.ts",
+        "start": {
+          "line": 157,
+          "column": 38
+        },
+        "end": {
+          "line": 157,
+          "column": 42
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "This parameter freshness is unused.",
+      "category": "lint/correctness/noUnusedFunctionParameters",
+      "location": {
+        "path": "src/catalogue/shared/source-freshness.ts",
+        "start": {
+          "line": 28,
+          "column": 45
+        },
+        "end": {
+          "line": 28,
+          "column": 54
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "All these imports are only used as types.",
+      "category": "lint/style/useImportType",
+      "location": {
+        "path": "src/catalogue/shared/staging-object-storage.ts",
+        "start": {
+          "line": 1,
+          "column": 8
+        },
+        "end": {
+          "line": 1,
+          "column": 67
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "All these imports are only used as types.",
+      "category": "lint/style/useImportType",
+      "location": {
+        "path": "test/domain/catalogue-store.types.ts",
+        "start": {
+          "line": 2,
+          "column": 8
+        },
+        "end": {
+          "line": 2,
+          "column": 65
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "Several of these imports are unused.",
+      "category": "lint/correctness/noUnusedImports",
+      "location": {
+        "path": "test/domain/official-source-raw-contract-shared.mjs",
+        "start": {
+          "line": 7,
+          "column": 3
+        },
+        "end": {
+          "line": 10,
+          "column": 30
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "Several of these imports are unused.",
+      "category": "lint/correctness/noUnusedImports",
+      "location": {
+        "path": "test/domain/official-source-raw-contract-shared.mjs",
+        "start": {
+          "line": 14,
+          "column": 8
+        },
+        "end": {
+          "line": 17,
+          "column": 28
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "This variable path is unused.",
+      "category": "lint/correctness/noUnusedVariables",
+      "location": {
+        "path": "test/support/fake-publisher/official-source-fixtures.mjs",
+        "start": {
+          "line": 430,
+          "column": 9
+        },
+        "end": {
+          "line": 430,
+          "column": 13
+        }
+      },
+      "advices": []
+    },
+    {
+      "severity": "warning",
+      "message": "This parameter surface is unused.",
+      "category": "lint/correctness/noUnusedFunctionParameters",
+      "location": {
+        "path": "test/support/fake-publisher/reconciliation-documents.ts",
+        "start": {
+          "line": 7,
+          "column": 64
+        },
+        "end": {
+          "line": 7,
+          "column": 71
+        }
+      },
+      "advices": []
+    }
+  ],
+  "command": "lint"
+}

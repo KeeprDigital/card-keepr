@@ -9,14 +9,9 @@ import addFormats from "ajv-formats";
 import { runCli, startWorker, stopWorker, waitForHealth } from "./helpers/acceptance-runtime.mjs";
 
 const root = resolve(import.meta.dirname, "..");
-const apiSchema = JSON.parse(
-  readFileSync(resolve(root, "prototype/formalize-implementation-contracts/schemas/api.schema.json"), "utf8"),
-);
+const apiSchema = JSON.parse(readFileSync(resolve(root, "contracts/schemas/api.schema.json"), "utf8"));
 const exportManifestSchemaV5 = JSON.parse(
-  readFileSync(
-    resolve(root, "prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v5.schema.json"),
-    "utf8",
-  ),
+  readFileSync(resolve(root, "contracts/schemas/catalogue-export-manifest-v5.schema.json"), "utf8"),
 );
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
@@ -104,6 +99,7 @@ test("the CLI reports both locally emulated runtimes as healthy", async (t) => {
   } catch (error) {
     throw new Error(
       `${error instanceof Error ? error.message : String(error)}\nAPI:\n${api.getOutput()}\nIngestion:\n${ingestion.getOutput()}`,
+      { cause: error },
     );
   }
 
