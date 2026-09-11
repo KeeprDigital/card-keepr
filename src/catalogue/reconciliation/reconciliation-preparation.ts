@@ -2,6 +2,10 @@ import { documentStorage } from "./reconciliation-document";
 import { type CatalogueStore, canonicalJson, compareUtf8, sha256Text } from "../shared";
 import { preparationBatchStatement, recordPreparationBatchStatement } from "./reconciliation-preparation-repository";
 
+const nonAscii = /[^\u0000-\u007f]/;
+const encoder = new TextEncoder();
+const utf8Length = (text: string) => nonAscii.test(text) ? encoder.encode(text).byteLength : text.length;
+
 /** Each receipt and its bounded effects commit together, independent of Workflow history. */
 export async function prepareCandidateBatch(
   database: CatalogueStore,
@@ -41,7 +45,7 @@ export function* canonicalValueChunks(value: unknown): Generator<string> {
   let chunk = "";
   let bytes = 0;
   for (const part of canonicalParts(value)) {
-    const length = new TextEncoder().encode(part).byteLength;
+    const length = utf8Length(part);
     if (length > 524288) throw new Error("reconciliation_capacity_exceeded: one JSON value exceeds 512 KiB.");
     if (bytes + length > 524288) {
       yield chunk;
@@ -155,7 +159,7 @@ export async function* canonicalStreamValueChunks(value: unknown): AsyncGenerato
   let chunk = "";
   let bytes = 0;
   for await (const part of streamedParts(value)) {
-    const length = new TextEncoder().encode(part).byteLength;
+    const length = utf8Length(part);
     if (bytes + length > 524288) {
       if (chunk) yield chunk;
       chunk = "";

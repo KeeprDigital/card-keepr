@@ -261,3 +261,32 @@ test("the SQLite schema query pages every entry within its row and UTF-8 byte bo
     database.close();
   }
 });
+
+test("snapshot SQL resumes after a full page of small rows", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const { compositionVerificationQuery } =
+    await import("../../src/catalogue/backup-recovery/composition-verification-repository.ts");
+  const database = new DatabaseSync(":memory:");
+  try {
+    database.exec("CREATE TABLE reconciliation_checkpoints (content TEXT)");
+    const insert = database.prepare("INSERT INTO reconciliation_checkpoints VALUES (?)");
+    for (let index = 0; index < 129; index++) insert.run(`record ${index}`);
+    const records = [];
+    let after = 0;
+    let pages = 0;
+    for (;;) {
+      const query = compositionVerificationQuery({
+        kind: "composition-page", table: "reconciliation_checkpoints", after, columns: ["content"],
+      });
+      const page = database.prepare(query.sql).all(...query.params);
+      if (!page.length) break;
+      pages++;
+      records.push(...page.map((row) => row.content));
+      after = page.at(-1).snapshot_rowid;
+    }
+    assert.ok(pages > 1);
+    assert.deepEqual(records, Array.from({ length: 129 }, (_, index) => `record ${index}`));
+  } finally {
+    database.close();
+  }
+});

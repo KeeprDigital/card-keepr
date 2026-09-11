@@ -6,6 +6,7 @@ import {
   nextReducerEntityStateStatement,
   nextReducerGroupStateStatement,
   exactReducerStateStatement,
+  matchingReducerStateStatement,
   reducerStateStatement,
   retainReducerStateStatement,
   reducerStateLookupPageStatement,
@@ -26,6 +27,12 @@ async function storage<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 type StateRow = { content: string; sha256: string };
+type PreparedWrite = {
+  bytes: number;
+  statement: () => D1PreparedStatement;
+  replayStatement: () => D1PreparedStatement;
+  accept: (inserted: StateRow | null, readConflict?: boolean) => Promise<void>;
+};
 
 /** A replay sees its predecessor state, even when later observations already have retained effects. */
 export class ReconciliationReducerIndex<T> {
@@ -71,8 +78,7 @@ export class ReconciliationReducerIndex<T> {
     let bytes = 0;
     const flush = async () => {
       if (!writes.length) return;
-      const results = await storage(() => this.database.batch<StateRow>(writes.map((write) => write.statement())));
-      for (const [index, write] of writes.entries()) await write.accept(results[index]?.results[0] ?? null);
+      await this.commitWrites(writes);
       writes = [];
       bytes = 0;
     };
@@ -174,8 +180,7 @@ export class ReconciliationReducerIndex<T> {
     if (!writes.length) return;
     if (writes.reduce((sum, write) => sum + write.bytes, 0) > 262144)
       throw new Error("Paired reducer seed batch exceeds 256 KiB.");
-    const results = await storage(() => this.database.batch<StateRow>(writes.map((write) => write.statement())));
-    for (const [index, write] of writes.entries()) await write.accept(results[index]?.results[0] ?? null);
+    await this.commitWrites(writes);
   }
 
   /** Query only the predecessor view; call before this observation writes matching state. */
@@ -335,11 +340,21 @@ export class ReconciliationReducerIndex<T> {
     const right = await other.index.prepareWrite(other.key, other.value);
     const writes = [left, right];
     if (additional) writes.push(await additional.index.prepareWrite(additional.key, additional.value));
-    const results = await storage(() => this.database.batch<StateRow>(writes.map((write) => write.statement())));
-    for (const [index, write] of writes.entries()) await write.accept(results[index]?.results[0] ?? null);
+    await this.commitWrites(writes);
   }
 
-  private async prepareWrite(key: string, value: T) {
+  private async commitWrites(writes: PreparedWrite[]) {
+    const results = await storage(() => this.database.batch<StateRow>(writes.map((write) => write.statement())));
+    const rows = results.map((result) => result.results[0] ?? null);
+    const conflicts = writes.map((write, index) => ({ write, index })).filter(({ index }) => !rows[index]);
+    if (conflicts.length) {
+      const retained = await storage(() => this.database.batch<StateRow>(conflicts.map(({ write }) => write.replayStatement())));
+      for (const [index, conflict] of conflicts.entries()) rows[conflict.index] = retained[index]?.results[0] ?? null;
+    }
+    for (const [index, write] of writes.entries()) await write.accept(rows[index] ?? null, false);
+  }
+
+  private async prepareWrite(key: string, value: T): Promise<PreparedWrite> {
     const ordinal = this.ordinal;
     const digest = await sha256Text(key);
     const envelope = await retainPartitionedRecord(this.database, this.runId, JSON.parse(JSON.stringify(value)));
@@ -361,12 +376,13 @@ export class ReconciliationReducerIndex<T> {
           sha256,
           groupDigest,
         ),
-      accept: async (inserted: StateRow | null) => {
+      replayStatement: () => matchingReducerStateStatement(this.database, this.runId, this.namespace, digest, ordinal, content, sha256),
+      accept: async (inserted: StateRow | null, readConflict = true) => {
         const retained =
           inserted ??
-          (await storage(() =>
+          (readConflict ? await storage(() =>
             exactReducerStateStatement(this.database, this.runId, this.namespace, digest, ordinal).first<StateRow>(),
-          ));
+          ) : null);
         if (retained?.content !== content || retained.sha256 !== sha256)
           throw new Error("Reducer replay changed its immutable observation effect.");
         if (this.ordinal === ordinal) {

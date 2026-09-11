@@ -1,7 +1,7 @@
 import { type CatalogueStore, repositoryStatements } from "../shared";
 
 // Pages bound database snapshot metadata independently of consumer export envelopes.
-export const maximumSnapshotPageRows = 16;
+export const maximumSnapshotPageRows = 128;
 export const maximumSnapshotPageBytes = 1_048_576;
 export const maximumSchemaSnapshotPageRows = 32;
 export const maximumSchemaSnapshotPageBytes = 1_048_576;

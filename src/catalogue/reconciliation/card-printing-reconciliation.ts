@@ -47,6 +47,7 @@ import { ReconciliationReducerIndex, ReconciliationReducerStorageError } from ".
 import {
   ReconciliationInputStorageError,
   verifiedReconciliationRecordEntries,
+  reconciliationInputGroups,
   scannedReconciliationRecordEntries,
   type ReconciliationInputRecordCursor,
 } from "./reconciliation-input";
@@ -578,6 +579,22 @@ export async function reconcileRetainedCardPrintingEvidence(
   let pendingSourceWarning = reduction?.value.pendingSourceWarning ?? null;
   let dedicatedErrata = reduction?.value.dedicatedErrata ?? 0;
   let hasWithdrawals = reduction?.value.hasWithdrawals ?? false;
+  let pendingPlans: ObservationPlan[] = [];
+  let pendingPlanBytes = 0;
+  const flushPlans = async () => {
+    if (pendingPlans.length) await plans.appendMany(pendingPlans);
+    pendingPlans = [];
+    pendingPlanBytes = 0;
+  };
+  const retainPlan = async (plan: ObservationPlan) => {
+    const bytes = new TextEncoder().encode(canonicalJson(plan)).byteLength;
+    if (pendingPlans.length && (pendingPlans.length === 8 || pendingPlanBytes + bytes > 131072)) await flushPlans();
+    if (bytes > 131072) await plans.append(plan);
+    else {
+      pendingPlans.push(plan);
+      pendingPlanBytes += bytes;
+    }
+  };
   const saveReduction = async (
     after: ReconciliationInputRecordCursor | null,
     complete: boolean,
@@ -589,6 +606,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       errataChecksComplete: boolean;
     },
   ) => {
+    await flushPlans();
     const phase = errata ? "official_errata" : "official_reduction";
     const mappings = await sourceMappings.checkpoint();
     await retainReconciliationCheckpoint(database, runId, phase, reductionOrdinal, {
@@ -633,16 +651,15 @@ export async function reconcileRetainedCardPrintingEvidence(
     let inUnit = 0;
     let bytes = 0;
     let after = reduction?.value.after ?? null;
-    for await (const {
+    for await (const group of reconciliationInputGroups(verifiedReconciliationRecordEntries<NormalizedReconciliationObservation>(
+      database, runId, "observations", after,
+    ))) {
+      await cards.prefetchOfficialIdentities(group.flatMap(({ value }) => value.kind === "card_printing" && value.observedCardAndPrinting.card ? [value.observedCardAndPrinting.card] : []));
+    for (const {
       value: observation,
       cursor,
       byteLength,
-    } of verifiedReconciliationRecordEntries<NormalizedReconciliationObservation>(
-      database,
-      runId,
-      "observations",
-      after,
-    )) {
+    } of group) {
       if (observation.kind === "card_printing" && observation.errata.length > 8)
         throw new Error("reconciliation_capacity_exceeded: one observation contains more than eight Errata.");
       const work =
@@ -1479,7 +1496,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           };
           await sourceMappings.append(await boundedSourceMapping(mapping));
         }
-        await plans.append({
+        await retainPlan({
           sourceObservationSetId: observation.sourceObservationSetId,
           sourceSnapshotId: observation.sourceSnapshotId,
           sourceObservationId: observation.sourceObservationId,
@@ -1563,6 +1580,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         inUnit = 0;
         bytes = 0;
       }
+    }
     }
     const next = await saveReduction(after, true);
     if (yieldAtCheckpoint) return next;

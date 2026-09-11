@@ -73,6 +73,13 @@ export function exactReducerStateStatement(
     .bind(preparationId, namespace, key, ordinal);
 }
 
+/** Conflict verification returns only an exact expected effect, bounding replay response bytes. */
+export function matchingReducerStateStatement(database: CatalogueStore, preparationId: string, namespace: string, key: string, ordinal: number, content: string, sha256: string) {
+  return repositoryStatements(database).prepare(`SELECT content, sha256 FROM reconciliation_reducer_state
+    WHERE preparation_id = ? AND namespace = ? AND key_digest = ? AND observation_ordinal = ?
+      AND content = ? AND sha256 = ?`).bind(preparationId, namespace, key, ordinal, content, sha256);
+}
+
 export function nextReducerGroupStateStatement(
   database: CatalogueStore,
   preparationId: string,

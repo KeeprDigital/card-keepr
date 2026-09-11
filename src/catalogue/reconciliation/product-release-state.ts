@@ -152,9 +152,9 @@ export async function reconcileProductReleaseState(
   const recordLimit = () => {
     if (stage === "inputs") return fresh() ? 16 : 4;
     if (stage === "existing_products") return 8;
-    if (stage === "new_products" && priorProductCount === 0) return 32;
-    if (stage === "new_contexts" && priorContexts.position === 0) return 32;
-    if (stage === "new_relationships" && priorRelationships.position === 0) return 32;
+    if (stage === "new_products" && priorProductCount === 0) return 128;
+    if (stage === "new_contexts" && priorContexts.position === 0) return 128;
+    if (stage === "new_relationships" && priorRelationships.position === 0) return 128;
     return 16;
   };
   const effectLimit = () => (fresh() ? 32 : 4);

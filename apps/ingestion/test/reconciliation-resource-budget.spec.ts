@@ -1,13 +1,33 @@
 import { expect, test } from "vitest";
 import type { WorkflowStep } from "cloudflare:workers";
 import { boundedReconciliationResources } from "../src/reconciliation-resource-budget";
-import { installReconciliationSuite, testEnv } from "./reconciliation-helpers";
+import { collect, installReconciliationSuite, testEnv } from "./reconciliation-helpers";
+import { catalogueStore } from "../../../src/catalogue/shared";
+import { initializeReconciliationProgress } from "../../../src/catalogue/reconciliation/reconciliation-progress";
+import { ReconciliationReducerIndex } from "../../../src/catalogue/reconciliation/reconciliation-reducer-state";
 
 installReconciliationSuite();
 
 function directStep() {
   return { do: async (...args: unknown[]) => (args.at(-1) as () => Promise<unknown>)() } as unknown as WorkflowStep;
 }
+
+test("uncheckpointed reducer output replays within one callback and rejects changed effects", async () => {
+  const source = await collect("/reconciliation/card-without-printing", "reducer-output-replay");
+  const bounded = boundedReconciliationResources(testEnv, directStep());
+  const store = catalogueStore(bounded.env.CATALOGUE_DB);
+  await initializeReconciliationProgress(store, source.id, new Date().toISOString());
+  const entries = Array.from({ length: 101 }, (_, index) => ({ key: `result-${index}`, value: { id: `result-${index}`, value: index } }));
+  const index = () => new ReconciliationReducerIndex<{ id: string; value: number }>(store, source.id, "uncheckpointed_output");
+  await bounded.step.do("retain output before lost checkpoint", async () => index().seedMany(entries));
+  const replay = index();
+  await bounded.step.do("replay output", async () => replay.seedMany(entries));
+  const actual = [];
+  for await (const value of replay.entityValues()) actual.push(value);
+  expect(actual).toEqual(entries.map(({ value }) => value).sort((left, right) => left.id.localeCompare(right.id)));
+  const changed = entries.map((entry, ordinal) => ordinal === 50 ? { ...entry, value: { ...entry.value, value: -1 } } : entry);
+  await expect(bounded.step.do("reject changed output replay", async () => index().seedMany(changed))).rejects.toThrow("immutable observation effect");
+});
 
 test("a reconciliation callback cannot make its 101st D1 call", async () => {
   let calls = 0;

@@ -105,6 +105,7 @@ export async function prepareNativeSourceHistory(
     if (yieldAtCheckpoint) throw new ReconciliationContinuation({ phase: "disappearance_warnings", ordinal });
   };
   let work = 0;
+  let historyBytes = 0;
   let planEntries: AsyncGenerator<ObservationPlan> | undefined;
   let planEntry: IteratorResult<ObservationPlan> | undefined;
   let planFrame: Frame | undefined;
@@ -222,7 +223,19 @@ export async function prepareNativeSourceHistory(
           planFrame = frame;
           planEntry = undefined;
         }
-        const next = (planEntry ??= await planEntries!.next());
+        if (!planEntry) {
+          const next = await planEntries!.next();
+          if (!next.done) {
+            const size = new TextEncoder().encode(canonicalJson(next.value)).byteLength;
+            if (work > 0 && historyBytes + size > 256000) {
+              await save();
+              work = historyBytes = 0;
+            }
+            historyBytes += size;
+          }
+          planEntry = next;
+        }
+        const next = planEntry;
         if (next.done) {
           if (cursor.scanned !== frame.plans)
             throw new Error("Native source history observation prefix is missing records.");
@@ -232,8 +245,14 @@ export async function prepareNativeSourceHistory(
           const plan = next.value;
           const events = historyObservation(frame, plan);
           if (cursor.planPart < events.length) {
-            const event = events[cursor.planPart++]!;
+            const event = events[cursor.planPart]!;
             const size = new TextEncoder().encode(canonicalJson(event)).byteLength + 1;
+            if (work > 0 && historyBytes + size > 256000) {
+              await save();
+              work = historyBytes = 0;
+            }
+            cursor.planPart++;
+            historyBytes += size;
             if (pendingHistory.length && (pendingHistory.length === 8 || pendingHistoryBytes + size > 131072))
               await flushHistory();
             if (size + 2 > 131072) await history.retain(event, { preserveFirst: true });
@@ -250,10 +269,10 @@ export async function prepareNativeSourceHistory(
           }
         }
       }
-      // Eight bounded records per durable unit avoid a new Workflow dispatch for every small history row.
-      if (++work === 8 || cursor.stage === "prior_ready" || cursor.stage === "complete") {
+      // Batched observations can advance further; predecessor traversals keep their smaller bound.
+      if (++work >= (cursor.stage === "observations" ? 32 : 8) || historyBytes >= 256000 || cursor.stage === "prior_ready" || cursor.stage === "complete") {
         await save();
-        work = 0;
+        work = historyBytes = 0;
       }
     }
   } finally {
