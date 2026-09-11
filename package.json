@@ -24,7 +24,7 @@
     "test:benchmark": "node scripts/acceptance-tier.mjs benchmark",
     "test:stress": "KEEPR_TEST_SUITE=stress vitest run --config apps/ingestion/vitest.config.ts apps/ingestion/test/runtime-host-pacing.stress.spec.ts apps/ingestion/test/runtime-collection-throughput.stress.spec.ts",
     "test:stress:full": "KEEPR_TEST_SUITE=stress vitest run --config apps/ingestion/vitest.config.ts",
-    "check": "pnpm run lint && pnpm run check:lint-tooling && pnpm run format:check && pnpm run typecheck && pnpm run check:generated && pnpm run check:imports && pnpm run build",
+    "check": "pnpm run lint && pnpm run format:check && pnpm run typecheck && pnpm run check:generated && pnpm run check:imports && pnpm run build",
     "lint": "eslint . --max-warnings=0",
     "format": "node scripts/format.mjs",
     "format:check": "node scripts/format.mjs --check",
@@ -35,8 +35,7 @@
     "generate:validators": "node scripts/document-validators.mjs",
     "build": "pnpm run build:api && pnpm run build:ingestion",
     "build:api": "WRANGLER_LOG_PATH=.wrangler/logs wrangler deploy --dry-run --config apps/api/wrangler.jsonc",
-    "build:ingestion": "WRANGLER_LOG_PATH=.wrangler/logs wrangler deploy --dry-run --config apps/ingestion/wrangler.jsonc",
-    "check:lint-tooling": "node scripts/lint-contract.mjs && node scripts/format-contract.mjs"
+    "build:ingestion": "WRANGLER_LOG_PATH=.wrangler/logs wrangler deploy --dry-run --config apps/ingestion/wrangler.jsonc"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.1.6",

@@ -13,15 +13,16 @@ the old npm examples, do not insert an extra `--`. Start with these:
 | Run all routine tests before review       | `pnpm run test:full` |
 | Fix formatting in changed files           | `pnpm run format`    |
 
-`check` and `test:full` together cover local review validation. `check` includes
-tooling contract probes but no application test suites. `test:full` already
+`check` and `test:full` together cover local review validation. `check` contains
+no test suites. `test:full` already
 includes everything in `pnpm test`, so there is no need to run both for the same
 change. Stress tests, extended journeys and benchmarks are separate opt-in
 workloads. See [testing](testing.md) for coverage and CI policy.
 
-`lint` uses ESLint and `format` uses Prettier. `check:lint-tooling`, included in
-`check` and the existing CI lint job, verifies the diagnostic corpus and the
-formatter's changed-file selection. See the [toolchain policy](toolchain.md).
+`lint` uses ESLint and `format` uses Prettier. The
+[command audit](evidence/package-command-audit.md) records why each command is
+retained and removes the migration-only tooling gate. See the
+[toolchain policy](toolchain.md) for configuration and editor setup.
 
 ## Local development and operator CLI
 
@@ -55,30 +56,32 @@ Pass filters to the individual suite, rather than the combined test commands:
 pnpm run test:ingestion apps/ingestion/test/evidence-cleanup.spec.ts
 pnpm run test:api apps/api/test/health.spec.ts
 pnpm run test:domain source-host-pacing-mode
+pnpm run test:acceptance http-fixture
 pnpm run test:acceptance --shard=1/3
 pnpm run test:acceptance:extended --list
 pnpm run test:benchmark native-sqlite-export
 ```
 
-Acceptance commands support `--list` and `--shard=1/3`; there is no separate
-shard command. Extended and benchmark commands require a scenario or `--all`.
+Acceptance commands support an exact filename or scenario name, `--list` and
+`--shard=1/3`; there is no separate shard command. An `acceptance/` filename
+prefix is accepted. Selection stays within the chosen tier. Extended and
+benchmark commands require a scenario or `--all`.
 Listing starts no services. See [acceptance details](../acceptance/README.md)
 for available scenarios and benchmark report settings.
 
 ## Validation, formatting and generation
 
-| Command                          | What it does                                                                                                                                   |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm run check`                 | Runs lint, tooling probes, format check, typecheck, generated-file checks, import checks and builds, in that order; stops on the first failure |
-| `pnpm run lint`                  | Checks maintained code with ESLint and rejects warnings; does not rewrite files                                                                |
-| `pnpm run check:lint-tooling`    | Verifies lint diagnostics and changed-file formatting behavior                                                                                 |
-| `pnpm run format`                | Rewrites formatting in branch changes since `main`, staged/unstaged edits and new untracked files                                              |
-| `pnpm run format:check`          | Checks the same formatting without rewriting; CI passes `--since=origin/<base>`                                                                |
-| `pnpm run typecheck`             | Checks TypeScript across both Workers and their tests, plus domain tests                                                                       |
-| `pnpm run check:generated`       | Checks that Worker declarations and compiled document validators match their sources                                                           |
-| `pnpm run check:imports`         | Checks catalogue import cycles and module boundary rules                                                                                       |
-| `pnpm run generate:worker-types` | Rewrites both Workers' generated declarations after binding/configuration changes                                                              |
-| `pnpm run generate:validators`   | Rewrites compiled document validators and declarations after schema changes                                                                    |
+| Command                          | What it does                                                                                                                     |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm run check`                 | Runs lint, format check, typecheck, generated-file checks, import checks and builds, in that order; stops on the first failure   |
+| `pnpm run lint`                  | Checks maintained code with ESLint and rejects warnings; does not rewrite files                                                  |
+| `pnpm run format`                | Rewrites formatting in changes since `origin/main` (falling back to local `main`), staged/unstaged edits and new untracked files |
+| `pnpm run format:check`          | Checks the same formatting without rewriting; CI passes `--since=origin/<base>`                                                  |
+| `pnpm run typecheck`             | Checks TypeScript across both Workers and their tests, plus domain tests                                                         |
+| `pnpm run check:generated`       | Checks that Worker declarations and compiled document validators match their sources                                             |
+| `pnpm run check:imports`         | Checks catalogue import cycles and module boundary rules                                                                         |
+| `pnpm run generate:worker-types` | Rewrites both Workers' generated declarations after binding/configuration changes                                                |
+| `pnpm run generate:validators`   | Rewrites compiled document validators and declarations after schema changes                                                      |
 
 `typecheck` checks code against its types; `check:generated` catches stale
 generated files. After using a generation command, commit the resulting files
@@ -86,8 +89,11 @@ alongside their source changes.
 
 Both formatting commands use Prettier, apply `.prettierignore`, and accept
 `--since=<ref>` to choose a different comparison base. They compare from the
-common ancestor with that base and include local edits. A clean tree with no
-branch changes succeeds without processing files.
+common ancestor with that base and include local edits. The default is the
+locally available `origin/main`, falling back to `main` if that remote-tracking
+ref is absent. This includes committed, unpushed changes on local `main`.
+The command does not fetch; use an explicit base when the upstream ref is stale.
+A clean tree with no branch changes succeeds without processing files.
 
 ## Builds
 

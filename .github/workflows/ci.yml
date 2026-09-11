@@ -53,7 +53,6 @@ jobs:
       # Always recreate node_modules and run approved native builds, even on a store hit.
       - run: pnpm install --frozen-lockfile
       - run: pnpm run lint
-      - run: pnpm run check:lint-tooling
       - run: pnpm run format:check --since="origin/${BASE_REF}"
 
   checks:

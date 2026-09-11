@@ -15,7 +15,6 @@
     "../apps/*/vitest.config.ts",
     "../test/support/fake-publisher/sqlite-restore.test.ts",
     "../*.mjs",
-    "./fixtures/**/*.mjs",
   ],
   "exclude": ["../acceptance/fixtures"],
 }

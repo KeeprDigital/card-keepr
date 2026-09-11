@@ -9,5 +9,3 @@ pnpm-lock.yaml
 coverage
 test-results
 .artifacts
-# Deliberately invalid lint inputs are parsed only.
-eslint/fixtures

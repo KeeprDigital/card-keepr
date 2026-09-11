@@ -106,7 +106,9 @@ files and the renamed commands.
 | `pnpm run test:stress:full`                    | All ingestion capacity experiments, explicit opt-in             |
 
 Vitest accepts file filters and `-t 'test name'`. Acceptance commands accept
-`--list` and `--shard=1/3`. Extended/benchmark commands require a scenario
+an exact filename or scenario name (for example `pnpm run test:acceptance http-fixture`),
+`--list` and `--shard=1/3`. Selection stays within the chosen tier.
+Extended/benchmark commands require a scenario
 or `--all`; listing never boots services. Selection lives in
 `acceptance/helpers/test-tiers.mjs`, with a contract test proving that routine
 files appear exactly once across three shards. New acceptance files enter routine

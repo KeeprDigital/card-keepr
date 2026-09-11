@@ -2,14 +2,15 @@
 
 The supported interface is Corepack-managed pnpm. ESLint owns `lint`; Prettier
 owns `format` and `format:check`. `check` and the existing CI lint job enforce the
-focused correctness rules, diagnostic corpus and changed-file formatting policy.
+focused correctness rules and changed-file formatting policy.
 Biome and Vite+ are not installed dependencies. The
 [removal record](evidence/biome-removal.md) follows the
 [typed ESLint/Prettier evaluation](evidence/eslint-303.md) and its
 [staged implementation](evidence/eslint-migration.md).
 
 Formatting is incremental: a file adopts Prettier when changed on the branch,
-staged, edited or newly created. Do not run a repository-wide reformat.
+staged, edited or newly created. The comparison base defaults to `origin/main`
+when available, then local `main`; `--since=REF` overrides it. Do not run a repository-wide reformat.
 `.prettierignore` preserves generated output, retained fixtures and prototypes;
 ESLint independently excludes those files from its whole-tree scan.
 
@@ -112,8 +113,9 @@ VS Code reproduced stale typed diagnostics after an imported function changed it
 return type; even Revalidate All Open Files retained the old result. Use **ESLint:
 Restart ESLint Server** after such changes and run the uncached CLI check before
 review. This is a [documented upstream limitation](https://typescript-eslint.io/troubleshooting/typed-linting/#editor-eslint-reports-become-out-of-date-after-file-changes).
-`pnpm run check:lint-tooling` parses faulty examples without executing them and
-checks changed-file formatting in a disposable repository. Unsafe-flow rules apply
+The migration-only lint probes and their package/CI gate have been retired.
+The custom changed-file formatter is covered by `acceptance/format.test.mjs`
+in routine acceptance. Unsafe-flow rules apply
 first to bounded JSON input and the annotated shared CLI/release HTTP transport.
 The broad unannotated-JavaScript backlog remains outside this correctness gate.
 

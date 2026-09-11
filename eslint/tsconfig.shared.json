@@ -11,7 +11,6 @@
     "../src/**/*.mjs",
     "../test/support/**/*.ts",
     "../test/support/**/*.mjs",
-    "./fixtures/**/*.ts",
   ],
   "exclude": ["../test/support/api-worker.ts", "../test/support/fake-publisher/sqlite-restore.test.ts"],
 }

@@ -7,6 +7,7 @@ mixed-game recovery. See [the testing guide](../docs/testing.md) for CI policy.
 | Command                                               | Scope                                                               |
 | ----------------------------------------------------- | ------------------------------------------------------------------- |
 | `pnpm run test:acceptance`                            | All routine acceptance; at most two files at once                   |
+| `pnpm run test:acceptance http-fixture`               | One routine file, also accepting `acceptance/http-fixture.test.mjs` |
 | `pnpm run test:acceptance:smoke`                      | External evidence CLI and two-record native publication/SQL restore |
 | `pnpm run test:acceptance --shard=1/3`                | One routine CI shard                                                |
 | `pnpm run test:acceptance:extended composed-recovery` | One explicit extended scenario                                      |
@@ -15,7 +16,8 @@ mixed-game recovery. See [the testing guide](../docs/testing.md) for CI policy.
 | `pnpm run test:stress:full`                           | All Worker capacity experiments; explicit opt-in                    |
 
 Append `--list` to an acceptance/benchmark command to inspect selection without
-starting a Worker. Extended and benchmark commands require a scenario name
+starting a Worker. Routine and smoke commands optionally accept one filename or
+scenario name from their own tier. Extended and benchmark commands require a scenario name
 (with or without `.test.mjs`); `--all` explicitly selects every scenario in that
 tier. Omitting a scenario fails before allocating resources.
 

@@ -1,5 +1,8 @@
 # Biome removal
 
+The subsequent [package command audit](package-command-audit.md) removes the
+migration-only tooling gate described in this historical removal record.
+
 The owner requested complete removal after the staged implementation at
 `3db4f86e30dcdfb90c16d22481a5abf6ea8e8fbc`. This follow-up switches the ordinary
 commands to the already validated ESLint and Prettier configuration, superseding

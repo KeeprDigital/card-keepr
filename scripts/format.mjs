@@ -10,7 +10,13 @@ if (args.some((arg) => arg !== "--check" && arg !== since) || since === "--since
 
 const root = resolve(import.meta.dirname, "..");
 const git = (...parameters) => execFileSync("git", parameters, { cwd: root, encoding: "utf8" });
-const base = git("merge-base", "HEAD", since?.slice("--since=".length) ?? "main").trim();
+const hasUpstream =
+  spawnSync("git", ["show-ref", "--verify", "--quiet", "refs/remotes/origin/main"], { cwd: root }).status === 0;
+const base = git(
+  "merge-base",
+  "HEAD",
+  since?.slice("--since=".length) ?? (hasUpstream ? "origin/main" : "main"),
+).trim();
 // Format branch changes, working-tree edits and new files so the local command
 // checks what the developer is about to commit without reformatting the whole tree.
 const files = [

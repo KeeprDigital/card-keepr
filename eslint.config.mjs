@@ -12,16 +12,15 @@ import { createTypeScriptImportResolver } from "eslint-import-resolver-typescrip
 import vitest from "@vitest/eslint-plugin";
 import n from "eslint-plugin-n";
 
-const code = ["{src,apps,test,cli,scripts,acceptance}/**/*.{ts,mts,mjs}", "*.mjs", "eslint/fixtures/*.{ts,mjs}"];
+const code = ["{src,apps,test,cli,scripts,acceptance}/**/*.{ts,mts,mjs}", "*.mjs"];
 const node = [
   "{cli,scripts,acceptance}/**/*.{mjs,ts}",
   "test/domain/**/*.{ts,mjs}",
   "apps/*/vitest.config.ts",
   "test/support/fake-publisher/sqlite-restore.test.ts",
   "*.mjs",
-  "eslint/fixtures/*.mjs",
 ];
-const vitestFiles = ["eslint/fixtures/*.spec.ts", "apps/*/test/**/*.spec.ts", "test/domain/**/*.{spec.ts,test.mjs}"];
+const vitestFiles = ["apps/*/test/**/*.spec.ts", "test/domain/**/*.{spec.ts,test.mjs}"];
 const projects = [
   "./eslint/tsconfig.shared.json",
   "./eslint/tsconfig.api.json",
@@ -40,7 +39,6 @@ export default defineConfig([
       "**/node_modules/**",
       "**/.wrangler/**",
       ".claude/worktrees/**",
-      "eslint/fixtures/**",
       "prototype/**",
       "acceptance/fixtures/**",
       "**/worker-configuration.d.ts",
@@ -105,7 +103,7 @@ export default defineConfig([
   { files: ["**/*.mjs"], rules: { "no-undef": "error" } },
   {
     // Validated HTTP input and the annotated shared CLI/release transport boundary.
-    files: ["src/http/bounded-json.ts", "cli/lib/http-client.mjs", "eslint/fixtures/*.ts"],
+    files: ["src/http/bounded-json.ts", "cli/lib/http-client.mjs"],
     rules: {
       "@typescript-eslint/no-unsafe-assignment": "error",
       "@typescript-eslint/no-unsafe-argument": "error",
@@ -132,11 +130,7 @@ export default defineConfig([
     },
   },
   {
-    files: [
-      "eslint/fixtures/*.test.mjs",
-      "acceptance/**/*.test.mjs",
-      "test/support/fake-publisher/sqlite-restore.test.ts",
-    ],
+    files: ["acceptance/**/*.test.mjs", "test/support/fake-publisher/sqlite-restore.test.ts"],
     rules: {
       // The node:test runner owns registration completion, including failures.
       "@typescript-eslint/no-floating-promises": [
