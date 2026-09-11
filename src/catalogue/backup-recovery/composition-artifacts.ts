@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import type { CompositionSnapshotEvidence } from "./composition-verification";
-import { type CatalogueStore, sha256Text, StreamingSha256 } from "../shared";
+import { type CatalogueStore, sha256Text } from "../shared";
 import {
   compositionArtifactRootsStatement,
   acceptedEvidenceArtifactRootsStatement,
@@ -197,14 +198,14 @@ async function verifyReference(
     )
       throw new Error("Invalid public export component reference.");
     if (nodeLevel !== undefined && nodeLevel !== null) throw new Error("Expected a publication composition node.");
-    const digest = new StreamingSha256();
+    const digest = createHash("sha256");
     const reader = object.body.getReader();
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
       digest.update(value);
     }
-    if (digest.digestHex() !== reference.sha256) throw new Error("Publication artifact digest mismatch.");
+    if (digest.digest("hex") !== reference.sha256) throw new Error("Publication artifact digest mismatch.");
     return 1;
   }
 }

@@ -164,11 +164,12 @@ export async function advancePublicationPreparation(
       try {
         const cursor = JSON.parse(state.cursor_json) as PreparationCursor;
         const phase = state.phase;
+        const readPartition = publicationPartitionReader(db, id);
         // Amortize the guarded checkpoint over four sequential bounded artifacts.
         // A phase boundary commits before the next phase reads the receipts we staged.
         // Composition nodes also commit individually before a parent reads them.
         for (let unit = 0; unit < 4; unit++) {
-          const continueBatch = await prepareUnit(env, candidate, state, cursor, statements);
+          const continueBatch = await prepareUnit(env, candidate, state, cursor, statements, readPartition);
           if (
             continueBatch === false ||
             phase === "composition" ||
@@ -271,12 +272,41 @@ async function initialCursor(db: CatalogueStore, c: Candidate): Promise<Preparat
     ),
   };
 }
+/** One verified partition per callback; the next durable unit always reads storage again. */
+function publicationPartitionReader(db: CatalogueStore, id: string) {
+  const read = async (ordinal: number) => {
+    const partition = await gameCandidatePartitionStatement(db, id, ordinal).first<{
+      kind: string;
+      content: string;
+      sha256: string;
+      byte_length: number;
+      record_count: number;
+    }>();
+    if (
+      !partition ||
+      new TextEncoder().encode(partition.content).byteLength !== partition.byte_length ||
+      partition.byte_length > 524288 ||
+      (await sha256Text(partition.content)) !== partition.sha256
+    )
+      throw new PublicationIntegrityError("publication_partition_corrupt");
+    const records = JSON.parse(partition.content) as Envelope[];
+    if (!Array.isArray(records) || records.length !== partition.record_count || records.length > 500)
+      throw new PublicationIntegrityError("publication_partition_corrupt");
+    return { ordinal, partition, records };
+  };
+  let retained: Awaited<ReturnType<typeof read>> | undefined;
+  return async (ordinal: number) => {
+    if (retained?.ordinal !== ordinal) retained = await read(ordinal);
+    return retained;
+  };
+}
 async function prepareUnit(
   env: Environment,
   candidate: Candidate,
   state: PreparationState,
   cursor: PreparationCursor,
   statements: D1PreparedStatement[],
+  readPartition: ReturnType<typeof publicationPartitionReader>,
 ) {
   const db = env.CATALOGUE_DB,
     id = candidate.id;
@@ -375,23 +405,7 @@ async function prepareUnit(
     cursor.partition = cursor.record = cursor.text = cursor.chunk = cursor.subrecord = 0;
     return;
   }
-  const partition = await gameCandidatePartitionStatement(db, id, cursor.partition).first<{
-    kind: string;
-    content: string;
-    sha256: string;
-    byte_length: number;
-    record_count: number;
-  }>();
-  if (
-    !partition ||
-    new TextEncoder().encode(partition.content).byteLength !== partition.byte_length ||
-    partition.byte_length > 524288 ||
-    (await sha256Text(partition.content)) !== partition.sha256
-  )
-    throw new PublicationIntegrityError("publication_partition_corrupt");
-  const records = JSON.parse(partition.content) as Envelope[];
-  if (!Array.isArray(records) || records.length !== partition.record_count || records.length > 500)
-    throw new PublicationIntegrityError("publication_partition_corrupt");
+  const { partition, records } = await readPartition(cursor.partition);
   const nextPartition = async () => {
     if (state.phase === "images")
       cursor.chain = await sha256Text(

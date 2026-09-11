@@ -1,4 +1,5 @@
-import { canonicalJson, StreamingSha256 } from "../shared";
+import { createHash } from "node:crypto";
+import { canonicalJson } from "../shared";
 import {
   type CompositionVerificationQuery,
   type AcceptedEvidenceArtifactRoot,
@@ -59,7 +60,7 @@ export async function captureCompositionSnapshot(
       throw new Error("Accepted private evidence roots are unavailable or invalid.");
     acceptedRoots = rows as AcceptedEvidenceArtifactRoot[];
   }
-  const schema = new StreamingSha256();
+  const schema = createHash("sha256");
   let schemaAfter = "";
   for (;;) {
     const page = await query({ kind: "composition-schema", after: schemaAfter });
@@ -95,7 +96,7 @@ export async function captureCompositionSnapshot(
       if (typeof row.name !== "string") throw new Error("Invalid composition snapshot columns.");
       return row.name;
     });
-    const digest = new StreamingSha256();
+    const digest = createHash("sha256");
     let after = 0,
       rows = 0;
     for (;;) {
@@ -116,7 +117,7 @@ export async function captureCompositionSnapshot(
         rows++;
       }
     }
-    tables.push({ table, rows, sha256: digest.digestHex() });
+    tables.push({ table, rows, sha256: digest.digest("hex") });
   }
   return {
     revision_id: revisionId,
@@ -126,7 +127,7 @@ export async function captureCompositionSnapshot(
     schema_migration_level: state.migration_level,
     ...(acceptedRoots === undefined ? {} : { accepted_evidence_roots: acceptedRoots }),
     members: state.members,
-    schema_sha256: schema.digestHex(),
+    schema_sha256: schema.digest("hex"),
     tables,
   };
 }
