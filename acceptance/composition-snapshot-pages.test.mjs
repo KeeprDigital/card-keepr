@@ -14,7 +14,7 @@ test("private census SQL respects byte-limited partial pages without skipping ro
   await build({
     stdin: {
       contents:
-        "export {compositionVerificationQuery,maximumPrivateSnapshotPageBytes} from './src/catalogue/backup-recovery/composition-verification-repository';",
+        "export {compositionVerificationQuery,maximumSnapshotPageBytes} from './src/catalogue/backup-recovery/composition-verification-repository';",
       resolveDir: resolve("."),
     },
     bundle: true,
@@ -23,20 +23,23 @@ test("private census SQL respects byte-limited partial pages without skipping ro
     outfile,
     logLevel: "silent",
   });
-  const { compositionVerificationQuery, maximumPrivateSnapshotPageBytes } = await import(pathToFileURL(outfile).href);
+  const { compositionVerificationQuery, maximumSnapshotPageBytes } = await import(pathToFileURL(outfile).href);
   const fixture = compositionSnapshotPageFixture();
   t.after(() => fixture.db.close());
+  const columns = fixture
+    .query(compositionVerificationQuery({ kind: "composition-columns", table: "reconciliation_checkpoints" }))
+    .map((row) => row.name);
   let after = 0;
   const ids = [],
     sizes = [];
   for (;;) {
     const page = fixture.query(
-      compositionVerificationQuery({ kind: "composition-page", table: "reconciliation_checkpoints", after }),
+      compositionVerificationQuery({ kind: "composition-page", table: "reconciliation_checkpoints", after, columns }),
     );
     if (!page.length) break;
     sizes.push(page.length);
     assert.ok(
-      page.reduce((total, row) => total + Buffer.byteLength(JSON.stringify(row)), 0) <= maximumPrivateSnapshotPageBytes,
+      page.reduce((total, row) => total + Buffer.byteLength(JSON.stringify(row)), 0) <= maximumSnapshotPageBytes,
     );
     ids.push(...page.map((row) => row.snapshot_rowid));
     after = page.at(-1).snapshot_rowid;

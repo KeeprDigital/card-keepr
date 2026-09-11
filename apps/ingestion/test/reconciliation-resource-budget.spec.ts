@@ -41,35 +41,38 @@ test("a reconciliation callback cannot make its 101st D1 call", async () => {
   expect(calls).toBe(100);
 });
 
-test("four R2 bodies may remain open, and closing the callback releases them", async () => {
-  await testEnv.EVIDENCE_OBJECTS.put("resource-budget-body", "retained evidence");
-  let gets = 0;
-  const bucket = new Proxy(testEnv.EVIDENCE_OBJECTS, {
-    get(target, property) {
-      if (property === "get")
-        return (...args: Parameters<R2Bucket["get"]>) => {
-          gets++;
-          return target.get(...args);
-        };
-      const value = Reflect.get(target, property, target);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
-  const { env, step } = boundedReconciliationResources({ ...testEnv, EVIDENCE_OBJECTS: bucket }, directStep());
-  await expect(
-    step.do("open bodies", async () => {
-      for (let index = 0; index < 5; index++) await env.EVIDENCE_OBJECTS.get("resource-budget-body");
-    }),
-  ).rejects.toThrow("four open");
-  expect(gets).toBe(4);
-  await step.do("consumed bodies", async () => {
-    for (let index = 0; index < 5; index++) {
-      const body = await env.EVIDENCE_OBJECTS.get("resource-budget-body");
-      expect(await body!.text()).toBe("retained evidence");
-    }
-  });
-  expect(gets).toBe(9);
-});
+test.each(["EVIDENCE_OBJECTS", "PRINTING_IMAGES", "CATALOGUE_EXPORTS"] as const)(
+  "%s allows four open bodies and releases them when the callback closes",
+  async (binding) => {
+    await testEnv[binding].put("resource-budget-body", "retained evidence");
+    let gets = 0;
+    const bucket = new Proxy(testEnv[binding], {
+      get(target, property) {
+        if (property === "get")
+          return (...args: Parameters<R2Bucket["get"]>) => {
+            gets++;
+            return target.get(...args);
+          };
+        const value = Reflect.get(target, property, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const { env, step } = boundedReconciliationResources({ ...testEnv, [binding]: bucket }, directStep());
+    await expect(
+      step.do("open bodies", async () => {
+        for (let index = 0; index < 5; index++) await env[binding].get("resource-budget-body");
+      }),
+    ).rejects.toThrow("four open");
+    expect(gets).toBe(4);
+    await step.do("consumed bodies", async () => {
+      for (let index = 0; index < 5; index++) {
+        const body = await env[binding].get("resource-budget-body");
+        expect(await body!.text()).toBe("retained evidence");
+      }
+    });
+    expect(gets).toBe(9);
+  },
+);
 
 test("Workflow binding and instance calls share the callback allowance", async () => {
   let gets = 0,

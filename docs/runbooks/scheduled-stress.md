@@ -6,9 +6,51 @@ workflow reports its own failures and its liveness must be checked by hand.
 
 The default is two bounded checks: per-host concurrency/pacing and a 60-request
 throughput window. It runs one file at a time with a five-minute job cap. The
-full nine-file capacity suite is manual only: choose `suite: full` in the
+full ten-file capacity suite is manual only: choose `suite: full` in the
 workflow or run `pnpm run test:stress:full` locally; its job cap is 45 minutes.
 Manual and scheduled runs have separate cancellation groups.
+
+The full selection contains these ingestion files:
+
+| File                                            | Coverage                                                        |
+| ----------------------------------------------- | --------------------------------------------------------------- |
+| `capacity-tier-admission.stress.spec.ts`        | Tier request admission; fetches no bodies                       |
+| `game-reconciliation-scale.stress.spec.ts`      | Native 1,001-Product candidate callback and elapsed budgets     |
+| `native-printing-images.stress.spec.ts`         | Native publication, serving and export of 128 images            |
+| `reconciliation-evidence-volume.stress.spec.ts` | Retained evidence volume                                        |
+| `reconciliation-scale.stress.spec.ts`           | Large Card/Product publication and restore, images and warnings |
+| `runtime-capacity-resume.stress.spec.ts`        | Capacity pause and resume                                       |
+| `runtime-collection-completion.stress.spec.ts`  | Collection completion at volume                                 |
+| `runtime-collection-throughput.stress.spec.ts`  | Bounded collection throughput                                   |
+| `runtime-discovery-scale.stress.spec.ts`        | Discovery at volume                                             |
+| `runtime-host-pacing.stress.spec.ts`            | Independent-host concurrency and pacing                         |
+
+Run volume measurements with exclusive host resources and record the exact
+commit, runtime, complete selection and every failure. Keep the candidate's
+15,000 ms performance assertion separate from test deadlines and from CPU or
+billing measurements. A bounded pass does not replace the full selection; a
+full pass does not certify the 5/50 GiB tiers, whose admission test fetches no
+bodies. Issue #275 owns usable capacity and accounting; #276 owns uncovered
+durable faults.
+
+Each workflow retains a seven-day `stress-results-bounded` or
+`stress-results-full` JSON artifact with the complete test selection, failures,
+durations and native callback report. Archive relevant evidence before expiry.
+If a job dies before the reporter finishes, its missing artifact is incomplete
+evidence, not an empty successful selection.
+
+Use the existing focused diagnostics workflow for an isolated stress file:
+
+```sh
+gh workflow run test-suite-diagnostics.yml --ref <branch> \
+  -f worker=ingestion -f suite=stress -f storage=disk \
+  -f files='apps/ingestion/test/game-reconciliation-scale.stress.spec.ts' \
+  -f repeats=1
+```
+
+`storage=memory` selects the routine CI helper's disposable 512 MiB tmpfs for
+a controlled storage comparison. Its space limit still applies. Focused results
+do not replace full stress or routine CI.
 
 The API currently has no separate stress files; its functional checks run in
 the normal API suite. Missing expected ingestion tests remain an error. Add
@@ -19,7 +61,9 @@ API performance coverage explicitly before extending the stress selection.
 When the `stress` job fails, the `report-failure` job opens a GitHub issue
 titled `stress: scheduled stress suite failed` with the label `bug`, or
 comments on that issue while it is still open, with the run link, trigger,
-and commit. Close the issue once the run is green again; the next failure
+and commit. Close the issue once its recorded acceptance is met, including
+full-selection verification when required; a green bounded run alone does not
+resolve a tracked full-suite failure. The next failure
 opens a fresh one. The `stress` job itself keeps a read-only token; only
 `report-failure` holds `issues: write`.
 

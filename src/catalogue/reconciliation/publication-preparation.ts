@@ -138,7 +138,6 @@ export async function advancePublicationPreparation(
         "publication_preparation_not_paused",
         "Only an exhausted transient retry can resume.",
       );
-    const initial = await initialCursor(db, candidate);
     const state: PreparationState = current
       ? { ...current }
       : {
@@ -148,7 +147,7 @@ export async function advancePublicationPreparation(
           sequence: 0,
           state: "preparing",
           phase: "images",
-          cursor_json: canonicalJson(initial),
+          cursor_json: canonicalJson(await initialCursor(db, candidate)),
           failures: 0,
           failure_code: null,
           artifact_count: 0,
@@ -164,7 +163,20 @@ export async function advancePublicationPreparation(
     } else {
       try {
         const cursor = JSON.parse(state.cursor_json) as PreparationCursor;
-        await prepareUnit(env, candidate, state, cursor, statements);
+        const phase = state.phase;
+        // Amortize the guarded checkpoint over four sequential bounded artifacts.
+        // A phase boundary commits before the next phase reads the receipts we staged.
+        // Composition nodes also commit individually before a parent reads them.
+        for (let unit = 0; unit < 4; unit++) {
+          const continueBatch = await prepareUnit(env, candidate, state, cursor, statements);
+          if (
+            continueBatch === false ||
+            phase === "composition" ||
+            state.phase !== phase ||
+            state.state !== "preparing"
+          )
+            break;
+        }
         state.cursor_json = canonicalJson(cursor);
         state.failures = 0;
         state.failure_code = null;
@@ -268,6 +280,7 @@ async function prepareUnit(
 ) {
   const db = env.CATALOGUE_DB,
     id = candidate.id;
+  let boundBytes = 0;
   const artifact = (
     kind: string,
     ref: { object_key: string; sha256: string; byte_length: number; reused: boolean },
@@ -287,9 +300,10 @@ async function prepareUnit(
   };
   if (state.phase === "composition") {
     const refs = (
-      await (cursor.level === 0
-        ? repository.publicationArtifacts(db, id, cursor.after)
-        : repository.publicationNodes(db, id, cursor.level - 1, cursor.after)
+      await (
+        cursor.level === 0
+          ? repository.publicationArtifacts(db, id, cursor.after)
+          : repository.publicationNodes(db, id, cursor.level - 1, cursor.after)
       ).all<ArtifactReference>()
     ).results;
     if (!refs.length) {
@@ -564,8 +578,8 @@ async function prepareUnit(
             ]
           : [],
     });
-    if (new TextEncoder().encode(projection).byteLength > 524288)
-      throw new PublicationIntegrityError("publication_capacity_exceeded");
+    boundBytes = new TextEncoder().encode(projection).byteLength;
+    if (boundBytes > 524288) throw new PublicationIntegrityError("publication_capacity_exceeded");
     const ref = await retainPublicationObject(env.CATALOGUE_EXPORTS, projection);
     statements.push(repository.retainPublicationProjection(db, id, state.artifact_count, kind, projection, ref.sha256));
     statements.push(repository.retainPublicationQueryDocument(db, id, kind, String(value.id), state.artifact_count));
@@ -581,6 +595,7 @@ async function prepareUnit(
     artifact("query_search", ref);
     const lifecycle = await preparePublicLifecycle(db, candidate, kind, envelope.value);
     if (lifecycle) {
+      boundBytes += new TextEncoder().encode(canonicalJson(lifecycle)).byteLength;
       statements.push(retainPublicLifecycle(db, lifecycle));
       artifact(
         "public_lifecycle",
@@ -602,6 +617,9 @@ async function prepareUnit(
     cursor.subrecord = 0;
   }
   cursor.text = cursor.chunk = 0;
+  // Three <=64 KiB units plus one <=512 KiB projection and <=128 KiB
+  // lifecycle leave room for the fixed receipts/cursor within a 1 MiB D1 batch.
+  return boundBytes <= 65536;
 }
 
 /** Preparation of a composition only retains references; #228 owns selecting a published head. */

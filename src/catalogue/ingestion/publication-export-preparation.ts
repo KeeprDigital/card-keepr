@@ -78,7 +78,7 @@ function result(state: PublicExportState) {
   return { contract: "card-keepr-public-export-preparation@5", ...state, cursor: JSON.parse(state.cursor_json) };
 }
 
-/** One durable unit renders at most one bounded public record, or seals 32 references. */
+/** A durable unit renders up to four records within the call/byte budgets, or seals 32 references. */
 export async function advancePublicationExports(env: Environment, id: string, generation: number, key: string) {
   const db = env.CATALOGUE_DB,
     request = canonicalJson({ id, generation, key });
@@ -121,16 +121,17 @@ export async function advancePublicationExports(env: Environment, id: string, ge
   const cursor = JSON.parse(state.cursor_json) as Cursor;
   const statements: D1PreparedStatement[] = [];
   try {
-    await prepareUnit(
-      {
-        CATALOGUE_DB: db,
-        CATALOGUE_EXPORTS: trackedStagingBucket(db, env.CATALOGUE_EXPORTS, "CATALOGUE_EXPORTS", owner.candidate_id),
-      },
-      owner,
-      state,
-      cursor,
-      statements,
-    );
+    const environment = {
+      CATALOGUE_DB: db,
+      CATALOGUE_EXPORTS: trackedStagingBucket(db, env.CATALOGUE_EXPORTS, "CATALOGUE_EXPORTS", owner.candidate_id),
+    };
+    const phase = cursor.phase;
+    const budget = { calls: 0, bytes: 0 };
+    for (let unit = 0; unit < 4; unit++) {
+      const prepared = await prepareUnit(environment, owner, state, cursor, statements, budget);
+      // New components and nodes must commit before a parent reads their receipts.
+      if (prepared === false || phase === "nodes" || cursor.phase !== phase) break;
+    }
     state.cursor_json = canonicalJson(cursor);
   } catch (error) {
     if (!(error instanceof InvalidPublicExport)) throw error;
@@ -155,6 +156,7 @@ async function prepareUnit(
   state: PublicExportState,
   cursor: Cursor,
   statements: D1PreparedStatement[],
+  budget: { calls: number; bytes: number },
 ) {
   const db = env.CATALOGUE_DB,
     bucket = env.CATALOGUE_EXPORTS;
@@ -193,6 +195,8 @@ async function prepareUnit(
       dependencies.length +
       dependencies.reduce((n, d) => n + d.text_calls, 0);
     if (dependencies.length > 128 || calls > 80) throw new InvalidPublicExport("public_export_capacity_exceeded");
+    if (budget.calls + calls > 80) return false;
+    budget.calls += calls;
     const input = await sha256Text(
       canonicalJson({
         contract: "card-keepr-public-record@5",
@@ -214,8 +218,12 @@ async function prepareUnit(
     let ref: Reference, descriptor: Record<string, unknown>;
     if (prior) {
       ref = prior;
-      await verify(bucket, ref);
       descriptor = JSON.parse(prior.descriptor_json);
+      const bytes = Number(descriptor.uncompressed_bytes);
+      if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > 4_000_000)
+        throw new InvalidPublicExport("public_export_capacity_exceeded");
+      if (budget.bytes + bytes > 4_000_000) return false;
+      await verify(bucket, ref);
     } else {
       let value: unknown;
       try {
@@ -236,6 +244,7 @@ async function prepareUnit(
       }
       const raw = new TextEncoder().encode(`${canonicalJson(value)}\n`);
       if (raw.byteLength > 4_000_000) throw new InvalidPublicExport("public_export_capacity_exceeded");
+      if (budget.bytes + raw.byteLength > 4_000_000) return false;
       ref = await retain(bucket, deterministicGzip(raw));
       descriptor = {
         kind: source.kind === "product_relationships" ? "relationships" : source.kind.replaceAll("_", "-"),
@@ -249,6 +258,7 @@ async function prepareUnit(
         compressed_sha256: ref.sha256,
       };
     }
+    budget.bytes += Number(descriptor.uncompressed_bytes);
     descriptor.name = `${source.supported_game}.${source.ordinal}`;
     statements.push(
       repository.retainExportComponent(
@@ -267,9 +277,10 @@ async function prepareUnit(
     return;
   }
   const refs = (
-    await (cursor.level === 0
-      ? repository.exportComponents(db, state.candidate_id, cursor.after)
-      : repository.exportNodes(db, owner.id, cursor.level - 1, cursor.after)
+    await (
+      cursor.level === 0
+        ? repository.exportComponents(db, state.candidate_id, cursor.after)
+        : repository.exportNodes(db, owner.id, cursor.level - 1, cursor.after)
     ).all<Reference & { ordinal: number; descriptor_json?: string }>()
   ).results;
   if (refs.length) {

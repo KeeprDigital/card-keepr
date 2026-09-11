@@ -22,6 +22,7 @@ type ProductReceipt = {
 };
 export type MembershipCursor = {
   input: string;
+  hasMemberships?: boolean;
   stage:
     | "declared_products"
     | "declared_contexts"
@@ -99,6 +100,8 @@ export async function prepareMembershipState(
     result: {},
   };
   if (cursor.input !== input) throw new Error("Membership preparation provenance changed.");
+  // The plan prefix is immutable and bound by input; retain this decision across callbacks.
+  const hasMemberships = (cursor.hasMemberships ??= await plans.hasMemberships(game));
   result.resumeAt(cursor.result);
   declared.resumeAt(cursor.declared);
   products.resumeAt(cursor.products);
@@ -134,7 +137,7 @@ export async function prepareMembershipState(
     await save();
   };
   if (cursor.stage === "declared_products") {
-    for await (const product of prior.values("products", cursor.after)) {
+    for await (const product of hasMemberships ? prior.values("products", cursor.after) : []) {
       await before({ id: product.id, game: product.game, official_code: product.official_code, name: product.name });
       if (product.game === game && product.membership_evidence === undefined)
         for (const value of new Set([product.official_code, product.name])) {
@@ -160,7 +163,7 @@ export async function prepareMembershipState(
               (await membershipDistributionContextId(game, lineage, relationship.relationship_value))
           )
             await contextOrigins.seed(relationship.to.id, { id: relationship.to.id, lineage });
-        } else {
+        } else if (hasMemberships) {
           const id = relationshipTargetKey(relationship);
           if (!(await declaredRelationships.get(id))) await declaredRelationships.seed(id, { id });
         }
@@ -171,14 +174,17 @@ export async function prepareMembershipState(
     await advance("declared_contexts");
   }
   if (cursor.stage === "declared_contexts") {
-    for await (const context of prior.values("distribution_contexts", cursor.after)) {
+    // Without current memberships, only prior derived contexts need observation updates.
+    for await (const context of hasMemberships || contextOrigins.position > 0
+      ? prior.values("distribution_contexts", cursor.after)
+      : []) {
       await before(context);
       const lineage = (await contextOrigins.get(context.id))?.lineage;
       const inferred =
         lineage !== undefined &&
         context.evidence_category === "derived" &&
         context.id === (await membershipDistributionContextId(game, lineage, context.label));
-      if (context.game === game && !inferred && !(await contexts.get(context.key)))
+      if (hasMemberships && context.game === game && !inferred && !(await contexts.get(context.key)))
         await contexts.seed(context.key, { id: context.key, target: context.id });
       if (inferred && checked.has(lineage!))
         await result.set("distribution_contexts", { ...context, observed: false, source_lineages: [] });
@@ -188,7 +194,7 @@ export async function prepareMembershipState(
     await advance("plans");
   }
   if (cursor.stage === "plans") {
-    for await (const plan of plans.values(cursor.after)) {
+    for await (const plan of hasMemberships ? plans.values(cursor.after) : []) {
       await before({
         sourceLineage: plan.sourceLineage,
         sourceObservationId: plan.sourceObservationId,

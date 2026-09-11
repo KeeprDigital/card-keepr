@@ -181,6 +181,7 @@ export function boundedReconciliationResources(env: Env, step: WorkflowStep): { 
       CATALOGUE_DB: database,
       EVIDENCE_OBJECTS: bucket(env.EVIDENCE_OBJECTS),
       PRINTING_IMAGES: bucket(env.PRINTING_IMAGES),
+      CATALOGUE_EXPORTS: bucket(env.CATALOGUE_EXPORTS),
       RECONCILIATION_WORKFLOW: workflow(env.RECONCILIATION_WORKFLOW),
       EVIDENCE_INGESTION_WORKFLOW: workflow(env.EVIDENCE_INGESTION_WORKFLOW),
     },
