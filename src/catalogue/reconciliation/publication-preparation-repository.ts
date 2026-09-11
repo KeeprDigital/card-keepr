@@ -18,7 +18,8 @@ export function publicationPreparationGuard(
   sequence?: number,
 ) {
   return repositoryStatements(db)
-    .prepare(`SELECT CASE
+    .prepare(
+      `SELECT CASE
     WHEN NOT EXISTS (SELECT 1 FROM game_candidates c JOIN reconciliation_operations o ON o.id = c.preparation_id
       JOIN game_candidate_slots s ON s.preparation_id = o.id AND s.supported_game = c.supported_game
       WHERE c.id = ?1 AND o.supported_game IS NOT NULL AND c.state = 'sealed' AND o.state = 'sealed'
@@ -32,14 +33,17 @@ export function publicationPreparationGuard(
     WHEN EXISTS (SELECT 1 FROM operation_state WHERE singleton = 1 AND recovery_health <> 'healthy')
       THEN json_extract('{}','recovery_not_verified')
     WHEN ?5 IS NOT NULL AND COALESCE((SELECT sequence FROM publication_preparations WHERE candidate_id = ?1),0) <> ?5
-      THEN json_extract('{}','publication_sequence_conflict') ELSE 1 END`)
+      THEN json_extract('{}','publication_sequence_conflict') ELSE 1 END`,
+    )
     .bind(id, manifest, generation, at, sequence ?? null);
 }
 export function createPublicationPreparation(db: CatalogueStore, state: PreparationState) {
   return repositoryStatements(db)
-    .prepare(`INSERT INTO publication_preparations
+    .prepare(
+      `INSERT INTO publication_preparations
     (candidate_id,manifest_digest,generation,sequence,state,phase,cursor_json,created_at)
-    VALUES (?,?,?,0,'preparing','images',?,?)`)
+    VALUES (?,?,?,0,'preparing','images',?,?)`,
+    )
     .bind(state.candidate_id, state.manifest_digest, state.generation, state.cursor_json, state.created_at);
 }
 export function updatePublicationPreparation(db: CatalogueStore, s: PreparationState) {
@@ -126,8 +130,10 @@ export function publicationManifestPrefix(db: CatalogueStore, id: string) {
 
 export function reservePublicationWorkflowAttempt(db: CatalogueStore, id: string, first: number) {
   return repositoryStatements(db)
-    .prepare(`INSERT INTO publication_workflow_budgets VALUES (?,?,1)
-    ON CONFLICT(candidate_id,first_sequence) DO UPDATE SET attempts=attempts+1 WHERE attempts<40 RETURNING attempts`)
+    .prepare(
+      `INSERT INTO publication_workflow_budgets VALUES (?,?,1)
+    ON CONFLICT(candidate_id,first_sequence) DO UPDATE SET attempts=attempts+1 WHERE attempts<40 RETURNING attempts`,
+    )
     .bind(id, first);
 }
 export function retainVerifiedPublicationComposition(db: CatalogueStore, sha: string, content: string) {
@@ -161,9 +167,11 @@ export function retainPublicationSearchChunk(
       .bind(id, cardId, field, ordinal, text),
     after: [
       repositoryStatements(db)
-        .prepare(`INSERT INTO publication_search_fts(rowid,candidate_token,candidate_id,card_id,search_text)
+        .prepare(
+          `INSERT INTO publication_search_fts(rowid,candidate_token,candidate_id,card_id,search_text)
       SELECT rowid,'|' || candidate_id || '|',candidate_id,card_id,search_text FROM publication_search_chunks
-      WHERE candidate_id=? AND card_id=? AND field=? AND ordinal=?`)
+      WHERE candidate_id=? AND card_id=? AND field=? AND ordinal=?`,
+        )
         .bind(id, cardId, field, ordinal),
     ],
   });
@@ -184,12 +192,14 @@ export function publicationQueryDocuments(
         : `EXISTS (SELECT 1 FROM publication_search_chunks chunk WHERE chunk.candidate_id=?1 AND chunk.card_id=document.entity_id AND instr(chunk.search_text,?4)>0)`;
   const query = fts ? `candidate_token : "|${id}|" AND search_text : "${search!.replaceAll('"', '""')}"` : search;
   return repositoryStatements(db)
-    .prepare(`SELECT entity_id,content FROM (SELECT document.entity_id,document.content,
+    .prepare(
+      `SELECT entity_id,content FROM (SELECT document.entity_id,document.content,
     SUM(length(CAST(document.content AS BLOB))) OVER (ORDER BY document.entity_id) AS bytes
     FROM (SELECT document.entity_id,json_extract(batch.content,'$.records[0]') AS content FROM publication_query_documents document
       JOIN publication_projection_batches batch ON batch.candidate_id=document.candidate_id AND batch.ordinal=document.batch_ordinal
       WHERE document.candidate_id=?1 AND document.kind=?2 AND document.entity_id>?3 AND ${predicate}
-      ORDER BY document.entity_id LIMIT 32) document) WHERE bytes<=524288`)
+      ORDER BY document.entity_id LIMIT 32) document) WHERE bytes<=524288`,
+    )
     .bind(...(search === null ? [id, kind, after] : [id, kind, after, query]));
 }
 
@@ -201,10 +211,12 @@ export function publicationTerminalGuard(
   sequence: number,
 ) {
   return repositoryStatements(db)
-    .prepare(`SELECT CASE WHEN EXISTS (SELECT 1 FROM publication_preparations
+    .prepare(
+      `SELECT CASE WHEN EXISTS (SELECT 1 FROM publication_preparations
     WHERE candidate_id=? AND manifest_digest=? AND generation=? AND sequence=? AND state='preparing')
     AND NOT EXISTS (SELECT 1 FROM operation_state WHERE singleton=1 AND recovery_health<>'healthy')
-    THEN 1 ELSE json_extract('{}','publication_sequence_conflict') END`)
+    THEN 1 ELSE json_extract('{}','publication_sequence_conflict') END`,
+    )
     .bind(id, manifest, generation, sequence);
 }
 
@@ -212,14 +224,17 @@ export function publicationTerminalGuard(
 export function retainPublicReadFacts(
   db: CatalogueStore,
   id: string,
-  ordinal: number,
+  ordinals: number[],
   preparation: string,
   game: string,
 ) {
+  if (ordinals.length < 1 || ordinals.length > 6) throw new Error("Public facts require one to six projections.");
+  const selected = JSON.stringify(ordinals);
   const sql = repositoryStatements(db);
   return [
     sql
-      .prepare(`INSERT INTO publication_read_entities
+      .prepare(
+        `INSERT INTO publication_read_entities
  SELECT ?1,b.kind,json_extract(b.content,'$.records[0].value.id'),b.ordinal,?3,?4,
  coalesce(json_extract(b.content,'$.records[0].value.card_id'),json_extract(b.content,'$.records[0].value.printing_id')),json_extract(b.content,'$.records[0].value.official_identity.kind'),
  json_extract(b.content,'$.records[0].value.official_identity.value'),json_extract(b.content,'$.records[0].value.name'),
@@ -231,22 +246,27 @@ export function retainPublicReadFacts(
  CASE WHEN b.kind='products' THEN CASE WHEN json_extract(b.content,'$.records[0].value.name') IS NULL THEN '1' ELSE '0' END ELSE '' END,
  CASE WHEN b.kind='products' THEN coalesce(json_extract(b.content,'$.records[0].value.name'),'') ELSE '' END,
  length(CAST(b.content AS BLOB))+coalesce((SELECT sum(json_extract(value,'$.byte_length')) FROM json_each(b.content,'$.records[0].text_parts')),0)
- FROM publication_projection_batches b WHERE b.candidate_id=?1 AND b.ordinal=?2`)
-      .bind(id, ordinal, preparation, game),
+ FROM publication_projection_batches b WHERE b.candidate_id=?1 AND b.ordinal IN (SELECT value FROM json_each(?2))`,
+      )
+      .bind(id, selected, preparation, game),
     sql
-      .prepare(`INSERT INTO publication_read_attributes
+      .prepare(
+        `INSERT INTO publication_read_attributes
  WITH RECURSIVE attributes(card_id,profile,attribute,value,kind) AS (
  SELECT json_extract(b.content,'$.records[0].value.id'),json_extract(b.content,'$.records[0].value.game_data.profile'),field.key,field.value,field.type
- FROM publication_projection_batches b,json_each(b.content,'$.records[0].value.game_data.attributes') field WHERE b.candidate_id=?1 AND b.ordinal=?2 AND b.kind='cards'
+ FROM publication_projection_batches b,json_each(b.content,'$.records[0].value.game_data.attributes') field WHERE b.candidate_id=?1 AND b.ordinal IN (SELECT value FROM json_each(?2)) AND b.kind='cards'
  UNION ALL SELECT p.card_id,p.profile,p.attribute || CASE WHEN p.kind='array' THEN '' ELSE '.' || child.key END,child.value,child.type
  FROM attributes p,json_each(CASE WHEN p.kind IN ('array','object') THEN p.value ELSE '[]' END) child)
- SELECT DISTINCT ?1,card_id,profile,attribute,CASE kind WHEN 'text' THEN json_quote(value) WHEN 'null' THEN 'null' WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' ELSE CAST(value AS TEXT) END FROM attributes WHERE kind NOT IN ('array','object')`)
-      .bind(id, ordinal),
+ SELECT DISTINCT ?1,card_id,profile,attribute,CASE kind WHEN 'text' THEN json_quote(value) WHEN 'null' THEN 'null' WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' ELSE CAST(value AS TEXT) END FROM attributes WHERE kind NOT IN ('array','object')`,
+      )
+      .bind(id, selected),
     sql
-      .prepare(`INSERT INTO publication_read_release_regions SELECT DISTINCT ?1,json_extract(b.content,'$.records[0].value.id'),json_extract(release.value,'$.region')
+      .prepare(
+        `INSERT INTO publication_read_release_regions SELECT DISTINCT ?1,json_extract(b.content,'$.records[0].value.id'),json_extract(release.value,'$.region')
  FROM publication_projection_batches b,json_each(b.content,'$.records[0].value.releases') release
- WHERE b.candidate_id=?1 AND b.ordinal=?2 AND b.kind='products' AND json_extract(release.value,'$.region') IS NOT NULL`)
-      .bind(id, ordinal),
+ WHERE b.candidate_id=?1 AND b.ordinal IN (SELECT value FROM json_each(?2)) AND b.kind='products' AND json_extract(release.value,'$.region') IS NOT NULL`,
+      )
+      .bind(id, selected),
   ];
 }
 export function retainPublicReadText(db: CatalogueStore, id: string, sha: string, ordinal: number, content: string) {

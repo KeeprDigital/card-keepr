@@ -1,8 +1,11 @@
 import { type CatalogueStore } from "./catalogue-store-repository";
 import {
   beginStagingWrite,
+  beginStagingWrites,
   finishStagingWrite,
+  finishStagingWrites,
   finishObservedStagingWrite,
+  registeredStagingKeysStatement,
   type StagingBinding,
 } from "./staging-object-repository";
 
@@ -55,14 +58,10 @@ export async function writeStagingObjects(
   preparation: string,
   objects: { key: string; content: string | Uint8Array; options: R2PutOptions }[],
 ) {
-  if (!objects.length) return;
+  if (!objects.length) return [];
   if (objects.length > 4) throw new Error("Staging writes exceed four objects.");
   const writes = objects.map((object) => ({ ...object, token: crypto.randomUUID() }));
-  await db.batch(
-    writes.flatMap(({ key, token }) =>
-      beginStagingWrite(db, preparation, binding, key, token, new Date().toISOString()),
-    ),
-  );
+  await db.batch(beginStagingWrites(db, preparation, binding, writes, new Date().toISOString()));
   const results = await Promise.allSettled(
     writes.map(async ({ key, content, options, token }) =>
       bucket.put(key, content, {
@@ -73,7 +72,11 @@ export async function writeStagingObjects(
   );
   const completed = writes.filter((_, index) => results[index]!.status === "fulfilled");
   if (completed.length)
-    await db.batch(completed.map(({ token }) => finishStagingWrite(db, token, new Date().toISOString())));
+    await finishStagingWrites(
+      db,
+      completed.map(({ token }) => token),
+      new Date().toISOString(),
+    ).run();
   const observed = trackedStagingBucket(db, bucket, binding, preparation);
   const observations = await Promise.allSettled(
     writes.flatMap(({ key }, index) => {
@@ -82,4 +85,14 @@ export async function writeStagingObjects(
     }),
   );
   for (const result of [...results, ...observations]) if (result.status === "rejected") throw result.reason;
+  return results.map((result) => {
+    if (result.status === "rejected") throw result.reason;
+    return result.value;
+  });
+}
+
+/** A registered identity may have a prior or ambiguous write and requires R2 observation. */
+export async function registeredStagingKeys(db: CatalogueStore, binding: StagingBinding, keys: string[]) {
+  const rows = await registeredStagingKeysStatement(db, binding, keys).all<{ object_key: string }>();
+  return new Set(rows.results.map(({ object_key }) => object_key));
 }

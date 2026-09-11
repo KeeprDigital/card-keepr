@@ -163,7 +163,7 @@ export {
   publicationBackupReservationStatement,
   publishedCompositionStatement,
 } from "./publication-composition-repository";
-export { trackedStagingBucket, writeStagingObjects } from "./staging-object-storage";
+export { trackedStagingBucket, writeStagingObjects, registeredStagingKeys } from "./staging-object-storage";
 
 export { sharedCuratableFieldSchemas } from "./curated-field-schemas";
 export { validCuratedField } from "./curated-field-validation";

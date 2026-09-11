@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
-import { type CatalogueStore, sha256Text, trackedStagingBucket, writeStagingObjects } from "../shared";
+import {
+  type CatalogueStore,
+  sha256Text,
+  trackedStagingBucket,
+  registeredStagingKeys,
+  writeStagingObjects,
+} from "../shared";
 import { PublicationIntegrityError } from "./publication-preparation-types";
 
 type RetainedObject = { object_key: string; sha256: string; byte_length: number; reused: boolean };
@@ -15,9 +21,17 @@ export function publicationObjectBatch(db: CatalogueStore, bucket: R2Bucket, pre
     const batch = pending;
     pending = [];
     pendingBytes = 0;
-    const heads = await Promise.allSettled(batch.map(({ reference }) => observed.head(reference.object_key)));
+    const keys = batch.map(({ reference }) => reference.object_key);
+    // Unknown identities still use conditional PUT and read-back verification. A
+    // registered identity can own a lost write, so observe it before retrying.
+    const registered = batch.length === 1 ? new Set(keys) : await registeredStagingKeys(db, "CATALOGUE_EXPORTS", keys);
+    const heads = await Promise.allSettled(
+      batch.map(async ({ reference }) =>
+        registered.has(reference.object_key) ? observed.head(reference.object_key) : null,
+      ),
+    );
     for (const head of heads) if (head.status === "rejected") throw head.reason;
-    await writeStagingObjects(
+    const written = await writeStagingObjects(
       db,
       bucket,
       "CATALOGUE_EXPORTS",
@@ -41,9 +55,12 @@ export function publicationObjectBatch(db: CatalogueStore, bucket: R2Bucket, pre
       ),
     );
     for (const result of verified) if (result.status === "rejected") throw result.reason;
+    let write = 0;
     batch.forEach((object, index) => {
       const head = heads[index]!;
-      object.retained = { ...object.reference, reused: head.status === "fulfilled" && head.value !== null };
+      const existed = head.status === "fulfilled" && head.value !== null;
+      const reused = existed || written[write++] === null;
+      object.retained = { ...object.reference, reused };
       object.content = "";
     });
   }

@@ -166,6 +166,7 @@ export async function advancePublicationPreparation(
         const readPartition = publicationPartitionReader(db, id);
         const objects = publicationObjectBatch(db, env.CATALOGUE_EXPORTS, candidate.preparation_id);
         const artifacts: (() => D1PreparedStatement)[] = [];
+        const projections: number[] = [];
         // Export units need fewer calls and bind only text chunks; projections stay at six.
         // A phase boundary commits before the next phase reads the receipts we staged.
         // Composition nodes also commit individually before a parent reads them.
@@ -180,6 +181,7 @@ export async function advancePublicationPreparation(
             readPartition,
             objects,
             artifacts,
+            projections,
           );
           if (
             continueBatch === false ||
@@ -190,6 +192,16 @@ export async function advancePublicationPreparation(
             break;
         }
         await objects.flush();
+        if (projections.length)
+          statements.push(
+            ...repository.retainPublicReadFacts(
+              db,
+              id,
+              projections,
+              candidate.preparation_id,
+              candidate.supported_game,
+            ),
+          );
         statements.push(...artifacts.map((receipt) => receipt()));
         state.cursor_json = canonicalJson(cursor);
         state.failures = 0;
@@ -322,6 +334,7 @@ async function prepareUnit(
   readPartition: ReturnType<typeof publicationPartitionReader>,
   objects: ReturnType<typeof publicationObjectBatch>,
   artifacts: (() => D1PreparedStatement)[],
+  projections: number[],
 ) {
   const db = env.CATALOGUE_DB,
     id = candidate.id;
@@ -610,15 +623,7 @@ async function prepareUnit(
     const ref = await objects.stage(projection);
     statements.push(repository.retainPublicationProjection(db, id, state.artifact_count, kind, projection, ref.sha256));
     statements.push(repository.retainPublicationQueryDocument(db, id, kind, String(value.id), state.artifact_count));
-    statements.push(
-      ...repository.retainPublicReadFacts(
-        db,
-        id,
-        state.artifact_count,
-        candidate.preparation_id,
-        candidate.supported_game,
-      ),
-    );
+    projections.push(state.artifact_count);
     artifact("query_search", ref);
     const lifecycle = await preparePublicLifecycle(db, candidate, kind, envelope.value);
     if (lifecycle) {

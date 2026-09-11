@@ -838,3 +838,27 @@ test("staging retry settles only the writer token actually observed in object me
       .all(),
   ).toMatchObject({ results: [{ token: "unrelated-lost-writer" }] });
 });
+
+test("a new staging identity cannot replace corrupt pre-registry bytes or receipt a partial artifact batch", async () => {
+  await activeStaging("staging_unregistered");
+  const { catalogueStore } = await import("../../../src/catalogue/shared");
+  const { publicationObjectBatch } = await import("../../../src/catalogue/reconciliation/publication-artifact-storage");
+  const objects = publicationObjectBatch(
+    catalogueStore(env.CATALOGUE_DB),
+    env.CATALOGUE_EXPORTS,
+    "staging_unregistered",
+  );
+  const conflict = await objects.stage("expected bytes");
+  const fresh = await objects.stage("fresh bytes");
+  await env.CATALOGUE_EXPORTS.put(conflict.object_key, "corrupt bytes");
+  await expect(objects.flush()).rejects.toMatchObject({ code: "publication_artifact_corrupt" });
+  expect(await (await env.CATALOGUE_EXPORTS.get(conflict.object_key))!.text()).toBe("corrupt bytes");
+  expect(await (await env.CATALOGUE_EXPORTS.get(fresh.object_key))!.text()).toBe("fresh bytes");
+  expect(() => conflict.receipt()).toThrow("has not been verified");
+  expect(() => fresh.receipt()).toThrow("has not been verified");
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      "SELECT token FROM staging_object_writes WHERE preparation_id='staging_unregistered' AND completed_at IS NULL",
+    ).all(),
+  ).toMatchObject({ results: [] });
+});
