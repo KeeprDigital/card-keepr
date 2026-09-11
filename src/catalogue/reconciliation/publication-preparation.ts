@@ -168,8 +168,14 @@ export async function advancePublicationPreparation(
         // A phase boundary commits before the next phase reads the receipts we staged.
         // Composition nodes also commit individually before a parent reads them.
         for (let unit = 0; unit < 4; unit++) {
-          await prepareUnit(env, candidate, state, cursor, statements);
-          if (phase === "composition" || state.phase !== phase || state.state !== "preparing") break;
+          const continueBatch = await prepareUnit(env, candidate, state, cursor, statements);
+          if (
+            continueBatch === false ||
+            phase === "composition" ||
+            state.phase !== phase ||
+            state.state !== "preparing"
+          )
+            break;
         }
         state.cursor_json = canonicalJson(cursor);
         state.failures = 0;
@@ -274,6 +280,7 @@ async function prepareUnit(
 ) {
   const db = env.CATALOGUE_DB,
     id = candidate.id;
+  let boundBytes = 0;
   const artifact = (
     kind: string,
     ref: { object_key: string; sha256: string; byte_length: number; reused: boolean },
@@ -571,8 +578,8 @@ async function prepareUnit(
             ]
           : [],
     });
-    if (new TextEncoder().encode(projection).byteLength > 524288)
-      throw new PublicationIntegrityError("publication_capacity_exceeded");
+    boundBytes = new TextEncoder().encode(projection).byteLength;
+    if (boundBytes > 524288) throw new PublicationIntegrityError("publication_capacity_exceeded");
     const ref = await retainPublicationObject(env.CATALOGUE_EXPORTS, projection);
     statements.push(repository.retainPublicationProjection(db, id, state.artifact_count, kind, projection, ref.sha256));
     statements.push(repository.retainPublicationQueryDocument(db, id, kind, String(value.id), state.artifact_count));
@@ -588,6 +595,7 @@ async function prepareUnit(
     artifact("query_search", ref);
     const lifecycle = await preparePublicLifecycle(db, candidate, kind, envelope.value);
     if (lifecycle) {
+      boundBytes += new TextEncoder().encode(canonicalJson(lifecycle)).byteLength;
       statements.push(retainPublicLifecycle(db, lifecycle));
       artifact(
         "public_lifecycle",
@@ -609,6 +617,9 @@ async function prepareUnit(
     cursor.subrecord = 0;
   }
   cursor.text = cursor.chunk = 0;
+  // Three <=64 KiB units plus one <=512 KiB projection and <=128 KiB
+  // lifecycle leave room for the fixed receipts/cursor within a 1 MiB D1 batch.
+  return boundBytes <= 65536;
 }
 
 /** Preparation of a composition only retains references; #228 owns selecting a published head. */
