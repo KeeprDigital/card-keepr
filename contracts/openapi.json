@@ -3,10 +3,10 @@
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "info": {
     "title": "Card Keepr read API",
-    "version": "1.1.0-prototype",
-    "description": "Authenticated, read-only access to one atomically published Catalogue Revision. This prototype contract is a discussion artifact, not a deployed API.",
+    "version": "1.1.0",
+    "description": "Maintained contract for authenticated, read-only access to one atomically published Catalogue Revision. The configured servers describe the public mounts; this document does not certify deployment or game readiness.",
     "license": {
-      "name": "Unlicensed private prototype",
+      "name": "Unlicensed private project",
       "identifier": "LicenseRef-Proprietary"
     }
   },

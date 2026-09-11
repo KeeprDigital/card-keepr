@@ -17,7 +17,8 @@ No dependency resolutions, deployed Worker settings or remote catalogue data cha
 
 - `contracts/` now owns OpenAPI, API/export/admin schemas, administration and
   serialization documents. Production and test imports follow the new location.
-  Parsed JSON matches the original files exactly, including schema identities.
+  Parsed schemas match the original files exactly, including schema identities.
+  OpenAPI differs only in `info` metadata that now identifies it as maintained.
   Existing JSON lint and changed-file formatting now cover these maintained files.
   Prototype demonstrations and original proposals remain clearly historical.
 - The five previously untracked tooling research/review notes are preserved,
@@ -44,7 +45,32 @@ files and the existing deadlines. File times on this Mac were 140.886 seconds fo
 reconciliation progress, 121.464 seconds for card identity and 79.289 seconds for
 identity corrections. These are elapsed samples, not CPU profiles or promises.
 
-Validation results for the final change are recorded below when complete.
+The same 101 tests passed after the change, with identical test names. File times
+were 150.200 seconds for reconciliation progress, 116.466 seconds for card identity
+and 88.123 seconds for identity corrections. This mixed single-sample result does
+not establish a wall-clock speedup. The concrete optimization is fewer unused
+partition-body requests and no record hydration for header-only fixture setup.
+
+The complete non-test check passes, including lint, formatting, all six compiler
+projects, generated output, catalogue boundaries/cycles and both Worker build dry
+runs. Actionlint 1.7.12 passes all workflows. The six release workflow contracts
+and nine focused release D1/state/formatter tests pass.
+
+### Standards review
+
+Independent read-only review of `bb6802f9...7439095b`: no documented-standard
+breaches or actionable heuristic smells. It verified record-kind consumers,
+complete failed-candidate comparisons, cache/release semantics and schema equality.
+
+### Spec review
+
+Independent read-only review of the same diff found one issue: the promoted
+administration contract still gave the historical prototype authority, and
+OpenAPI still called itself a discussion artifact. Those status statements are
+corrected; schema identities and validation behavior remain unchanged. The Spec
+reviewer verified the correction and reports no outstanding findings.
+
+Full regression and hosted validation are in progress.
 
 The implementation follows the existing testing strategy. Reference syntax was
 checked against [GitHub composite actions](https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action)

@@ -253,7 +253,8 @@ administration key uses a harmless authenticated status probe. Cloudflare
 operation tokens and the GitHub-held deployment token use class-specific
 least-privilege probes in their owning boundary.
 
-`administration.mjs` is the executable reference transition table. Any
-production implementation must accept every transition it accepts, reject
-every transition it rejects with the same stable code, and preserve the same
-terminal-state and concurrency invariants.
+The maintained implementation and its behavioral tests must preserve the
+transitions, stable rejection codes, terminal-state and concurrency invariants
+defined here and in the applicable ADRs. The state machine under `prototype/`
+is historical discussion material; it does not override this contract or later
+architecture decisions.
