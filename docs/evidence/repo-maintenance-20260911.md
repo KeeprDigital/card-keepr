@@ -70,7 +70,21 @@ OpenAPI still called itself a discussion artifact. Those status statements are
 corrected; schema identities and validation behavior remain unchanged. The Spec
 reviewer verified the correction and reports no outstanding findings.
 
-Full regression and hosted validation are in progress.
+`pnpm run test:full` passes all 1,539 routine tests: 298 domain, 95 API,
+788 ingestion and 358 acceptance. Acceptance reports zero failures,
+cancellations or skips. The six API contract tests also pass after the OpenAPI
+metadata correction, using the documented domain runner.
+
+The [focused Linux selection](https://github.com/KeeprDigital/card-keepr/actions/runs/34549137933)
+passes all 106 tests across the three changed families and publication-caller
+retirement, before full hosted CI. The
+[draft CI on 777cf23e](https://github.com/KeeprDigital/card-keepr/actions/runs/34549388966)
+passes; its logs confirm a source-store cache hit, a frozen install, and fresh
+approved workerd/esbuild/unrs-resolver install hooks through the shared action.
+The full nine-job hosted result for the same code is recorded in
+[run 34549818754](https://github.com/KeeprDigital/card-keepr/actions/runs/34549818754).
+The [maintenance PR](https://github.com/KeeprDigital/card-keepr/pull/304) links
+the final validation status. No production release or remote-data operation is run.
 
 The implementation follows the existing testing strategy. Reference syntax was
 checked against [GitHub composite actions](https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action)
