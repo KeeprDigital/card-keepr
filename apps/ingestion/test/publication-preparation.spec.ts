@@ -453,7 +453,10 @@ test.each(["projections", "composition"])(
 test.each(["prepare publication artifacts", "dispatch publication preparation successor"])(
   "exhausted %s steps retain a retry pause",
   async (failedStep) => {
-    const candidate = await sealedCandidate();
+    // Keep the successor fault beyond one shard after bounded artifact batching.
+    const candidate = await sealedCandidate(
+      failedStep === "dispatch publication preparation successor" ? "three-role-image-work-units" : "base",
+    );
     const path = `/v1/game-candidates/${candidate.id}/publication-preparation`;
     let parameters: import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams | undefined;
     const workflow = {
@@ -473,6 +476,7 @@ test.each(["prepare publication artifacts", "dispatch publication preparation su
     const started = await advanceWith({ ...testEnv, RECONCILIATION_WORKFLOW: workflow }, `${path}/start`, intent);
     expect(started.response.status).toBe(202);
     const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+    let injected = false;
     await runReconciliationWorkflow(
       testEnv,
       {
@@ -484,13 +488,16 @@ test.each(["prepare publication artifacts", "dispatch publication preparation su
       >,
       {
         do: async (name: string, _config: unknown, callback: () => Promise<string>) => {
-          if (name.startsWith(failedStep))
+          if (name.startsWith(failedStep)) {
+            injected = true;
             throw new Error("Injected Workflow step has exhausted its transport retries");
+          }
           return callback();
         },
       } as unknown as import("cloudflare:workers").WorkflowStep,
     );
     const status = (await get(path)).document;
+    expect(injected).toBe(true);
     expect(status).toMatchObject({
       state: "retry_paused",
       failure_code: "publication_workflow_retry_exhausted",

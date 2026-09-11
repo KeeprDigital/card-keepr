@@ -138,7 +138,6 @@ export async function advancePublicationPreparation(
         "publication_preparation_not_paused",
         "Only an exhausted transient retry can resume.",
       );
-    const initial = await initialCursor(db, candidate);
     const state: PreparationState = current
       ? { ...current }
       : {
@@ -148,7 +147,7 @@ export async function advancePublicationPreparation(
           sequence: 0,
           state: "preparing",
           phase: "images",
-          cursor_json: canonicalJson(initial),
+          cursor_json: canonicalJson(await initialCursor(db, candidate)),
           failures: 0,
           failure_code: null,
           artifact_count: 0,
@@ -164,7 +163,14 @@ export async function advancePublicationPreparation(
     } else {
       try {
         const cursor = JSON.parse(state.cursor_json) as PreparationCursor;
-        await prepareUnit(env, candidate, state, cursor, statements);
+        const phase = state.phase;
+        // Amortize the guarded checkpoint over four sequential bounded artifacts.
+        // A phase boundary commits before the next phase reads the receipts we staged.
+        // Composition nodes also commit individually before a parent reads them.
+        for (let unit = 0; unit < 4; unit++) {
+          await prepareUnit(env, candidate, state, cursor, statements);
+          if (phase === "composition" || state.phase !== phase || state.state !== "preparing") break;
+        }
         state.cursor_json = canonicalJson(cursor);
         state.failures = 0;
         state.failure_code = null;

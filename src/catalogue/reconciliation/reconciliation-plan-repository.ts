@@ -1,5 +1,17 @@
 import { type CatalogueStore, repositoryStatements } from "../shared";
 
+export function membershipPlanStatement(database: CatalogueStore, preparationId: string, through: number, game: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT content, sha256 FROM reconciliation_reducer_state
+      WHERE preparation_id = ? AND namespace = 'observation_plans' AND observation_ordinal <= ?
+        AND json_extract(content, '$.value.plan.supportedGame') = ?
+        AND json_extract(content, '$.value.plan.printingId') IS NOT NULL
+        AND (json_array_length(content, '$.value.plan.memberships.products') > 0
+          OR json_array_length(content, '$.value.plan.memberships.distribution_contexts') > 0)
+      LIMIT 1`)
+    .bind(preparationId, through, game);
+}
+
 export function observedPlanStatement(
   database: CatalogueStore,
   preparationId: string,
