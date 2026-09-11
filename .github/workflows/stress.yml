@@ -31,21 +31,8 @@ jobs:
     timeout-minutes: ${{ inputs.suite == 'full' && 45 || 5 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        id: node
-        with:
-          node-version-file: .node-version
-          package-manager-cache: false
-      - name: Set up Corepack and pnpm
-        id: pnpm
-        run: bash scripts/setup-pnpm.sh
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: pnpm-store
-        with:
-          path: ${{ steps.pnpm.outputs.store-path }}
-          key: pnpm-store-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.node.outputs.node-version }}-${{ steps.pnpm.outputs.version }}-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'pnpm-workspace.yaml', '.npmrc', 'scripts/setup-pnpm.sh', '.node-version') }}
-      # Always recreate node_modules and run approved native builds, even on a store hit.
-      - run: pnpm install --frozen-lockfile
+      - name: Set up repository tooling
+        uses: ./.github/actions/setup-toolchain
       - if: inputs.suite != 'full'
         run: pnpm run test:stress
       - if: inputs.suite == 'full'

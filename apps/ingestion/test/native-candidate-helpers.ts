@@ -63,7 +63,8 @@ export async function waitForDispatchedNativeCandidates(
   throw new Error(`Collection ${runId} has not returned its native dispatch receipt.`);
 }
 
-export async function nativeCandidateRecords(candidateId: string) {
+/** Read only the requested record kinds; omit kinds when the complete candidate is the assertion. */
+export async function nativeCandidateRecords(candidateId: string, kinds?: readonly string[]) {
   const records: Record<string, Record<string, unknown>[]> = {};
   let cursor: string | null = null;
   do {
@@ -72,6 +73,7 @@ export async function nativeCandidateRecords(candidateId: string) {
     );
     expect(page.response.status).toBe(200);
     for (const partition of page.document.partitions as { kind: string; ordinal: number }[]) {
+      if (kinds !== undefined && !kinds.includes(partition.kind)) continue;
       const detail = await get(`/v1/game-candidates/${candidateId}/partitions/${partition.ordinal}`);
       expect(detail.response.status).toBe(200);
       records[partition.kind] ??= [];

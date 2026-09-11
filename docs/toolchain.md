@@ -55,7 +55,9 @@ A new unapproved build script fails installation through `strictDepBuilds`;
 review its purpose before changing `allowBuilds`. Do not disable the
 guard or silently skip a native dependency's required setup.
 
-CI's shared setup script installs Corepack into a temporary runner directory and
+All six workflows use [.github/actions/setup-toolchain/action.yml](../.github/actions/setup-toolchain/action.yml)
+after checkout for Node selection, dependency caching and frozen installation.
+Its shared setup script installs Corepack into a temporary runner directory and
 adds its pnpm shim to the job PATH. It does not replace the runner's global tools.
 All six workflows cache the pnpm store, keyed by OS, architecture, exact Node and
 pnpm versions, lockfile, manifest, settings and the Corepack setup script. Every
@@ -94,7 +96,13 @@ or task scheduler has been introduced.
 
 `tsc` remains TypeScript 7.0.2 through `@typescript/native`. The `typescript`
 package aliases the supported TS6 compatibility API used by typescript-eslint;
-`pnpm exec tsc6 --version` reports 6.0.3. All five ordinary compiler projects are unchanged.
+`pnpm exec tsc6 --version` reports 6.0.3. The Worker projects share compiler options
+through `tsconfig.base.json`, retaining separate generated bindings and test types.
+`pnpm run typecheck` also checks the explicit JavaScript files in
+`tsconfig.tooling.json`: configuration parsing, HTTP transport, development process
+management, formatting, D1 release queries and release-state SQL. That project
+enables strict `checkJs` with Node types and JSDoc; it does not load Worker globals.
+Extend its file list as another operational boundary is annotated and verified.
 Supplemental projects under `eslint/` explicitly own shared Worker source, Node
 JavaScript, API support, and six implementations with adjacent declarations.
 
@@ -117,7 +125,8 @@ The migration-only lint probes and their package/CI gate have been retired.
 The custom changed-file formatter is covered by `acceptance/format.test.mjs`
 in routine acceptance. Unsafe-flow rules apply
 first to bounded JSON input and the annotated shared CLI/release HTTP transport.
-The broad unannotated-JavaScript backlog remains outside this correctness gate.
+The remaining unannotated JavaScript is covered by lint but remains outside full
+compiler checking.
 
 ## Before another Vite+ trial
 
@@ -135,7 +144,7 @@ metadata, not an old recommendation. At minimum:
    Avoid a permanent hybrid or a bespoke replacement JSON linter merely to make
    the migration pass.
 3. Verify typed lint with both valid and invalid imported, D1 and R2 promises.
-   Resolve real diagnostics deliberately. Keep TypeScript 7 and prove all five
+   Resolve real diagnostics deliberately. Keep TypeScript 7 and prove all
    existing compiler projects and options, retaining the explicit compiler task
    wherever Vite+'s check does not cover them.
 4. Run focused domain, API, ingestion and Node acceptance smoke, then full

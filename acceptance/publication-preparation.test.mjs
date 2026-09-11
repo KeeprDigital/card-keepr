@@ -250,16 +250,10 @@ test("one owner CLI start verifies native artifacts without exposing any unfinis
   const ajv = new Ajv2020({ allErrors: true });
   addFormats(ajv);
   const manifestSchema = JSON.parse(
-    await readFile(
-      resolve("prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v5.schema.json"),
-      "utf8",
-    ),
+    await readFile(resolve("contracts/schemas/catalogue-export-manifest-v5.schema.json"), "utf8"),
   );
   const recordSchema = JSON.parse(
-    await readFile(
-      resolve("prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json"),
-      "utf8",
-    ),
+    await readFile(resolve("contracts/schemas/catalogue-export-record-v5.schema.json"), "utf8"),
   );
   const validateManifest = ajv.compile(manifestSchema),
     validateRecord = ajv.compile(recordSchema);

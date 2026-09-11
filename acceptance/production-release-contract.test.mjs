@@ -161,12 +161,26 @@ test("the release SHA is resolved through the GitHub API before checkout and ci 
 
 test("workflow hygiene: pinned actions, no secret written to GITHUB_ENV, no misleading job name, stress failures reported", () => {
   // Issue #75.
-  const workflows = ["ci", "production-preflight", "production-release", "stress"].map((name) => [
-    name,
-    readFileSync(`.github/workflows/${name}.yml`, "utf8"),
-  ]);
-  for (const [name, text] of workflows) {
+  const workflows = [
+    "ci",
+    "production-preflight",
+    "production-release",
+    "stress",
+    "official-source-recapture",
+    "test-suite-diagnostics",
+  ].map((name) => [name, readFileSync(`.github/workflows/${name}.yml`, "utf8")]);
+  const sources = [...workflows];
+  const visited = new Set();
+  for (const [name, text] of sources) {
     for (const uses of text.match(/^\s*(?:- )?uses: .+$/gmu) ?? []) {
+      const local = uses.match(/uses: (\.\/\.github\/actions\/[\w/-]+)$/u);
+      if (local) {
+        if (!visited.has(local[1])) {
+          visited.add(local[1]);
+          sources.push([local[1], readFileSync(`${local[1]}/action.yml`, "utf8")]);
+        }
+        continue;
+      }
       assert.match(uses, /uses: [\w.-]+\/[\w.-]+@[0-9a-f]{40} # v\d+\.\d+\.\d+$/u, `${name}: ${uses.trim()}`);
     }
     // A secret interpolated into a GITHUB_ENV or GITHUB_OUTPUT write would

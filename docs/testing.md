@@ -182,7 +182,11 @@ reset. Cloudflare documents [per-file isolation and explicit disposal](https://d
   controlled fixtures should complete explicitly rather than wait for scheduling.
 - Keep independent case identities distinct and reset storage between tests.
   Helpers should read only required identities/manifests; inspect all partitions
-  only when their records are the assertion.
+  only when their records are the assertion. Use
+  `nativeCandidateRecords(id, ["cards", "printings"])` to hydrate selected kinds;
+  omit the selection for whole-candidate comparisons. Header-only setup should
+  not load candidate records at all. Selected reads still traverse every page of
+  partition metadata and verify each requested partition through the real API.
 - Run the affected file first. For CI-only failures, use a focused hosted
   selection, fix the cause, then repeat that selection before full validation.
   Do not chase green with repeated full runs, larger timeouts, rate-limit changes

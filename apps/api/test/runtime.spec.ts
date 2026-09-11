@@ -2,9 +2,9 @@ import { exports } from "cloudflare:workers";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { expect, test, vi } from "vitest";
-import apiSchema from "../../../prototype/formalize-implementation-contracts/schemas/api.schema.json";
-import exportManifestSchemaV5 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v5.schema.json";
-import exportRecordSchemaV5 from "../../../prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json";
+import apiSchema from "../../../contracts/schemas/api.schema.json";
+import exportManifestSchemaV5 from "../../../contracts/schemas/catalogue-export-manifest-v5.schema.json";
+import exportRecordSchemaV5 from "../../../contracts/schemas/catalogue-export-record-v5.schema.json";
 import {
   prepareCardSearchForD1Export,
   reconstructCardSearchAfterD1Restore,

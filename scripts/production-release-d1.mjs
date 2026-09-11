@@ -15,6 +15,12 @@ import { readFile } from "node:fs/promises";
 
 const defaultApi = "https://api.cloudflare.com/client/v4";
 
+/**
+ * @param {NodeJS.ProcessEnv} environment
+ * @param {{configPath: string, sqlPath: string}} paths
+ * @param {typeof globalThis.fetch} [fetchImpl]
+ * @returns {Promise<unknown[]>}
+ */
 export async function executeSqlFile(environment, { configPath, sqlPath }, fetchImpl = fetch) {
   const token = required(environment, "CLOUDFLARE_API_TOKEN");
   const accountId = required(environment, "CLOUDFLARE_ACCOUNT_ID");
@@ -32,6 +38,7 @@ export async function executeSqlFile(environment, { configPath, sqlPath }, fetch
     },
     fetchImpl,
   );
+  /** @type {unknown} */
   let document;
   try {
     document = await response.json();
@@ -39,20 +46,26 @@ export async function executeSqlFile(environment, { configPath, sqlPath }, fetch
     throw new Error("d1_malformed_response");
   }
   if (!response.ok || !record(document) || document.success !== true || !Array.isArray(document.result)) {
-    const errors = Array.isArray(document?.errors) ? document.errors : [];
-    const detail = errors.map((error) => `${error?.code ?? "unknown"}:${error?.message ?? ""}`).join(";");
+    /** @type {unknown[]} */
+    const errors = record(document) && Array.isArray(document.errors) ? document.errors : [];
+    const detail = errors
+      .map((error) => (record(error) ? `${error.code ?? "unknown"}:${error.message ?? ""}` : "unknown:"))
+      .join(";");
     throw new Error(`d1_query_failed:${detail === "" ? String(response.status) : detail}`);
   }
-  for (const entry of document.result) {
+  /** @type {unknown[]} */
+  const results = document.result;
+  for (const entry of results) {
     if (!record(entry) || entry.success !== true || !Array.isArray(entry.results))
       throw new Error("d1_statement_failed");
   }
-  return document.result;
+  return results;
 }
 
 // The release binds the catalogue database through the wrangler config it is
 // given (the checked-in one, or an ephemeral replacement-handoff config), so
 // the identity comes from that file's CATALOGUE_DB binding and nowhere else.
+/** @param {string} configPath */
 async function catalogueDatabaseId(configPath) {
   let config;
   try {
@@ -60,25 +73,29 @@ async function catalogueDatabaseId(configPath) {
   } catch {
     throw new Error(`invalid_wrangler_config:${configPath}`);
   }
-  const binding = (Array.isArray(config?.d1_databases) ? config.d1_databases : []).find(
-    (entry) => record(entry) && entry.binding === "CATALOGUE_DB",
-  );
-  if (!binding || typeof binding.database_id !== "string" || binding.database_id.length === 0)
+  /** @type {unknown[]} */
+  const bindings = Array.isArray(config.d1_databases) ? config.d1_databases : [];
+  const binding = bindings.find((entry) => record(entry) && entry.binding === "CATALOGUE_DB");
+  if (!record(binding) || typeof binding.database_id !== "string" || binding.database_id.length === 0)
     throw new Error("missing_catalogue_database_binding");
   return binding.database_id;
 }
 
+/** @param {unknown} value @returns {value is Record<string, unknown>} */
 function record(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
+/** @param {NodeJS.ProcessEnv} environment @param {string} name */
 function required(environment, name) {
   const value = environment[name];
   if (typeof value !== "string" || value.length === 0) throw new Error(`missing_${name.toLowerCase()}`);
   return value;
 }
 
+/** @param {string[]} argv */
 function parseArguments(argv) {
   if (argv[0] !== "execute") return null;
+  /** @type {Record<string, string>} */
   const values = {};
   for (let index = 1; index < argv.length; index += 2) {
     const name = argv[index];

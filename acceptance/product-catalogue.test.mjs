@@ -240,9 +240,7 @@ test("native publication: the CLI publishes separated Product catalogue data con
   const productResponse = await fetch(`${api.url}/v1/products/${productId}`, { headers });
   assert.equal(productResponse.status, 200);
   const productDocument = await productResponse.json();
-  const apiSchema = JSON.parse(
-    await readFile(resolve(root, "prototype/formalize-implementation-contracts/schemas/api.schema.json"), "utf8"),
-  );
+  const apiSchema = JSON.parse(await readFile(resolve(root, "contracts/schemas/api.schema.json"), "utf8"));
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
   const validateProduct = ajv.compile({
@@ -274,10 +272,7 @@ test("native publication: the CLI publishes separated Product catalogue data con
     ),
   );
   const exportSchema = JSON.parse(
-    await readFile(
-      resolve(root, "prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json"),
-      "utf8",
-    ),
+    await readFile(resolve(root, "contracts/schemas/catalogue-export-record-v5.schema.json"), "utf8"),
   );
   const validatePrintingExport = ajv.compile({
     ...exportSchema,

@@ -80,7 +80,7 @@ test("active API and administration schema definitions include Riftbound but sta
   const ajv = new Ajv2020({ strict: false });
   addFormats(ajv);
   for (const file of ["api.schema.json", "administration.schema.json"]) {
-    const schema = JSON.parse(readFileSync(`prototype/formalize-implementation-contracts/schemas/${file}`, "utf8"));
+    const schema = JSON.parse(readFileSync(`contracts/schemas/${file}`, "utf8"));
     ajv.addSchema(schema);
     const validate = ajv.getSchema(`${schema.$id}#/$defs/SupportedGame`)!;
     for (const game of games) expect(validate(game)).toBe(true);

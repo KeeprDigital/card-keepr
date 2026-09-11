@@ -1,24 +1,4 @@
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "resolveJsonModule": true,
-    "lib": ["ES2022"],
-    "types": ["node"],
-    "strict": true,
-    "noEmit": true,
-    // Modules that Node loads directly (acceptance tests and Vitest configs
-    // reach src/catalogue through explicit-extension specifiers) import their
-    // TypeScript neighbours as "./name.ts"; everything else stays extensionless.
-    "allowImportingTsExtensions": true,
-    "noUncheckedIndexedAccess": true,
-    "skipLibCheck": true
-  },
-  "include": [
-    "worker-configuration.d.ts",
-    "src/**/*.ts",
-    "../../src/**/*.ts",
-    "../../src/**/*.mjs"
-  ]
+  "extends": "../../tsconfig.base.json",
+  "include": ["worker-configuration.d.ts", "src/**/*.ts", "../../src/**/*.ts", "../../src/**/*.mjs"],
 }

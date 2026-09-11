@@ -13,10 +13,7 @@ const root = resolve(import.meta.dirname, "../..");
 
 test("Catalogue Export relationship records carry closed endpoints", async () => {
   const record = JSON.parse(
-    await readFile(
-      resolve(root, "prototype/formalize-implementation-contracts/schemas", "catalogue-export-record-v5.schema.json"),
-      "utf8",
-    ),
+    await readFile(resolve(root, "contracts/schemas", "catalogue-export-record-v5.schema.json"), "utf8"),
   );
 
   const ajv = new Ajv2020({ allErrors: true, strict: false });
@@ -70,27 +67,21 @@ test("Catalogue Export relationship records carry closed endpoints", async () =>
 });
 
 test("Product detail documents invalid include requests", async () => {
-  const openapi = JSON.parse(
-    await readFile(resolve(root, "prototype/formalize-implementation-contracts/openapi.json"), "utf8"),
-  );
+  const openapi = JSON.parse(await readFile(resolve(root, "contracts/openapi.json"), "utf8"));
   assert.deepEqual(openapi.paths["/products/{product_id}"].get.responses["400"], {
     $ref: "#/components/responses/InvalidRequest",
   });
 });
 
 test("consumer OpenAPI omits eligibility routes", async () => {
-  const openapi = JSON.parse(
-    await readFile(resolve(root, "prototype/formalize-implementation-contracts/openapi.json"), "utf8"),
-  );
+  const openapi = JSON.parse(await readFile(resolve(root, "contracts/openapi.json"), "utf8"));
   assert.equal(Object.hasOwn(openapi.paths, "/legality-status"), false);
 });
 
 test("Card browsing documents and validates collection, detail, and problem representations", async () => {
   const [openapi, schema] = await Promise.all([
-    readFile(resolve(root, "prototype/formalize-implementation-contracts/openapi.json"), "utf8").then(JSON.parse),
-    readFile(resolve(root, "prototype/formalize-implementation-contracts/schemas/api.schema.json"), "utf8").then(
-      JSON.parse,
-    ),
+    readFile(resolve(root, "contracts/openapi.json"), "utf8").then(JSON.parse),
+    readFile(resolve(root, "contracts/schemas/api.schema.json"), "utf8").then(JSON.parse),
   ]);
   assert.deepEqual(openapi.paths["/cards"].get.responses["200"].content["application/json"].schema, {
     $ref: "./schemas/api.schema.json#/$defs/CardCollection",
@@ -174,8 +165,7 @@ test("Card browsing documents and validates collection, detail, and problem repr
 test("the Catalogue Export schema carries typed Product and Release facts without evidence projections", async () => {
   const [api, exportSchema, exportManifest] = await Promise.all(
     ["api.schema.json", "catalogue-export-record-v5.schema.json", "catalogue-export-manifest-v5.schema.json"].map(
-      async (name) =>
-        JSON.parse(await readFile(resolve(root, "prototype/formalize-implementation-contracts/schemas", name), "utf8")),
+      async (name) => JSON.parse(await readFile(resolve(root, "contracts/schemas", name), "utf8")),
     ),
   );
   assert.equal(api.$defs.Printing.required.includes("products"), false);

@@ -31,6 +31,7 @@ authentication.
 Contributors and coding agents: read the [testing approach](docs/testing.md)
 before selecting checks, adding tests, or changing CI. Start with the
 [testing and verification commands](#testing-and-verification) below.
+Maintained API, export and administration schemas are in [contracts/](contracts/README.md).
 
 ## Local development
 

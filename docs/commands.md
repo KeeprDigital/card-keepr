@@ -120,6 +120,7 @@ operator CLI flow in the [Production Release runbook](runbooks/production-releas
 | `check:catalogue-cycles`, `check:catalogue-boundary`               | `check:imports`                                                                |
 | `deploy:dry-run`, `deploy:dry-run:api`, `deploy:dry-run:ingestion` | `build`, `build:api`, `build:ingestion`                                        |
 
+Maintained API, export and administration contracts live in [contracts/](../contracts/README.md).
 Historical prototype demos are invoked directly from their own READMEs:
 [Game Profiles](../prototype/v1-game-profiles-source-adapters/README.md),
 [implementation contracts](../prototype/formalize-implementation-contracts/README.md)

@@ -28,7 +28,7 @@
     "lint": "eslint . --max-warnings=0",
     "format": "node scripts/format.mjs",
     "format:check": "node scripts/format.mjs --check",
-    "typecheck": "tsc --project apps/api/tsconfig.json && tsc --project apps/api/test/tsconfig.json && tsc --project apps/ingestion/tsconfig.json && tsc --project apps/ingestion/test/tsconfig.json && tsc --project test/domain/tsconfig.json",
+    "typecheck": "tsc --project apps/api/tsconfig.json && tsc --project apps/api/test/tsconfig.json && tsc --project apps/ingestion/tsconfig.json && tsc --project apps/ingestion/test/tsconfig.json && tsc --project test/domain/tsconfig.json && tsc --project tsconfig.tooling.json",
     "check:generated": "node scripts/worker-types.mjs --check && node scripts/document-validators.mjs --check",
     "check:imports": "node scripts/catalogue-import-cycles.mjs && node scripts/catalogue-import-boundary.mjs",
     "generate:worker-types": "node scripts/worker-types.mjs",

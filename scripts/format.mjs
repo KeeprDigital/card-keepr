@@ -9,6 +9,7 @@ if (args.some((arg) => arg !== "--check" && arg !== since) || since === "--since
 }
 
 const root = resolve(import.meta.dirname, "..");
+/** @param {...string} parameters */
 const git = (...parameters) => execFileSync("git", parameters, { cwd: root, encoding: "utf8" });
 const hasUpstream =
   spawnSync("git", ["show-ref", "--verify", "--quiet", "refs/remotes/origin/main"], { cwd: root }).status === 0;
