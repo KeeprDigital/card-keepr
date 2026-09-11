@@ -166,10 +166,11 @@ export async function advancePublicationPreparation(
         const readPartition = publicationPartitionReader(db, id);
         const objects = publicationObjectBatch(db, env.CATALOGUE_EXPORTS, candidate.preparation_id);
         const artifacts: (() => D1PreparedStatement)[] = [];
-        // Amortize the guarded checkpoint over six sequential bounded units.
+        // Export units need fewer calls and bind only text chunks; projections stay at six.
         // A phase boundary commits before the next phase reads the receipts we staged.
         // Composition nodes also commit individually before a parent reads them.
-        for (let unit = 0; unit < 6; unit++) {
+        const maximumUnits = phase === "exports" ? 11 : 6;
+        for (let unit = 0; unit < maximumUnits; unit++) {
           const continueBatch = await prepareUnit(
             env,
             candidate,
@@ -516,7 +517,8 @@ async function prepareUnit(
       delete cursor.text_hash;
       delete cursor.text_bytes;
     }
-    return;
+    // Ten small text chunks plus one 128 KiB chunk stay below the D1 batch bound.
+    return bytes.byteLength <= 65536;
   }
   if (state.phase === "projections" && kind === "cards" && cursor.text < 3) {
     const paths = [["official_identity", "value"], ["name"], ["effective_rules_text"]];

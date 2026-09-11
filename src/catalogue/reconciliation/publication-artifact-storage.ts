@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { type CatalogueStore, sha256Text, trackedStagingBucket, writeStagingObjects } from "../shared";
 import { PublicationIntegrityError } from "./publication-preparation-types";
 
@@ -105,19 +106,28 @@ export async function verifyPublicationObject(bucket: R2Bucket, key: string, sha
     await object.body.cancel();
     throw new PublicationIntegrityError("publication_artifact_corrupt");
   }
-  const digest = new crypto.DigestStream("SHA-256");
+  const digest = createHash("sha256");
+  const reader = object.body.getReader();
   let received = 0;
-  await object.body
-    .pipeThrough(
-      new TransformStream<Uint8Array, Uint8Array>({
-        transform(chunk, controller) {
-          received += chunk.byteLength;
-          if (received > bytes) throw new PublicationIntegrityError("publication_artifact_corrupt");
-          controller.enqueue(chunk);
-        },
-      }),
-    )
-    .pipeTo(digest);
-  const actual = Array.from(new Uint8Array(await digest.digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-  if (received !== bytes || actual !== sha) throw new PublicationIntegrityError("publication_artifact_corrupt");
+  let complete = false;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) {
+        complete = true;
+        break;
+      }
+      received += value.byteLength;
+      if (received > bytes) throw new PublicationIntegrityError("publication_artifact_corrupt");
+      digest.update(value);
+    }
+    if (received !== bytes || digest.digest("hex") !== sha)
+      throw new PublicationIntegrityError("publication_artifact_corrupt");
+  } finally {
+    try {
+      if (!complete) await reader.cancel();
+    } finally {
+      reader.releaseLock();
+    }
+  }
 }
