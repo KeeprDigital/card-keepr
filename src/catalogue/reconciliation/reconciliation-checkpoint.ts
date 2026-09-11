@@ -4,6 +4,7 @@ import {
   exactReconciliationCheckpointStatement,
   latestReconciliationCheckpointStatement,
   retainReconciliationCheckpointStatement,
+  reconciliationCheckpointWindowStatement,
 } from "./reconciliation-checkpoint-repository";
 
 type CheckpointRow = { ordinal: number; content: string; sha256: string };
@@ -17,18 +18,15 @@ export async function prepareCheckpointReadWindow(database: CatalogueStore, runI
   if (phases.length > 16 || new Set(phases).size !== phases.length)
     throw new Error("Invalid reconciliation checkpoint read window.");
   const rows = new Map<string, CheckpointRow | null>();
-  for (let offset = 0; offset < phases.length; offset += 6) {
-    const group = phases.slice(offset, offset + 6);
-    // Six immutable 64 KiB checkpoints stay within the metadata fetch allowance.
-    const results = await documentStorage(async () => {
-      const batch = await database.batch<CheckpointRow>(
-        group.map((phase) => latestReconciliationCheckpointStatement(database, runId, phase)),
-      );
-      if (batch.length !== group.length || batch.some((result) => !result.success || !Array.isArray(result.results)))
-        throw new Error("Reconciliation checkpoint read window returned an incomplete batch.");
-      return batch;
-    });
-    for (const [index, phase] of group.entries()) rows.set(phase, results[index]!.results[0] ?? null);
+  let remaining = [...phases].sort();
+  while (remaining.length) {
+    const page = await documentStorage(() =>
+      reconciliationCheckpointWindowStatement(database, runId, remaining).all<CheckpointRow & { phase: string }>(),
+    );
+    if (!page.success || !page.results.length || page.results.some((row, index) => row.phase !== remaining[index]))
+      throw new Error("Reconciliation checkpoint read window returned an incomplete page.");
+    for (const row of page.results) rows.set(row.phase, row.content === null ? null : row);
+    remaining = remaining.slice(page.results.length);
   }
   (database as WindowStore)[readWindow] = { runId, rows };
 }

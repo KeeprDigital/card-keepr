@@ -64,22 +64,70 @@ export class ReconciliationReducerIndex<T> {
     await this.set(key, value);
   }
 
-  async get(key: string): Promise<T | undefined> {
-    if (this.ordinal === 0) return undefined;
+  /** Independent seed effects retain their original ordinals in bounded transactions. */
+  async seedMany(entries: Iterable<{ key: string; value: T }>): Promise<void> {
+    let writes: Awaited<ReturnType<typeof this.prepareWrite>>[] = [];
+    let bytes = 0;
+    const flush = async () => {
+      if (!writes.length) return;
+      const results = await storage(() => this.database.batch<StateRow>(writes.map((write) => write.statement())));
+      for (const [index, write] of writes.entries()) await write.accept(results[index]?.results[0] ?? null);
+      writes = [];
+      bytes = 0;
+    };
+    for (const entry of entries) {
+      this.beginObservation();
+      const write = await this.prepareWrite(entry.key, entry.value);
+      if (writes.length && (writes.length === 16 || bytes + write.bytes > 262144)) await flush();
+      writes.push(write);
+      bytes += write.bytes;
+    }
+    await flush();
+  }
+
+  private async readRequest(key: string): Promise<{ cached?: T; statement?: D1PreparedStatement }> {
+    if (this.ordinal === 0) return {};
     const digest = await sha256Text(key);
-    if (this.lastWrite?.digest === digest) return JSON.parse(this.lastWrite.content).value as T;
-    const row = await storage(() =>
-      reducerStateStatement(
+    if (this.lastWrite?.digest === digest) return { cached: JSON.parse(this.lastWrite.content).value as T };
+    return {
+      statement: reducerStateStatement(
         this.database,
         this.runId,
         this.namespace,
         digest,
         this.ordinal + (this.completedPrefix || this.written.has(digest) ? 1 : 0),
-      ).first<StateRow>(),
-    );
+      ),
+    };
+  }
+  private async restoreRow(row: StateRow | null): Promise<T | undefined> {
     if (!row) return undefined;
     if ((await sha256Text(row.content)) !== row.sha256) throw new Error("Reducer state failed integrity verification.");
     return (await restorePartitionedRecord(this.database, this.runId, JSON.parse(row.content))) as T;
+  }
+  async get(key: string): Promise<T | undefined> {
+    const request = await this.readRequest(key);
+    return request.statement
+      ? this.restoreRow(await storage(() => request.statement!.first<StateRow>()))
+      : request.cached;
+  }
+
+  /** Read independent Product and Distribution Context predecessors in one transaction. */
+  async getAlongside<U>(
+    key: string,
+    other: { index: ReconciliationReducerIndex<U>; key: string },
+  ): Promise<[T | undefined, U | undefined]> {
+    if (this.database !== other.index.database) throw new Error("Reducer reads require the same catalogue store.");
+    const left = await this.readRequest(key);
+    const right = await other.index.readRequest(other.key);
+    const statements = [left.statement, right.statement].filter(
+      (value): value is D1PreparedStatement => value !== undefined,
+    );
+    const results = statements.length ? await storage(() => this.database.batch<StateRow>(statements)) : [];
+    let position = 0;
+    return [
+      left.statement ? await this.restoreRow(results[position++]?.results[0] ?? null) : left.cached,
+      right.statement ? await other.index.restoreRow(results[position]?.results[0] ?? null) : right.cached,
+    ];
   }
 
   /** Query only the predecessor view; call before this observation writes matching state. */
@@ -94,7 +142,7 @@ export class ReconciliationReducerIndex<T> {
     }
   }
 
-  /** Stream lifetime history one verified row at a time, without an identity-match ceiling. */
+  /** Stream lifetime history in verified bounded pages, without an identity-match ceiling. */
   async *groupEntriesBeforeObservation(
     group: string,
     after = "",
@@ -102,25 +150,24 @@ export class ReconciliationReducerIndex<T> {
     if (this.ordinal <= 1) return;
     const groupDigest = await sha256Text(group);
     for (;;) {
-      const row = await storage(() =>
-        nextReducerGroupStateStatement(
-          this.database,
-          this.runId,
-          this.namespace,
-          groupDigest,
-          this.ordinal,
-          after,
-        ).first<StateRow & { key_digest: string }>(),
+      const ordinal = this.ordinal;
+      const page = await storage(() =>
+        nextReducerGroupStateStatement(this.database, this.runId, this.namespace, groupDigest, ordinal, after).all<
+          StateRow & { key_digest: string }
+        >(),
       );
-      if (!row) return;
-      if ((await sha256Text(row.content)) !== row.sha256)
-        throw new Error("Reducer state failed integrity verification.");
-      yield {
-        key: row.key_digest,
-        value: (await restorePartitionedRecord(this.database, this.runId, JSON.parse(row.content))) as T,
-        bytes: new TextEncoder().encode(row.content).byteLength,
-      };
-      after = row.key_digest;
+      if (!page.results.length) return;
+      for (const row of page.results) {
+        if ((await sha256Text(row.content)) !== row.sha256)
+          throw new Error("Reducer state failed integrity verification.");
+        yield {
+          key: row.key_digest,
+          value: (await restorePartitionedRecord(this.database, this.runId, JSON.parse(row.content))) as T,
+          bytes: new TextEncoder().encode(row.content).byteLength,
+        };
+        after = row.key_digest;
+        if (this.ordinal !== ordinal) break;
+      }
     }
   }
 
@@ -132,19 +179,23 @@ export class ReconciliationReducerIndex<T> {
   async *latestEntries(after = ""): AsyncGenerator<{ key: string; value: T }> {
     if (this.ordinal === 0) return;
     for (;;) {
-      const row: (StateRow & { key_digest: string }) | null = await storage(() =>
-        nextLatestReducerStateStatement(this.database, this.runId, this.namespace, this.ordinal, after).first<
+      const ordinal = this.ordinal;
+      const page = await storage(() =>
+        nextLatestReducerStateStatement(this.database, this.runId, this.namespace, ordinal, after).all<
           StateRow & { key_digest: string }
         >(),
       );
-      if (!row) return;
-      if ((await sha256Text(row.content)) !== row.sha256)
-        throw new Error("Reducer state failed integrity verification.");
-      yield {
-        key: row.key_digest,
-        value: (await restorePartitionedRecord(this.database, this.runId, JSON.parse(row.content))) as T,
-      };
-      after = row.key_digest;
+      if (!page.results.length) return;
+      for (const row of page.results) {
+        if ((await sha256Text(row.content)) !== row.sha256)
+          throw new Error("Reducer state failed integrity verification.");
+        yield {
+          key: row.key_digest,
+          value: (await restorePartitionedRecord(this.database, this.runId, JSON.parse(row.content))) as T,
+        };
+        after = row.key_digest;
+        if (this.ordinal !== ordinal) break;
+      }
     }
   }
 
@@ -250,6 +301,7 @@ export class ReconciliationReducerIndex<T> {
     const sha256 = await sha256Text(content);
     const groupDigest = this.group ? await sha256Text(this.group(value)) : null;
     return {
+      bytes: new TextEncoder().encode(content).byteLength,
       statement: () =>
         retainReducerStateStatement(
           this.database,
@@ -269,11 +321,13 @@ export class ReconciliationReducerIndex<T> {
           ));
         if (retained?.content !== content || retained.sha256 !== sha256)
           throw new Error("Reducer replay changed its immutable observation effect.");
-        this.written.add(digest);
-        this.lastWrite =
-          envelope.text_parts.length === 0 && new TextEncoder().encode(content).byteLength <= 32768
-            ? { digest, content }
-            : null;
+        if (this.ordinal === ordinal) {
+          this.written.add(digest);
+          this.lastWrite =
+            envelope.text_parts.length === 0 && new TextEncoder().encode(content).byteLength <= 32768
+              ? { digest, content }
+              : null;
+        }
       },
     };
   }

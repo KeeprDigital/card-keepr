@@ -5,6 +5,8 @@ import type { ReconciliationInputRecordCursor } from "./reconciliation-input";
 import type { ReconciliationRecordSink } from "./reconciliation-record-collection";
 import type {
   CatalogueStore,
+  CatalogueDraftEntity,
+  CatalogueEntityCollection,
   CatalogueProduct,
   CatalogueDistributionContext,
   ProductRelationship,
@@ -102,7 +104,9 @@ export async function reconcileProductReleaseState(
     for (const [name, retained] of Object.entries(indexes)) retained.resumeAt(checkpoint.value.indexes[name]!);
     warnings.resumeAt(checkpoint.value.warnings);
   }
+  let flushResults = async () => {};
   const save = async () => {
+    await flushResults();
     await retainReconciliationCheckpoint(database, runId, phase, ordinal, {
       stage,
       after,
@@ -158,6 +162,34 @@ export async function reconcileProductReleaseState(
       await action(value);
       after = value.id;
       await finishRecord();
+    }
+  };
+  const consumeNew = async <T extends { id: string }, K extends CatalogueEntityCollection>(
+    values: AsyncIterable<T>,
+    kind: K,
+    transform: (value: T) => Promise<CatalogueDraftEntity<K> | undefined>,
+  ) => {
+    let pending: CatalogueDraftEntity<K>[] = [];
+    let pendingBytes = 0;
+    const flush = async () => {
+      if (pending.length) await result.setMany(kind, pending);
+      pending = [];
+      pendingBytes = 0;
+    };
+    flushResults = flush;
+    try {
+      await consume(values, async (value) => {
+        const entity = await transform(value);
+        if (!entity) return;
+        const size = new TextEncoder().encode(JSON.stringify(entity)).byteLength;
+        if (pending.length && pendingBytes + size > 262144) await flush();
+        pending.push(entity);
+        pendingBytes += size;
+        if (pending.length === 16) await flush();
+      });
+      await flush();
+    } finally {
+      flushResults = async () => {};
     }
   };
   const runStage = async (expected: Stage, next: Stage, action: () => Promise<void>) => {
@@ -238,16 +270,33 @@ export async function reconcileProductReleaseState(
           game,
         );
         await warnings.push(...observation.warnings);
-        for (const product of observation.products) {
-          const previous = await groups.get(product.id);
-          const observations = [...(previous?.observations ?? []), product];
-          await assertProductGroupBudget(observations);
-          await groups.seed(product.id, { id: product.id, observations });
-        }
-        for (const context of observation.distributionContexts) {
-          const previous = await contexts.get(context.id);
-          const merged = aggregateContexts(previous ? [previous, context] : [context])[0]!;
-          await contexts.seed(context.id, merged);
+        for (
+          let index = 0;
+          index < Math.max(observation.products.length, observation.distributionContexts.length);
+          index++
+        ) {
+          const product = observation.products[index];
+          const context = observation.distributionContexts[index];
+          const [previousProduct, previousContext] =
+            product && context
+              ? await groups.getAlongside(product.id, { index: contexts, key: context.id })
+              : [
+                  product ? await groups.get(product.id) : undefined,
+                  context ? await contexts.get(context.id) : undefined,
+                ];
+          const group = product
+            ? { id: product.id, observations: [...(previousProduct?.observations ?? []), product] }
+            : undefined;
+          if (group) await assertProductGroupBudget(group.observations);
+          const merged = context
+            ? aggregateContexts(previousContext ? [previousContext, context] : [context])[0]!
+            : undefined;
+          if (group && merged) {
+            groups.beginObservation();
+            contexts.beginObservation();
+            await groups.setAlongside(group.id, group, { index: contexts, key: merged.id, value: merged });
+          } else if (group) await groups.seed(group.id, group);
+          else if (merged) await contexts.seed(merged.id, merged);
         }
         for (const relationship of observation.relationships) {
           const previous = await relationships.get(relationship.id);
@@ -295,10 +344,9 @@ export async function reconcileProductReleaseState(
     });
   });
   await runStage("new_products", "existing_contexts", async () => {
-    await consume(groups.entityValues(after), async (group) => {
+    await consumeNew(groups.entityValues(after), "products", async (group) => {
       if (priorProductCount > 0 && (await names.has(group.id))) return;
-      const product = resolveProduct(group.observations, game);
-      await result.set("products", product);
+      return resolveProduct(group.observations, game);
     });
   });
   await runStage("existing_contexts", "new_contexts", async () => {
@@ -317,9 +365,8 @@ export async function reconcileProductReleaseState(
     });
   });
   await runStage("new_contexts", "existing_relationships", async () => {
-    await consume(contexts.entityValues(after), async (context) => {
-      if (!(await priorContexts.has(context.id)))
-        await result.set("distribution_contexts", { ...context, observed: true });
+    await consumeNew(contexts.entityValues(after), "distribution_contexts", async (context) => {
+      if (!(await priorContexts.has(context.id))) return { ...context, observed: true };
     });
   });
   await runStage("existing_relationships", "new_relationships", async () => {
@@ -346,8 +393,8 @@ export async function reconcileProductReleaseState(
     });
   });
   await runStage("new_relationships", options.membershipEvidence ? "memberships" : "complete", async () => {
-    await consume(relationships.entityValues(after), async (relationship) => {
-      if (!(await priorRelationships.has(relationship.id))) await result.set("product_relationships", relationship);
+    await consumeNew(relationships.entityValues(after), "product_relationships", async (relationship) => {
+      if (!(await priorRelationships.has(relationship.id))) return relationship;
     });
   });
   let draft = result;

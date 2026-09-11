@@ -37,16 +37,17 @@ export async function claimObservationOrigin(
   ordinal: number,
 ) {
   type Origin = { observation_set_id: string; source_ordinal: number };
-  const inserted = await storage(() =>
-    retainObservationOriginStatement(database, runId, id, setId, ordinal).first<Origin>(),
+  const results = await storage(() =>
+    database.batch<Origin>([
+      retainObservationOriginStatement(database, runId, id, setId, ordinal),
+      normalizedObservationExistsStatement(database, runId, id),
+    ]),
   );
+  const inserted = results[0]?.results[0];
   const origin = inserted ?? (await storage(() => observationOriginStatement(database, runId, id).first<Origin>()));
   if (origin?.observation_set_id !== setId || origin.source_ordinal !== ordinal)
     throw new Error(`Duplicate Source Observation ${id} spans planned requests.`);
-}
-
-export async function hasNormalizedObservation(database: CatalogueStore, runId: string, id: string) {
-  return (await storage(() => normalizedObservationExistsStatement(database, runId, id).first())) !== null;
+  return (results[1]?.results.length ?? 0) > 0;
 }
 
 export async function retainNormalizedObservation(

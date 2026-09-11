@@ -10,7 +10,7 @@ import type {
 import { ReconciliationInputSequence } from "./reconciliation-input-sequence";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
 import { retainedEvidenceSelection, retainedEvidenceSelectionRequest } from "./reconciliation-selection";
-import { readSourceObservation } from "./reconciliation-source-observation";
+import { readSourceObservations } from "./reconciliation-source-observation";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { assertClosedRequestGraph } from "./reconciliation-source-graph";
 import {
@@ -25,7 +25,6 @@ import {
   normalizedCardErrata,
   hasNormalizedCardErrata,
   claimObservationOrigin,
-  hasNormalizedObservation,
   retainNormalizedObservation,
   stagedNormalizedObservations,
 } from "./reconciliation-normalized";
@@ -169,8 +168,7 @@ async function collectRetainedReconciliationObservation(
     return request !== undefined && isSelected(request) ? request : undefined;
   };
   type MetadataCursor =
-    | { stage: "requests"; sequenceNumber: number; requestId: string }
-    | { stage: "suffix"; index: number };
+    { stage: "requests"; sequenceNumber: number; requestId: string } | { stage: "suffix"; index: number };
   const metadataSequence = <T>(project: (selection: EvidenceSelection) => Promise<T[]>, suffix: T[] = []) =>
     new ReconciliationInputSequence<T, MetadataCursor>(async function* (after) {
       if (after?.stage !== "suffix")
@@ -289,7 +287,13 @@ async function collectRetainedReconciliationObservation(
       if (!isRecord(wrapped) || typeof wrapped.id !== "string") {
         throw new Error("Retained Source Observation identity is invalid.");
       }
-      await claimObservationOrigin(database, runId, wrapped.id, row.observation_set_id, sourceOrdinal);
+      const normalized = await claimObservationOrigin(
+        database,
+        runId,
+        wrapped.id,
+        row.observation_set_id,
+        sourceOrdinal,
+      );
       if (isRecord(wrapped.value) && wrapped.value.observation_type === "official_surface_evidence") {
         if (typeof wrapped.value.surface !== "string" || !Array.isArray(wrapped.value.records) || officialSurfaceSeen) {
           throw new Error("Retained Official Source surface evidence is invalid or duplicated.");
@@ -297,7 +301,7 @@ async function collectRetainedReconciliationObservation(
         officialSurfaceSeen = true;
         return;
       }
-      if (await hasNormalizedObservation(database, runId, wrapped.id)) return;
+      if (normalized) return;
       const retained = await attachRetainedPrintingImages(
         wrapped.value,
         async (url) => {
@@ -370,8 +374,12 @@ async function collectRetainedReconciliationObservation(
         throw new ReconciliationContinuation({ phase: "normalization", ordinal: checkpointOrdinal - 1 });
       work = workBytes = 0;
     };
-    for (let sourceOrdinal = startOrdinal; sourceOrdinal < row.observation_count; sourceOrdinal++) {
-      const wrapped = await readSourceObservation(database, row.observation_set_id, sourceOrdinal);
+    for await (const { ordinal: sourceOrdinal, value: wrapped } of readSourceObservations(
+      database,
+      row.observation_set_id,
+      startOrdinal,
+      row.observation_count,
+    )) {
       const value = isRecord(wrapped) ? wrapped.value : null;
       const appearance = isRecord(value) ? value.appearance_evidence : null;
       // Image retention also registers and settles a durable staging writer.
