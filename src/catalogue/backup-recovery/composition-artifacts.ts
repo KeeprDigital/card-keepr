@@ -116,8 +116,11 @@ async function verifyPrivateRoot(bucket: R2Bucket, images: R2Bucket, member: Pri
 async function readRoot(bucket: R2Bucket, digest: string, byteLength?: number) {
   if (typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest)) throw new Error("Invalid publication root digest.");
   const object = await bucket.get(`publication-artifacts/${digest}`);
-  if (!object || object.size > 524288 || (byteLength !== undefined && object.size !== byteLength))
+  if (!object) throw new Error("Publication root is unavailable or oversized.");
+  if (object.size > 524288 || (byteLength !== undefined && object.size !== byteLength)) {
+    await object.body.cancel();
     throw new Error("Publication root is unavailable or oversized.");
+  }
   const content = await object.text();
   if ((await sha256Text(content)) !== digest) throw new Error("Publication root digest mismatch.");
   return JSON.parse(content);
@@ -139,12 +142,25 @@ async function verifyReference(
     reference.byte_length > 20 * 1024 * 1024
   )
     throw new Error("Invalid publication artifact reference.");
+  const metadata = reference.object_key.startsWith("publication-artifacts/");
+  if (metadata && reference.byte_length > 524288) throw new Error("Publication metadata capacity exceeded.");
+  if (!metadata) {
+    if (
+      publicExport &&
+      (reference.object_key !== `catalogue-public-components/${reference.sha256}.ndjson.gz` ||
+        reference.byte_length > 4_000_000)
+    )
+      throw new Error("Invalid public export component reference.");
+    if (nodeLevel !== undefined && nodeLevel !== null) throw new Error("Expected a publication composition node.");
+  }
   const object = await (reference.object_key.startsWith("printing-images/") ? images : bucket).get(
     reference.object_key,
   );
-  if (!object || object.size !== reference.byte_length) throw new Error("Publication artifact missing or truncated.");
-  const metadata = reference.object_key.startsWith("publication-artifacts/");
-  if (metadata && object.size > 524288) throw new Error("Publication metadata capacity exceeded.");
+  if (!object) throw new Error("Publication artifact missing or truncated.");
+  if (object.size !== reference.byte_length) {
+    await object.body.cancel();
+    throw new Error("Publication artifact missing or truncated.");
+  }
   if (metadata) {
     const content = await object.text();
     if ((await sha256Text(content)) !== reference.sha256) throw new Error("Publication artifact digest mismatch.");
@@ -162,7 +178,7 @@ async function verifyReference(
       )
         throw new Error("Invalid bounded publication composition node.");
       let leaves = 0;
-      for (const child of value.children) {
+      const verifyChild = async (child: Reference & { descriptor?: Record<string, unknown> }) => {
         if (
           publicExport &&
           value.level === 0 &&
@@ -171,7 +187,7 @@ async function verifyReference(
             child.descriptor?.records !== 1)
         )
           throw new Error("Public export descriptor mismatch.");
-        leaves += await verifyReference(
+        return verifyReference(
           bucket,
           images,
           child,
@@ -179,6 +195,18 @@ async function verifyReference(
           value.level === 0 ? null : value.level - 1,
           publicExport,
         );
+      };
+      if (value.level === 0) {
+        // Leaf groups cannot recurse. Settle all four bodies before advancing or failing.
+        for (let offset = 0; offset < value.children.length; offset += 4) {
+          const results = await Promise.allSettled(value.children.slice(offset, offset + 4).map(verifyChild));
+          for (const result of results) {
+            if (result.status === "rejected") throw result.reason;
+            leaves += result.value;
+          }
+        }
+      } else {
+        for (const child of value.children) leaves += await verifyChild(child);
       }
       return leaves;
     } else if (
@@ -191,13 +219,6 @@ async function verifyReference(
       throw new Error("Invalid publication artifact contract.");
     return 1;
   } else {
-    if (
-      publicExport &&
-      (reference.object_key !== `catalogue-public-components/${reference.sha256}.ndjson.gz` ||
-        reference.byte_length > 4_000_000)
-    )
-      throw new Error("Invalid public export component reference.");
-    if (nodeLevel !== undefined && nodeLevel !== null) throw new Error("Expected a publication composition node.");
     const digest = createHash("sha256");
     const reader = object.body.getReader();
     for (;;) {

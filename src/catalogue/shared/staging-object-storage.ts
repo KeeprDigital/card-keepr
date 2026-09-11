@@ -53,7 +53,7 @@ export async function writeStagingObjects(
   bucket: R2Bucket,
   binding: StagingBinding,
   preparation: string,
-  objects: { key: string; content: string; options: R2PutOptions }[],
+  objects: { key: string; content: string | Uint8Array; options: R2PutOptions }[],
 ) {
   if (!objects.length) return;
   if (objects.length > 4) throw new Error("Staging writes exceed four objects.");
