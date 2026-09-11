@@ -32,7 +32,7 @@ permissions:
   contents: read
 jobs:
   focused:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
       TEST_WORKER: ${{ inputs.worker }}

@@ -119,14 +119,12 @@ test("partial object staging exhausts bounded retry and resumes without replacin
     status = (await post(path, { ...intent, sequence: status.sequence, idempotency_key: `images-${status.sequence}` }))
       .document;
   const before = status.artifact_count;
-  let puts = 0;
-  let stagedKey = "";
+  const puts = new Map<string, number>();
   const bucket = new Proxy(testEnv.CATALOGUE_EXPORTS, {
     get(target, property) {
       if (property === "put")
         return async (...args: Parameters<R2Bucket["put"]>) => {
-          puts++;
-          stagedKey = args[0];
+          puts.set(args[0], (puts.get(args[0]) ?? 0) + 1);
           await target.put(...args);
           throw new Error("Injected lost object PUT response");
         };
@@ -153,16 +151,21 @@ test("partial object staging exhausts bounded retry and resumes without replacin
     failures: 3,
     artifact_count: before,
   });
-  expect(puts).toBe(1);
-  const retainedBytes = await (await testEnv.CATALOGUE_EXPORTS.get(stagedKey))!.arrayBuffer();
+  expect(puts.size).toBeGreaterThan(0);
+  expect([...puts.values()]).toEqual([...puts.keys()].map(() => 1));
+  const retainedBytes = new Map<string, ArrayBuffer>();
+  for (const key of puts.keys())
+    retainedBytes.set(key, await (await testEnv.CATALOGUE_EXPORTS.get(key))!.arrayBuffer());
   const paused = status;
   status = (await post(path, { ...intent, sequence: status.sequence, resume: true, idempotency_key: "resume-partial" }))
     .document;
   expect(status).toMatchObject({ state: "preparing", deadline: paused.deadline, artifact_count: before });
   await finish(path, intent, status);
   const artifacts = (await get(`${path}/artifacts`)).document.artifacts as { object_key: string; reused: number }[];
-  expect(artifacts).toEqual(expect.arrayContaining([expect.objectContaining({ object_key: stagedKey, reused: 1 })]));
-  expect(await (await testEnv.CATALOGUE_EXPORTS.get(stagedKey))!.arrayBuffer()).toEqual(retainedBytes);
+  for (const [key, bytes] of retainedBytes) {
+    expect(artifacts).toEqual(expect.arrayContaining([expect.objectContaining({ object_key: key, reused: 1 })]));
+    expect(await (await testEnv.CATALOGUE_EXPORTS.get(key))!.arrayBuffer()).toEqual(bytes);
+  }
 });
 
 test("corrupt immutable image bytes fail distinctly and cannot be resumed", async () => {

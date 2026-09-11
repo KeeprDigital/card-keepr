@@ -22,7 +22,11 @@ import { assertIdentifier } from "../source-evidence";
 import { inspectGameCandidate } from "./game-candidate";
 import { gameCandidatePartitionStatement } from "./game-candidate-repository";
 import { reconciliationTextStatement } from "./reconciliation-text-repository";
-import { retainPublicationObject, verifyPublicationObject } from "./publication-artifact-storage";
+import {
+  publicationObjectBatch,
+  retainPublicationObject,
+  verifyPublicationObject,
+} from "./publication-artifact-storage";
 import * as repository from "./publication-preparation-repository";
 import {
   PublicationIntegrityError,
@@ -116,11 +120,6 @@ export async function advancePublicationPreparation(
     .first<{ request_json: string; result_json: string }>();
   if (replay) return replayResult(replay, request);
   const candidate = await inspectGameCandidate(db, id);
-  env = {
-    CATALOGUE_DB: db,
-    PRINTING_IMAGES: env.PRINTING_IMAGES,
-    CATALOGUE_EXPORTS: trackedStagingBucket(db, env.CATALOGUE_EXPORTS, "CATALOGUE_EXPORTS", candidate.preparation_id),
-  };
   const current = await repository.publicationPreparationStatement(db, id).first<PreparationState>();
   try {
     await repository
@@ -165,11 +164,22 @@ export async function advancePublicationPreparation(
         const cursor = JSON.parse(state.cursor_json) as PreparationCursor;
         const phase = state.phase;
         const readPartition = publicationPartitionReader(db, id);
+        const objects = publicationObjectBatch(db, env.CATALOGUE_EXPORTS, candidate.preparation_id);
+        const artifacts: (() => D1PreparedStatement)[] = [];
         // Amortize the guarded checkpoint over four sequential bounded artifacts.
         // A phase boundary commits before the next phase reads the receipts we staged.
         // Composition nodes also commit individually before a parent reads them.
         for (let unit = 0; unit < 4; unit++) {
-          const continueBatch = await prepareUnit(env, candidate, state, cursor, statements, readPartition);
+          const continueBatch = await prepareUnit(
+            env,
+            candidate,
+            state,
+            cursor,
+            statements,
+            readPartition,
+            objects,
+            artifacts,
+          );
           if (
             continueBatch === false ||
             phase === "composition" ||
@@ -178,6 +188,8 @@ export async function advancePublicationPreparation(
           )
             break;
         }
+        await objects.flush();
+        statements.push(...artifacts.map((receipt) => receipt()));
         state.cursor_json = canonicalJson(cursor);
         state.failures = 0;
         state.failure_code = null;
@@ -307,26 +319,32 @@ async function prepareUnit(
   cursor: PreparationCursor,
   statements: D1PreparedStatement[],
   readPartition: ReturnType<typeof publicationPartitionReader>,
+  objects: ReturnType<typeof publicationObjectBatch>,
+  artifacts: (() => D1PreparedStatement)[],
 ) {
   const db = env.CATALOGUE_DB,
     id = candidate.id;
   let boundBytes = 0;
   const artifact = (
     kind: string,
-    ref: { object_key: string; sha256: string; byte_length: number; reused: boolean },
+    reference:
+      | Awaited<ReturnType<typeof objects.stage>>
+      | { object_key: string; sha256: string; byte_length: number; reused: boolean },
   ) => {
-    statements.push(
-      repository.retainPublicationArtifact(
+    const ordinal = state.artifact_count++;
+    artifacts.push(() => {
+      const ref = "receipt" in reference ? reference.receipt() : reference;
+      return repository.retainPublicationArtifact(
         db,
         id,
-        state.artifact_count++,
+        ordinal,
         kind,
         ref.object_key,
         ref.sha256,
         ref.byte_length,
         ref.reused,
-      ),
-    );
+      );
+    });
   };
   if (state.phase === "composition") {
     const refs = (
@@ -338,8 +356,7 @@ async function prepareUnit(
     ).results;
     if (!refs.length) {
       if (cursor.level === 0 && cursor.node === 0) {
-        const empty = await retainPublicationObject(
-          env.CATALOGUE_EXPORTS,
+        const empty = await objects.stage(
           canonicalJson({ contract: "card-keepr-publication-composition-node@1", level: 0, children: [] }),
         );
         statements.push(
@@ -350,8 +367,7 @@ async function prepareUnit(
       }
       if (cursor.node === 1) {
         const root = (await repository.publicationNodes(db, id, cursor.level, -1).all<ArtifactReference>()).results[0]!;
-        const sealed = await retainPublicationObject(
-          env.CATALOGUE_EXPORTS,
+        const sealed = await objects.stage(
           canonicalJson({
             contract: "card-keepr-game-publication-artifacts@1",
             candidate_id: id,
@@ -372,8 +388,7 @@ async function prepareUnit(
       }
       return;
     }
-    const ref = await retainPublicationObject(
-      env.CATALOGUE_EXPORTS,
+    const ref = await objects.stage(
       canonicalJson({
         contract: "card-keepr-publication-composition-node@1",
         level: cursor.level,
@@ -489,11 +504,7 @@ async function prepareUnit(
     hash.update(bytes);
     cursor.text_hash = hash.checkpoint;
     cursor.text_bytes = (cursor.text_bytes ?? 0) + bytes.byteLength;
-    const ref = await retainPublicationObject(
-      env.CATALOGUE_EXPORTS,
-      chunk.content,
-      `publication-text/${part.sha256}/${cursor.chunk}`,
-    );
+    const ref = await objects.stage(chunk.content, `publication-text/${part.sha256}/${cursor.chunk}`);
     artifact("text", ref);
     statements.push(repository.retainPublicReadText(db, id, part.sha256, cursor.chunk, chunk.content));
     cursor.chunk++;
@@ -547,7 +558,7 @@ async function prepareUnit(
       ordinal: cursor.search_ordinal ?? 0,
       text: chunk,
     });
-    const ref = await retainPublicationObject(env.CATALOGUE_EXPORTS, content);
+    const ref = await objects.stage(content);
     statements.push(
       repository.retainPublicationSearchChunk(db, id, String(value.id), cursor.text, cursor.search_ordinal ?? 0, chunk),
     );
@@ -572,7 +583,7 @@ async function prepareUnit(
   });
   if (new TextEncoder().encode(content).byteLength > 524288)
     throw new PublicationIntegrityError("publication_capacity_exceeded");
-  if (state.phase === "exports") artifact(kind, await retainPublicationObject(env.CATALOGUE_EXPORTS, content));
+  if (state.phase === "exports") artifact(kind, await objects.stage(content));
   else {
     const projection = canonicalJson({
       contract: "card-keepr-game-query-batch@1",
@@ -594,7 +605,7 @@ async function prepareUnit(
     });
     boundBytes = new TextEncoder().encode(projection).byteLength;
     if (boundBytes > 524288) throw new PublicationIntegrityError("publication_capacity_exceeded");
-    const ref = await retainPublicationObject(env.CATALOGUE_EXPORTS, projection);
+    const ref = await objects.stage(projection);
     statements.push(repository.retainPublicationProjection(db, id, state.artifact_count, kind, projection, ref.sha256));
     statements.push(repository.retainPublicationQueryDocument(db, id, kind, String(value.id), state.artifact_count));
     statements.push(
@@ -613,8 +624,7 @@ async function prepareUnit(
       statements.push(retainPublicLifecycle(db, lifecycle));
       artifact(
         "public_lifecycle",
-        await retainPublicationObject(
-          env.CATALOGUE_EXPORTS,
+        await objects.stage(
           canonicalJson({
             contract: "card-keepr-game-export-record@1",
             kind: "public_lifecycle",

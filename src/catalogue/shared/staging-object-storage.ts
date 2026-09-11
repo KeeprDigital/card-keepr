@@ -46,3 +46,40 @@ export function trackedStagingBucket(
     },
   });
 }
+
+/** Own every write before starting I/O, then settle only calls with a known result. */
+export async function writeStagingObjects(
+  db: CatalogueStore,
+  bucket: R2Bucket,
+  binding: StagingBinding,
+  preparation: string,
+  objects: { key: string; content: string; options: R2PutOptions }[],
+) {
+  if (!objects.length) return;
+  if (objects.length > 4) throw new Error("Staging writes exceed four objects.");
+  const writes = objects.map((object) => ({ ...object, token: crypto.randomUUID() }));
+  await db.batch(
+    writes.flatMap(({ key, token }) =>
+      beginStagingWrite(db, preparation, binding, key, token, new Date().toISOString()),
+    ),
+  );
+  const results = await Promise.allSettled(
+    writes.map(async ({ key, content, options, token }) =>
+      bucket.put(key, content, {
+        ...options,
+        customMetadata: { ...options.customMetadata, cleanup_writer_token: token },
+      }),
+    ),
+  );
+  const completed = writes.filter((_, index) => results[index]!.status === "fulfilled");
+  if (completed.length)
+    await db.batch(completed.map(({ token }) => finishStagingWrite(db, token, new Date().toISOString())));
+  const observed = trackedStagingBucket(db, bucket, binding, preparation);
+  const observations = await Promise.allSettled(
+    writes.flatMap(({ key }, index) => {
+      const result = results[index]!;
+      return result.status === "fulfilled" && result.value === null ? [observed.head(key)] : [];
+    }),
+  );
+  for (const result of [...results, ...observations]) if (result.status === "rejected") throw result.reason;
+}

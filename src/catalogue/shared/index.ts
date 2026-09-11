@@ -52,10 +52,7 @@ export type {
   CuratedRelationshipTarget,
 } from "./curated-provenance";
 export { type DocumentSchema, decodeDocument } from "./document-decoder";
-export {
-  deterministicGzip,
-  deterministicGzipStream,
-} from "./export-compression";
+export { deterministicGzip, deterministicGzipStream } from "./export-compression";
 export {
   CatalogueExportLimitError,
   maximumCatalogueExportBytes,
@@ -63,11 +60,7 @@ export {
   maximumExportComponentBytes,
   maximumExportRecordBytes,
 } from "./export-limits";
-export {
-  catalogueRevisionIdentity,
-  evidenceRunIdentity,
-  replayByDigest,
-} from "./idempotent-identities";
+export { catalogueRevisionIdentity, evidenceRunIdentity, replayByDigest } from "./idempotent-identities";
 export { runStartGuardStatement, runTransitionGuardStatement } from "./ingestion-guards-repository";
 export {
   createRunEventStatement,
@@ -127,14 +120,7 @@ export {
   sourceVocabularyWarning,
 } from "./reconciliation-profile";
 export { isReleaseActor, isReleaseDigest, isReleaseHead, isReleaseIdentity } from "./release-input-shapes.mjs";
-export {
-  canonicalJson,
-  canonicalNdjson,
-  compareUtf8,
-  sha256,
-  sha256Text,
-  utf8,
-} from "./serialization";
+export { canonicalJson, canonicalNdjson, compareUtf8, sha256, sha256Text, utf8 } from "./serialization";
 export { SPINE_REVISION_ID } from "./spine-revision.mjs";
 export { StreamingSha256, type StreamingSha256State } from "./streaming-sha256";
 export {
@@ -177,7 +163,7 @@ export {
   publicationBackupReservationStatement,
   publishedCompositionStatement,
 } from "./publication-composition-repository";
-export { trackedStagingBucket } from "./staging-object-storage";
+export { trackedStagingBucket, writeStagingObjects } from "./staging-object-storage";
 
 export { sharedCuratableFieldSchemas } from "./curated-field-schemas";
 export { validCuratedField } from "./curated-field-validation";
