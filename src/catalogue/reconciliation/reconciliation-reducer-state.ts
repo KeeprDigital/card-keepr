@@ -8,6 +8,7 @@ import {
   exactReducerStateStatement,
   reducerStateStatement,
   retainReducerStateStatement,
+  reducerStateLookupPageStatement,
 } from "./reconciliation-reducer-state-repository";
 
 export class ReconciliationReducerStorageError extends Error {
@@ -128,6 +129,53 @@ export class ReconciliationReducerIndex<T> {
       left.statement ? await this.restoreRow(results[position++]?.results[0] ?? null) : left.cached,
       right.statement ? await other.index.restoreRow(results[position]?.results[0] ?? null) : right.cached,
     ];
+  }
+
+  /** An optional bounded predecessor window; large matches keep the single-record path. */
+  async getMany(keys: readonly string[]): Promise<Map<string, T | undefined> | null> {
+    const unique = [...new Set(keys)];
+    if (unique.length > 16) throw new Error("Reducer lookup window exceeds 16 keys.");
+    if (!this.ordinal || !unique.length) return new Map(unique.map((key) => [key, undefined]));
+    const requests: { digest: string; before: number }[] = [];
+    for (const key of unique) {
+      const digest = await sha256Text(key);
+      requests.push({ digest, before: this.ordinal + (this.completedPrefix || this.written.has(digest) ? 1 : 0) });
+    }
+    const page = await storage(() =>
+      reducerStateLookupPageStatement(this.database, this.runId, this.namespace, requests).all<
+        StateRow & { request_ordinal: number }
+      >(),
+    );
+    if (page.results.length !== unique.length) return null;
+    const values = new Map<string, T | undefined>();
+    for (const [index, row] of page.results.entries()) {
+      if (Number(row.request_ordinal) !== index) throw new Error("Reducer lookup window is incomplete.");
+      values.set(unique[index]!, row.content === null ? undefined : await this.restoreRow(row));
+    }
+    return values;
+  }
+
+  /** History rows and their entity counts commit together, preserving each index's seed ordinals. */
+  async seedManyAlongside<U>(
+    entries: readonly { key: string; value: T }[],
+    other: { index: ReconciliationReducerIndex<U>; entries: readonly { key: string; value: U }[] },
+  ) {
+    if (this.database !== other.index.database || entries.length + other.entries.length > 16)
+      throw new Error("Invalid paired reducer seed batch.");
+    const writes: Awaited<ReturnType<typeof this.prepareWrite>>[] = [];
+    for (const entry of entries) {
+      this.beginObservation();
+      writes.push(await this.prepareWrite(entry.key, entry.value));
+    }
+    for (const entry of other.entries) {
+      other.index.beginObservation();
+      writes.push(await other.index.prepareWrite(entry.key, entry.value));
+    }
+    if (!writes.length) return;
+    if (writes.reduce((sum, write) => sum + write.bytes, 0) > 262144)
+      throw new Error("Paired reducer seed batch exceeds 256 KiB.");
+    const results = await storage(() => this.database.batch<StateRow>(writes.map((write) => write.statement())));
+    for (const [index, write] of writes.entries()) await write.accept(results[index]?.results[0] ?? null);
   }
 
   /** Query only the predecessor view; call before this observation writes matching state. */

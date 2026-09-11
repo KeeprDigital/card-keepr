@@ -53,8 +53,10 @@ export async function prepareNativeSourceHistory(
   preparation: string,
   finishCurrent: boolean,
   yieldAtCheckpoint: boolean,
+  retainedCandidate?: SourceHistoryCandidate,
 ) {
-  const current = await sourceHistoryCandidateStatement(db, preparation).first<SourceHistoryCandidate>();
+  const current =
+    retainedCandidate ?? (await sourceHistoryCandidateStatement(db, preparation).first<SourceHistoryCandidate>());
   if (!current) return null;
   requireCandidate(current, current.supported_game, false);
   let checkpoint = await reconciliationCheckpoint<SharedCheckpoint>(db, preparation, "disappearance_warnings");
@@ -84,7 +86,15 @@ export async function prepareNativeSourceHistory(
   const visited = new ReconciliationReducerIndex<boolean>(db, preparation, "source_history_visited");
   walk.resumeAt(cursor.walkPosition);
   visited.resumeAt(cursor.visitedPosition);
+  let pendingHistory: SourceHistoryRecord[] = [];
+  let pendingHistoryBytes = 2;
+  const flushHistory = async () => {
+    if (pendingHistory.length) await history.retainObservations(pendingHistory);
+    pendingHistory = [];
+    pendingHistoryBytes = 2;
+  };
   const save = async () => {
+    await flushHistory();
     cursor.history = history.cursor;
     cursor.walkPosition = walk.position;
     cursor.visitedPosition = visited.position;
@@ -100,6 +110,7 @@ export async function prepareNativeSourceHistory(
   let planFrame: Frame | undefined;
   try {
     while (cursor.stage !== "complete") {
+      if (cursor.stage !== "observations") await flushHistory();
       if (cursor.stage === "prior_ready") {
         if (!finishCurrent) break;
         cursor.finishing = true;
@@ -222,7 +233,14 @@ export async function prepareNativeSourceHistory(
           const events = historyObservation(frame, plan);
           if (cursor.planPart < events.length) {
             const event = events[cursor.planPart++]!;
-            await history.retain(event, { preserveFirst: true });
+            const size = new TextEncoder().encode(canonicalJson(event)).byteLength + 1;
+            if (pendingHistory.length && (pendingHistory.length === 8 || pendingHistoryBytes + size > 131072))
+              await flushHistory();
+            if (size + 2 > 131072) await history.retain(event, { preserveFirst: true });
+            else {
+              pendingHistory.push(event);
+              pendingHistoryBytes += size;
+            }
           }
           if (cursor.planPart === events.length) {
             cursor.after = plan.sourceObservationId;

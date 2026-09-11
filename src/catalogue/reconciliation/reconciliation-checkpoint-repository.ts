@@ -33,14 +33,14 @@ export function reconciliationCheckpointWindowStatement(
       `SELECT phase, ordinal, content, sha256 FROM (
     SELECT *, sum(COALESCE(length(CAST(content AS BLOB)), 0)) OVER (ORDER BY phase) AS bytes FROM (
       SELECT requested.value AS phase, checkpoint.ordinal, checkpoint.content, checkpoint.sha256
-      FROM json_each(?2) AS requested LEFT JOIN reconciliation_checkpoints AS checkpoint
+      FROM json_each(json_array(${phases.map((_, index) => `?${index + 2}`).join(",")})) AS requested LEFT JOIN reconciliation_checkpoints AS checkpoint
         ON checkpoint.preparation_id = ?1 AND checkpoint.phase = requested.value
         AND checkpoint.ordinal = (SELECT max(latest.ordinal) FROM reconciliation_checkpoints AS latest
           WHERE latest.preparation_id = ?1 AND latest.phase = requested.value)
     )
   ) WHERE bytes <= 393216 ORDER BY phase`,
     )
-    .bind(preparationId, JSON.stringify(phases));
+    .bind(preparationId, ...phases);
 }
 export function exactReconciliationCheckpointStatement(
   database: CatalogueStore,

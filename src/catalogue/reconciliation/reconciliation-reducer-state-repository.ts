@@ -1,5 +1,28 @@
 import { type CatalogueStore, repositoryStatements } from "../shared";
 
+/** Left joins retain missing keys; the byte bound lets callers fall back without buffering large matches. */
+export function reducerStateLookupPageStatement(
+  database: CatalogueStore,
+  preparationId: string,
+  namespace: string,
+  requests: { digest: string; before: number }[],
+) {
+  return repositoryStatements(database)
+    .prepare(
+      `SELECT request_ordinal, content, sha256 FROM (
+    SELECT requested.key AS request_ordinal, state.content, state.sha256,
+      sum(COALESCE(length(CAST(state.content AS BLOB)), 0)) OVER (ORDER BY CAST(requested.key AS INTEGER)) AS bytes
+    FROM json_each(?3) AS requested LEFT JOIN reconciliation_reducer_state AS state
+      ON state.preparation_id = ?1 AND state.namespace = ?2
+      AND state.key_digest = json_extract(requested.value, '$.digest')
+      AND state.observation_ordinal = (SELECT max(latest.observation_ordinal) FROM reconciliation_reducer_state AS latest
+        WHERE latest.preparation_id = ?1 AND latest.namespace = ?2 AND latest.key_digest = state.key_digest
+          AND latest.observation_ordinal < json_extract(requested.value, '$.before'))
+  ) WHERE bytes <= 131072 ORDER BY CAST(request_ordinal AS INTEGER)`,
+    )
+    .bind(preparationId, namespace, JSON.stringify(requests));
+}
+
 export function reducerStateStatement(
   database: CatalogueStore,
   preparationId: string,

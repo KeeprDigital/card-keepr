@@ -1,4 +1,6 @@
 import { prepareNativeSourceHistory } from "./native-source-history";
+import { sourceHistoryCandidateStatement, type SourceHistoryCandidate } from "./native-source-history-repository";
+import { correctionPinStatement } from "./identity-correction-repository";
 import { type CheckedCardScope } from "./scoped-disappearance";
 import {
   nativePrintingMatches,
@@ -29,6 +31,7 @@ import {
   reconciliationCheckpoint,
   retainReconciliationCheckpoint,
   prepareCheckpointReadWindow,
+  type CheckpointRow,
 } from "./reconciliation-checkpoint";
 import type { NativePrintingIdentity } from "./prior-state-types";
 import { candidateAtRevision, type PriorStatePositions } from "./reconciliation-prior-state";
@@ -50,8 +53,12 @@ import {
 import { CandidateImageStorageError } from "./reconciliation-images";
 import { productReleaseHasNoRelationships } from "./product-release-catalogue";
 import { initializeReconciliationProgress } from "./reconciliation-progress";
-import { reconciliationWriterGuard } from "./reconciliation-progress-repository";
-import { pinCorrectionDecisions, pinnedCardIdentityResolver } from "./identity-correction-pins";
+import {
+  reconciliationWriterGuard,
+  reconciliationOperationHeaderStatement,
+} from "./reconciliation-progress-repository";
+import { latestReconciliationCheckpointStatement } from "./reconciliation-checkpoint-repository";
+import { pinCorrectionDecisions, pinnedCardIdentityResolver, type CorrectionPin } from "./identity-correction-pins";
 import {
   assessSourceAdmission,
   completeSourceAdmission,
@@ -191,15 +198,45 @@ export async function reconcileRetainedCardPrintingEvidence(
   generation = 0,
   yieldAtCheckpoint = false,
 ): Promise<Record<string, unknown>> {
-  const replay = await finalizedReconciliationResult(database, runId, generation);
+  // A single read transaction captures the callback's run, definitions, and two reduction cursors.
+  // Every later mutation still checks the live writer generation and predecessor in its own transaction.
+  const context = await database.batch([
+    reconciliationRunStateStatement(database, runId),
+    activeParsingRunStatement(database, runId),
+    reconciliationOperationHeaderStatement(database, runId),
+    latestReconciliationCheckpointStatement(database, runId, "official_errata"),
+    latestReconciliationCheckpointStatement(database, runId, "official_reduction"),
+    sourceHistoryCandidateStatement(database, runId),
+    correctionPinStatement(database, runId),
+  ]);
+  const state = context[0]?.results[0] as NativePreparationGuardState | undefined;
+  const replay = await finalizedReconciliationResult(database, runId, generation, state ?? null);
   if (replay !== null) return replay;
-  const run = await requiredActiveParsingRun(database, runId);
-  await initializeReconciliationProgress(database, runId, observedAt);
+  const run = requiredActiveParsingRun((context[1]?.results[0] as ActiveRunRow | undefined) ?? null, runId);
+  const definitions = context[2]?.results[0] as { definition_pins_json: string } | undefined;
+  await initializeReconciliationProgress(
+    database,
+    runId,
+    observedAt,
+    undefined,
+    definitions?.definition_pins_json ?? null,
+  );
   const base = database;
   database = guardedCatalogueStore(base, () => reconciliationWriterGuard(base, runId, generation));
-  const errataReduction = await reconciliationCheckpoint<OfficialReductionCursor>(database, runId, "official_errata");
+  const errataReduction = await reconciliationCheckpoint<OfficialReductionCursor>(
+    database,
+    runId,
+    "official_errata",
+    (context[3]?.results[0] as CheckpointRow | undefined) ?? null,
+  );
   const reduction =
-    errataReduction ?? (await reconciliationCheckpoint<OfficialReductionCursor>(database, runId, "official_reduction"));
+    errataReduction ??
+    (await reconciliationCheckpoint<OfficialReductionCursor>(
+      database,
+      runId,
+      "official_reduction",
+      (context[4]?.results[0] as CheckpointRow | undefined) ?? null,
+    ));
   if (errataReduction?.value.errataComplete && yieldAtCheckpoint) {
     await prepareCheckpointReadWindow(database, runId, [
       ...errataReduction.value.productGames.map((game) => `product_reduction:${game}`),
@@ -454,7 +491,12 @@ export async function reconcileRetainedCardPrintingEvidence(
   if (!reduction) await pinCorrectionDecisions(database, runId, JSON.parse(run.selected_games_json) as string[]);
   let correctedCardIdentity: Awaited<ReturnType<typeof pinnedCardIdentityResolver>>;
   try {
-    correctedCardIdentity = await pinnedCardIdentityResolver(database, runId, yieldAtCheckpoint);
+    correctedCardIdentity = await pinnedCardIdentityResolver(
+      database,
+      runId,
+      yieldAtCheckpoint,
+      context[6]?.results[0] as CorrectionPin | undefined,
+    );
   } catch (error) {
     if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
     throw error;
@@ -520,7 +562,13 @@ export async function reconcileRetainedCardPrintingEvidence(
   }
   let sourceHistory: Awaited<ReturnType<typeof prepareNativeSourceHistory>>;
   try {
-    sourceHistory = await prepareNativeSourceHistory(database, runId, false, yieldAtCheckpoint);
+    sourceHistory = await prepareNativeSourceHistory(
+      database,
+      runId,
+      false,
+      yieldAtCheckpoint,
+      context[5]?.results[0] as SourceHistoryCandidate | undefined,
+    );
   } catch (error) {
     if (error instanceof ReconciliationContinuation) return { continuation: error.checkpoint };
     throw error;
@@ -1892,7 +1940,13 @@ export async function reconcileRetainedCardPrintingEvidence(
   const { draft: official, observedCards, observedPrintings } = assembled;
   const checkedSourceLineages = errataOnlyEvidence ? [] : [...completeLineages].sort();
   try {
-    sourceHistory = await prepareNativeSourceHistory(database, runId, true, yieldAtCheckpoint);
+    sourceHistory = await prepareNativeSourceHistory(
+      database,
+      runId,
+      true,
+      yieldAtCheckpoint,
+      context[5]?.results[0] as SourceHistoryCandidate | undefined,
+    );
     await prepareDisappearanceWarnings(
       database,
       runId,
@@ -2131,8 +2185,8 @@ async function finalizedReconciliationResult(
   database: CatalogueStore,
   runId: string,
   generation: number,
+  row: NativePreparationGuardState | null,
 ): Promise<Record<string, unknown> | null> {
-  const row = await reconciliationRunStateStatement(database, runId).first<NativePreparationGuardState>();
   if (row?.supported_game) {
     const terminal = independentGamePreparationResult(runId, row, generation);
     if (terminal) return terminal;
@@ -2418,8 +2472,7 @@ function printingImageEvidenceEquivalent(left: CataloguePrintingImage, right: Ca
   return canonicalJson(leftEvidence) === canonicalJson(rightEvidence);
 }
 
-async function requiredActiveParsingRun(database: CatalogueStore, runId: string): Promise<ActiveRunRow> {
-  const row = await activeParsingRunStatement(database, runId).first<ActiveRunRow>();
+function requiredActiveParsingRun(row: ActiveRunRow | null, runId: string): ActiveRunRow {
   if (
     row === null ||
     (row.supported_game === null && row.active_ingestion_run_id !== runId) ||
