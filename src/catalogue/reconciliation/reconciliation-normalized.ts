@@ -29,55 +29,61 @@ export async function hasNormalizedCardErrata(database: CatalogueStore, runId: s
   return (await storage(() => normalizedCardErrataExistStatement(database, runId).first())) !== null;
 }
 
-export async function claimObservationOrigin(
+export async function claimObservationOrigins(
   database: CatalogueStore,
   runId: string,
-  id: string,
   setId: string,
-  ordinal: number,
+  observations: readonly { id: string; ordinal: number }[],
 ) {
+  if (observations.length > 8) throw new Error("Observation origin batch exceeds eight records.");
   type Origin = { observation_set_id: string; source_ordinal: number };
-  const results = await storage(() =>
-    database.batch<Origin>([
-      retainObservationOriginStatement(database, runId, id, setId, ordinal),
-      normalizedObservationExistsStatement(database, runId, id),
-    ]),
-  );
-  const inserted = results[0]?.results[0];
-  const origin = inserted ?? (await storage(() => observationOriginStatement(database, runId, id).first<Origin>()));
-  if (origin?.observation_set_id !== setId || origin.source_ordinal !== ordinal)
-    throw new Error(`Duplicate Source Observation ${id} spans planned requests.`);
-  return (results[1]?.results.length ?? 0) > 0;
+  const results = await storage(() => database.batch<Origin>(observations.flatMap(({ id, ordinal }) => [
+    retainObservationOriginStatement(database, runId, id, setId, ordinal),
+    normalizedObservationExistsStatement(database, runId, id),
+  ])));
+  const normalized = new Set<string>();
+  for (const [index, { id, ordinal }] of observations.entries()) {
+    const inserted = results[index * 2]?.results[0];
+    const origin = inserted ?? await storage(() => observationOriginStatement(database, runId, id).first<Origin>());
+    if (origin?.observation_set_id !== setId || origin.source_ordinal !== ordinal)
+      throw new Error(`Duplicate Source Observation ${id} spans planned requests.`);
+    if (results[index * 2 + 1]?.results.length) normalized.add(id);
+  }
+  return normalized;
 }
 
-export async function retainNormalizedObservation(
-  database: CatalogueStore,
-  runId: string,
-  id: string,
-  record: unknown,
-  cardErratumTarget: { game: string; officialIdentity: unknown } | null = null,
-) {
-  const envelope = await retainPartitionedRecord(database, runId, JSON.parse(JSON.stringify(record)));
-  const content = canonicalJson(envelope);
-  if (new TextEncoder().encode(content).byteLength > 524286)
-    throw new Error("reconciliation_capacity_exceeded: one normalized observation exceeds 512 KiB.");
-  const sha256 = await sha256Text(content);
-  const targetDigest =
-    cardErratumTarget === null
-      ? null
-      : await sha256Text(canonicalJson([cardErratumTarget.game, cardErratumTarget.officialIdentity]));
-  type Retained = { content: string; sha256: string; card_erratum_target_digest: string | null };
-  const inserted = await storage(() =>
-    retainNormalizedObservationStatement(database, runId, id, content, sha256, targetDigest).first<Retained>(),
-  );
-  const retained =
-    inserted ?? (await storage(() => normalizedObservationStatement(database, runId, id).first<Retained>()));
-  if (
-    retained?.content !== content ||
-    retained.sha256 !== sha256 ||
-    retained.card_erratum_target_digest !== targetDigest
-  )
-    throw new Error("Normalized observation replay changed its immutable content.");
+type NormalizedWrite = { id: string; content: string; sha256: string; card_erratum_target_digest: string | null };
+/** Flush immutable normalized effects before their cursor, and before returning an image receipt. */
+export class NormalizedObservationBatch {
+  private pending: NormalizedWrite[] = [];
+  private bytes = 0;
+  constructor(private database: CatalogueStore, private runId: string) {}
+
+  async retain(id: string, record: unknown, cardErratumTarget: { game: string; officialIdentity: unknown } | null = null) {
+    const envelope = await retainPartitionedRecord(this.database, this.runId, JSON.parse(JSON.stringify(record)));
+    const content = canonicalJson(envelope);
+    const size = new TextEncoder().encode(content).byteLength;
+    if (size > 524286) throw new Error("reconciliation_capacity_exceeded: one normalized observation exceeds 512 KiB.");
+    const sha256 = await sha256Text(content);
+    const target = cardErratumTarget === null ? null : await sha256Text(canonicalJson([cardErratumTarget.game, cardErratumTarget.officialIdentity]));
+    if (this.pending.length && (this.pending.length === 16 || this.bytes + size > 262144)) await this.flush();
+    this.pending.push({ id, content, sha256, card_erratum_target_digest: target });
+    this.bytes += size;
+  }
+
+  async flush() {
+    if (!this.pending.length) return;
+    const results = await storage(() => this.database.batch<NormalizedWrite>(this.pending.map((write) =>
+      retainNormalizedObservationStatement(this.database, this.runId, write.id, write.content, write.sha256, write.card_erratum_target_digest),
+    )));
+    for (const [index, write] of this.pending.entries()) {
+      const retained = results[index]?.results[0] ?? await storage(() => normalizedObservationStatement(this.database, this.runId, write.id).first<NormalizedWrite>());
+      if (retained?.content !== write.content || retained.sha256 !== write.sha256 || retained.card_erratum_target_digest !== write.card_erratum_target_digest)
+        throw new Error("Normalized observation replay changed its immutable content.");
+    }
+    this.pending = [];
+    this.bytes = 0;
+  }
 }
 
 /** Generated Source Observation IDs use lowercase ASCII digests and decimal suffixes; this preserves their existing lexical order. */

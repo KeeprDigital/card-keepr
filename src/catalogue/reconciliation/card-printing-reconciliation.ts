@@ -1922,8 +1922,14 @@ export async function reconcileRetainedCardPrintingEvidence(
         errata: currentErrata,
         plans,
         games: evidenceGames,
-        observedCard: async (id) =>
-          (await localCardFacts.has(id)) || (await targetedCardIds.has(id)) || (await admittedEntities.hasCard(id)),
+        observedCards: async (ids) => {
+          const facts = await localCardFacts.getMany(ids);
+          const observed = new Set<string>();
+          for (const id of ids)
+            if ((facts ? facts.get(id) !== undefined : await localCardFacts.has(id)) ||
+              await targetedCardIds.has(id) || await admittedEntities.hasCard(id)) observed.add(id);
+          return observed;
+        },
         observedPrinting: async (id) =>
           (await plans.hasObserved("printing", id)) ||
           (await targetedPrintingIds.has(id)) ||

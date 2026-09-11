@@ -10,7 +10,7 @@ import type {
 import { ReconciliationInputSequence } from "./reconciliation-input-sequence";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
 import { retainedEvidenceSelection, retainedEvidenceSelectionRequest } from "./reconciliation-selection";
-import { readSourceObservations } from "./reconciliation-source-observation";
+import { readSourceObservations, sourceObservationBatches } from "./reconciliation-source-observation";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { assertClosedRequestGraph } from "./reconciliation-source-graph";
 import {
@@ -24,8 +24,8 @@ import { prepareSourceDocuments, readSourceDocument } from "./reconciliation-sou
 import {
   normalizedCardErrata,
   hasNormalizedCardErrata,
-  claimObservationOrigin,
-  retainNormalizedObservation,
+  claimObservationOrigins,
+  NormalizedObservationBatch,
   stagedNormalizedObservations,
 } from "./reconciliation-normalized";
 import {
@@ -283,17 +283,11 @@ async function collectRetainedReconciliationObservation(
     const continuingDocument = normalized?.value.requestId === request.request_id && !normalized.value.complete;
     let officialSurfaceSeen = continuingDocument ? normalized!.value.officialSurfaceSeen : false;
     const sourceSurface = await sourceSurfaceForRequest(request, selectedRequestById, row);
-    const normalize = async (wrapped: unknown, sourceOrdinal: number) => {
+    const writes = new NormalizedObservationBatch(database, runId);
+    const normalize = async (wrapped: unknown, normalized: boolean) => {
       if (!isRecord(wrapped) || typeof wrapped.id !== "string") {
         throw new Error("Retained Source Observation identity is invalid.");
       }
-      const normalized = await claimObservationOrigin(
-        database,
-        runId,
-        wrapped.id,
-        row.observation_set_id,
-        sourceOrdinal,
-      );
       if (isRecord(wrapped.value) && wrapped.value.observation_type === "official_surface_evidence") {
         if (typeof wrapped.value.surface !== "string" || !Array.isArray(wrapped.value.records) || officialSurfaceSeen) {
           throw new Error("Retained Official Source surface evidence is invalid or duplicated.");
@@ -337,9 +331,7 @@ async function collectRetainedReconciliationObservation(
         selectedPlans.find((plan) => plan.source_lineage === row.source_lineage)?.coverage?.subset,
       );
       assertObservationAuthority(parsed, adapter, sourceSurface);
-      await retainNormalizedObservation(
-        database,
-        runId,
+      await writes.retain(
         wrapped.id,
         {
           ...parsed,
@@ -356,11 +348,13 @@ async function collectRetainedReconciliationObservation(
           ? { game: parsed.game, officialIdentity: parsed.target.officialIdentity }
           : null,
       );
+      if (parsed.kind === "card_printing" && parsed.printingImages.length) await writes.flush();
     };
     const startOrdinal = continuingDocument ? normalized!.value.nextObservationOrdinal : 0;
     let work = 0,
       workBytes = 0;
     const savePrefix = async (nextObservationOrdinal: number) => {
+      await writes.flush();
       await retainReconciliationCheckpoint(database, runId, "normalization", checkpointOrdinal++, {
         inputDigest,
         sequenceNumber: request.sequence_number,
@@ -374,24 +368,28 @@ async function collectRetainedReconciliationObservation(
         throw new ReconciliationContinuation({ phase: "normalization", ordinal: checkpointOrdinal - 1 });
       work = workBytes = 0;
     };
-    for await (const { ordinal: sourceOrdinal, value: wrapped } of readSourceObservations(
-      database,
-      row.observation_set_id,
-      startOrdinal,
-      row.observation_count,
-    )) {
+    for await (const batch of sourceObservationBatches(readSourceObservations(
+      database, row.observation_set_id, startOrdinal, row.observation_count,
+    ))) {
+      const origins = batch.map(({ ordinal, value }) => {
+        if (!isRecord(value) || typeof value.id !== "string") throw new Error("Retained Source Observation identity is invalid.");
+        return { id: value.id, ordinal };
+      });
+      const retained = await claimObservationOrigins(database, runId, row.observation_set_id, origins);
+      for (const { ordinal: sourceOrdinal, value: wrapped, byteLength: size } of batch) {
       const value = isRecord(wrapped) ? wrapped.value : null;
       const appearance = isRecord(value) ? value.appearance_evidence : null;
       // Image retention also registers and settles a durable staging writer.
       const cost = 1 + (isRecord(appearance) && Array.isArray(appearance.images) ? 2 * appearance.images.length : 0);
-      const size = new TextEncoder().encode(canonicalJson(wrapped)).byteLength;
       if (work > 0 && (work + cost > 16 || workBytes + size > 512000)) await savePrefix(sourceOrdinal);
-      await normalize(wrapped, sourceOrdinal);
+      await normalize(wrapped, retained.has((wrapped as { id: string }).id));
       work += cost;
       workBytes += size;
       if ((work >= 16 || workBytes >= 512000) && sourceOrdinal + 1 < row.observation_count)
         await savePrefix(sourceOrdinal + 1);
+      }
     }
+    await writes.flush();
     await retainReconciliationCheckpoint(database, runId, "normalization", checkpointOrdinal++, {
       inputDigest,
       sequenceNumber: request.sequence_number,

@@ -6,7 +6,7 @@ import {
   sourceRecordPage,
   type SourceRecordRow,
 } from "../source-evidence";
-import { type CatalogueStore, sha256Text } from "../shared";
+import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { documentStorage } from "./reconciliation-document";
 export async function readSourceObservation(
   database: CatalogueStore,
@@ -54,4 +54,21 @@ async function restoreObservation(database: CatalogueStore, setId: string, recor
         documentStorage,
       )
     : wrapped;
+}
+
+/** Hydrated normalization inputs have their own bound, independent of the stored page size. */
+export async function* sourceObservationBatches(source: AsyncIterable<{ ordinal: number; value: unknown }>) {
+  let entries: { ordinal: number; value: unknown; byteLength: number }[] = [];
+  let bytes = 0;
+  for await (const entry of source) {
+    const byteLength = new TextEncoder().encode(canonicalJson(entry.value)).byteLength;
+    if (entries.length && (entries.length === 8 || bytes + byteLength > 131072)) {
+      yield entries;
+      entries = [];
+      bytes = 0;
+    }
+    entries.push({ ...entry, byteLength });
+    bytes += byteLength;
+  }
+  if (entries.length) yield entries;
 }

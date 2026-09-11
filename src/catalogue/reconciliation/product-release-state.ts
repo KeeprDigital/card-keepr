@@ -35,6 +35,28 @@ export type ProductInputEntry = {
   cursor: ReconciliationInputRecordCursor;
   byteLength: number;
 };
+
+/** Fresh inputs can share a predecessor lookup, with bounded hydrated data and effects. */
+async function* productInputBatches(source: AsyncIterable<ProductInputEntry>, game: SupportedGame, fresh: boolean) {
+  type Entry = { entry: ProductInputEntry; parsed: Awaited<ReturnType<typeof parseProductReleaseObservation>> | null };
+  let batch: Entry[] = [];
+  let bytes = 0;
+  let effects = 0;
+  for await (const entry of source) {
+    const parsed = entry.input === null ? null : await parseProductReleaseObservation(entry.input, game);
+    const size = new TextEncoder().encode(JSON.stringify([entry.input, parsed])).byteLength;
+    const count = parsed ? parsed.products.length + parsed.distributionContexts.length : 0;
+    if (batch.length && (!fresh || batch.length === 8 || bytes + size > 131072 || effects + count > 16)) {
+      yield batch;
+      batch = [];
+      bytes = effects = 0;
+    }
+    batch.push({ entry, parsed });
+    bytes += size;
+    effects += count;
+  }
+  if (batch.length) yield batch;
+}
 type Stage =
   | "prior_products"
   | "prior_contexts"
@@ -223,10 +245,26 @@ export async function reconcileProductReleaseState(
   });
   await runStage("inputs", "existing_products", async () => {
     if (!options.hasInputs) return;
-    for await (const entry of inputs(inputAfter)) {
+    for await (const batch of productInputBatches(inputs(inputAfter), game, fresh())) {
+      const productKeys = batch.flatMap(({ parsed }) => parsed?.products.map(({ id }) => id) ?? []);
+      const contextKeys = batch.flatMap(({ parsed }) => parsed?.distributionContexts.map(({ id }) => id) ?? []);
+      const canBatch = fresh() && productKeys.length + contextKeys.length <= 16;
+      const productWindow = canBatch ? await groups.getMany(productKeys) : null;
+      const contextWindow = canBatch ? await contexts.getMany(contextKeys) : null;
+      let productWrites: { key: string; value: ProductGroup }[] = [];
+      let contextWrites: { key: string; value: CatalogueDistributionContext }[] = [];
+      let writeBytes = 0;
+      const flush = async () => {
+        await groups.seedManyAlongside(productWrites, { index: contexts, entries: contextWrites });
+        productWrites = [];
+        contextWrites = [];
+        writeBytes = 0;
+      };
+      flushResults = flush;
+      try {
+      for (const { entry, parsed } of batch) {
       const input = entry.input;
-      if (input !== null) {
-        const parsed = await parseProductReleaseObservation(input, game);
+      if (input !== null && parsed !== null) {
         await budget(
           entry.byteLength,
           parsed.products.length +
@@ -278,7 +316,9 @@ export async function reconcileProductReleaseState(
           const product = observation.products[index];
           const context = observation.distributionContexts[index];
           const [previousProduct, previousContext] =
-            product && context
+            productWindow && contextWindow
+              ? [product ? productWindow.get(product.id) : undefined, context ? contextWindow.get(context.id) : undefined]
+              : product && context
               ? await groups.getAlongside(product.id, { index: contexts, key: context.id })
               : [
                   product ? await groups.get(product.id) : undefined,
@@ -291,7 +331,20 @@ export async function reconcileProductReleaseState(
           const merged = context
             ? aggregateContexts(previousContext ? [previousContext, context] : [context])[0]!
             : undefined;
-          if (group && merged) {
+          if (productWindow && contextWindow) {
+            const size = new TextEncoder().encode(JSON.stringify([group, merged])).byteLength;
+            if (writeBytes && writeBytes + size > 131072) await flush();
+            if (size > 131072) {
+              if (group) await groups.seed(group.id, group);
+              if (merged) await contexts.seed(merged.id, merged);
+            } else {
+              if (group) productWrites.push({ key: group.id, value: group });
+              if (merged) contextWrites.push({ key: merged.id, value: merged });
+              writeBytes += size;
+            }
+            if (group) productWindow.set(group.id, group);
+            if (merged) contextWindow.set(merged.id, merged);
+          } else if (group && merged) {
             groups.beginObservation();
             contexts.beginObservation();
             await groups.setAlongside(group.id, group, { index: contexts, key: merged.id, value: merged });
@@ -308,6 +361,11 @@ export async function reconcileProductReleaseState(
       } else await budget(entry.byteLength);
       inputAfter = entry.cursor;
       await finishRecord();
+      }
+      await flush();
+      } finally {
+        flushResults = async () => {};
+      }
     }
   });
   const productSurfaceObserved = checkedLineages.size > 0;
