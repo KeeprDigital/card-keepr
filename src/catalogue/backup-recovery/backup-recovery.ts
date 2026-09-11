@@ -500,7 +500,7 @@ export async function createVerifiedCatalogueBackup(
   }
   const { expected: capturedVerification, representativeDocuments: expectedRepresentativeDocuments } =
     await captureCatalogueVerificationEvidenceWithDocuments(database, input.expectedCurrentRevisionId);
-  const expectedVerification = { ...capturedVerification };
+  const expectedVerification = { ...capturedVerification }; const measureStart=Date.now();
   let attemptState = attempt.state;
   if (attemptState === "pending") {
     try {
@@ -577,7 +577,7 @@ export async function createVerifiedCatalogueBackup(
                 (await catalogueVerificationStatement(database, request).all<Record<string, unknown>>()).results,
               input.expectedCurrentRevisionId,
             );
-            if (!snapshot) throw new Error("Native composition snapshot is unavailable.");
+            (globalThis as unknown as { profile253: unknown[] }).profile253.push({scope:"backup",phase:"snapshot",milliseconds:Date.now()-measureStart}); console.info("[PROFILE-253-backup]", "snapshot", Date.now()-measureStart);if (!snapshot) throw new Error("Native composition snapshot is unavailable.");
             if (!options.publicationArtifacts || !options.printingImages)
               throw new Error("Private publication artifacts are required for native backup.");
             await verifyCompositionArtifacts(
@@ -587,7 +587,7 @@ export async function createVerifiedCatalogueBackup(
               input.expectedCurrentRevisionId,
               snapshot,
             );
-            expectedVerification.composition_snapshot = snapshot;
+            (globalThis as unknown as { profile253: unknown[] }).profile253.push({scope:"backup",phase:"artifacts",milliseconds:Date.now()-measureStart}); console.info("[PROFILE-253-backup]", "artifacts", Date.now()-measureStart);expectedVerification.composition_snapshot = snapshot;
             const content = canonicalJson(snapshot);
             snapshotDigest = await sha256(content);
             snapshotKey = `${objectPrefix}/snapshot-${snapshotDigest}.json`;
@@ -606,7 +606,7 @@ export async function createVerifiedCatalogueBackup(
         } finally {
           await backupStatements.clearBackupRestoreStatement(database, native !== null).run();
         }
-        exportedBookmark = exported.bookmark;
+        (globalThis as unknown as { profile253: unknown[] }).profile253.push({scope:"backup",phase:"exported",milliseconds:Date.now()-measureStart}); console.info("[PROFILE-253-backup]", "exported", Date.now()-measureStart);exportedBookmark = exported.bookmark;
         const sized = new FixedLengthStream(exported.size);
         const contentDigest = createHash("sha256");
         const hashing = new TransformStream<Uint8Array, Uint8Array>({
@@ -634,7 +634,7 @@ export async function createVerifiedCatalogueBackup(
         if (retained === null || retained.size !== exported.size) {
           throw new Error("Retained backup digest is unavailable.");
         }
-        contentSha256 = contentDigest.digest("hex");
+        (globalThis as unknown as { profile253: unknown[] }).profile253.push({scope:"backup",phase:"retained",milliseconds:Date.now()-measureStart}); console.info("[PROFILE-253-backup]", "retained", Date.now()-measureStart);contentSha256 = contentDigest.digest("hex");
         exportBytes = retained.size;
       }
       await transitionExportedAttempt(
@@ -690,7 +690,7 @@ export async function createVerifiedCatalogueBackup(
         size: stored.size,
         etag: stored.etag,
       });
-      await transitionRestoredAttempt(database, input.idempotencyKey, ownerToken);
+      (globalThis as unknown as { profile253: unknown[] }).profile253.push({scope:"backup",phase:"restored",milliseconds:Date.now()-measureStart}); console.info("[PROFILE-253-backup]", "restored", Date.now()-measureStart);await transitionRestoredAttempt(database, input.idempotencyKey, ownerToken);
       attemptState = "verifying";
     }
     if (attemptState === "verifying") {
@@ -711,7 +711,7 @@ export async function createVerifiedCatalogueBackup(
         expected: expectedVerification,
         expectedRepresentativeDocuments,
       });
-      assertCompleteRestoredVerification(restoredVerification);
+      (globalThis as unknown as { profile253: unknown[] }).profile253.push({scope:"backup",phase:"verified",milliseconds:Date.now()-measureStart}); console.info("[PROFILE-253-backup]", "verified", Date.now()-measureStart);assertCompleteRestoredVerification(restoredVerification);
     }
     const manifest = {
       contract: "card-keepr-catalogue-backup-manifest@1",
