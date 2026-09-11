@@ -1,22 +1,10 @@
 import { type CatalogueStore, repositoryStatements } from "../shared";
 
-// These are database snapshot records, never a consumer export envelope.
-// Only schema-bounded private records use small pages; other tables retain one row.
-export const maximumPrivateSnapshotPageBytes = 1_048_576;
+// Pages bound database snapshot metadata independently of consumer export envelopes.
+export const maximumSnapshotPageRows = 16;
+export const maximumSnapshotPageBytes = 1_048_576;
 export const maximumSchemaSnapshotPageRows = 32;
 export const maximumSchemaSnapshotPageBytes = 1_048_576;
-const privateSnapshotColumns = {
-  reconciliation_checkpoints: ["preparation_id", "phase", "ordinal", "content", "sha256"],
-  reconciliation_reducer_state: [
-    "preparation_id",
-    "namespace",
-    "key_digest",
-    "observation_ordinal",
-    "group_digest",
-    "content",
-    "sha256",
-  ],
-} as const;
 export const compositionSnapshotTables = [
   "catalogue_revisions",
   "catalogue_exports",
@@ -99,7 +87,8 @@ export const compositionSnapshotTables = [
 export type CompositionSnapshotTable = (typeof compositionSnapshotTables)[number];
 export type CompositionVerificationQuery =
   | { kind: "composition-state"; revisionId: string }
-  | { kind: "composition-page"; table: CompositionSnapshotTable; after: number }
+  | { kind: "composition-columns"; table: CompositionSnapshotTable }
+  | { kind: "composition-page"; table: CompositionSnapshotTable; after: number; columns: readonly string[] }
   | { kind: "composition-schema"; after: string }
   | { kind: "composition-accepted-roots" }
   | { kind: "foreign-keys" };
@@ -120,23 +109,24 @@ export function compositionVerificationQuery(input: CompositionVerificationQuery
       params: [input.after],
     };
   if (input.kind === "foreign-keys") return { sql: "PRAGMA foreign_key_check", params: [] };
-  if (input.kind === "composition-page") {
+  if (input.kind === "composition-columns" || input.kind === "composition-page") {
     if (!compositionSnapshotTables.includes(input.table)) throw new Error("Unknown composition snapshot table.");
-    if (input.table === "reconciliation_checkpoints" || input.table === "reconciliation_reducer_state") {
-      const fields = ["snapshot_rowid", ...privateSnapshotColumns[input.table]]
-        .map((column) => `'${column}',${column}`)
-        .join(",");
-      return {
-        sql: `WITH page AS (SELECT rowid AS snapshot_rowid,* FROM ${input.table} WHERE rowid>? ORDER BY rowid LIMIT 4),
-          sizes AS (SELECT snapshot_rowid,sum(length(CAST(json_object(${fields}) AS BLOB))) OVER (ORDER BY snapshot_rowid) AS page_bytes FROM page)
-          SELECT page.* FROM page JOIN sizes USING(snapshot_rowid)
-          WHERE sizes.page_bytes<=${maximumPrivateSnapshotPageBytes} OR page.snapshot_rowid=(SELECT min(snapshot_rowid) FROM page)
-          ORDER BY page.snapshot_rowid`,
-        params: [input.after],
-      };
-    }
+    if (input.kind === "composition-columns")
+      return { sql: "SELECT name FROM pragma_table_info(?) ORDER BY cid", params: [input.table] };
+    if (
+      !input.columns.length ||
+      input.columns.length > 128 ||
+      new Set(input.columns).size !== input.columns.length ||
+      input.columns.some((column) => !/^[a-z_][a-z0-9_]*$/.test(column) || column === "snapshot_rowid")
+    )
+      throw new Error("Invalid composition snapshot columns.");
+    const fields = ["snapshot_rowid", ...input.columns].map((column) => `'${column}',"${column}"`).join(",");
     return {
-      sql: `SELECT rowid AS snapshot_rowid, * FROM ${input.table} WHERE rowid > ? ORDER BY rowid LIMIT 1`,
+      sql: `WITH page AS (SELECT rowid AS snapshot_rowid,* FROM ${input.table} WHERE rowid>? ORDER BY rowid LIMIT ${maximumSnapshotPageRows}),
+        sizes AS (SELECT snapshot_rowid,sum(length(CAST(json_object(${fields}) AS BLOB))) OVER (ORDER BY snapshot_rowid) AS page_bytes FROM page)
+        SELECT page.* FROM page JOIN sizes USING(snapshot_rowid)
+        WHERE sizes.page_bytes<=${maximumSnapshotPageBytes} OR page.snapshot_rowid=(SELECT min(snapshot_rowid) FROM page)
+        ORDER BY page.snapshot_rowid`,
       params: [input.after],
     };
   }
@@ -177,7 +167,8 @@ export function compositionVerificationStatement(db: CatalogueStore, input: Comp
 
 export function compositionArtifactRootsStatement(db: CatalogueStore, revisionId: string) {
   return repositoryStatements(db)
-    .prepare(`SELECT m.supported_game,m.game_revision_id,m.candidate_id,m.root_digest,
+    .prepare(
+      `SELECT m.supported_game,m.game_revision_id,m.candidate_id,m.root_digest,
  c.preparation_id,c.manifest_digest,p.publication_operation_id,p.revision_id,p.state AS public_state,
  p.root_digest AS public_root_digest,p.root_object_key,p.root_bytes,p.component_count,o.deadline,
  r.content_digest AS composition_digest,v.content AS composition_json
@@ -186,7 +177,8 @@ export function compositionArtifactRootsStatement(db: CatalogueStore, revisionId
  LEFT JOIN verified_publication_compositions v ON v.sha256=r.content_digest
  LEFT JOIN publication_export_preparations p ON p.candidate_id=m.candidate_id
  LEFT JOIN game_publication_operations o ON o.id=p.publication_operation_id
- WHERE m.catalogue_revision_id=? ORDER BY m.supported_game LIMIT 5`)
+ WHERE m.catalogue_revision_id=? ORDER BY m.supported_game LIMIT 5`,
+    )
     .bind(revisionId);
 }
 

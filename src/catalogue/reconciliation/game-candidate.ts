@@ -103,14 +103,24 @@ export async function prepareGameCandidateManifests(
   };
   for (const kind of ["cards", "printings"] as const) {
     if (cursor.stage !== kind) continue;
+    let scopes: { id: string; game?: string; card_id?: string }[] = [];
+    const flush = async () => {
+      if (!scopes.length) return;
+      await documentStorage(() => retainGameEntityScopesStatement(database, runId, kind, canonicalJson(scopes)).run());
+      scopes = [];
+    };
     for await (const record of candidate.values(kind, cursor.after)) {
       const scope =
         "game" in record ? { id: record.id, game: record.game } : { id: record.id, card_id: record.card_id };
-      await documentStorage(() => retainGameEntityScopesStatement(database, runId, kind, canonicalJson([scope])).run());
+      scopes.push(scope);
       cursor.after = record.id;
       bytes += new TextEncoder().encode(canonicalJson(record)).byteLength;
-      if (++work === 32 || bytes >= 512000) await save();
+      if (++work === 32 || bytes >= 512000) {
+        await flush();
+        await save();
+      }
     }
+    await flush();
     cursor.after = "";
     cursor.stage = kind === "cards" ? "printings" : "lineages";
     await save();

@@ -293,9 +293,10 @@ async function prepareUnit(
   };
   if (state.phase === "composition") {
     const refs = (
-      await (cursor.level === 0
-        ? repository.publicationArtifacts(db, id, cursor.after)
-        : repository.publicationNodes(db, id, cursor.level - 1, cursor.after)
+      await (
+        cursor.level === 0
+          ? repository.publicationArtifacts(db, id, cursor.after)
+          : repository.publicationNodes(db, id, cursor.level - 1, cursor.after)
       ).all<ArtifactReference>()
     ).results;
     if (!refs.length) {

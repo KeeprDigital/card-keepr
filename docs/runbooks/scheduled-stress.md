@@ -12,18 +12,18 @@ Manual and scheduled runs have separate cancellation groups.
 
 The full selection contains these ingestion files:
 
-| File | Coverage |
-| --- | --- |
-| `capacity-tier-admission.stress.spec.ts` | Tier request admission; fetches no bodies |
-| `game-reconciliation-scale.stress.spec.ts` | Native 1,001-Product candidate callback and elapsed budgets |
-| `native-printing-images.stress.spec.ts` | Native publication, serving and export of 128 images |
-| `reconciliation-evidence-volume.stress.spec.ts` | Retained evidence volume |
-| `reconciliation-scale.stress.spec.ts` | Large Card/Product publication and restore, images and warnings |
-| `runtime-capacity-resume.stress.spec.ts` | Capacity pause and resume |
-| `runtime-collection-completion.stress.spec.ts` | Collection completion at volume |
-| `runtime-collection-throughput.stress.spec.ts` | Bounded collection throughput |
-| `runtime-discovery-scale.stress.spec.ts` | Discovery at volume |
-| `runtime-host-pacing.stress.spec.ts` | Independent-host concurrency and pacing |
+| File                                            | Coverage                                                        |
+| ----------------------------------------------- | --------------------------------------------------------------- |
+| `capacity-tier-admission.stress.spec.ts`        | Tier request admission; fetches no bodies                       |
+| `game-reconciliation-scale.stress.spec.ts`      | Native 1,001-Product candidate callback and elapsed budgets     |
+| `native-printing-images.stress.spec.ts`         | Native publication, serving and export of 128 images            |
+| `reconciliation-evidence-volume.stress.spec.ts` | Retained evidence volume                                        |
+| `reconciliation-scale.stress.spec.ts`           | Large Card/Product publication and restore, images and warnings |
+| `runtime-capacity-resume.stress.spec.ts`        | Capacity pause and resume                                       |
+| `runtime-collection-completion.stress.spec.ts`  | Collection completion at volume                                 |
+| `runtime-collection-throughput.stress.spec.ts`  | Bounded collection throughput                                   |
+| `runtime-discovery-scale.stress.spec.ts`        | Discovery at volume                                             |
+| `runtime-host-pacing.stress.spec.ts`            | Independent-host concurrency and pacing                         |
 
 Run volume measurements with exclusive host resources and record the exact
 commit, runtime, complete selection and every failure. Keep the candidate's
@@ -32,6 +32,25 @@ billing measurements. A bounded pass does not replace the full selection; a
 full pass does not certify the 5/50 GiB tiers, whose admission test fetches no
 bodies. Issue #275 owns usable capacity and accounting; #276 owns uncovered
 durable faults.
+
+Each workflow retains a seven-day `stress-results-bounded` or
+`stress-results-full` JSON artifact with the complete test selection, failures,
+durations and native callback report. Archive relevant evidence before expiry.
+If a job dies before the reporter finishes, its missing artifact is incomplete
+evidence, not an empty successful selection.
+
+Use the existing focused diagnostics workflow for an isolated stress file:
+
+```sh
+gh workflow run test-suite-diagnostics.yml --ref <branch> \
+  -f worker=ingestion -f suite=stress -f storage=disk \
+  -f files='apps/ingestion/test/game-reconciliation-scale.stress.spec.ts' \
+  -f repeats=1
+```
+
+`storage=memory` selects the routine CI helper's disposable 512 MiB tmpfs for
+a controlled storage comparison. Its space limit still applies. Focused results
+do not replace full stress or routine CI.
 
 The API currently has no separate stress files; its functional checks run in
 the normal API suite. Missing expected ingestion tests remain an error. Add

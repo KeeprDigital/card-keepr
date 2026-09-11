@@ -212,8 +212,7 @@ export async function prepareNativeSourceHistory(
         const events = historyObservation(frame, plan);
         if (cursor.planPart < events.length) {
           const event = events[cursor.planPart++]!;
-          const previous = await history.index.get(event.id);
-          await history.retain({ ...event, first: previous?.first ?? event.first });
+          await history.retain(event, { preserveFirst: true });
         }
         if (cursor.planPart === events.length) {
           cursor.after = plan.sourceObservationId;

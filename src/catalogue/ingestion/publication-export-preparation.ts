@@ -277,9 +277,10 @@ async function prepareUnit(
     return;
   }
   const refs = (
-    await (cursor.level === 0
-      ? repository.exportComponents(db, state.candidate_id, cursor.after)
-      : repository.exportNodes(db, owner.id, cursor.level - 1, cursor.after)
+    await (
+      cursor.level === 0
+        ? repository.exportComponents(db, state.candidate_id, cursor.after)
+        : repository.exportNodes(db, owner.id, cursor.level - 1, cursor.after)
     ).all<Reference & { ordinal: number; descriptor_json?: string }>()
   ).results;
   if (refs.length) {
