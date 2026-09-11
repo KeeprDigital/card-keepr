@@ -69,6 +69,13 @@ export function measureRevisionCardSearchChunks(database: D1Database): D1Prepare
       AND card_id IN (SELECT CAST(value AS TEXT) FROM json_each(?))`);
 }
 
+export function measurePublicationCardSearchChunks(database: D1Database): D1PreparedStatement {
+  return database.prepare(`SELECT COUNT(*) AS chunk_count,
+    MAX(length(search_text)) AS maximum_chunk_length,
+    SUM(length(CAST(search_text AS BLOB))) AS chunk_bytes
+    FROM publication_search_chunks WHERE candidate_id = ?`);
+}
+
 export function insertRevisionCardSearchChunksForProductionReleaseSearchFixturesComeFromRealisticRevisionPinned(
   database: D1Database,
 ): D1PreparedStatement {

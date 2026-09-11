@@ -1,7 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://card-keepr.invalid/schemas/administration@1",
-  "title": "Card Keepr administration state",
+  "title": "Card Keepr historical administration state and current command requests",
+  "description": "The root decodes historical administration@1 snapshots, including the retired run-owned publication lifecycle. It is not the current status response or a native publication request. Current command inputs are the named CommandRequest definitions; numeric fields describe normalized inputs after the HTTP adapter converts CLI decimal strings.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -59,6 +60,75 @@
     }
   },
   "$defs": {
+    "NativeIdentifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]*$"
+    },
+    "Generation": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "GameCandidatePrepareCommandRequest": {
+      "description": "POST /v1/game-candidates. HTTP 201 creates the independently prepared game candidate; exact replay returns HTTP 200 and the current candidate header.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ingestion_run_id", "supported_game", "expected_game_revision_id", "idempotency_key"],
+      "properties": {
+        "ingestion_run_id": { "$ref": "#/$defs/NativeIdentifier" },
+        "supported_game": { "$ref": "#/$defs/SupportedGame" },
+        "expected_game_revision_id": { "$ref": "#/$defs/NativeIdentifier" },
+        "idempotency_key": { "$ref": "#/$defs/NativeIdentifier" }
+      }
+    },
+    "GameCandidateActionCommandRequest": {
+      "description": "POST /v1/game-candidates/:candidate/pause, /resume or /abandon. Generation is the candidate generation; exact replay returns its retained action result.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generation", "idempotency_key"],
+      "properties": {
+        "generation": { "$ref": "#/$defs/Generation" },
+        "idempotency_key": { "$ref": "#/$defs/NativeIdentifier" }
+      }
+    },
+    "PublicationPreparationCommandRequest": {
+      "description": "POST /v1/game-candidates/:candidate/publication-preparation/start or /resume dispatches durable artifact preparation (HTTP 202); the unsuffixed route advances one unit (HTTP 200). The /resume route sets resume=true. Start at sequence 0, then use the retained sequence. Generation binds the candidate.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest_digest", "generation", "sequence", "idempotency_key"],
+      "properties": {
+        "manifest_digest": { "$ref": "#/$defs/Sha256" },
+        "generation": { "$ref": "#/$defs/Generation" },
+        "sequence": { "$ref": "#/$defs/Generation" },
+        "idempotency_key": { "$ref": "#/$defs/NativeIdentifier" },
+        "resume": { "type": "boolean" }
+      }
+    },
+    "PublicationResumeCommandRequest": {
+      "description": "POST /v1/publications/:operation/resume. Generation is the current publication operation generation, distinct from the candidate generation. HTTP 202 retains the resumed acknowledgement; status observes progress.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generation", "idempotency_key"],
+      "properties": {
+        "generation": { "$ref": "#/$defs/Generation" },
+        "idempotency_key": { "type": "string", "minLength": 1 }
+      }
+    },
+    "PublicationApprovalCommandRequest": {
+      "description": "POST /v1/publications/start (dispatch) or /v1/publications (durable approval only). Returns HTTP 202 with the retained whole-candidate acknowledgement; GET /v1/publications/:id observes current progress.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate_id", "manifest_digest", "expected_game_revision_id", "generation", "idempotency_key"],
+      "properties": {
+        "candidate_id": { "type": "string", "minLength": 1 },
+        "manifest_digest": { "$ref": "#/$defs/Sha256" },
+        "expected_game_revision_id": { "type": "string", "minLength": 1 },
+        "generation": { "$ref": "#/$defs/Generation" },
+        "idempotency_key": { "type": "string", "minLength": 1 }
+      }
+    },
     "OpaqueId": {
       "type": "string",
       "minLength": 1,
@@ -155,6 +225,7 @@
       }
     },
     "IngestionRun": {
+      "description": "Historical run-owned snapshot decoding only; native candidate and publication states are independent records.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -217,6 +288,7 @@
       }
     },
     "Approval": {
+      "description": "Retained historical aggregate approval metadata, never a native approval request.",
       "type": "object",
       "additionalProperties": false,
       "required": ["approved_at", "candidate_digest", "expected_current_revision_id"],

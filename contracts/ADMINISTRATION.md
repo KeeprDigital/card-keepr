@@ -1,6 +1,18 @@
 # Owner administration contract
 
-Contract: `card-keepr-administration@1`
+The maintained native protocol follows [ADR 0015](../docs/adr/0015-bounded-durable-publication-per-game.md).
+An Ingestion Run records collection provenance; a Catalogue Candidate, its
+Reconciliation Operation, artifact preparation and Publication Operation have
+separate identities and progress. Publication approves one exact whole game
+candidate against its Game Catalogue Revision predecessor.
+
+The root of [administration.schema.json](schemas/administration.schema.json)
+decodes historical `card-keepr-administration@1` snapshots. Its run-owned state
+and approval definitions are retained for historical decoding, not current
+status or native approval. The named `CommandRequest` definitions describe
+current canonical inputs. Generation and sequence are non-negative safe integers
+after HTTP normalization; the shipped CLI sends these two fields as decimal
+strings, which the HTTP adapter converts to numbers.
 
 The repository CLI is the only initial owner interface. It talks to the
 ingestion Worker for catalogue operations, to GitHub for a production release
@@ -9,16 +21,22 @@ ingestion Worker never receives GitHub or Cloudflare deployment credentials.
 
 ## Interaction rules
 
-Read-only commands never prompt. Every production-changing command:
+Read-only commands never prompt. Native commands use the configured ingestion
+URL and administration key. `game-candidate prepare` and `abandon` require
+`--yes`; native artifact preparation and publication commands bind the explicit
+candidate or operation without a production-target confirmation option.
 
-- requires `--environment production`;
-- prints the resolved Cloudflare account, Worker, D1, and R2 identities before
+Commands that implement production-target confirmation (including release,
+recovery and maintenance):
+
+- require `--environment production`;
+- print the resolved Cloudflare account, Worker, D1, and R2 identities before
   confirmation;
-- names every target by opaque identity;
-- checks an expected current Catalogue Revision;
-- accepts secrets only from an interactive hidden prompt, keychain reference,
+- name every target by opaque identity;
+- check the operation-specific expected Catalogue Revision;
+- accept secrets only from an interactive hidden prompt, keychain reference,
   or stdin descriptor, never an argument; and
-- returns stable JSON with `--json` and the exit codes below.
+- return stable JSON with `--json` and the exit codes below.
 
 `--yes` is accepted only with `--confirm` equal to the complete resolved
 production-target JSON where applicable, plus the expected revision, content
@@ -30,18 +48,23 @@ before mutation.
 Exit codes are `0` success, `2` usage, `3` confirmation declined, `4`
 authentication, `5` authorization, `6` not found, `7` conflict or stale
 precondition, `8` contract validation, `9` remote/platform failure, and `10`
-operation accepted but not yet terminal.
+operation accepted but not yet terminal where the command's presentation defines
+that pending outcome. Native candidate, artifact-preparation and publication
+commands currently exit `0` for a successfully returned document, including a
+pending acknowledgement or a status document reporting `failed`. Callers must
+read `state` and `failure_code` and poll status; neither exit `0` nor HTTP `202`
+proves publication or backup completion.
 
 ## Commands
 
 | CLI command                               | Mutation | Required preconditions or bindings                                                                                                                                                                                             |
 | ----------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `keepr status`                            | no       | none                                                                                                                                                                                                                           |
-| `keepr run start`                         | yes      | exact Supported Games; no active run; recovery not blocked                                                                                                                                                                     |
+| `keepr source collect`                    | yes      | exact source plan; source collection reservations; recovery not blocked                                                                                                                                                        |
 | `keepr run show`                          | no       | run identity                                                                                                                                                                                                                   |
 | `keepr run reconcile`                     | yes      | exact run identity; expected current Catalogue Revision; idempotency key; production confirmation after resolving the production run and its bound revision; starts or observes the bound reconciliation Workflow              |
-| `keepr candidate inspect`                 | no       | run in `awaiting_approval`                                                                                                                                                                                                     |
-| `keepr run approve`                       | yes      | run identity, candidate digest, expected current revision, unexpired candidate, verified current backup                                                                                                                        |
+| `keepr candidate inspect`                 | no       | retained historical run candidate; not native approval input                                                                                                                                                                   |
+| `keepr run approve`                       | no       | retired locally with `run_approval_retired`, exit `2`, no request                                                                                                                                                              |
 | `keepr run reject`                        | yes      | run identity and candidate digest                                                                                                                                                                                              |
 | `keepr run retry`                         | yes      | terminal source run; creates a new linked run                                                                                                                                                                                  |
 | `keepr backup status`                     | no       | Catalogue Revision identity                                                                                                                                                                                                    |
@@ -60,10 +83,114 @@ operation accepted but not yet terminal.
 | `keepr credential revoke-old`             | yes      | verified replacement and exact old credential fingerprint                                                                                                                                                                      |
 | `keepr catalogue search repair`           | yes      | exact target among the current Catalogue Revision and its two immediate predecessors; expected current Catalogue Revision; idempotency key; production confirmation after resolving production status; one bounded repair step |
 
-The ingestion Workflow owns automatic collection, parsing, reconciliation,
-candidate finalization, publication, export verification, expiry, and backup
-attempt progression. The CLI observes these automatic transitions; it cannot
-skip or rewrite them.
+Collection Workflows retain evidence. Independent game preparation seals the
+candidate and inspection artifacts; artifact and publication Workflows prepare
+immutable consumer data, publish atomically and dispatch the exact backup.
+These transitions preserve the original candidate deadline.
+
+## Native candidate and publication commands
+
+| CLI command                                         | HTTP route                                                                       | Exact inputs                                                                                    |
+| --------------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `keepr game-candidate prepare --yes`                | POST `/v1/game-candidates`                                                       | `ingestion_run_id`, `supported_game`, `expected_game_revision_id`, `idempotency_key`            |
+| `keepr game-candidate list`                         | GET `/v1/ingestion-runs/:run/game-candidates`                                    | run ID; optional `after`                                                                        |
+| `keepr game-candidate show`                         | GET `/v1/game-candidates/:candidate`                                             | candidate ID                                                                                    |
+| `keepr game-candidate inspect`                      | GET `/v1/game-candidates/:candidate/inspection`                                  | candidate ID; optional `manifest` pin                                                           |
+| `keepr game-candidate partitions`, `partition`      | GET `/v1/game-candidates/:candidate/partitions[/:ordinal]`                       | candidate ID; optional `manifest`; listing accepts `after`                                      |
+| `keepr game-candidate evidence`                     | GET `/v1/game-candidates/:candidate/inspection/evidence/:kind`                   | candidate ID, evidence kind; optional `manifest`, `after`                                       |
+| `keepr game-candidate abandon --yes`                | POST `/v1/game-candidates/:candidate/abandon`                                    | candidate ID; `generation`, `idempotency_key`                                                   |
+| `keepr publication-preparation start`, `resume`     | POST `/v1/game-candidates/:candidate/publication-preparation/start` or `/resume` | candidate ID; `manifest_digest`, `generation`, `sequence`, `idempotency_key`                    |
+| `keepr publication-preparation status`, `artifacts` | GET `/v1/game-candidates/:candidate/publication-preparation[/artifacts]`         | candidate ID; artifacts listing accepts `after`                                                 |
+| `keepr publication approve`                         | POST `/v1/publications/start`                                                    | `candidate_id`, `manifest_digest`, `expected_game_revision_id`, `generation`, `idempotency_key` |
+| `keepr publication status`                          | GET `/v1/publications/:operation`                                                | operation ID                                                                                    |
+| `keepr publication resume`                          | POST `/v1/publications/:operation/resume`                                        | operation ID; operation `generation`, `idempotency_key`                                         |
+
+CLI options use hyphens, with `--run-id` for `ingestion_run_id`, `--game` for
+`supported_game`, and `--operation-id` for a Publication Operation. Candidate
+pause and resume are available through POST `/v1/game-candidates/:candidate/pause`
+and `/resume` with `{generation, idempotency_key}`; there are no corresponding
+`game-candidate pause` or `game-candidate resume` CLI commands. Run-level
+`reconciliation pause/resume` targets the separate retained run preparation.
+
+Candidate creation returns HTTP `201`; an exact replay returns `200` and the
+current candidate header, re-dispatching unfinished preparation. A changed key
+reuse returns `409 idempotency_conflict`. A game slot, exact predecessor and
+retained game evidence govern admission. Other games may collect, prepare and
+receive approval concurrently; there is no global active-run prerequisite for
+native approval. Recovery and the SQL snapshot fence still block mutations.
+
+Inspection pins the immutable manifest and reports `ready`, `reason` and
+`approval_scope: whole_candidate`. Follow every partition/evidence cursor and
+restore referenced large text before reviewing; see the
+[inspection runbook](../docs/runbooks/bounded-reconciliation.md). A ready
+candidate and verified publication artifacts are separate prerequisites.
+
+Artifact preparation starts at sequence `0`. Start and resume return HTTP `202`
+with `{preparation, workflow}`; status returns the current artifact state,
+sequence, generation and root digest. Use the status sequence on resume. Exact
+unit intent replays retain their result; different reuse fails. The `/resume`
+route sets `resume: true`. The unsuffixed POST route advances one bounded unit
+and returns `200`; it accepts the same fields and optional boolean `resume`.
+
+Approval returns HTTP `202` only after retaining an immutable acknowledgement
+with contract `card-keepr-game-publication@1`, `approval_scope: whole_candidate`,
+`id`, `candidate_id`, manifest, predecessor, `candidate_generation`, operation
+`generation`, deadline and `state: approved`. Exact replay returns that original
+acknowledgement even after publication. It does not return the latest status.
+GET status returns HTTP `200` with current state, `failure_code`,
+`resulting_revision_id` and `backup_attempt_id`. POST `/v1/publications` retains
+the same approval without dispatch; the owner CLI uses `/start` to dispatch.
+
+Publication progresses through `approved`, `waiting_artifacts` or
+`waiting_backup` to `published`, or ends in `failed`/pauses in `retry_paused`.
+The switch rechecks the exact whole-candidate approval, manifest, game
+predecessor, generation, original seven-day deadline and recovery fences. It
+atomically advances the game and composition, records the result and reserves
+its backup. Other games' approvals survive an unrelated-game publication. The
+next switch waits for the exact current composition's verified backup. Equal
+consumer facts preserve the revision and immutable exports while advancing the
+private evidence head and requiring a new exact verified backup.
+
+Resume uses the current **operation** generation and a new key; it preserves
+candidate bindings and deadline, increments the writer generation, and returns
+HTTP `202`. Exact replay returns its retained acknowledgement and re-dispatches
+remaining work. Always read status after an acknowledgement. A `published`
+status identifies the backup attempt; observe `/v1/backups/:attempt` until
+`verified` or `failed` when checkpoint completion is required.
+
+Stable native errors include:
+
+- `422 invalid_parameter`, `unsupported_game`, `invalid_generation`,
+  `invalid_publication_approval`, `invalid_publication_preparation_intent`;
+- `404 game_evidence_not_found`, `game_candidate_not_found`, `publication_not_found`;
+- `409 idempotency_conflict`, `game_revision_mismatch`,
+  `game_candidate_slot_occupied`, `candidate_pin_mismatch`, `candidate_not_ready`,
+  `publication_approval_conflict`, `publication_resume_conflict`,
+  `publication_ownership_conflict`, `recovery_not_verified`.
+
+A returned status may instead retain a failure such as
+`publication_deadline_expired`, `publication_candidate_conflict` or
+`publication_legacy_composition_unprepared`. Read the operation outcome even
+when the HTTP request succeeded. See the
+[publication protocol](../docs/runbooks/atomic-game-publication.md) for the
+composition and recovery rules.
+
+## Historical run operations
+
+New POST `/v1/ingestion-runs/:run/approval` intents return HTTP `410`
+`run_approval_retired` without an administration claim, reservation, export or
+publication. The CLI reports retirement locally and sends no request. Aggregate
+candidate digests and global predecessors cannot be translated into native
+owner approval.
+
+The HTTP route remains an observer of an exact persisted historical result or
+already reserved publication. Exact result replay returns the original status
+and document; changed bindings fail `409`. A retained reservation returns its
+pending result, or recovers only that reservation after lease expiry under its
+original candidate, approval, predecessor and ownership/recovery fences. It
+never acquires a new historical reservation. Inspection, historical rejection,
+recovery and reference-safe cleanup remain supported where their retained
+records authorize them.
 
 `run reconcile` never executes reconciliation inline in the HTTP request. Its
 request is exactly `{expected_current_revision_id, idempotency_key}` and is
@@ -130,9 +257,12 @@ ingestion and release, and healthy recovery. The export disappears from listing
 and serving when the operation enters `deleting`, so a partially removed package
 is never presented as verified.
 
-Deletion is confined to
-`catalogue-exports/<catalogue_revision_id>/`; the manifest is removed last and
-absence of every bound object is verified. Source and reconciliation evidence,
+For native packages, deletion removes the exclusive manifest under
+`catalogue-public-manifests/<catalogue_revision_id>/` and retains shared public
+roots, tree nodes, compressed components and the independent backup protecting
+them. Historical packages retain their exact `catalogue-exports/<revision>/`
+object set. In either layout the manifest is removed last and absence of every
+bound removal object is verified. Source and reconciliation evidence,
 Catalogue Revision records, backups, Time Travel bookmarks, recovery exports,
 and the deletion plan, operation, and tombstone remain retained. A failed
 operation stays unavailable and can only retry the same object-set digest.
@@ -150,25 +280,24 @@ Stable result codes are:
   `export_deletion_not_failed`, `deleted_object_set_mismatch`; and
 - `ok`.
 
-## Ingestion Run states
+## Collection, candidate and historical states
 
-The only legal non-terminal path is:
+Collection starts `planning → collecting → parsing`. A collecting run may pause
+for capacity, retry, Workflow recovery or owner intent. Resume preserves its
+identity and evidence. Only explicit Collection Termination ends a paused run,
+retaining its audit evidence and releasing its collection reservation.
 
-```text
-planning → collecting → parsing → reconciling → awaiting_approval
-          → publishing → published
-```
+A native Reconciliation Operation progresses independently through `preparing`,
+`paused`, `sealed`, `abandoned` or `failed`; candidate inspection and publication
+remain separate. Its deadline is seven 24-hour periods after creation and never
+moves on pause, resume or approval. Artifact preparation progresses through
+`preparing`, `retry_paused`, `verified` or `failed`.
 
-`planning`, `collecting`, `parsing`, and `reconciling` may become `failed`.
-`awaiting_approval` may become `publishing`, `rejected`, `expired`, or `failed`.
-`publishing` may become `published` or `failed`. `published`, `rejected`,
-`expired`, and `failed` are immutable terminal states.
-
-Entering `awaiting_approval` fixes the candidate digest and a deadline exactly
-seven 24-hour periods after `candidate_created_at`. At or after the deadline,
-expiry wins over concurrent approval. Approval atomically rechecks run state,
-deadline, candidate digest, expected current revision, active-run identity, and
-recovery health.
+Retained run-owned records can still decode
+`parsing → reconciling → awaiting_approval → publishing → published`, with
+`rejected`, `expired` and `failed` terminal outcomes. These states describe the
+historical lifecycle and retained inspection/recovery machinery. They are not
+the native publication protocol and do not authorize a fresh aggregate approval.
 
 ## Backup and recovery states
 

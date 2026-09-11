@@ -166,14 +166,6 @@ export async function reconcile(runId: string, extraHeaders: Record<string, stri
   throw new Error(`reconciliation Workflow ${runId} did not complete`);
 }
 
-export function approve(document: Record<string, unknown>) {
-  return post(`/v1/ingestion-runs/${requiredString(document, "run_id")}/approval`, {
-    candidate_digest: requiredString(document, "candidate_digest"),
-    expected_current_revision_id: requiredString(document, "expected_current_revision_id"),
-    idempotency_key: `approve-${crypto.randomUUID()}`,
-  });
-}
-
 export function get(pathname: string) {
   return request(pathname);
 }
@@ -346,7 +338,7 @@ async function exportRead(path: string) {
   return response;
 }
 
-async function nativeExportManifestPage(revisionId: string, after: string | null) {
+export async function nativeExportManifestPage(revisionId: string, after: string | null) {
   const response = await exportRead(
     `/v1/catalogue-exports/${revisionId}${after === null ? "" : `?after=${encodeURIComponent(after)}`}`,
   );
