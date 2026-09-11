@@ -43,14 +43,16 @@ Use the existing focused diagnostics workflow for an isolated stress file:
 
 ```sh
 gh workflow run test-suite-diagnostics.yml --ref <branch> \
-  -f worker=ingestion -f suite=stress -f storage=disk \
+  -f worker=ingestion -f suite=stress -f storage=memory \
   -f files='apps/ingestion/test/game-reconciliation-scale.stress.spec.ts' \
   -f repeats=1
 ```
 
-`storage=memory` selects the routine CI helper's disposable 512 MiB tmpfs for
-a controlled storage comparison. Its space limit still applies. Focused results
-do not replace full stress or routine CI.
+Hosted full stress and `storage=memory` stress diagnostics use a disposable
+2 GiB tmpfs; bounded stress and routine CI use 512 MiB. Capacity fixtures exceed
+the smaller volume. The wrapper prints occupied bytes before removing the volume.
+Use `storage=disk` for a controlled storage comparison. Focused results do not
+replace full stress or routine CI.
 
 The API currently has no separate stress files; its functional checks run in
 the normal API suite. Missing expected ingestion tests remain an error. Add

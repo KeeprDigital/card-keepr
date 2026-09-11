@@ -83,7 +83,8 @@ test("native history counts large hydrated plans toward its callback budget", as
       });
     } catch (error) {
       if (!(error instanceof ReconciliationContinuation)) throw error;
-      if (++continuations > 64) throw new Error("History failed to advance its retained plan cursor.");
+      if (++continuations > 64)
+        throw new Error("History failed to advance its retained plan cursor.", { cause: error });
     }
   }
   expect(result.history.current.cursor.count).toBe(32);

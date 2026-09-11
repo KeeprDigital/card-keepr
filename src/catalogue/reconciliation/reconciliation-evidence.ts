@@ -40,7 +40,7 @@ import {
   parsedOfficialArtworkIdentity,
   requiredSourceAdapter,
 } from "../adapters";
-import { type CatalogueStore, type SupportedGame, canonicalJson, sha256Text } from "../shared";
+import { type CatalogueStore, type SupportedGame, sha256Text } from "../shared";
 import {
   evidencePlanForRequest,
   parseEvidencePlans,

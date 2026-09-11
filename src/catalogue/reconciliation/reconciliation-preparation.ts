@@ -2,7 +2,7 @@ import { documentStorage } from "./reconciliation-document";
 import { type CatalogueStore, canonicalJson, compareUtf8, sha256Text } from "../shared";
 import { preparationBatchStatement, recordPreparationBatchStatement } from "./reconciliation-preparation-repository";
 
-const nonAscii = /[^\u0000-\u007f]/;
+const nonAscii = /[\u0080-\uffff]/;
 const encoder = new TextEncoder();
 const utf8Length = (text: string) => (nonAscii.test(text) ? encoder.encode(text).byteLength : text.length);
 
