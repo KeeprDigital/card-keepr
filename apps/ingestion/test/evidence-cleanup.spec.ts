@@ -724,8 +724,10 @@ test("a staging batch waits for late writes and leaves only ambiguous writer tic
     releaseLate = resolve;
   });
   let completeKnown!: () => void;
-  const completed = new Promise<void>((resolve) => {
+  let failKnown!: (error: unknown) => void;
+  const completed = new Promise<void>((resolve, reject) => {
     completeKnown = resolve;
+    failKnown = reject;
   });
   const keys = [
     "publication-artifacts/lost-batch",
@@ -736,17 +738,22 @@ test("a staging batch waits for late writes and leaves only ambiguous writer tic
     get(target, property) {
       if (property === "put")
         return async (...args: Parameters<R2Bucket["put"]>) => {
-          const ticket = await env.CATALOGUE_DB.prepare(
-            "SELECT object_key,completed_at FROM staging_object_writes WHERE token=?",
-          )
-            .bind(args[2]?.customMetadata?.cleanup_writer_token)
-            .first();
-          expect(ticket).toEqual({ object_key: args[0], completed_at: null });
-          if (args[0] === keys[1]) await late;
-          const result = await target.put(...args);
-          if (args[0] === keys[0]) throw new Error("synthetic ambiguous batch write");
-          if (args[0] === keys[2]) completeKnown();
-          return result;
+          try {
+            const ticket = await env.CATALOGUE_DB.prepare(
+              "SELECT object_key,completed_at FROM staging_object_writes WHERE token=?",
+            )
+              .bind(args[2]?.customMetadata?.cleanup_writer_token)
+              .first();
+            expect(ticket).toEqual({ object_key: args[0], completed_at: null });
+            if (args[0] === keys[1]) await late;
+            const result = await target.put(...args);
+            if (args[0] === keys[0]) throw new Error("synthetic ambiguous batch write");
+            if (args[0] === keys[2]) completeKnown();
+            return result;
+          } catch (error) {
+            if (args[0] === keys[2]) failKnown(error);
+            throw error;
+          }
         };
       const value = Reflect.get(target, property, target);
       return typeof value === "function" ? value.bind(target) : value;
@@ -771,7 +778,7 @@ test("a staging batch waits for late writes and leaves only ambiguous writer tic
   );
   let outcome: unknown;
   try {
-    await completed;
+    await Promise.race([completed, writing]);
     const open = await env.CATALOGUE_DB.prepare(
       "SELECT object_key FROM staging_object_writes WHERE preparation_id='staging_batch' AND completed_at IS NULL",
     ).all();
