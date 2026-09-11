@@ -5,6 +5,11 @@ import { collect, installReconciliationSuite, testEnv } from "./reconciliation-h
 import { catalogueStore } from "../../../src/catalogue/shared";
 import { initializeReconciliationProgress } from "../../../src/catalogue/reconciliation/reconciliation-progress";
 import { ReconciliationReducerIndex } from "../../../src/catalogue/reconciliation/reconciliation-reducer-state";
+import { ReconciliationPlanState } from "../../../src/catalogue/reconciliation/reconciliation-plan-state";
+import { prepareNativeSourceHistory } from "../../../src/catalogue/reconciliation/native-source-history";
+import { ReconciliationContinuation } from "../../../src/catalogue/reconciliation/reconciliation-continuation";
+import { retainReconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
+import { retainNativePreparation } from "./native-preparation-fixture";
 
 installReconciliationSuite();
 
@@ -17,16 +22,74 @@ test("uncheckpointed reducer output replays within one callback and rejects chan
   const bounded = boundedReconciliationResources(testEnv, directStep());
   const store = catalogueStore(bounded.env.CATALOGUE_DB);
   await initializeReconciliationProgress(store, source.id, new Date().toISOString());
-  const entries = Array.from({ length: 101 }, (_, index) => ({ key: `result-${index}`, value: { id: `result-${index}`, value: index } }));
-  const index = () => new ReconciliationReducerIndex<{ id: string; value: number }>(store, source.id, "uncheckpointed_output");
+  const entries = Array.from({ length: 101 }, (_, index) => ({
+    key: `result-${index}`,
+    value: { id: `result-${index}`, value: index },
+  }));
+  const index = () =>
+    new ReconciliationReducerIndex<{ id: string; value: number }>(store, source.id, "uncheckpointed_output");
   await bounded.step.do("retain output before lost checkpoint", async () => index().seedMany(entries));
   const replay = index();
   await bounded.step.do("replay output", async () => replay.seedMany(entries));
   const actual = [];
   for await (const value of replay.entityValues()) actual.push(value);
   expect(actual).toEqual(entries.map(({ value }) => value).sort((left, right) => left.id.localeCompare(right.id)));
-  const changed = entries.map((entry, ordinal) => ordinal === 50 ? { ...entry, value: { ...entry.value, value: -1 } } : entry);
-  await expect(bounded.step.do("reject changed output replay", async () => index().seedMany(changed))).rejects.toThrow("immutable observation effect");
+  const changed = entries.map((entry, ordinal) =>
+    ordinal === 50 ? { ...entry, value: { ...entry.value, value: -1 } } : entry,
+  );
+  await expect(bounded.step.do("reject changed output replay", async () => index().seedMany(changed))).rejects.toThrow(
+    "immutable observation effect",
+  );
+});
+
+test("native history counts large hydrated plans toward its callback budget", async () => {
+  const source = await collect("/reconciliation/card-without-printing", "history-plan-budget");
+  const preparation = await retainNativePreparation(source.id, "catrev_spine_000", "history-plan-budget-prepare");
+  const bounded = boundedReconciliationResources(testEnv, directStep());
+  const store = catalogueStore(bounded.env.CATALOGUE_DB);
+  const plans = new ReconciliationPlanState(store, preparation.candidateId);
+  const facts = JSON.stringify({
+    official_identity: { kind: "publisher_card_number", value: "BUDGET-1" },
+    name: "x".repeat(1_500_000),
+  });
+  for (let index = 0; index < 32; index++)
+    await plans.append({
+      sourceObservationSetId: "history-budget-set",
+      sourceSnapshotId: "history-budget-snapshot",
+      sourceObservationId: `history-budget-${index}`,
+      sourceLineage: "history-budget-source",
+      supportedGame: "one-piece",
+      observationKind: "card_printing",
+      cardId: `history-card-${index}`,
+      printingId: null,
+      locator: null,
+      variantKey: null,
+      compatibility: null,
+      memberships: { products: [], distribution_contexts: [], source_buckets: [] },
+      withdrawal: null,
+      sourceCardFactsJson: facts,
+    });
+  await retainReconciliationCheckpoint(store, preparation.candidateId, "official_reduction", 0, {
+    complete: true,
+    indexes: { plans: plans.position },
+    input: { evidencePlans: [{ supportedGame: "one-piece", sourceLineage: "history-budget-source" }] },
+  });
+  const result: { history: Awaited<ReturnType<typeof prepareNativeSourceHistory>> } = { history: null };
+  let continuations = 0;
+  while (!result.history) {
+    try {
+      await bounded.step.do("advance large-plan history", async () => {
+        result.history = await prepareNativeSourceHistory(store, preparation.candidateId, true, true);
+      });
+    } catch (error) {
+      if (!(error instanceof ReconciliationContinuation)) throw error;
+      if (++continuations > 64) throw new Error("History failed to advance its retained plan cursor.");
+    }
+  }
+  expect(result.history.current.cursor.count).toBe(32);
+  const ids = [];
+  for await (const { value } of result.history.current.entries()) ids.push(value.cardId);
+  expect(ids.sort()).toEqual(Array.from({ length: 32 }, (_, index) => `history-card-${index}`).sort());
 });
 
 test("a reconciliation callback cannot make its 101st D1 call", async () => {

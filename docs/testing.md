@@ -157,7 +157,9 @@ bounded behavioral proof. Fixture setup and teardown must remain bounded too.
 Ingestion, acceptance and draft smoke use a disposable 512 MiB tmpfs per hosted
 runner for temporary databases. It allocates space as files grow and is removed
 when the test step exits. Real storage isolation, transactions and SQL restore
-remain enabled. Local storage settings are unchanged.
+remain enabled. Bounded stress uses the same volume; full stress and focused
+stress diagnostics use 2 GiB because the capacity fixtures exceed 512 MiB.
+The wrapper reports occupied bytes before cleanup. Local storage settings are unchanged.
 
 Routine tests use small offline fixtures and disposable state. They must not
 require full catalogue replay or multi-gigabyte disk preflights. Full Riftbound

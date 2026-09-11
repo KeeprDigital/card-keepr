@@ -368,25 +368,26 @@ async function collectRetainedReconciliationObservation(
         throw new ReconciliationContinuation({ phase: "normalization", ordinal: checkpointOrdinal - 1 });
       work = workBytes = 0;
     };
-    for await (const batch of sourceObservationBatches(readSourceObservations(
-      database, row.observation_set_id, startOrdinal, row.observation_count,
-    ))) {
+    for await (const batch of sourceObservationBatches(
+      readSourceObservations(database, row.observation_set_id, startOrdinal, row.observation_count),
+    )) {
       const origins = batch.map(({ ordinal, value }) => {
-        if (!isRecord(value) || typeof value.id !== "string") throw new Error("Retained Source Observation identity is invalid.");
+        if (!isRecord(value) || typeof value.id !== "string")
+          throw new Error("Retained Source Observation identity is invalid.");
         return { id: value.id, ordinal };
       });
       const retained = await claimObservationOrigins(database, runId, row.observation_set_id, origins);
       for (const { ordinal: sourceOrdinal, value: wrapped, byteLength: size } of batch) {
-      const value = isRecord(wrapped) ? wrapped.value : null;
-      const appearance = isRecord(value) ? value.appearance_evidence : null;
-      // Image retention also registers and settles a durable staging writer.
-      const cost = 1 + (isRecord(appearance) && Array.isArray(appearance.images) ? 2 * appearance.images.length : 0);
-      if (work > 0 && (work + cost > 16 || workBytes + size > 512000)) await savePrefix(sourceOrdinal);
-      await normalize(wrapped, retained.has((wrapped as { id: string }).id));
-      work += cost;
-      workBytes += size;
-      if ((work >= 16 || workBytes >= 512000) && sourceOrdinal + 1 < row.observation_count)
-        await savePrefix(sourceOrdinal + 1);
+        const value = isRecord(wrapped) ? wrapped.value : null;
+        const appearance = isRecord(value) ? value.appearance_evidence : null;
+        // Image retention also registers and settles a durable staging writer.
+        const cost = 1 + (isRecord(appearance) && Array.isArray(appearance.images) ? 2 * appearance.images.length : 0);
+        if (work > 0 && (work + cost > 16 || workBytes + size > 512000)) await savePrefix(sourceOrdinal);
+        await normalize(wrapped, retained.has((wrapped as { id: string }).id));
+        work += cost;
+        workBytes += size;
+        if ((work >= 16 || workBytes >= 512000) && sourceOrdinal + 1 < row.observation_count)
+          await savePrefix(sourceOrdinal + 1);
       }
     }
     await writes.flush();

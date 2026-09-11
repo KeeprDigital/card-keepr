@@ -5,6 +5,7 @@
 set -euo pipefail
 
 test_tmp=$(mktemp -d)
-sudo mount -t tmpfs -o "size=512m,mode=0700,uid=$(id -u),gid=$(id -g)" tmpfs "$test_tmp"
-trap 'sudo umount "$test_tmp"; rmdir "$test_tmp"' EXIT
+test_tmp_size=${CI_TEST_TMPFS_SIZE:-512m}
+sudo mount -t tmpfs -o "size=$test_tmp_size,mode=0700,uid=$(id -u),gid=$(id -g)" tmpfs "$test_tmp"
+trap 'df -B1 "$test_tmp"; sudo umount "$test_tmp"; rmdir "$test_tmp"' EXIT
 TMPDIR="$test_tmp" "$@"

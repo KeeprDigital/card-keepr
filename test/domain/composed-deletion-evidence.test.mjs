@@ -276,7 +276,10 @@ test("snapshot SQL resumes after a full page of small rows", async () => {
     let pages = 0;
     for (;;) {
       const query = compositionVerificationQuery({
-        kind: "composition-page", table: "reconciliation_checkpoints", after, columns: ["content"],
+        kind: "composition-page",
+        table: "reconciliation_checkpoints",
+        after,
+        columns: ["content"],
       });
       const page = database.prepare(query.sql).all(...query.params);
       if (!page.length) break;
@@ -285,7 +288,10 @@ test("snapshot SQL resumes after a full page of small rows", async () => {
       after = page.at(-1).snapshot_rowid;
     }
     assert.ok(pages > 1);
-    assert.deepEqual(records, Array.from({ length: 129 }, (_, index) => `record ${index}`));
+    assert.deepEqual(
+      records,
+      Array.from({ length: 129 }, (_, index) => `record ${index}`),
+    );
   } finally {
     database.close();
   }

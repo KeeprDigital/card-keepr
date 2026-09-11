@@ -348,7 +348,9 @@ export class ReconciliationReducerIndex<T> {
     const rows = results.map((result) => result.results[0] ?? null);
     const conflicts = writes.map((write, index) => ({ write, index })).filter(({ index }) => !rows[index]);
     if (conflicts.length) {
-      const retained = await storage(() => this.database.batch<StateRow>(conflicts.map(({ write }) => write.replayStatement())));
+      const retained = await storage(() =>
+        this.database.batch<StateRow>(conflicts.map(({ write }) => write.replayStatement())),
+      );
       for (const [index, conflict] of conflicts.entries()) rows[conflict.index] = retained[index]?.results[0] ?? null;
     }
     for (const [index, write] of writes.entries()) await write.accept(rows[index] ?? null, false);
@@ -376,13 +378,22 @@ export class ReconciliationReducerIndex<T> {
           sha256,
           groupDigest,
         ),
-      replayStatement: () => matchingReducerStateStatement(this.database, this.runId, this.namespace, digest, ordinal, content, sha256),
+      replayStatement: () =>
+        matchingReducerStateStatement(this.database, this.runId, this.namespace, digest, ordinal, content, sha256),
       accept: async (inserted: StateRow | null, readConflict = true) => {
         const retained =
           inserted ??
-          (readConflict ? await storage(() =>
-            exactReducerStateStatement(this.database, this.runId, this.namespace, digest, ordinal).first<StateRow>(),
-          ) : null);
+          (readConflict
+            ? await storage(() =>
+                exactReducerStateStatement(
+                  this.database,
+                  this.runId,
+                  this.namespace,
+                  digest,
+                  ordinal,
+                ).first<StateRow>(),
+              )
+            : null);
         if (retained?.content !== content || retained.sha256 !== sha256)
           throw new Error("Reducer replay changed its immutable observation effect.");
         if (this.ordinal === ordinal) {

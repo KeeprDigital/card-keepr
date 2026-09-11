@@ -270,7 +270,12 @@ export async function prepareNativeSourceHistory(
         }
       }
       // Batched observations can advance further; predecessor traversals keep their smaller bound.
-      if (++work >= (cursor.stage === "observations" ? 32 : 8) || historyBytes >= 256000 || cursor.stage === "prior_ready" || cursor.stage === "complete") {
+      if (
+        ++work >= (cursor.stage === "observations" ? 32 : 8) ||
+        historyBytes >= 256000 ||
+        cursor.stage === "prior_ready" ||
+        cursor.stage === "complete"
+      ) {
         await save();
         work = historyBytes = 0;
       }

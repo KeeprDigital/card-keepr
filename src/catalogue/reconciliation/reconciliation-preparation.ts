@@ -4,7 +4,7 @@ import { preparationBatchStatement, recordPreparationBatchStatement } from "./re
 
 const nonAscii = /[^\u0000-\u007f]/;
 const encoder = new TextEncoder();
-const utf8Length = (text: string) => nonAscii.test(text) ? encoder.encode(text).byteLength : text.length;
+const utf8Length = (text: string) => (nonAscii.test(text) ? encoder.encode(text).byteLength : text.length);
 
 /** Each receipt and its bounded effects commit together, independent of Workflow history. */
 export async function prepareCandidateBatch(
@@ -62,7 +62,7 @@ function* canonicalParts(value: unknown): Generator<string> {
   if (typeof value === "string") {
     yield '"';
     const normalized = value.normalize("NFC");
-    for (let offset = 0; offset < normalized.length; ) {
+    for (let offset = 0; offset < normalized.length;) {
       let end = Math.min(offset + 32768, normalized.length);
       if (
         end < normalized.length &&

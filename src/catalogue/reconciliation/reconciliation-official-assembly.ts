@@ -137,25 +137,25 @@ export async function prepareOfficialCandidate(
       const observed = await sources.observedCards(page.map((card) => card.id));
       const resolvedCards: CatalogueCard[] = [];
       for (const card of page) {
-      const errata = await sources.errata.forCard(card.game, card.id);
-      let resolved = card;
-      if (sources.games.has(card.game)) {
-        try {
-          resolved = { ...card, effective_rules_text: deriveEffectiveRulesText(card, errata, observedAt) };
-        } catch (error) {
-          const plans = await sources.plans.forCard(card.id);
-          await diagnostics.push({
-            code: "canonical_card_conflict",
-            source_observation_id: plans[0]?.sourceObservationId ?? null,
-            locator: plans[0]?.locator ?? null,
-            matched_printing_ids: plans.flatMap((plan) => (plan.printingId === null ? [] : [plan.printingId])),
-            detail:
-              error instanceof ErratumRulesTextError
-                ? error.message
-                : "The Card has an unresolved Effective Rules Text conflict.",
-          });
+        const errata = await sources.errata.forCard(card.game, card.id);
+        let resolved = card;
+        if (sources.games.has(card.game)) {
+          try {
+            resolved = { ...card, effective_rules_text: deriveEffectiveRulesText(card, errata, observedAt) };
+          } catch (error) {
+            const plans = await sources.plans.forCard(card.id);
+            await diagnostics.push({
+              code: "canonical_card_conflict",
+              source_observation_id: plans[0]?.sourceObservationId ?? null,
+              locator: plans[0]?.locator ?? null,
+              matched_printing_ids: plans.flatMap((plan) => (plan.printingId === null ? [] : [plan.printingId])),
+              detail:
+                error instanceof ErratumRulesTextError
+                  ? error.message
+                  : "The Card has an unresolved Effective Rules Text conflict.",
+            });
+          }
         }
-      }
         resolvedCards.push(omitUndefinedValues(resolved) as CatalogueCard);
         if (observed.has(card.id)) {
           await cardIds.append(card.id);

@@ -79,20 +79,39 @@ export class ReconciliationCardState {
   }
   sameOfficialIdentity(game: string, identity: CatalogueCard["official_identity"], includeCurrent = false) {
     const key = canonicalJson([game, identity]);
-    return !includeCurrent && this.absentOfficialIdentities.has(key) ? Promise.resolve([]) : this.references(this.namespace, key, includeCurrent);
+    return !includeCurrent && this.absentOfficialIdentities.has(key)
+      ? Promise.resolve([])
+      : this.references(this.namespace, key, includeCurrent);
   }
   /** Only cache proven absences in this small input window; writes invalidate the affected identity. */
   async prefetchOfficialIdentities(cards: readonly Pick<CatalogueCard, "game" | "official_identity">[]) {
     if (cards.length > 8) throw new Error("Card identity lookup window exceeds eight records.");
     this.absentOfficialIdentities.clear();
-    const keys = [...new Set(cards.filter((card) => card.official_identity.kind !== "unknown").map((card) => canonicalJson([card.game, card.official_identity])))];
+    const keys = [
+      ...new Set(
+        cards
+          .filter((card) => card.official_identity.kind !== "unknown")
+          .map((card) => canonicalJson([card.game, card.official_identity])),
+      ),
+    ];
     if (!this.cards.position) {
       this.absentOfficialIdentities = new Set(keys);
       return;
     }
     if (!keys.length) return;
     const statements = [];
-    for (const key of keys) statements.push(nextReducerCardReferenceStatement(this.database, this.runId, this.namespace, await sha256Text(key), this.cards.position + 1, "", false));
+    for (const key of keys)
+      statements.push(
+        nextReducerCardReferenceStatement(
+          this.database,
+          this.runId,
+          this.namespace,
+          await sha256Text(key),
+          this.cards.position + 1,
+          "",
+          false,
+        ),
+      );
     try {
       const results = await this.database.batch(statements);
       for (const [index, key] of keys.entries()) {

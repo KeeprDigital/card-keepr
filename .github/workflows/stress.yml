@@ -29,14 +29,16 @@ jobs:
   stress:
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.suite == 'full' && 45 || 5 }}
+    env:
+      CI_TEST_TMPFS_SIZE: ${{ inputs.suite == 'full' && '2g' || '512m' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up repository tooling
         uses: ./.github/actions/setup-toolchain
       - if: inputs.suite != 'full'
-        run: pnpm run test:stress --reporter=default --reporter=json --outputFile=stress-results.json
+        run: bash scripts/ci-test.sh pnpm run test:stress --reporter=default --reporter=json --outputFile=stress-results.json
       - if: inputs.suite == 'full'
-        run: pnpm run test:stress:full --reporter=default --reporter=json --outputFile=stress-results.json
+        run: bash scripts/ci-test.sh pnpm run test:stress:full --reporter=default --reporter=json --outputFile=stress-results.json
       - name: Retain complete stress results and callback measurements
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

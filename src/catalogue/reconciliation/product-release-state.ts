@@ -262,107 +262,110 @@ export async function reconcileProductReleaseState(
       };
       flushResults = flush;
       try {
-      for (const { entry, parsed } of batch) {
-      const input = entry.input;
-      if (input !== null && parsed !== null) {
-        await budget(
-          entry.byteLength,
-          parsed.products.length +
-            parsed.distributionContexts.length +
-            parsed.relationships.length +
-            parsed.warnings.length,
-        );
-        if (input.value !== undefined) checkedLineages.add(input.sourceLineage);
-        // Identity matching needs only candidates with the same normalized name or official code.
-        let matchingVisits = 0;
-        const observation = await preservePublishedProductIdentity(
-          parsed,
-          async (product) => {
-            if (priorProductCount === 0) return [];
-            const matches = new Map<string, CatalogueProduct>();
-            const add = async (match: CatalogueProduct) => {
-              if (++matchingVisits > 16)
-                throw new Error(
-                  "reconciliation_capacity_exceeded: one Product input requires too many identity visits.",
-                );
-              if (matches.has(match.id)) return;
-              if (matches.size === 8)
-                throw new Error("reconciliation_capacity_exceeded: one Product identity has too many candidates.");
-              await assertProductGroupBudget([...matches.values(), match]);
-              matches.set(match.id, match);
-            };
-            for await (const match of names.matchingBeforeObservation(normalizedProductName(product.name) ?? "", {
-              records: 8,
-              bytes: 512000,
-            }))
-              await add(match);
-            if (product.officialCode !== null) {
-              for await (const match of codes.matchingBeforeObservation(product.officialCode, {
-                records: 8,
-                bytes: 512000,
-              }))
-                await add(match);
+        for (const { entry, parsed } of batch) {
+          const input = entry.input;
+          if (input !== null && parsed !== null) {
+            await budget(
+              entry.byteLength,
+              parsed.products.length +
+                parsed.distributionContexts.length +
+                parsed.relationships.length +
+                parsed.warnings.length,
+            );
+            if (input.value !== undefined) checkedLineages.add(input.sourceLineage);
+            // Identity matching needs only candidates with the same normalized name or official code.
+            let matchingVisits = 0;
+            const observation = await preservePublishedProductIdentity(
+              parsed,
+              async (product) => {
+                if (priorProductCount === 0) return [];
+                const matches = new Map<string, CatalogueProduct>();
+                const add = async (match: CatalogueProduct) => {
+                  if (++matchingVisits > 16)
+                    throw new Error(
+                      "reconciliation_capacity_exceeded: one Product input requires too many identity visits.",
+                    );
+                  if (matches.has(match.id)) return;
+                  if (matches.size === 8)
+                    throw new Error("reconciliation_capacity_exceeded: one Product identity has too many candidates.");
+                  await assertProductGroupBudget([...matches.values(), match]);
+                  matches.set(match.id, match);
+                };
+                for await (const match of names.matchingBeforeObservation(normalizedProductName(product.name) ?? "", {
+                  records: 8,
+                  bytes: 512000,
+                }))
+                  await add(match);
+                if (product.officialCode !== null) {
+                  for await (const match of codes.matchingBeforeObservation(product.officialCode, {
+                    records: 8,
+                    bytes: 512000,
+                  }))
+                    await add(match);
+                }
+                return [...matches.values()];
+              },
+              game,
+            );
+            await warnings.push(...observation.warnings);
+            for (
+              let index = 0;
+              index < Math.max(observation.products.length, observation.distributionContexts.length);
+              index++
+            ) {
+              const product = observation.products[index];
+              const context = observation.distributionContexts[index];
+              const [previousProduct, previousContext] =
+                productWindow && contextWindow
+                  ? [
+                      product ? productWindow.get(product.id) : undefined,
+                      context ? contextWindow.get(context.id) : undefined,
+                    ]
+                  : product && context
+                    ? await groups.getAlongside(product.id, { index: contexts, key: context.id })
+                    : [
+                        product ? await groups.get(product.id) : undefined,
+                        context ? await contexts.get(context.id) : undefined,
+                      ];
+              const group = product
+                ? { id: product.id, observations: [...(previousProduct?.observations ?? []), product] }
+                : undefined;
+              if (group) await assertProductGroupBudget(group.observations);
+              const merged = context
+                ? aggregateContexts(previousContext ? [previousContext, context] : [context])[0]!
+                : undefined;
+              if (productWindow && contextWindow) {
+                const size = new TextEncoder().encode(JSON.stringify([group, merged])).byteLength;
+                if (writeBytes && writeBytes + size > 131072) await flush();
+                if (size > 131072) {
+                  if (group) await groups.seed(group.id, group);
+                  if (merged) await contexts.seed(merged.id, merged);
+                } else {
+                  if (group) productWrites.push({ key: group.id, value: group });
+                  if (merged) contextWrites.push({ key: merged.id, value: merged });
+                  writeBytes += size;
+                }
+                if (group) productWindow.set(group.id, group);
+                if (merged) contextWindow.set(merged.id, merged);
+              } else if (group && merged) {
+                groups.beginObservation();
+                contexts.beginObservation();
+                await groups.setAlongside(group.id, group, { index: contexts, key: merged.id, value: merged });
+              } else if (group) await groups.seed(group.id, group);
+              else if (merged) await contexts.seed(merged.id, merged);
             }
-            return [...matches.values()];
-          },
-          game,
-        );
-        await warnings.push(...observation.warnings);
-        for (
-          let index = 0;
-          index < Math.max(observation.products.length, observation.distributionContexts.length);
-          index++
-        ) {
-          const product = observation.products[index];
-          const context = observation.distributionContexts[index];
-          const [previousProduct, previousContext] =
-            productWindow && contextWindow
-              ? [product ? productWindow.get(product.id) : undefined, context ? contextWindow.get(context.id) : undefined]
-              : product && context
-              ? await groups.getAlongside(product.id, { index: contexts, key: context.id })
-              : [
-                  product ? await groups.get(product.id) : undefined,
-                  context ? await contexts.get(context.id) : undefined,
-                ];
-          const group = product
-            ? { id: product.id, observations: [...(previousProduct?.observations ?? []), product] }
-            : undefined;
-          if (group) await assertProductGroupBudget(group.observations);
-          const merged = context
-            ? aggregateContexts(previousContext ? [previousContext, context] : [context])[0]!
-            : undefined;
-          if (productWindow && contextWindow) {
-            const size = new TextEncoder().encode(JSON.stringify([group, merged])).byteLength;
-            if (writeBytes && writeBytes + size > 131072) await flush();
-            if (size > 131072) {
-              if (group) await groups.seed(group.id, group);
-              if (merged) await contexts.seed(merged.id, merged);
-            } else {
-              if (group) productWrites.push({ key: group.id, value: group });
-              if (merged) contextWrites.push({ key: merged.id, value: merged });
-              writeBytes += size;
+            for (const relationship of observation.relationships) {
+              const previous = await relationships.get(relationship.id);
+              const merged = aggregateRelationships(previous ? [previous, relationship] : [relationship])[0]!;
+              await relationships.seed(relationship.id, merged);
             }
-            if (group) productWindow.set(group.id, group);
-            if (merged) contextWindow.set(merged.id, merged);
-          } else if (group && merged) {
-            groups.beginObservation();
-            contexts.beginObservation();
-            await groups.setAlongside(group.id, group, { index: contexts, key: merged.id, value: merged });
-          } else if (group) await groups.seed(group.id, group);
-          else if (merged) await contexts.seed(merged.id, merged);
-        }
-        for (const relationship of observation.relationships) {
-          const previous = await relationships.get(relationship.id);
-          const merged = aggregateRelationships(previous ? [previous, relationship] : [relationship])[0]!;
-          await relationships.seed(relationship.id, merged);
-        }
 
-        processedInputs++;
-      } else await budget(entry.byteLength);
-      inputAfter = entry.cursor;
-      await finishRecord();
-      }
-      await flush();
+            processedInputs++;
+          } else await budget(entry.byteLength);
+          inputAfter = entry.cursor;
+          await finishRecord();
+        }
+        await flush();
       } finally {
         flushResults = async () => {};
       }
