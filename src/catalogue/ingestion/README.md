@@ -4,7 +4,7 @@ The cluster's public interface stays in `index.ts` and `ingestion.ts`.
 Implementation modules separate responsibilities without changing Ingestion Run transitions:
 
 - `run-lifecycle.ts` starts, retries, rejects, and reads runs.
-- `publication-lifecycle.ts` approves candidates and reconciles abandoned publication reservations.
+- `publication-lifecycle.ts` observes exact historical approval results and reconciles already reserved abandoned publications; it cannot start a new aggregate publication. Current game candidate approval lives in `reconciliation/game-publication.ts` and follows the [native publication protocol](../../../docs/runbooks/atomic-game-publication.md).
 - `publication-commit.ts` builds publication statements and atomically publishes verified data.
 - `publication-storage.ts` reserves, writes, verifies, and fences publication objects.
 - `publication-cleanup.ts` records publication failure and owns claimed cleanup attempts.

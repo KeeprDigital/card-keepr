@@ -20,9 +20,9 @@ Each game manifest binds its candidate identity, collection provenance, Supporte
 Game, expected predecessor, deadline, preparation manifest and ordered partition
 hashes. The preparation manifest binds the verified input and pinned definitions,
 admission decisions and identity corrections. `expected_game_revision_id`
-currently identifies the nearest ancestor of the run's pinned Catalogue Revision
-that selected this game; final Game Catalogue Revision publication is the #228
-integration boundary. Attributable warnings belong only to that game's `warnings`
+binds the selected game's exact predecessor. Publication advances that game
+independently through the current [publication protocol](atomic-game-publication.md).
+Attributable warnings belong only to that game's `warnings`
 partitions. Diagnostics without game attribution are explicitly retained as
 `shared_warnings` in each selected game's manifest.
 
@@ -81,12 +81,21 @@ reads only earlier observation versions and its own writes, so retained later
 observations cannot change earlier identity decisions. This counter counts
 individual effects, not completed work units or a resume cursor.
 
-Independent game preparation uses `keepr game-candidate create`, `show`,
-`pause`, `resume`, and `abandon`. Each preparation owns its durable progress and
-game slot. The legacy run-level preparation and approval adapter remains for
-compatibility. Both paths use bounded reducers and partitioned retained work;
-see [Reconciliation continuation](reconciliation-workflows.md) for dispatch,
-resource bounds, and the native publication integration boundary.
+Independent game preparation uses `keepr game-candidate prepare --yes`, `show`,
+and `abandon --yes`. The preparation request binds `--run-id`, `--game`,
+`--expected-game-revision-id` and `--idempotency-key`. Candidate pause and resume
+are authenticated POST operations at `/v1/game-candidates/:candidate/pause`
+and `/resume`, with `{generation, idempotency_key}`; they have no matching CLI
+commands. Each preparation owns its durable progress and game slot.
+
+Run-level reconciliation remains available for retained inspection and recovery.
+New run approval is retired: `keepr run approve` returns retirement guidance
+without a request, and a new unreserved HTTP approval returns `410
+run_approval_retired`. Existing historical results and reservations retain
+their exact replay/recovery semantics. For current publication, inspect the
+native candidate, prepare its artifacts, and approve that whole candidate through
+[atomic game publication](atomic-game-publication.md). See
+[Reconciliation continuation](reconciliation-workflows.md) for dispatch and bounds.
 
 ## Complete candidate inspection
 

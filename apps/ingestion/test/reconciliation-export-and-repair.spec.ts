@@ -12,7 +12,6 @@ import {
 import * as cardSearchQueries from "./query-helpers/card-search";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import {
-  approve,
   collect,
   get,
   installReconciliationSuite,
@@ -552,7 +551,11 @@ test("retired aggregate approval cannot start an over-budget publication or writ
     .first<{ current_revision_id: string }>();
   const objectsBefore = (await testEnv.CATALOGUE_EXPORTS.list()).objects.map((object) => object.key).sort();
 
-  const blocked = await approve(reconciled.document);
+  const blocked = await post(`/v1/ingestion-runs/${run.id}/approval`, {
+    candidate_digest: requiredString(reconciled.document, "candidate_digest"),
+    expected_current_revision_id: requiredString(reconciled.document, "expected_current_revision_id"),
+    idempotency_key: "retired-over-budget-approval",
+  });
   const objectsAfter = (await testEnv.CATALOGUE_EXPORTS.list()).objects.map((object) => object.key).sort();
   const currentAfter = await publishedCatalogueQueries
     .readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB)

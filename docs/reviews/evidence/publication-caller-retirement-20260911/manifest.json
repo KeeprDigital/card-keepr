@@ -1,0 +1,80 @@
+{
+  "base_commit": "e4d49f420e9cb3c0343ef54a9948720aadbdf146",
+  "logs": [
+    {
+      "file": "check-final.log.gz",
+      "uncompressed_sha256": "41b8ac0930bdf8200d3580b4162b159d59636ba9b57789e7d0c0e56f24efb33e",
+      "uncompressed_bytes": 5984
+    },
+    {
+      "file": "check-reviewed.log.gz",
+      "uncompressed_sha256": "41b8ac0930bdf8200d3580b4162b159d59636ba9b57789e7d0c0e56f24efb33e",
+      "uncompressed_bytes": 5984
+    },
+    {
+      "file": "focused.log.gz",
+      "uncompressed_sha256": "e3ba3444993789d29a81067b3e16231b0271a2993e1ac603e5caa26e171b1d65",
+      "uncompressed_bytes": 35843
+    },
+    {
+      "file": "legacy-images.log.gz",
+      "uncompressed_sha256": "c59ec7122f8f75465f6616bc0a25e5cff20294d9e563567ffe764626373c3b50",
+      "uncompressed_bytes": 471593
+    },
+    {
+      "file": "legacy-large.log.gz",
+      "uncompressed_sha256": "04d21dd8e774abce0e92d0a563bde72209415ae19d3cc3b7854be544ebca9005",
+      "uncompressed_bytes": 1918479
+    },
+    {
+      "file": "legacy-warning.log.gz",
+      "uncompressed_sha256": "f26ef58210b8773adc0801dd92181b248bc7a1b89ce625ea3a25ab6d363adc1e",
+      "uncompressed_bytes": 302848
+    },
+    {
+      "file": "native-cards.log.gz",
+      "uncompressed_sha256": "7fb29fdef7ce2affca429f6cc5c854ff434a39b29b355e5b90344248c060252b",
+      "uncompressed_bytes": 23404
+    },
+    {
+      "file": "native-images.log.gz",
+      "uncompressed_sha256": "15a174de53a4855d1a6b67757538e70ee4865cc04785e412ae911ccefa1142e6",
+      "uncompressed_bytes": 23413
+    },
+    {
+      "file": "native-products.log.gz",
+      "uncompressed_sha256": "1d8780a13ebbb9bea9bd5c37e29b3a633432591f407b80257b6ee7f7d4faacbb",
+      "uncompressed_bytes": 12504739
+    },
+    {
+      "file": "native-warning.log.gz",
+      "uncompressed_sha256": "fe7f09fd472cf9569040275d610757536970977185859b8fb00a7dffc37b0959",
+      "uncompressed_bytes": 23404
+    },
+    {
+      "file": "schema-green-2.log.gz",
+      "uncompressed_sha256": "7004f347a50d9e35aa03397738a10163f15d2352f99528cbacb1349f068a9594",
+      "uncompressed_bytes": 298
+    },
+    {
+      "file": "schema-red-2.log.gz",
+      "uncompressed_sha256": "05938b46270497b8897c2d2eb8078bd7b19f3314f1d906bd757de7c5a2a2ea0f",
+      "uncompressed_bytes": 2193
+    },
+    {
+      "file": "schema-red.log.gz",
+      "uncompressed_sha256": "256611417d35017e9d8db6737e82bbcfc08b8662f263765422697eac220e70cb",
+      "uncompressed_bytes": 1255
+    },
+    {
+      "file": "schema-review.log.gz",
+      "uncompressed_sha256": "1115facf1385fc4a0d14a9e58de7f0d5b32855e7abad7d171cf2722deeac2991",
+      "uncompressed_bytes": 298
+    },
+    {
+      "file": "stress-final.log.gz",
+      "uncompressed_sha256": "a74613f6f84c3e38ce5ef53de87d7786a5f636cb40e8c5b761f02d52aa7c4d99",
+      "uncompressed_bytes": 12506191
+    }
+  ]
+}
