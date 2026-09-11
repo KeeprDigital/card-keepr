@@ -166,10 +166,10 @@ export async function advancePublicationPreparation(
         const readPartition = publicationPartitionReader(db, id);
         const objects = publicationObjectBatch(db, env.CATALOGUE_EXPORTS, candidate.preparation_id);
         const artifacts: (() => D1PreparedStatement)[] = [];
-        // Amortize the guarded checkpoint over four sequential bounded artifacts.
+        // Amortize the guarded checkpoint over six sequential bounded units.
         // A phase boundary commits before the next phase reads the receipts we staged.
         // Composition nodes also commit individually before a parent reads them.
-        for (let unit = 0; unit < 4; unit++) {
+        for (let unit = 0; unit < 6; unit++) {
           const continueBatch = await prepareUnit(
             env,
             candidate,
@@ -641,7 +641,7 @@ async function prepareUnit(
     cursor.subrecord = 0;
   }
   cursor.text = cursor.chunk = 0;
-  // Three <=64 KiB units plus one <=512 KiB projection and <=128 KiB
+  // Five <=64 KiB units plus one <=512 KiB projection and <=128 KiB
   // lifecycle leave room for the fixed receipts/cursor within a 1 MiB D1 batch.
   return boundBytes <= 65536;
 }
