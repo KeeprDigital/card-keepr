@@ -69,6 +69,12 @@ benchmark commands require a scenario or `--all`.
 Listing starts no services. See [acceptance details](../acceptance/README.md)
 for available scenarios and benchmark report settings.
 
+For a manual memory report, use
+`KEEPR_CAPACITY_OUTPUT_PREFIX=/tmp/keepr-capacity pnpm run profile:reconciliation`.
+This standalone diagnostic is excluded from all test suites. It reports observed
+memory, the historical 64 MiB reference and sampling gaps; it does not establish
+a memory budget. See the [report policy](../acceptance/README.md#extended-journeys-and-benchmarks).
+
 ## Validation, formatting and generation
 
 | Command                          | What it does                                                                                                                     |

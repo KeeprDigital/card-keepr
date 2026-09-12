@@ -52,7 +52,11 @@ Use the smallest input crossing the actual boundary: two pages for pagination,
 one record beyond a batch, two competing writers, or a streamed payload beyond
 one chunk. The native image assertion runs with two distinct 100 KiB images in
 routine coverage and 128 images in stress coverage. Both verify streaming,
-publication, serving bytes and export references. The missing-capture regression
+publication, serving bytes, exported record identities and real SQL backup/restore.
+The separate 128-image inline-source case stops at candidate preparation: its
+sub-1 MiB candidate bound applies to that source layout, while the native
+transport fixture includes more structured evidence. It does not repeat the
+publication journey. The missing-capture regression
 uses nine requests to cross an eight-request batch.
 
 ## What the stress commands prove
@@ -62,13 +66,14 @@ resource-limit and performance checks. Most are volume tests, not experiments
 that find the system's breaking point. Keep the command names for compatibility;
 describe a result by the behavior it actually tested.
 
-| Example                                                        | What it establishes                                            |
-| -------------------------------------------------------------- | -------------------------------------------------------------- |
-| 1,001 Products, public exports and actual SQL backup/restore   | Complete, correct publication and recovery for that workload   |
-| 128 images, large evidence and 5,000-request graphs            | Streaming, partitioning and completion at the specified volume |
-| One request beyond adapter capacity; concurrent admission      | Enforcement of configured limits, including competing requests |
-| Host pacing and pause/resume                                   | Scheduling rules and recovery behavior                         |
-| Native candidate below 15,000 ms; collection throughput window | Performance on that runner and toolchain                       |
+| Example                                                      | What it establishes                                            |
+| ------------------------------------------------------------ | -------------------------------------------------------------- |
+| 1,001 Products, public exports and actual SQL backup/restore | Complete, correct publication and recovery for that workload   |
+| 128 images, large evidence and 5,000-request graphs          | Streaming, partitioning and completion at the specified volume |
+| One request beyond adapter capacity; concurrent admission    | Enforcement of configured limits, including competing requests |
+| Host pacing and pause/resume                                 | Scheduling rules and recovery behavior                         |
+| Native candidate elapsed time                                | Diagnostic timing on that runner and toolchain                 |
+| Collection throughput window                                 | Existing per-request overhead requirement on that runner       |
 
 A stress experiment deliberately exceeds expected load or constrains resources,
 then checks how the system degrades, rejects work and recovers. Uncontrolled
@@ -76,8 +81,17 @@ hardware does not prevent that experiment, but makes timing and a repeatable
 breaking point harder to interpret. The current suite does not establish maximum
 production throughput. Report timings with the environment; use comparable,
 sequential runs for performance comparisons. Finite hang guards remain useful
-without becoming speed requirements. The existing native timing assertion is
-still a separate, hardware-sensitive performance requirement.
+without becoming speed requirements. Native preparation elapsed time is diagnostic:
+uncontrolled hardware cannot distinguish application regressions from runner contention.
+The separate collection throughput requirement is unchanged.
+
+The native resource test reports completion and callback limits independently
+with soft assertions, and retains elapsed/phase timings as diagnostics. Its observer
+must record successful storage work; the implementation's number of callback
+subdivisions is not a minimum requirement. Host concurrency uses a controlled
+fetch barrier, while same-host non-overlap and completion-to-next-start pacing
+are asserted separately. See the [test overhaul](reviews/testing-overhaul-20260912.md)
+for the audit dispositions and validation.
 
 ## Publication large-workload acceptance
 
@@ -85,9 +99,11 @@ The 1,001-Product publication journey retains its full workload, integrity,
 consumer and real SQL backup/restore checks. Its test-body hang cap is five
 minutes following the [12 September acceptance decision](reviews/publication-253-implementation-20260912.md).
 The previous two-minute failures remain failures under the original acceptance.
-Phase timings are measurements, not a publication completion SLA. The separate
-native preparation assertion stays below 15,000 ms with its existing workload
-and harness timeout. The public one-record component/four-component page contract
+Phase timings are measurements, not a publication completion SLA. Native
+preparation retains its 1,001-Product workload, callback bound and 120-second
+hang timeout. The former 15,000 ms preparation requirement became diagnostic
+in the test overhaul; earlier results keep their original verdicts.
+The public one-record component/four-component page contract
 is unchanged. A passing routine suite or revised timeout cannot close #253.
 
 The ingestion provider mock snapshots the owning runtime's actual SQLite file,
@@ -161,6 +177,12 @@ coverage by default. See [acceptance details](../acceptance/README.md).
 
 “Full” means routine regression coverage. Extended, benchmark and stress cases
 are deliberately separate. Weekly source recapture checks publisher freshness.
+
+`profile:reconciliation` is a separate manual memory diagnostic, excluded even
+from `test:benchmark --all`. It reports the observed heap, comparison with the
+historical 64 MiB reference, and incomplete sampling without a memory pass/fail
+verdict. Workload failures or unusable reports still return an error. See the
+[profiling command and report policy](../acceptance/README.md#extended-journeys-and-benchmarks).
 
 ## CI and resource policy
 

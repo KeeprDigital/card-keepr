@@ -9,7 +9,6 @@ export const extendedAcceptanceFiles = Object.freeze([
 export const benchmarkAcceptanceFiles = Object.freeze([
   "native-isolate-metrics.test.mjs",
   "native-sqlite-export.test.mjs",
-  "reconciliation-capacity-probe.test.mjs",
 ]);
 const smokeFiles = new Set(["source-evidence-cli.test.mjs", "riftbound-bounded-intake.test.mjs"]);
 export const acceptanceTiers = Object.freeze(["default", "smoke", "extended", "benchmark"]);

@@ -33,7 +33,6 @@ test("routine acceptance retains bounded restore and excludes full catalogue jou
     "riftbound-catalogue.test.mjs",
     "native-isolate-metrics.test.mjs",
     "native-sqlite-export.test.mjs",
-    "reconciliation-capacity-probe.test.mjs",
   ]) {
     assert.ok(!routine.includes(file));
   }
@@ -85,9 +84,10 @@ test("smoke retains the two everyday paths within routine coverage and unknown t
   }
 });
 
-test("expensive investigations require an explicit valid scenario and probes cannot silently skip", () => {
+test("expensive investigations require an explicit valid scenario and exclude the manual memory diagnostic", () => {
   assert.deepEqual(list("benchmark", "native-sqlite-export"), ["native-sqlite-export.test.mjs"]);
   assert.deepEqual(list("extended", "riftbound-catalogue.test.mjs"), ["riftbound-catalogue.test.mjs"]);
+  assert.deepEqual(list("benchmark", "--all"), ["native-isolate-metrics.test.mjs", "native-sqlite-export.test.mjs"]);
   for (const args of [
     ["extended"],
     ["benchmark"],

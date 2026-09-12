@@ -1,7 +1,8 @@
 import { env } from "cloudflare:workers";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+import { OfficialSourceTransport } from "../src/official-source-transport";
 import { catalogueStore } from "../../../src/catalogue/shared";
-import { pendingEvidenceRequests } from "../../../src/catalogue/source-evidence";
+import { pendingEvidenceRequests, sourceHostPacingIntervalMilliseconds } from "../../../src/catalogue/source-evidence";
 import {
   type CollectionDocument,
   fixtureEvidenceRequest,
@@ -48,12 +49,54 @@ test("collection is sequential per hostname and different hostnames progress con
     expect(request).toBeDefined();
     return request!.request_id;
   };
-  const completed = await resumeCollection(run.id);
+  const enteredHosts = new Set<string>();
+  const activeHosts = new Set<string>();
+  const overlaps: string[] = [];
+  let releaseFetches!: () => void;
+  const fetchesReleased = new Promise<void>((resolve) => {
+    releaseFetches = resolve;
+  });
+  const transport = vi.spyOn(OfficialSourceTransport.prototype, "fetch").mockImplementation(async (request) => {
+    const url = new URL(request.url);
+    if (activeHosts.has(url.hostname)) overlaps.push(url.hostname);
+    activeHosts.add(url.hostname);
+    try {
+      if (url.pathname === "/sequence/1") {
+        enteredHosts.add(url.hostname);
+        await fetchesReleased;
+      }
+      return await fetch(request);
+    } finally {
+      activeHosts.delete(url.hostname);
+    }
+  });
+  const completion = resumeCollection(run.id);
+  // Observe both outstanding fetches before releasing either. Serial execution
+  // cannot satisfy this barrier, even when its request starts happen close together.
+  void completion.catch(() => undefined);
+  try {
+    await expect.poll(() => enteredHosts.size, { timeout: 4_000 }).toBe(2);
+    expect([...activeHosts].sort()).toEqual(["pacing-a-official-source.invalid", "pacing-b-official-source.invalid"]);
+  } finally {
+    releaseFetches();
+    // Finish late work before restoring transport or letting storage reset.
+    await completion.catch(() => undefined);
+    transport.mockRestore();
+  }
+  const completed = await completion;
   expect(completed.collection_completed_at).toEqual(expect.any(String));
+  expect(overlaps).toEqual([]);
+  expect(completed.diagnostics).toHaveLength(4);
   const attempts = Object.fromEntries(
-    completed.diagnostics.map((attempt) => [attempt.request_id, Date.parse(attempt.requested_at)]),
+    completed.diagnostics.map((attempt) => {
+      expect(attempt.outcome).toBe("success");
+      return [attempt.request_id, attempt];
+    }),
   );
-  expect(attempts[idFor("a", 2)]! - attempts[idFor("a", 1)]!).toBeGreaterThanOrEqual(500);
-  expect(attempts[idFor("b", 2)]! - attempts[idFor("b", 1)]!).toBeGreaterThanOrEqual(500);
-  expect(Math.abs(attempts[idFor("a", 1)]! - attempts[idFor("b", 1)]!)).toBeLessThan(500);
+  const interval = sourceHostPacingIntervalMilliseconds(env.SOURCE_HOST_PACING_INTERVAL_MS);
+  for (const host of ["a", "b"]) {
+    const first = attempts[idFor(host, 1)]!;
+    const second = attempts[idFor(host, 2)]!;
+    expect(Date.parse(second.requested_at) - Date.parse(first.completed_at)).toBeGreaterThanOrEqual(interval);
+  }
 });

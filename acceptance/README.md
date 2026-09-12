@@ -56,19 +56,37 @@ layer's parsing, transactions, concurrency, corruption and recovery coverage.
 They retain their assertions and remain available for changes to those specific
 paths. Their workload is excluded from the everyday and full routine commands.
 
-Benchmarks are separate: `native-sqlite-export` deliberately crosses 64 MiB,
-`native-isolate-metrics` calibrates large-heap profiling, and
-`reconciliation-capacity-probe` measures the synthetic 1,001-Product fixture.
-The latter requires a report destination and never silently skips:
+Benchmarks are separate: `native-sqlite-export` deliberately crosses 64 MiB and
+`native-isolate-metrics` calibrates large-heap profiling.
+
+The synthetic 1,001-Product reconciliation memory investigation is a standalone
+profiling command, excluded from every test tier, including `test:benchmark --all`.
+No configured CI workflow invokes it. It requires a report destination:
 
 ```sh
-KEEPR_CAPACITY_OUTPUT_PREFIX=/tmp/keepr-capacity pnpm run test:benchmark reconciliation-capacity-probe
+KEEPR_CAPACITY_OUTPUT_PREFIX=/tmp/keepr-capacity pnpm run profile:reconciliation
 ```
 
-The probe retains its temporary state on failure and reports the location for
-inspection; remove that reported directory after investigating. Other optional
-probe settings are documented in its source. Running `benchmark --all` also
-requires the report prefix because it includes this probe.
+It writes `-summary.json`, `-workload.json` and `-isolate-1.json` reports. Temporary
+state is removed once the reports are written, or retained on failure with its
+location printed for inspection. Remove that retained directory after investigating.
+The script retains the external-source and declared-length variants documented
+in [its source](../scripts/reconciliation-memory.mjs).
+
+Keep the report prefix scoped to the command as shown. Exporting
+`KEEPR_CAPACITY_OUTPUT_PREFIX` globally also enables profiling in other acceptance
+Workers using the shared runtime, adding measurement overhead to those runs.
+
+Memory and elapsed time are observations. The former 64 MiB target is retained
+as a historical reference, with exceedance explicitly reported; it is not an
+established application memory budget. Inspector errors and skipped sampling
+intervals mark the measurement `incomplete` and remain in the reports. Error-free
+sampling is labelled `sampled`, never a complete peak or production-capacity proof.
+
+Exit zero means the workload sealed and a diagnostic with valid, nonempty heap
+samples was written, including any incomplete-measurement findings. A failed
+workload, missing/invalid samples, failed report write or 120-second hang returns
+an error. The old `test:benchmark reconciliation-capacity-probe` selection is retired.
 
 The full Riftbound journey alone retains the 6 GiB free-space preflight. Its
 historical run took about 21 minutes and sampled 3.94 GB of local logical

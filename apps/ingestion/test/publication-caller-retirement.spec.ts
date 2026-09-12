@@ -12,23 +12,38 @@ import {
   installReconciliationSuite,
   post,
   postWithControlledPublication,
+  reconcile,
   testEnv,
 } from "./reconciliation-helpers";
 
 import { waitForDispatchedNativeCandidates, waitForNativeCandidate } from "./native-candidate-helpers";
 import { nativeNoChangeState } from "./query-helpers/native-no-change";
+import { readCatalogueStateCurrentRevisionId } from "./query-helpers/published-catalogue";
 
 const workflowIsolation = installReconciliationSuite();
 
-test("a collected source publishes through exact native owner operations after run approval is retired", async () => {
+test("retired run approval preserves run state, current revision and immutable objects", async () => {
   const collection = await collect("/reconciliation/base", "retired-callers-native-source");
+  const reconciled = await reconcile(collection.id);
+  expect(reconciled.response.status).toBe(200);
+  const runBefore = (await get(`/v1/ingestion-runs/${collection.id}`)).document;
+  expect(runBefore).toMatchObject({ state: "awaiting_approval", failure_code: null });
+  const currentBefore = await readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB).first();
+  const objectsBefore = (await testEnv.CATALOGUE_EXPORTS.list()).objects;
   const rejected = await post(`/v1/ingestion-runs/${collection.id}/approval`, {
-    candidate_digest: "a".repeat(64),
+    candidate_digest: reconciled.document.candidate_digest,
     expected_current_revision_id: "catrev_spine_000",
     idempotency_key: "retired-callers-old-intent",
   });
   expect(rejected.response.status).toBe(410);
   expect(rejected.document.code).toBe("run_approval_retired");
+  expect((await get(`/v1/ingestion-runs/${collection.id}`)).document).toEqual(runBefore);
+  expect((await testEnv.CATALOGUE_EXPORTS.list()).objects).toEqual(objectsBefore);
+  expect(await readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB).first()).toEqual(currentBefore);
+});
+
+test("native owner operations bind exact approval pins and replay the same publication", async () => {
+  const collection = await collect("/reconciliation/base", "native-owner-pins-source");
   const candidate = await prepareNativeCandidate(
     collection.id,
     "one-piece",

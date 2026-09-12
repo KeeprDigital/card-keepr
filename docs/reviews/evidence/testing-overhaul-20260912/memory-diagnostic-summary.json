@@ -1,0 +1,15 @@
+{
+  "purpose": "Manual reconciliation memory diagnostic; no memory or elapsed-time pass/fail requirement",
+  "workload_state": "sealed",
+  "measurement_status": "incomplete",
+  "elapsed_ms": 8088,
+  "sampled_used_heap_maximum": 139414976,
+  "heap_samples": 2,
+  "historical_heap_reference_bytes": 67108864,
+  "exceeds_historical_heap_reference": true,
+  "observer_errors": [
+    "Error: Inspector timed out: Runtime.getHeapUsage"
+  ],
+  "skipped_sampling_intervals": 2,
+  "limitation": "Samples include profiling and fixture overhead. They are not an exhaustive peak or a production-capacity verdict."
+}
