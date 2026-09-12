@@ -1,0 +1,279 @@
+diff --git a/docs/reviews/evidence/publication-253-fixes-20260912/before-simplification/src/catalogue/shared/staging-object-repository.ts b/src/catalogue/shared/staging-object-repository.ts
+index 04775a0f..986e2c0e 100644
+--- a/docs/reviews/evidence/publication-253-fixes-20260912/before-simplification/src/catalogue/shared/staging-object-repository.ts
++++ b/src/catalogue/shared/staging-object-repository.ts
+@@ -46,51 +46,3 @@ export function finishObservedStagingWrite(
+     .bind(at, token, binding, key, binding, key);
+ }
+ 
+-/** Four object identities and their independent writer tickets enter one transaction.
+- * Keep the bounded input outermost so each ticket uses the complete object primary key. */
+-export function beginStagingWrites(
+-  db: CatalogueStore,
+-  preparation: string,
+-  binding: StagingBinding,
+-  writes: { key: string; token: string }[],
+-  at: string,
+-) {
+-  if (writes.length < 1 || writes.length > 4) throw new Error("Staging writes require one to four objects.");
+-  const sql = repositoryStatements(db);
+-  const identities = JSON.stringify(writes.map(({ key, token }) => ({ key, token })));
+-  return [
+-    sql
+-      .prepare(
+-        `INSERT INTO staging_objects(binding,object_key)
+- SELECT ?1,json_extract(value,'$.key') FROM json_each(?2) WHERE true
+- ON CONFLICT(binding,object_key) DO UPDATE SET state='available',incarnation=incarnation+1,cleanup_id=NULL,reserved_at=NULL
+- WHERE staging_objects.state='deleted'`,
+-      )
+-      .bind(binding, identities),
+-    sql
+-      .prepare(
+-        `INSERT INTO staging_object_writes
+- SELECT json_extract(write.value,'$.token'),COALESCE((SELECT preparation_id FROM game_candidates WHERE id=?1),?1),
+- ?2,object.object_key,object.incarnation,?4,NULL FROM json_each(?3) write
+- CROSS JOIN staging_objects object ON object.binding=?2 AND object.object_key=json_extract(write.value,'$.key')`,
+-      )
+-      .bind(preparation, binding, identities, at),
+-  ];
+-}
+-export function finishStagingWrites(db: CatalogueStore, tokens: string[], at: string) {
+-  if (tokens.length < 1 || tokens.length > 4) throw new Error("Staging completion requires one to four tickets.");
+-  return repositoryStatements(db)
+-    .prepare(
+-      `UPDATE staging_object_writes SET completed_at=? WHERE token IN (SELECT value FROM json_each(?)) AND completed_at IS NULL`,
+-    )
+-    .bind(at, JSON.stringify(tokens));
+-}
+-
+-export function registeredStagingKeysStatement(db: CatalogueStore, binding: StagingBinding, keys: string[]) {
+-  if (keys.length < 1 || keys.length > 4) throw new Error("Staging presence requires one to four keys.");
+-  return repositoryStatements(db)
+-    .prepare(
+-      `SELECT object_key FROM staging_objects WHERE binding=? AND object_key IN (SELECT value FROM json_each(?))`,
+-    )
+-    .bind(binding, JSON.stringify(keys));
+-}
+diff --git a/docs/reviews/evidence/publication-253-fixes-20260912/before-simplification/src/catalogue/shared/staging-object-storage.ts b/src/catalogue/shared/staging-object-storage.ts
+index e1aaccf4..00ebd589 100644
+--- a/docs/reviews/evidence/publication-253-fixes-20260912/before-simplification/src/catalogue/shared/staging-object-storage.ts
++++ b/src/catalogue/shared/staging-object-storage.ts
+@@ -1,11 +1,8 @@
+ import { type CatalogueStore } from "./catalogue-store-repository";
+ import {
+   beginStagingWrite,
+-  beginStagingWrites,
+   finishStagingWrite,
+-  finishStagingWrites,
+   finishObservedStagingWrite,
+-  registeredStagingKeysStatement,
+   type StagingBinding,
+ } from "./staging-object-repository";
+ 
+@@ -61,7 +58,9 @@ export async function writeStagingObjects(
+   if (!objects.length) return [];
+   if (objects.length > 4) throw new Error("Staging writes exceed four objects.");
+   const writes = objects.map((object) => ({ ...object, token: crypto.randomUUID() }));
+-  await db.batch(beginStagingWrites(db, preparation, binding, writes, new Date().toISOString()));
++  await db.batch(writes.flatMap(({ key, token }) =>
++    beginStagingWrite(db, preparation, binding, key, token, new Date().toISOString()),
++  ));
+   const results = await Promise.allSettled(
+     writes.map(async ({ key, content, options, token }) =>
+       bucket.put(key, content, {
+@@ -72,11 +71,7 @@ export async function writeStagingObjects(
+   );
+   const completed = writes.filter((_, index) => results[index]!.status === "fulfilled");
+   if (completed.length)
+-    await finishStagingWrites(
+-      db,
+-      completed.map(({ token }) => token),
+-      new Date().toISOString(),
+-    ).run();
++    await db.batch(completed.map(({ token }) => finishStagingWrite(db, token, new Date().toISOString())));
+   const observed = trackedStagingBucket(db, bucket, binding, preparation);
+   const observations = await Promise.allSettled(
+     writes.flatMap(({ key }, index) => {
+@@ -91,8 +86,3 @@ export async function writeStagingObjects(
+   });
+ }
+ 
+-/** A registered identity may have a prior or ambiguous write and requires R2 observation. */
+-export async function registeredStagingKeys(db: CatalogueStore, binding: StagingBinding, keys: string[]) {
+-  const rows = await registeredStagingKeysStatement(db, binding, keys).all<{ object_key: string }>();
+-  return new Set(rows.results.map(({ object_key }) => object_key));
+-}
+diff --git a/docs/reviews/evidence/publication-253-fixes-20260912/before-simplification/src/catalogue/reconciliation/publication-artifact-storage.ts b/src/catalogue/reconciliation/publication-artifact-storage.ts
+index fddf8467..9a3a6f6f 100644
+--- a/docs/reviews/evidence/publication-253-fixes-20260912/before-simplification/src/catalogue/reconciliation/publication-artifact-storage.ts
++++ b/src/catalogue/reconciliation/publication-artifact-storage.ts
+@@ -3,7 +3,6 @@ import {
+   type CatalogueStore,
+   sha256Text,
+   trackedStagingBucket,
+-  registeredStagingKeys,
+   writeStagingObjects,
+ } from "../shared";
+ import { PublicationIntegrityError } from "./publication-preparation-types";
+@@ -21,15 +20,7 @@ export function publicationObjectBatch(db: CatalogueStore, bucket: R2Bucket, pre
+     const batch = pending;
+     pending = [];
+     pendingBytes = 0;
+-    const keys = batch.map(({ reference }) => reference.object_key);
+-    // Unknown identities still use conditional PUT and read-back verification. A
+-    // registered identity can own a lost write, so observe it before retrying.
+-    const registered = batch.length === 1 ? new Set(keys) : await registeredStagingKeys(db, "CATALOGUE_EXPORTS", keys);
+-    const heads = await Promise.allSettled(
+-      batch.map(async ({ reference }) =>
+-        registered.has(reference.object_key) ? observed.head(reference.object_key) : null,
+-      ),
+-    );
++    const heads = await Promise.allSettled(batch.map(({ reference }) => observed.head(reference.object_key)));
+     for (const head of heads) if (head.status === "rejected") throw head.reason;
+     const written = await writeStagingObjects(
+       db,
+diff --git a/docs/reviews/evidence/publication-253-fixes-20260912/before-simplification/src/catalogue/reconciliation/publication-preparation.ts b/src/catalogue/reconciliation/publication-preparation.ts
+index b49175ac..50c77a50 100644
+--- a/docs/reviews/evidence/publication-253-fixes-20260912/before-simplification/src/catalogue/reconciliation/publication-preparation.ts
++++ b/src/catalogue/reconciliation/publication-preparation.ts
+@@ -170,12 +170,9 @@ export async function advancePublicationPreparation(
+         const readPartition = publicationPartitionReader(db, id);
+         const objects = publicationObjectBatch(db, env.CATALOGUE_EXPORTS, candidate.preparation_id);
+         const artifacts: (() => D1PreparedStatement)[] = [];
+-        const projections: number[] = [];
+-        // Export units need fewer calls and bind only text chunks; projections stay at six.
+         // A phase boundary commits before the next phase reads the receipts we staged.
+         // Composition nodes also commit individually before a parent reads them.
+-        const maximumUnits = phase === "exports" ? 11 : 6;
+-        for (let unit = 0; unit < maximumUnits; unit++) {
++        for (let unit = 0; unit < 6; unit++) {
+           const continueBatch = await prepareUnit(
+             env,
+             candidate,
+@@ -185,7 +182,6 @@ export async function advancePublicationPreparation(
+             readPartition,
+             objects,
+             artifacts,
+-            projections,
+           );
+           if (
+             continueBatch === false ||
+@@ -196,16 +192,6 @@ export async function advancePublicationPreparation(
+             break;
+         }
+         await objects.flush();
+-        if (projections.length)
+-          statements.push(
+-            ...repository.retainPublicReadFacts(
+-              db,
+-              id,
+-              projections,
+-              candidate.preparation_id,
+-              candidate.supported_game,
+-            ),
+-          );
+         statements.push(...artifacts.map((receipt) => receipt()));
+         state.cursor_json = canonicalJson(cursor);
+         state.failures = 0;
+@@ -338,7 +324,6 @@ async function prepareUnit(
+   readPartition: ReturnType<typeof publicationPartitionReader>,
+   objects: ReturnType<typeof publicationObjectBatch>,
+   artifacts: (() => D1PreparedStatement)[],
+-  projections: number[],
+ ) {
+   const db = env.CATALOGUE_DB,
+     id = candidate.id;
+@@ -534,7 +519,7 @@ async function prepareUnit(
+       delete cursor.text_hash;
+       delete cursor.text_bytes;
+     }
+-    // Ten small text chunks plus one 128 KiB chunk stay below the D1 batch bound.
++    // Five small text chunks plus one 128 KiB chunk stay below the D1 batch bound.
+     return bytes.byteLength <= 65536;
+   }
+   if (state.phase === "projections" && kind === "cards" && cursor.text < 3) {
+@@ -627,7 +612,9 @@ async function prepareUnit(
+     const ref = await objects.stage(projection);
+     statements.push(repository.retainPublicationProjection(db, id, state.artifact_count, kind, projection, ref.sha256));
+     statements.push(repository.retainPublicationQueryDocument(db, id, kind, String(value.id), state.artifact_count));
+-    projections.push(state.artifact_count);
++    statements.push(...repository.retainPublicReadFacts(
++      db, id, state.artifact_count, candidate.preparation_id, candidate.supported_game,
++    ));
+     artifact("query_search", ref);
+     const lifecycle = await preparePublicLifecycle(db, candidate, kind, envelope.value);
+     if (lifecycle) {
+diff --git a/docs/reviews/evidence/publication-253-fixes-20260912/before-simplification/src/catalogue/reconciliation/publication-preparation-repository.ts b/src/catalogue/reconciliation/publication-preparation-repository.ts
+index b7c66328..22645d2e 100644
+--- a/docs/reviews/evidence/publication-253-fixes-20260912/before-simplification/src/catalogue/reconciliation/publication-preparation-repository.ts
++++ b/src/catalogue/reconciliation/publication-preparation-repository.ts
+@@ -224,17 +224,14 @@ export function publicationTerminalGuard(
+ export function retainPublicReadFacts(
+   db: CatalogueStore,
+   id: string,
+-  ordinals: number[],
++  ordinal: number,
+   preparation: string,
+   game: string,
+ ) {
+-  if (ordinals.length < 1 || ordinals.length > 6) throw new Error("Public facts require one to six projections.");
+-  const selected = JSON.stringify(ordinals);
+   const sql = repositoryStatements(db);
+   return [
+     sql
+-      .prepare(
+-        `INSERT INTO publication_read_entities
++      .prepare(`INSERT INTO publication_read_entities
+  SELECT ?1,b.kind,json_extract(b.content,'$.records[0].value.id'),b.ordinal,?3,?4,
+  coalesce(json_extract(b.content,'$.records[0].value.card_id'),json_extract(b.content,'$.records[0].value.printing_id')),json_extract(b.content,'$.records[0].value.official_identity.kind'),
+  json_extract(b.content,'$.records[0].value.official_identity.value'),json_extract(b.content,'$.records[0].value.name'),
+@@ -246,27 +243,22 @@ export function retainPublicReadFacts(
+  CASE WHEN b.kind='products' THEN CASE WHEN json_extract(b.content,'$.records[0].value.name') IS NULL THEN '1' ELSE '0' END ELSE '' END,
+  CASE WHEN b.kind='products' THEN coalesce(json_extract(b.content,'$.records[0].value.name'),'') ELSE '' END,
+  length(CAST(b.content AS BLOB))+coalesce((SELECT sum(json_extract(value,'$.byte_length')) FROM json_each(b.content,'$.records[0].text_parts')),0)
+- FROM publication_projection_batches b WHERE b.candidate_id=?1 AND b.ordinal IN (SELECT value FROM json_each(?2))`,
+-      )
+-      .bind(id, selected, preparation, game),
++ FROM publication_projection_batches b WHERE b.candidate_id=?1 AND b.ordinal=?2`)
++      .bind(id, ordinal, preparation, game),
+     sql
+-      .prepare(
+-        `INSERT INTO publication_read_attributes
++      .prepare(`INSERT INTO publication_read_attributes
+  WITH RECURSIVE attributes(card_id,profile,attribute,value,kind) AS (
+  SELECT json_extract(b.content,'$.records[0].value.id'),json_extract(b.content,'$.records[0].value.game_data.profile'),field.key,field.value,field.type
+- FROM publication_projection_batches b,json_each(b.content,'$.records[0].value.game_data.attributes') field WHERE b.candidate_id=?1 AND b.ordinal IN (SELECT value FROM json_each(?2)) AND b.kind='cards'
++ FROM publication_projection_batches b,json_each(b.content,'$.records[0].value.game_data.attributes') field WHERE b.candidate_id=?1 AND b.ordinal=?2 AND b.kind='cards'
+  UNION ALL SELECT p.card_id,p.profile,p.attribute || CASE WHEN p.kind='array' THEN '' ELSE '.' || child.key END,child.value,child.type
+  FROM attributes p,json_each(CASE WHEN p.kind IN ('array','object') THEN p.value ELSE '[]' END) child)
+- SELECT DISTINCT ?1,card_id,profile,attribute,CASE kind WHEN 'text' THEN json_quote(value) WHEN 'null' THEN 'null' WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' ELSE CAST(value AS TEXT) END FROM attributes WHERE kind NOT IN ('array','object')`,
+-      )
+-      .bind(id, selected),
++ SELECT DISTINCT ?1,card_id,profile,attribute,CASE kind WHEN 'text' THEN json_quote(value) WHEN 'null' THEN 'null' WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' ELSE CAST(value AS TEXT) END FROM attributes WHERE kind NOT IN ('array','object')`)
++      .bind(id, ordinal),
+     sql
+-      .prepare(
+-        `INSERT INTO publication_read_release_regions SELECT DISTINCT ?1,json_extract(b.content,'$.records[0].value.id'),json_extract(release.value,'$.region')
++      .prepare(`INSERT INTO publication_read_release_regions SELECT DISTINCT ?1,json_extract(b.content,'$.records[0].value.id'),json_extract(release.value,'$.region')
+  FROM publication_projection_batches b,json_each(b.content,'$.records[0].value.releases') release
+- WHERE b.candidate_id=?1 AND b.ordinal IN (SELECT value FROM json_each(?2)) AND b.kind='products' AND json_extract(release.value,'$.region') IS NOT NULL`,
+-      )
+-      .bind(id, selected),
++ WHERE b.candidate_id=?1 AND b.ordinal=?2 AND b.kind='products' AND json_extract(release.value,'$.region') IS NOT NULL`)
++      .bind(id, ordinal),
+   ];
+ }
+ export function retainPublicReadText(db: CatalogueStore, id: string, sha: string, ordinal: number, content: string) {
+diff --git a/docs/reviews/evidence/publication-253-fixes-20260912/before-simplification/src/catalogue/shared/index.ts b/src/catalogue/shared/index.ts
+index 4a133870..502501c9 100644
+--- a/docs/reviews/evidence/publication-253-fixes-20260912/before-simplification/src/catalogue/shared/index.ts
++++ b/src/catalogue/shared/index.ts
+@@ -163,7 +163,7 @@ export {
+   publicationBackupReservationStatement,
+   publishedCompositionStatement,
+ } from "./publication-composition-repository";
+-export { trackedStagingBucket, writeStagingObjects, registeredStagingKeys } from "./staging-object-storage";
++export { trackedStagingBucket, writeStagingObjects } from "./staging-object-storage";
+ 
+ export { sharedCuratableFieldSchemas } from "./curated-field-schemas";
+ export { validCuratedField } from "./curated-field-validation";

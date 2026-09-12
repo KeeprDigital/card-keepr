@@ -65,6 +65,12 @@ retains a small immutable composition of those references. Unrelated games'
 components are reused. This prepares references only; #228 owns choosing and
 atomically publishing a consistent composition and checking backup/approval.
 
+A callback prepares at most six units, stopping earlier at phase boundaries or
+byte limits. It stages at most four objects together. Each write has its own
+durable ticket before storage I/O; every write settles and every object verifies
+before any output receipt or cursor commits. Exact replay and recovery checks
+remain required when changing these engineering bounds.
+
 Each successful unit atomically commits its cursor, immutable output receipts,
 query writes and exact response. D1 transactions stay below the 1 MiB work target;
 metadata reads stay within 512 KiB partitions. Image verification streams at

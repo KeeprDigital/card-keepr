@@ -1,0 +1,94 @@
+source [
+  [Object: null prototype] {
+    type: 'table',
+    name: 'catalogue_state',
+    tbl_name: 'catalogue_state',
+    rootpage: 2,
+    sql: 'CREATE TABLE catalogue_state(id INTEGER PRIMARY KEY)'
+  },
+  [Object: null prototype] {
+    type: 'table',
+    name: '_cf_METADATA',
+    tbl_name: '_cf_METADATA',
+    rootpage: 3,
+    sql: 'CREATE TABLE _cf_METADATA (\n' +
+      '        key INTEGER PRIMARY KEY,\n' +
+      '        value BLOB\n' +
+      '      )'
+  },
+  [Object: null prototype] {
+    type: 'table',
+    name: 'payloads',
+    tbl_name: 'payloads',
+    rootpage: 4,
+    sql: 'CREATE TABLE payloads(id INTEGER PRIMARY KEY,content TEXT)'
+  }
+] [ [Object: null prototype] { id: 1, content: "quote'this" } ]
+copy [
+  [Object: null prototype] {
+    type: 'table',
+    name: 'catalogue_state',
+    tbl_name: 'catalogue_state',
+    rootpage: 2,
+    sql: 'CREATE TABLE catalogue_state(id INTEGER PRIMARY KEY)'
+  },
+  [Object: null prototype] {
+    type: 'table',
+    name: '_cf_METADATA',
+    tbl_name: '_cf_METADATA',
+    rootpage: 3,
+    sql: 'CREATE TABLE _cf_METADATA (\n' +
+      '        key INTEGER PRIMARY KEY,\n' +
+      '        value BLOB\n' +
+      '      )'
+  },
+  [Object: null prototype] {
+    type: 'table',
+    name: 'payloads',
+    tbl_name: 'payloads',
+    rootpage: 4,
+    sql: 'CREATE TABLE payloads(id INTEGER PRIMARY KEY,content TEXT)'
+  }
+] [ [Object: null prototype] { id: 1, content: "quote'this" } ]
+native dump {
+  status: 0,
+  signal: null,
+  output: [
+    null,
+    'PRAGMA foreign_keys=OFF;\n' +
+      'BEGIN TRANSACTION;\n' +
+      'CREATE TABLE catalogue_state(id INTEGER PRIMARY KEY);\n' +
+      'CREATE TABLE _cf_METADATA (\n' +
+      '        key INTEGER PRIMARY KEY,\n' +
+      '        value BLOB\n' +
+      '      );\n' +
+      'INSERT INTO _cf_METADATA VALUES(2,2);\n' +
+      'CREATE TABLE payloads(id INTEGER PRIMARY KEY,content TEXT);\n' +
+      "INSERT INTO payloads VALUES(1,'quote''this');\n" +
+      'COMMIT;\n',
+    ''
+  ],
+  pid: 36196,
+  stdout: 'PRAGMA foreign_keys=OFF;\n' +
+    'BEGIN TRANSACTION;\n' +
+    'CREATE TABLE catalogue_state(id INTEGER PRIMARY KEY);\n' +
+    'CREATE TABLE _cf_METADATA (\n' +
+    '        key INTEGER PRIMARY KEY,\n' +
+    '        value BLOB\n' +
+    '      );\n' +
+    'INSERT INTO _cf_METADATA VALUES(2,2);\n' +
+    'CREATE TABLE payloads(id INTEGER PRIMARY KEY,content TEXT);\n' +
+    "INSERT INTO payloads VALUES(1,'quote''this');\n" +
+    'COMMIT;\n',
+  stderr: ''
+}
+{
+  path: '/var/folders/h9/r2hp35sx2bs4v69vcsxsls900000gn/T/keepr-snapshot-inspect-PqebSZ/export.sql',
+  bytes: 212
+} PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE catalogue_state(id INTEGER PRIMARY KEY);
+CREATE TABLE payloads(id INTEGER PRIMARY KEY,content TEXT);
+INSERT INTO payloads VALUES(1,'quote''this');
+COMMIT;
+

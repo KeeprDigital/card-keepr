@@ -6,9 +6,15 @@ workflow reports its own failures and its liveness must be checked by hand.
 
 The default is two bounded checks: per-host concurrency/pacing and a 60-request
 throughput window. It runs one file at a time with a five-minute job cap. The
-full ten-file capacity suite is manual only: choose `suite: full` in the
+full ten-file suite is manual only: choose `suite: full` in the
 workflow or run `pnpm run test:stress:full` locally; its job cap is 45 minutes.
 Manual and scheduled runs have separate cancellation groups.
+
+The command name covers volume, recovery, configured-limit and performance
+checks. It does not mean every test deliberately overloads the system or finds
+production capacity. See [what the stress commands prove](../testing.md#what-the-stress-commands-prove).
+Runner timing is an observation of that environment; publication integrity and
+restore outcomes are separate assertions.
 
 The full selection contains these ingestion files:
 
@@ -33,6 +39,12 @@ full pass does not certify the 5/50 GiB tiers, whose admission test fetches no
 bodies. Issue #275 owns usable capacity and accounting; #276 owns uncovered
 durable faults.
 
+The Product publication journey has a five-minute test-body hang cap following
+the [12 September acceptance decision](../reviews/publication-253-implementation-20260912.md).
+It retains the original workload and real backup/restore/consumer checks, and
+records phase timings separately. The original two-minute failures are not
+retrospectively passes. The native preparation assertion remains below 15,000 ms.
+
 Each workflow retains a seven-day `stress-results-bounded` or
 `stress-results-full` JSON artifact with the complete test selection, failures,
 durations and native callback report. Archive relevant evidence before expiry.
@@ -43,14 +55,16 @@ Use the existing focused diagnostics workflow for an isolated stress file:
 
 ```sh
 gh workflow run test-suite-diagnostics.yml --ref <branch> \
-  -f worker=ingestion -f suite=stress -f storage=disk \
+  -f worker=ingestion -f suite=stress -f storage=memory \
   -f files='apps/ingestion/test/game-reconciliation-scale.stress.spec.ts' \
   -f repeats=1
 ```
 
-`storage=memory` selects the routine CI helper's disposable 512 MiB tmpfs for
-a controlled storage comparison. Its space limit still applies. Focused results
-do not replace full stress or routine CI.
+Hosted full stress and `storage=memory` stress diagnostics use a disposable
+2 GiB tmpfs; bounded stress and routine CI use 512 MiB. Capacity fixtures exceed
+the smaller volume. The wrapper prints occupied bytes before removing the volume.
+Use `storage=disk` for a controlled storage comparison. Focused results do not
+replace full stress or routine CI.
 
 The API currently has no separate stress files; its functional checks run in
 the normal API suite. Missing expected ingestion tests remain an error. Add

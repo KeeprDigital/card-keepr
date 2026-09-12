@@ -1,0 +1,25 @@
+{"phase":"seed","ms":1887.314917}
+{"phase":"old_export_reproduced","ms":21665.629042}
+{"phase":"snapshot_and_file_export","ms":831.7505830000009}
+{"sql_bytes":125}
+{"phase":"stream_upload","ms":0.9490000000005239}
+{"phase":"actual_sql_import","ms":509.2307499999988}
+file:///Users/marcus/Developer/card-keepr/test/support/fake-publisher/sqlite-restore.ts:74
+      throw new Error(`Disposable restore query failed: ${sql}`, { cause: error });
+            ^
+
+Error: Disposable restore query failed: SELECT COUNT(*) AS n,SUM(length(content)) AS bytes,MIN(length(content)) AS min,MAX(length(content)) AS max FROM payloads
+    at SqliteRestore.query (file:///Users/marcus/Developer/card-keepr/test/support/fake-publisher/sqlite-restore.ts:74:13)
+    at file:///private/tmp/publication-export-boundary-diagnostic-253.mjs:21:23
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {
+  [cause]: Error: no such table: payloads
+      at SqliteRestore.query (file:///Users/marcus/Developer/card-keepr/test/support/fake-publisher/sqlite-restore.ts:69:39)
+      at file:///private/tmp/publication-export-boundary-diagnostic-253.mjs:21:23
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {
+    code: 'ERR_SQLITE_ERROR',
+    errcode: 1,
+    errstr: 'SQL logic error'
+  }
+}
+
+Node.js v26.8.2

@@ -55,6 +55,51 @@ routine coverage and 128 images in stress coverage. Both verify streaming,
 publication, serving bytes and export references. The missing-capture regression
 uses nine requests to cross an eight-request batch.
 
+## What the stress commands prove
+
+The existing `stress` commands select a mixed suite of large-workload, recovery,
+resource-limit and performance checks. Most are volume tests, not experiments
+that find the system's breaking point. Keep the command names for compatibility;
+describe a result by the behavior it actually tested.
+
+| Example                                                        | What it establishes                                            |
+| -------------------------------------------------------------- | -------------------------------------------------------------- |
+| 1,001 Products, public exports and actual SQL backup/restore   | Complete, correct publication and recovery for that workload   |
+| 128 images, large evidence and 5,000-request graphs            | Streaming, partitioning and completion at the specified volume |
+| One request beyond adapter capacity; concurrent admission      | Enforcement of configured limits, including competing requests |
+| Host pacing and pause/resume                                   | Scheduling rules and recovery behavior                         |
+| Native candidate below 15,000 ms; collection throughput window | Performance on that runner and toolchain                       |
+
+A stress experiment deliberately exceeds expected load or constrains resources,
+then checks how the system degrades, rejects work and recovers. Uncontrolled
+hardware does not prevent that experiment, but makes timing and a repeatable
+breaking point harder to interpret. The current suite does not establish maximum
+production throughput. Report timings with the environment; use comparable,
+sequential runs for performance comparisons. Finite hang guards remain useful
+without becoming speed requirements. The existing native timing assertion is
+still a separate, hardware-sensitive performance requirement.
+
+## Publication large-workload acceptance
+
+The 1,001-Product publication journey retains its full workload, integrity,
+consumer and real SQL backup/restore checks. Its test-body hang cap is five
+minutes following the [12 September acceptance decision](reviews/publication-253-implementation-20260912.md).
+The previous two-minute failures remain failures under the original acceptance.
+Phase timings are measurements, not a publication completion SLA. The separate
+native preparation assertion stays below 15,000 ms with its existing workload
+and harness timeout. The public one-record component/four-component page contract
+is unchanged. A passing routine suite or revised timeout cannot close #253.
+
+The ingestion provider mock snapshots the owning runtime's actual SQLite file,
+streams SQL through production backup storage and upload, and executes it in an
+independent disposable restore database. It requires `/usr/bin/sqlite3` on the
+supported macOS/Linux toolchains. The pinned Cloudflare test-plugin patch forwards
+the owned persistence directory; keep its manifest, lockfile and patch together.
+The routine `publication-backup-transport` acceptance test covers parser boundaries,
+schema, blobs, snapshot isolation and rejection of invalid SQL. The
+`publication-caller-retirement` Worker file verifies controlled and binding
+publication/checkpoint behavior through this transport.
+
 ## Fixture contracts
 
 Collection, preparation, publication and backup are separate contracts:
@@ -103,7 +148,7 @@ files and the renamed commands.
 | `pnpm run test:acceptance:extended <scenario>` | Explicit long recovery or retained-data journey                 |
 | `pnpm run test:benchmark <scenario>`           | Explicit capacity/profiling experiment                          |
 | `pnpm run test:stress`                         | Two bounded production-pacing checks used weekly                |
-| `pnpm run test:stress:full`                    | All ingestion capacity experiments, explicit opt-in             |
+| `pnpm run test:stress:full`                    | All ingestion volume, recovery, limit and performance checks    |
 
 Vitest accepts file filters and `-t 'test name'`. Acceptance commands accept
 an exact filename or scenario name (for example `pnpm run test:acceptance http-fixture`),
@@ -125,7 +170,7 @@ are deliberately separate. Weekly source recapture checks publisher freshness.
 | Ready PR opened, updated, reopened or marked ready       | Full checks, even if marking ready adds no commit                                            |
 | Push to `main` or manual `ci` dispatch                   | Full checks on the resulting or selected commit                                              |
 | Weekly/default manual `stress`                           | Two bounded pacing tests; five-minute job cap                                                |
-| Manual `stress` with `suite: full`                       | All capacity tests; 45-minute cap; no merge/release gate                                     |
+| Manual `stress` with `suite: full`                       | Full volume/recovery/limit/performance selection; 45-minute cap; no merge/release gate       |
 | Manual focused diagnostics                               | Selected files; diagnostic evidence only                                                     |
 
 [ci.yml](../.github/workflows/ci.yml) retains three ingestion and three acceptance
@@ -157,7 +202,9 @@ bounded behavioral proof. Fixture setup and teardown must remain bounded too.
 Ingestion, acceptance and draft smoke use a disposable 512 MiB tmpfs per hosted
 runner for temporary databases. It allocates space as files grow and is removed
 when the test step exits. Real storage isolation, transactions and SQL restore
-remain enabled. Local storage settings are unchanged.
+remain enabled. Bounded stress uses the same volume; full stress and focused
+stress diagnostics use 2 GiB because the capacity fixtures exceed 512 MiB.
+The wrapper reports occupied bytes before cleanup. Local storage settings are unchanged.
 
 Routine tests use small offline fixtures and disposable state. They must not
 require full catalogue replay or multi-gigabyte disk preflights. Full Riftbound

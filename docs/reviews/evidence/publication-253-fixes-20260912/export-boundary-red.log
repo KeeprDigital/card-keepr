@@ -1,0 +1,25 @@
+{"phase":"prepared","rows":260,"raw_bytes":272629760,"elapsed_ms":4023.538792}
+node:internal/process/task_queues:104
+    runMicrotasks();
+    ^
+
+Error: D1_ERROR: Failed to parse body as JSON, got: RangeError: Invalid string length
+    at #doExportData (file:///Users/marcus/Developer/card-keepr/node_modules/.pnpm/miniflare@5.20260908.0-alpha/node_modules/miniflare/dist/src/workers/d1/database.worker.js:211:21)
+    at D1DatabaseObject.queryExecute (file:///Users/marcus/Developer/card-keepr/node_modules/.pnpm/miniflare@5.20260908.0-alpha/node_modules/miniflare/dist/src/workers/d1/database.worker.js:192:32)
+    at async D1DatabaseObject.fetch (file:///Users/marcus/Developer/card-keepr/node_modules/.pnpm/miniflare@5.20260908.0-alpha/node_modules/miniflare/dist/src/workers/shared/index.worker.js:388:18)
+    at async D1DatabaseObject.fetch (file:///Users/marcus/Developer/card-keepr/node_modules/.pnpm/miniflare@5.20260908.0-alpha/node_modules/miniflare/dist/src/workers/shared/index.worker.js:555:14)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///private/tmp/publication-export-repro-253.mjs:12:15 {
+  [cause]: Error: Failed to parse body as JSON, got: RangeError: Invalid string length
+      at #doExportData (file:///Users/marcus/Developer/card-keepr/node_modules/.pnpm/miniflare@5.20260908.0-alpha/node_modules/miniflare/dist/src/workers/d1/database.worker.js:211:21)
+      at D1DatabaseObject.queryExecute (file:///Users/marcus/Developer/card-keepr/node_modules/.pnpm/miniflare@5.20260908.0-alpha/node_modules/miniflare/dist/src/workers/d1/database.worker.js:192:32)
+      at async D1DatabaseObject.fetch (file:///Users/marcus/Developer/card-keepr/node_modules/.pnpm/miniflare@5.20260908.0-alpha/node_modules/miniflare/dist/src/workers/shared/index.worker.js:388:18)
+      at async D1DatabaseObject.fetch (file:///Users/marcus/Developer/card-keepr/node_modules/.pnpm/miniflare@5.20260908.0-alpha/node_modules/miniflare/dist/src/workers/shared/index.worker.js:555:14)
+      at D1DatabaseSessionAlwaysPrimary._send (cloudflare-internal:d1-api:231:24)
+      at async D1DatabaseSessionAlwaysPrimary._sendOrThrow (cloudflare-internal:d1-api:184:25)
+      at async cloudflare-internal:d1-api:525:36 {
+    [cause]: undefined
+  }
+}
+
+Node.js v26.8.2

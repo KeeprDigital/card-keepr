@@ -1,0 +1,9 @@
+{
+  "variant": "single-fault",
+  "exit_code": 1,
+  "wall_seconds": 6.2712787496857345,
+  "process_tree_peak_rss_KiB": 1297872,
+  "workerd_processes_peak_rss_KiB": 506336,
+  "samples": 6,
+  "note": "sampled process RSS, not isolate working set; no production CPU/billing"
+}
