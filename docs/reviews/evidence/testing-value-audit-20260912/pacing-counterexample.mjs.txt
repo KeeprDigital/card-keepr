@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+// Execute the three existing start-time predicates verbatim with synthetic traces.
+// This checks the assertions' ability to distinguish behaviour, not production scheduling.
+const path='/Users/marcus/Developer/card-keepr/apps/ingestion/test/runtime-host-pacing.stress.spec.ts';
+const predicates=readFileSync(path,'utf8').split('\n').filter(line=>line.trim().startsWith('expect(')&&line.includes('attempts['));
+assert.equal(predicates.length,3);
+const expect=value=>({toBeGreaterThanOrEqual:minimum=>assert.ok(value>=minimum),toBeLessThan:maximum=>assert.ok(value<maximum)});
+const traces=[
+ {name:'serial_and_correctly_paced',a1:[0,10],b1:[20,30],a2:[600,610],b2:[620,630]},
+ {name:'serial_and_insufficient_post_completion_gap',a1:[0,400],b1:[410,810],a2:[820,830],b2:[920,930]},
+];
+for(const trace of traces){
+ const entries=['a1','b1','a2','b2'].map(id=>({id,start:trace[id][0],end:trace[id][1]})).sort((a,b)=>a.start-b.start);
+ const attempts=Object.fromEntries(entries.map(e=>[e.id,e.start]));
+ const code=predicates.join('\n').replaceAll(']!',']');
+ new Function('expect','attempts','idFor',code)(expect,attempts,(host,sequence)=>host+sequence);
+ const overlaps=entries.some((e,i)=>entries.slice(i+1).some(other=>e.start<other.end&&other.start<e.end));
+ assert.equal(overlaps,false);
+ console.log(JSON.stringify({name:trace.name,current_three_assertions:'PASS',any_fetch_overlap:overlaps,a_gap_after_completion_ms:trace.a2[0]-trace.a1[1],b_gap_after_completion_ms:trace.b2[0]-trace.b1[1],trace}));
+}

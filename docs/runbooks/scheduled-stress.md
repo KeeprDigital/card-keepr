@@ -18,32 +18,41 @@ restore outcomes are separate assertions.
 
 The full selection contains these ingestion files:
 
-| File                                            | Coverage                                                        |
-| ----------------------------------------------- | --------------------------------------------------------------- |
-| `capacity-tier-admission.stress.spec.ts`        | Tier request admission; fetches no bodies                       |
-| `game-reconciliation-scale.stress.spec.ts`      | Native 1,001-Product candidate callback and elapsed budgets     |
-| `native-printing-images.stress.spec.ts`         | Native publication, serving and export of 128 images            |
-| `reconciliation-evidence-volume.stress.spec.ts` | Retained evidence volume                                        |
-| `reconciliation-scale.stress.spec.ts`           | Large Card/Product publication and restore, images and warnings |
-| `runtime-capacity-resume.stress.spec.ts`        | Capacity pause and resume                                       |
-| `runtime-collection-completion.stress.spec.ts`  | Collection completion at volume                                 |
-| `runtime-collection-throughput.stress.spec.ts`  | Bounded collection throughput                                   |
-| `runtime-discovery-scale.stress.spec.ts`        | Discovery at volume                                             |
-| `runtime-host-pacing.stress.spec.ts`            | Independent-host concurrency and pacing                         |
+| File                                            | Coverage                                                                             |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `capacity-tier-admission.stress.spec.ts`        | Tier request admission; fetches no bodies                                            |
+| `game-reconciliation-scale.stress.spec.ts`      | Native 1,001-Product completion/callback budgets and diagnostic elapsed time         |
+| `native-printing-images.stress.spec.ts`         | 128 streamed images, publication, serving, export and SQL restore                    |
+| `reconciliation-evidence-volume.stress.spec.ts` | Retained evidence volume                                                             |
+| `reconciliation-scale.stress.spec.ts`           | Large Card/Product publication and restore, inline image candidate size and warnings |
+| `runtime-capacity-resume.stress.spec.ts`        | Capacity pause and resume                                                            |
+| `runtime-collection-completion.stress.spec.ts`  | Collection completion at volume                                                      |
+| `runtime-collection-throughput.stress.spec.ts`  | Bounded collection throughput                                                        |
+| `runtime-discovery-scale.stress.spec.ts`        | Discovery at volume                                                                  |
+| `runtime-host-pacing.stress.spec.ts`            | Independent-host concurrency and pacing                                              |
 
 Run volume measurements with exclusive host resources and record the exact
-commit, runtime, complete selection and every failure. Keep the candidate's
-15,000 ms performance assertion separate from test deadlines and from CPU or
-billing measurements. A bounded pass does not replace the full selection; a
+commit, runtime, complete selection and every failure. Native candidate elapsed
+time is diagnostic on uncontrolled hardware; completion and callback budgets
+remain enforced. Test deadlines detect hangs and do not measure CPU or billing.
+A bounded pass does not replace the full selection; a
 full pass does not certify the 5/50 GiB tiers, whose admission test fetches no
 bodies. Issue #275 owns usable capacity and accounting; #276 owns uncovered
 durable faults.
+
+The native candidate test reports resource and completion failures independently
+and retains phase/elapsed timings. The inline-image case retains its original 128-image input and
+candidate-size bound, but delegates publication/serving/export/restore coverage
+to the native image journey. Neither the 1,001-Product input nor its assertions
+are reduced by this consolidation.
 
 The Product publication journey has a five-minute test-body hang cap following
 the [12 September acceptance decision](../reviews/publication-253-implementation-20260912.md).
 It retains the original workload and real backup/restore/consumer checks, and
 records phase timings separately. The original two-minute failures are not
-retrospectively passes. The native preparation assertion remains below 15,000 ms.
+retrospectively passes. The native preparation test retains its 120-second hang
+timeout; the [test overhaul](../reviews/testing-overhaul-20260912.md) explicitly
+replaces its former 15,000 ms requirement with diagnostic timing.
 
 Each workflow retains a seven-day `stress-results-bounded` or
 `stress-results-full` JSON artifact with the complete test selection, failures,

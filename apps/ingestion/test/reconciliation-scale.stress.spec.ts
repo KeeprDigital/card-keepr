@@ -1,7 +1,7 @@
 import * as cardSearchQueries from "./query-helpers/card-search";
 import { expect, onTestFinished, test } from "vitest";
 import { catalogueStore, sha256, type CataloguePrintingImage } from "../../../src/catalogue/shared";
-import { compositionEntityResponse, compositionImageResponse } from "../../../src/catalogue/read/composition-read";
+import { compositionEntityResponse } from "../../../src/catalogue/read/composition-read";
 import { currentGameMembers, publicComponents } from "./query-helpers/atomic-publication";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
 import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
@@ -148,10 +148,10 @@ test("a Product-heavy export publishes bounded verified R2 components", async ({
   nextPhase("complete");
   Object.assign(timing, { completed: true });
   // #253 acceptance revision, approved 12 September: finite hang detection;
-  // elapsed phase measurements are separate from correctness and the native 15s assertion.
+  // elapsed phase measurements are separate from correctness, as in native preparation.
 }, 300_000);
 
-test("128 synthetic images of 100 KiB reconcile and publish as immutable references", async () => {
+test("128 inline images of 100 KiB reconcile into a candidate below 1 MiB", async () => {
   const { collectRequests } = await import("./reconciliation-helpers");
   const run = await collectRequests(
     Array.from({ length: 16 }, (_, index) => ({ id: `images-${index}`, scenario: `scale-128-images-${index}` })),
@@ -165,23 +165,9 @@ test("128 synthetic images of 100 KiB reconcile and publish as immutable referen
   expect(images).toHaveLength(128);
   expect(images.reduce((sum, image) => sum + image.content_byte_length, 0)).toBe(13107200);
   expect(JSON.stringify(images)).not.toContain("content_base64");
-  const published = await approveNativeCandidate(candidate, "bounded-images-approval");
-  const revision = requiredString(published.document, "resulting_revision_id");
-  for (const image of images) {
-    const served = await compositionImageResponse(
-      catalogueStore(testEnv.CATALOGUE_DB),
-      testEnv.PRINTING_IMAGES,
-      new Request(`https://card-keepr.invalid/v1/printing-images/${image.id}/content?revision=${revision}`),
-      image.id,
-    );
-    expect(served?.status).toBe(200);
-    const bytes = await served!.arrayBuffer();
-    expect(bytes.byteLength).toBe(image.content_byte_length);
-    expect(await sha256(bytes)).toBe(image.content_sha256);
-  }
-  const exported = await exportComponentRecords(revision, "printing-images");
-  expect(exported.map(({ id }) => id).sort()).toEqual(images.map(({ id }) => id).sort());
-  expect(JSON.stringify(exported)).not.toContain("content_base64");
+  // This distinct inline source layout owns the candidate-size bound. The
+  // native image volume journey owns publication, serving, export identities
+  // and verified SQL restore for the same 128 × 100 KiB image workload.
 }, 60000);
 
 test("warning-heavy evidence seals bounded warning partitions without copying all warnings into each plan", async () => {

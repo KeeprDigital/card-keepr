@@ -1,0 +1,2 @@
+{"name":"serial_and_correctly_paced","current_three_assertions":"PASS","any_fetch_overlap":false,"a_gap_after_completion_ms":590,"b_gap_after_completion_ms":590,"trace":{"name":"serial_and_correctly_paced","a1":[0,10],"b1":[20,30],"a2":[600,610],"b2":[620,630]}}
+{"name":"serial_and_insufficient_post_completion_gap","current_three_assertions":"PASS","any_fetch_overlap":false,"a_gap_after_completion_ms":420,"b_gap_after_completion_ms":110,"trace":{"name":"serial_and_insufficient_post_completion_gap","a1":[0,400],"b1":[410,810],"a2":[820,830],"b2":[920,930]}}
