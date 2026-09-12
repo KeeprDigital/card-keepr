@@ -1,66 +1,18 @@
-# Scheduled Stress Suite
+# Scheduled stress
 
-`.github/workflows/stress.yml` runs `pnpm run test:stress` every Monday at
-03:17 UTC and on `workflow_dispatch`. Nobody watches a scheduled run, so the
-workflow reports its own failures and its liveness must be checked by hand.
+[stress.yml](../../.github/workflows/stress.yml) runs two bounded pacing/throughput
+checks every Monday at 03:17 UTC and on manual dispatch, with a five-minute job cap.
+Full stress is manual (`suite: full`, 45-minute cap) or local
+`pnpm run test:stress:full`. Manual and scheduled cancellation groups are separate.
+[Test selection and interpretation](../testing.md#what-the-stress-commands-prove)
+explain what a result establishes.
 
-The default is two bounded checks: per-host concurrency/pacing and a 60-request
-throughput window. It runs one file at a time with a five-minute job cap. The
-full ten-file suite is manual only: choose `suite: full` in the
-workflow or run `pnpm run test:stress:full` locally; its job cap is 45 minutes.
-Manual and scheduled runs have separate cancellation groups.
+Results are retained for seven days as `stress-results-bounded` or
+`stress-results-full`. Save relevant evidence outside the tracked documentation
+before expiry. A missing report is incomplete evidence, never an empty pass.
+Bounded hosted storage uses 512 MiB tmpfs; full stress uses 2 GiB.
 
-The command name covers volume, recovery, configured-limit and performance
-checks. It does not mean every test deliberately overloads the system or finds
-production capacity. See [what the stress commands prove](../testing.md#what-the-stress-commands-prove).
-Runner timing is an observation of that environment; publication integrity and
-restore outcomes are separate assertions.
-
-The full selection contains these ingestion files:
-
-| File                                            | Coverage                                                                             |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `capacity-tier-admission.stress.spec.ts`        | Tier request admission; fetches no bodies                                            |
-| `game-reconciliation-scale.stress.spec.ts`      | Native 1,001-Product completion/callback budgets and diagnostic elapsed time         |
-| `native-printing-images.stress.spec.ts`         | 128 streamed images, publication, serving, export and SQL restore                    |
-| `reconciliation-evidence-volume.stress.spec.ts` | Retained evidence volume                                                             |
-| `reconciliation-scale.stress.spec.ts`           | Large Card/Product publication and restore, inline image candidate size and warnings |
-| `runtime-capacity-resume.stress.spec.ts`        | Capacity pause and resume                                                            |
-| `runtime-collection-completion.stress.spec.ts`  | Collection completion at volume                                                      |
-| `runtime-collection-throughput.stress.spec.ts`  | Bounded collection throughput                                                        |
-| `runtime-discovery-scale.stress.spec.ts`        | Discovery at volume                                                                  |
-| `runtime-host-pacing.stress.spec.ts`            | Independent-host concurrency and pacing                                              |
-
-Run volume measurements with exclusive host resources and record the exact
-commit, runtime, complete selection and every failure. Native candidate elapsed
-time is diagnostic on uncontrolled hardware; completion and callback budgets
-remain enforced. Test deadlines detect hangs and do not measure CPU or billing.
-A bounded pass does not replace the full selection; a
-full pass does not certify the 5/50 GiB tiers, whose admission test fetches no
-bodies. Issue #275 owns usable capacity and accounting; #276 owns uncovered
-durable faults.
-
-The native candidate test reports resource and completion failures independently
-and retains phase/elapsed timings. The inline-image case retains its original 128-image input and
-candidate-size bound, but delegates publication/serving/export/restore coverage
-to the native image journey. Neither the 1,001-Product input nor its assertions
-are reduced by this consolidation.
-
-The Product publication journey has a five-minute test-body hang cap following
-the [12 September acceptance decision](../reviews/publication-253-implementation-20260912.md).
-It retains the original workload and real backup/restore/consumer checks, and
-records phase timings separately. The original two-minute failures are not
-retrospectively passes. The native preparation test retains its 120-second hang
-timeout; the [test overhaul](../reviews/testing-overhaul-20260912.md) explicitly
-replaces its former 15,000 ms requirement with diagnostic timing.
-
-Each workflow retains a seven-day `stress-results-bounded` or
-`stress-results-full` JSON artifact with the complete test selection, failures,
-durations and native callback report. Archive relevant evidence before expiry.
-If a job dies before the reporter finishes, its missing artifact is incomplete
-evidence, not an empty successful selection.
-
-Use the existing focused diagnostics workflow for an isolated stress file:
+For one failing file:
 
 ```sh
 gh workflow run test-suite-diagnostics.yml --ref <branch> \
@@ -69,53 +21,30 @@ gh workflow run test-suite-diagnostics.yml --ref <branch> \
   -f repeats=1
 ```
 
-Hosted full stress and `storage=memory` stress diagnostics use a disposable
-2 GiB tmpfs; bounded stress and routine CI use 512 MiB. Capacity fixtures exceed
-the smaller volume. The wrapper prints occupied bytes before removing the volume.
 Use `storage=disk` for a controlled storage comparison. Focused results do not
-replace full stress or routine CI.
+replace full stress or routine CI. The failure-reporting job opens/comments on
+`stress: scheduled stress suite failed`; only that job holds `issues: write`.
+Close the issue when its actual acceptance is met. A green bounded selection
+does not resolve a full-suite failure.
 
-The API currently has no separate stress files; its functional checks run in
-the normal API suite. Missing expected ingestion tests remain an error. Add
-API performance coverage explicitly before extending the stress selection.
+## Schedule liveness
 
-## Failure reporting
-
-When the `stress` job fails, the `report-failure` job opens a GitHub issue
-titled `stress: scheduled stress suite failed` with the label `bug`, or
-comments on that issue while it is still open, with the run link, trigger,
-and commit. Close the issue once its recorded acceptance is met, including
-full-selection verification when required; a green bounded run alone does not
-resolve a tracked full-suite failure. The next failure
-opens a fresh one. The `stress` job itself keeps a read-only token; only
-`report-failure` holds `issues: write`.
-
-## Cron liveness
-
-A quiet schedule is not a passing schedule. GitHub silently stops a cron
-when:
-
-- the repository has had no activity for 60 days (GitHub disables the
-  schedule and emails the last actor who touched the workflow file);
-- the last actor to modify `stress.yml` loses write access to the
-  repository, or the workflow file is changed on a branch other than `main`
-  (schedules run only from the default branch);
-- the workflow was disabled by hand.
-
-None of these fail a run, so `report-failure` never fires and no issue is
-opened. Check at least monthly, and after any long quiet period:
+GitHub can disable scheduled workflows after 60 days of inactivity; schedules
+also depend on default-branch configuration and an enabled workflow. A quiet
+schedule is not a pass and creates no failed-run issue. Check monthly and after
+long quiet periods:
 
 ```sh
-gh workflow view stress.yml --repo KeeprDigital/card-keepr      # state must be active
+gh workflow view stress.yml --repo KeeprDigital/card-keepr
 gh run list --workflow stress.yml --limit 3 --repo KeeprDigital/card-keepr
 ```
 
-The latest run must be no older than the schedule interval (seven days).
-If the workflow is disabled, re-enable it and run it once:
+Require an active workflow and a scheduled run within seven days. If disabled:
 
 ```sh
 gh workflow enable stress.yml --repo KeeprDigital/card-keepr
 gh workflow run stress.yml --repo KeeprDigital/card-keepr
 ```
 
-A commit to `main` also resets the 60-day inactivity clock.
+[Official-source monitoring](../../acceptance/fixtures/retained-official-source/README.md)
+is independent of these offline stress tests.

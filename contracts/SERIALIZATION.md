@@ -68,7 +68,7 @@ The component order is:
 
 ## Export schema compatibility
 
-Before Go-Live exactly one export schema major exists (ADR 0008): changes edit
+Before Go-Live exactly one export schema major exists ([definition policy](../docs/architecture.md#definition-changes-and-go-live)): changes edit
 the major-5 schema in place, no earlier major is kept readable or checked in,
 and exports produced under an earlier shape are regenerated rather than
 migrated. Publishers emit `card-keepr-catalogue-export-manifest@5` and
@@ -76,7 +76,7 @@ migrated. Publishers emit `card-keepr-catalogue-export-manifest@5` and
 only that major. Consumers must select a decoder by `export_schema_major` and
 URI and must never validate a component with a different major. From Go-Live,
 export schema majors become immutable compatibility contracts and earlier
-majors stay readable (ADRs 0001 to 0003).
+majors stay readable under that policy.
 
 Within a component, records are sorted by the UTF-8 byte order of their opaque
 `id`; `game-profiles` instead sort by `profile`. IDs and profile names are

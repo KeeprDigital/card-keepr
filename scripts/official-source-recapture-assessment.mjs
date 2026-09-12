@@ -8,7 +8,6 @@ import { reviewedCosmeticComparison } from "./official-source-cosmetic-compariso
 
 // These exact captures preserve the old eligibility evidence and regression
 // census, but ADR 0014 removed their acquisition from the current card scope.
-// The caller audit is recorded in docs/reviews/official-source-recapture-2026-09-09.md.
 export const excludedRecaptures = new Set([
   "digimon-en-policy.json",
   "fusion-world-en-legality-history-news.json",

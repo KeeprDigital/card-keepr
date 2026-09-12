@@ -222,8 +222,8 @@ recovery flags with SQL or erase the old database to make a gate pass.
 
 Production Release failures after migration require compatible roll-forward as
 specified in the [release runbook](production-release.md). Schema-changing
-pre-Go-Live work may instead require deliberate data regeneration under ADR 0008;
-that is a separate owner decision, not recovery acceptance.
+pre-Go-Live work may instead require separately approved
+[data regeneration](../architecture.md#definition-changes-and-go-live).
 
 Stored public exports participate in the same recovery closure. Snapshot evidence
 includes public export preparations, component descriptors and Merkle nodes; all

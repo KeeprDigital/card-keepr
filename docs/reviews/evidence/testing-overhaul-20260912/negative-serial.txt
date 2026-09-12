@@ -1,7 +1,0 @@
-Temporary serialized fetch transport
-Expected exit code: 1
-AssertionError: expected 1 to be 2 // Object.is equality
- Test Files  1 failed (1)
-      Tests  1 failed (1)
-   Duration  7.75s (transform 797ms, setup 0ms, import 1.57s, tests 5.66s, environment 0ms)
-Both temporary mutations were restored.

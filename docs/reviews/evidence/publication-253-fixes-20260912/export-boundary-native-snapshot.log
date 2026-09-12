@@ -1,6 +1,0 @@
-{"phase":"seed","ms":1680.834625}
-{"phase":"old_export_reproduced","ms":21391.370666000003}
-{"phase":"snapshot_and_file_export","ms":1367.1182909999989}
-{"phase":"stream_upload","ms":1024.9561250000006}
-{"phase":"actual_sql_import","ms":1547.6892499999994}
-{"seed_ms":1680.834625,"old_export_reproduced_ms":21391.370666000003,"snapshot_and_file_export_ms":1367.1182909999989,"sql_bytes":545269208,"stream_upload_ms":1024.9561250000006,"actual_sql_import_ms":1547.6892499999994,"completed":true,"elapsed_ms":27412.988167,"counts":{"n":260,"bytes":272629760,"min":1048576,"max":1048576}}

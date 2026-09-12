@@ -1,8 +1,0 @@
-{
-  "head": "fa0a404e4f980914a79825d6ff34f6d9f68e6a48",
-  "patch_sha256": "3317954293102f9934fabd04111f7c9467a0342edf971245d8b3d10558a60b78",
-  "protected_plans": {
-    "docs/plans/private-launch-waves.md": "a2a8b1aa643b87c466bc7f061af1068067f5ded7884d73443ea33cc908bfd9c6",
-    "docs/plans/backlog-reconciliation-2026-09-11.md": "55d1b6b972c5be2f28e37331fd26bc62499125e283e90dc6eacfd3a82aa5e839"
-  }
-}

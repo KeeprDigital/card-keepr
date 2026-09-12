@@ -1,8 +1,0 @@
-
- RUN  v4.1.10 /Users/marcus/Developer/card-keepr-worktrees/project-audit-20260909
-
-
- Test Files  1 passed (1)
-      Tests  1 passed (1)
-   Start at  17:06:58
-   Duration  2.41s (transform 763ms, setup 0ms, import 1.48s, tests 393ms, environment 0ms)

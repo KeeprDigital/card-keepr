@@ -1,6 +1,6 @@
 # Owner administration contract
 
-The maintained native protocol follows [ADR 0015](../docs/adr/0015-bounded-durable-publication-per-game.md).
+The maintained native protocol follows [per-game publication](../docs/architecture.md#per-game-publication-and-recovery).
 An Ingestion Run records collection provenance; a Catalogue Candidate, its
 Reconciliation Operation, artifact preparation and Publication Operation have
 separate identities and progress. Publication approves one exact whole game
@@ -16,7 +16,7 @@ strings, which the HTTP adapter converts to numbers.
 
 The repository CLI is the only initial owner interface. It talks to the
 ingestion Worker for catalogue operations, to GitHub for a production release
-dispatch, and to the owning secret stores for credential operations. The
+dispatch. The
 ingestion Worker never receives GitHub or Cloudflare deployment credentials.
 
 ## Interaction rules
@@ -78,9 +78,6 @@ proves publication or backup completion.
 | `keepr recovery verify`                   | yes      | recovery operation and restored target digest                                                                                                                                                                                  |
 | `keepr recovery accept`                   | yes      | verified recovery operation and expected restored revision                                                                                                                                                                     |
 | `keepr release production`                | yes      | manual dispatch; production target; expected current revision; ingestion idle; recovery healthy                                                                                                                                |
-| `keepr credential rotate`                 | yes      | credential class; replacement supplied out of band                                                                                                                                                                             |
-| `keepr credential verify`                 | yes      | rotation identity and harmless class-specific probe                                                                                                                                                                            |
-| `keepr credential revoke-old`             | yes      | verified replacement and exact old credential fingerprint                                                                                                                                                                      |
 | `keepr catalogue search repair`           | yes      | exact target among the current Catalogue Revision and its two immediate predecessors; expected current Catalogue Revision; idempotency key; production confirmation after resolving production status; one bounded repair step |
 
 Collection Workflows retain evidence. Independent game preparation seals the
@@ -122,8 +119,27 @@ native approval. Recovery and the SQL snapshot fence still block mutations.
 Inspection pins the immutable manifest and reports `ready`, `reason` and
 `approval_scope: whole_candidate`. Follow every partition/evidence cursor and
 restore referenced large text before reviewing; see the
-[inspection runbook](../docs/runbooks/bounded-reconciliation.md). A ready
+[inspection runbook](../docs/runbooks/publication.md#prepare-and-inspect). A ready
 candidate and verified publication artifacts are separate prerequisites.
+
+Partition listings return at most 100 entries. Metadata partitions contain at
+most 500 records and 512 KiB. Each partition returns parallel `records` and
+`text_parts` arrays. Reconstruct the ordered envelopes
+`{contract: "card-keepr-partitioned-record@1", value: records[i], text_parts: text_parts[i]}`
+and hash their canonical JSON using the [serialization rules](SERIALIZATION.md).
+Text descriptors name a path, complete SHA-256, UTF-8 byte length and chunk count;
+the path's null is a transport placeholder. Read
+`GET /v1/game-candidates/:candidate/text/:digest/:ordinal`, concatenate `content`
+in ordinal order and verify the full length/digest before restoring the path.
+Raw text chunks are at most 128 KiB. Retained run inspection also exposes
+`keepr reconciliation text --run-id RUN --digest SHA256 --ordinal ORDINAL`.
+For inspection before/after values, resolve the referenced preparation's text.
+
+Candidate image content uses
+`GET /v1/game-candidates/:candidate/partitions/:ordinal/images/:record?manifest=SHA256`.
+`record` is the zero-based index in a `printing_images` partition; an inspection
+image instead selects `side=before` or `side=after`. The route verifies retained
+bytes and refuses missing or corrupt content.
 
 Artifact preparation starts at sequence `0`. Start and resume return HTTP `202`
 with `{preparation, workflow}`; status returns the current artifact state,
@@ -172,7 +188,7 @@ A returned status may instead retain a failure such as
 `publication_deadline_expired`, `publication_candidate_conflict` or
 `publication_legacy_composition_unprepared`. Read the operation outcome even
 when the HTTP request succeeded. See the
-[publication protocol](../docs/runbooks/atomic-game-publication.md) for the
+[publication protocol](../docs/runbooks/publication.md#approve-and-observe-publication) for the
 composition and recovery rules.
 
 ## Historical run operations
@@ -356,7 +372,7 @@ production binding observation, idempotency key, and exact production
 confirmation. Changed idempotent replays fail closed; exact replays return the
 retained operation without repeating a restore, verification, or acceptance.
 
-## Release and credential states
+## Release states
 
 A production release follows:
 
@@ -370,20 +386,40 @@ recovery, bindings, migration level, and recovery bookmark before mutation.
 After a migration, failure is corrected by a compatible roll-forward unless a
 schema-compatible Worker rollback is proven.
 
-A credential rotation follows:
+Bearer keys retain primary/replacement slots. There is no current
+`credential rotate`, `verify` or `revoke-old` CLI command; historical credential
+fields in the snapshot schema do not expose an active rotation workflow.
 
-```text
-replacement_installed → replacement_verified → old_revoked
+## Source authority
+
+`GET /v1/source-registry` identifies installed game/source/profile/adapter bindings;
+`GET /v1/source-authorities` returns scoped designations. Registration, transport
+permission and publisher ownership do not grant Source Authority.
+`POST /v1/source-authorities` accepts:
+
+```json
+{
+  "game": "one-piece",
+  "locale": "en",
+  "release_region": "OCEANIA",
+  "area": "card_facts",
+  "source_lineage": "limitless-one-piece-en",
+  "expected_generation": "0",
+  "rationale": "Owner selected this source for the declared scope",
+  "idempotency_key": "one-piece-card-authority-selection"
+}
 ```
 
-The old credential remains usable until verification succeeds. The API traffic
-gate may deliberately overlap both values during consumer cutover. The
-administration key uses a harmless authenticated status probe. Cloudflare
-operation tokens and the GitHub-held deployment token use class-specific
-least-privilege probes in their owning boundary.
+Areas are `card_facts`, `printing_details` and `corrected_card_content`. The expected
+generation is a non-negative decimal string. Success retains an append-only
+decision and incremented generation. Exact replay returns that decision; changed
+key reuse or stale generation returns 409; invalid scope returns 422. Changes
+require idle collection, review/publication, recovery and release. Selected
+authority cannot silently fall back when its evidence is missing. Decisions stay
+in administrative backup/recovery data, outside consumer exports.
 
-The maintained implementation and its behavioral tests must preserve the
-transitions, stable rejection codes, terminal-state and concurrency invariants
-defined here and in the applicable ADRs. The state machine under `prototype/`
-is historical discussion material; it does not override this contract or later
-architecture decisions.
+The [source procedure](../docs/runbooks/sources.md) covers collection, admission,
+identity decisions and Curated Revisions. Official Erratum observation shapes
+are defined by [their schema](schemas/official-errata.schema.json). Publisher
+corrections preserve Printed Rules Text; publication uses the inspected candidate
+and does not activate/recalculate corrections when an applicability date passes.

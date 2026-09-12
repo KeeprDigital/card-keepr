@@ -13,5 +13,5 @@ test runtime's temporary files to compensate for a missing path.
 Remove it once the upstream pool exposes an equivalent supported persistence path.
 Validate `publication-backup-transport` acceptance and the ingestion
 `publication-caller-retirement.spec.ts` file, including controlled and real binding
-execution, before broader suites. The [implementation record](../docs/reviews/publication-253-implementation-20260912.md)
-retains the failed partial patch and successful end-to-end proof.
+execution, before broader suites. See the
+[publication test contract](../docs/testing.md#publication-large-workload-acceptance).

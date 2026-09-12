@@ -1,7 +1,0 @@
-
-> typecheck
-> tsc --project apps/api/tsconfig.json && tsc --project apps/api/test/tsconfig.json && tsc --project apps/ingestion/tsconfig.json && tsc --project apps/ingestion/test/tsconfig.json && tsc --project test/domain/tsconfig.json
-
-test/domain/bounded-page-extraction.spec.ts(35,22): error TS2550: Property 'fromAsync' does not exist on type 'ArrayConstructor'. Do you need to change your target library? Try changing the 'lib' compiler option to 'esnext' or later.
-test/domain/bounded-page-extraction.spec.ts(41,23): error TS2550: Property 'fromAsync' does not exist on type 'ArrayConstructor'. Do you need to change your target library? Try changing the 'lib' compiler option to 'esnext' or later.
-test/domain/bounded-page-extraction.spec.ts(41,56): error TS7006: Parameter 'record' implicitly has an 'any' type.

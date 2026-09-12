@@ -1,9 +1,0 @@
-{
-  "variant": "grouped-fault",
-  "exit_code": 0,
-  "wall_seconds": 8.23771679122001,
-  "process_tree_peak_rss_KiB": 1748848,
-  "workerd_processes_peak_rss_KiB": 818400,
-  "samples": 8,
-  "note": "sampled process RSS, not isolate working set; no production CPU/billing"
-}

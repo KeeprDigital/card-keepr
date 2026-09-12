@@ -2,7 +2,7 @@
 
 Implements [#219](https://github.com/KeeprDigital/card-keepr/issues/219), under [#216](https://github.com/KeeprDigital/card-keepr/issues/216). This pack contains actual HTTP response bodies and original source image bytes. It changes no production adapters, admission policy, enabled games or release gates.
 
-Run from the repository root, after `npm ci`:
+Run from the repository root, after `pnpm install --frozen-lockfile`:
 
 ```sh
 node scripts/source-evidence/replay.mjs acceptance/fixtures/real-sources/2026-09-06
