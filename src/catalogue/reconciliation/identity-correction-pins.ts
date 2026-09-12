@@ -30,15 +30,21 @@ export async function pinCorrectionDecisions(database: CatalogueStore, runId: st
       "The run's correction game selection is immutable.",
     );
 }
-export async function correctionDecisionPinMetadata(database: CatalogueStore, runId: string) {
-  const pin = await correctionPinStatement(database, runId).first<{ games_json: string; decision_cutoff: number }>();
+export type CorrectionPin = { games_json: string; decision_cutoff: number };
+export async function correctionDecisionPinMetadata(database: CatalogueStore, runId: string, retained?: CorrectionPin) {
+  const pin = retained ?? (await correctionPinStatement(database, runId).first<CorrectionPin>());
   if (!pin) throw new Error("Correction decisions must be pinned before reconciliation.");
   return { decision_cutoff: pin.decision_cutoff, set_digest: await sha256Text(canonicalJson(pin)) };
 }
 // Identity corrections only relax the Card association explicitly reviewed by
 // the owner. Artwork, printed content, rarity and treatment still must agree.
-export async function pinnedCardIdentityResolver(database: CatalogueStore, runId: string, yieldAtCheckpoint = false) {
-  const pin = await correctionDecisionPinMetadata(database, runId);
+export async function pinnedCardIdentityResolver(
+  database: CatalogueStore,
+  runId: string,
+  yieldAtCheckpoint = false,
+  retainedPin?: CorrectionPin,
+) {
+  const pin = await correctionDecisionPinMetadata(database, runId, retainedPin);
   if (pin.decision_cutoff === 0)
     return Object.assign(async (cardId: string, _printingId: string) => cardId, {
       next: async (_cardId: string, _printingId: string): Promise<string | undefined> => undefined,

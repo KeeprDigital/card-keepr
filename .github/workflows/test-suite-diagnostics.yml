@@ -9,6 +9,16 @@ on:
         type: choice
         options: [ingestion, api]
         default: ingestion
+      suite:
+        description: Routine Worker tests or ingestion stress experiments
+        type: choice
+        options: [routine, stress]
+        default: routine
+      storage:
+        description: Temporary database backing for an isolated comparison
+        type: choice
+        options: [memory, disk]
+        default: memory
       files:
         description: Space-separated test file paths, relative to the repository
         required: true
@@ -26,8 +36,11 @@ jobs:
     timeout-minutes: 12
     env:
       TEST_WORKER: ${{ inputs.worker }}
+      TEST_SUITE: ${{ inputs.suite }}
+      TEST_STORAGE: ${{ inputs.storage }}
       TEST_FILES: ${{ inputs.files }}
       TEST_REPEATS: ${{ inputs.repeats }}
+      CI_TEST_TMPFS_SIZE: ${{ inputs.suite == 'stress' && '2g' || '512m' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up repository tooling
@@ -35,19 +48,29 @@ jobs:
       - name: Run the selected files
         run: |
           case "$TEST_WORKER" in ingestion|api) ;; *) exit 2 ;; esac
+          case "$TEST_SUITE" in routine|stress) ;; *) exit 2 ;; esac
+          case "$TEST_STORAGE" in memory|disk) ;; *) exit 2 ;; esac
           case "$TEST_REPEATS" in 1|3) ;; *) exit 2 ;; esac
+          suffix='\.spec\.ts'
+          if [ "$TEST_SUITE" = stress ]; then
+            if [ "$TEST_WORKER" != ingestion ]; then exit 2; fi
+            export KEEPR_TEST_SUITE=stress
+            suffix='\.stress\.spec\.ts'
+          fi
           read -r -a files <<< "$TEST_FILES"
           if [ "${#files[@]}" -eq 0 ]; then exit 2; fi
           for file in "${files[@]}"; do
-            if [[ ! "$file" =~ ^apps/$TEST_WORKER/test/[a-z0-9-]+\.spec\.ts$ ]] || [ ! -f "$file" ]; then
+            if [[ ! "$file" =~ ^apps/$TEST_WORKER/test/[a-z0-9-]+${suffix}$ ]] || [ ! -f "$file" ]; then
               echo "Invalid test file: $file" >&2
               exit 2
             fi
           done
           mkdir -p test-results
+          runner=()
+          if [ "$TEST_STORAGE" = memory ]; then runner=(bash scripts/ci-test.sh); fi
           status=0
           for ((run=1; run<=TEST_REPEATS; run++)); do
-            bash scripts/ci-test.sh pnpm run "test:$TEST_WORKER" "${files[@]}" \
+            "${runner[@]}" pnpm run "test:$TEST_WORKER" "${files[@]}" \
               --silent=passed-only --reporter=default --reporter=json \
               --outputFile.json="test-results/run-$run.json" || status=1
           done

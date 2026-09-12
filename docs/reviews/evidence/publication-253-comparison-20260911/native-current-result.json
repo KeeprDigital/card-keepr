@@ -1,0 +1,11 @@
+{
+  "source": "unchanged primary working tree; starting-worktree.patch",
+  "command": "KEEPR_TEST_SUITE=stress KEEPR_CALLBACK_ARTIFACT=<evidence>/native-current.json pnpm exec vitest run --config apps/ingestion/vitest.config.ts apps/ingestion/test/game-reconciliation-scale.stress.spec.ts --reporter=default --reporter=./test/support/reconciliation-callback-reporter.mjs",
+  "exit_code": 0,
+  "elapsed_preparation_ms": 7401,
+  "performance_assertion_ms": 15000,
+  "test_body_ms": 8518,
+  "total_process_reported_seconds": 10.28,
+  "maximum_callback_calls": 41,
+  "note": "One separate local run of the original native performance assertion; not the Product timeout or full/hosted validation."
+}

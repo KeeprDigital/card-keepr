@@ -1,0 +1,21 @@
+✖ restore consumes streamed SQL across UTF-8, quoted text and trigger boundaries (4.193458ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 78.695958
+
+✖ failing tests:
+
+test at test/support/fake-publisher/sqlite-restore.test.ts:47:1
+✖ restore consumes streamed SQL across UTF-8, quoted text and trigger boundaries (4.193458ms)
+  TypeError: The "sql" argument must be a string.
+      at SqliteRestore.import (file:///Users/marcus/Developer/card-keepr/test/support/fake-publisher/sqlite-restore.ts:26:21)
+      at TestContext.<anonymous> (file:///Users/marcus/Developer/card-keepr/test/support/fake-publisher/sqlite-restore.test.ts:66:26)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    code: 'ERR_INVALID_ARG_TYPE'
+  }

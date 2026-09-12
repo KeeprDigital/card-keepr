@@ -4,7 +4,8 @@ import { catalogueStore, sha256, type CataloguePrintingImage } from "../../../sr
 import { compositionImageResponse } from "../../../src/catalogue/read/composition-read";
 import { compositionExportResponse } from "../../../src/catalogue/read/composition-export";
 import { runReconciliationWorkflow } from "./reconciliation-workflow-driver";
-import { collect, get, post, requiredString, testEnv } from "./reconciliation-helpers";
+import { collect, exportComponentRecords, get, post, requiredString, testEnv } from "./reconciliation-helpers";
+import { approveNativeCandidate } from "./native-publication-helpers";
 import type { ReconciliationWorkflowParams } from "../../../src/catalogue/reconciliation";
 
 export async function assertNativePrintingImagePublication(workload: "2-images" | "128-images", imageCount: number) {
@@ -13,14 +14,14 @@ export async function assertNativePrintingImagePublication(workload: "2-images" 
     lineage: "one-piece-en",
     adapter: "fixture-one-piece-capacity@1",
   });
-  let retainedReads = 0;
+  const retainedImages = new Set<string>();
   const objects = new Proxy(testEnv.EVIDENCE_OBJECTS, {
     get(target, property) {
       if (property === "get")
         return async (...args: Parameters<R2Bucket["get"]>) => {
           const object = await target.get(...args);
           if (!object?.httpMetadata?.contentType?.startsWith("image/")) return object;
-          retainedReads++;
+          retainedImages.add(object.key);
           return new Proxy(object, {
             get(image, member) {
               if (member === "arrayBuffer" || member === "text" || member === "json" || member === "blob")
@@ -80,19 +81,30 @@ export async function assertNativePrintingImagePublication(workload: "2-images" 
   await runReconciliationWorkflow({ ...testEnv, EVIDENCE_OBJECTS: objects, PRINTING_IMAGES: images }, event, step);
   const candidate = (await get(`/v1/game-candidates/${id}`)).document;
   expect(candidate, JSON.stringify(candidate)).toMatchObject({ state: "sealed" });
-  expect(retainedReads).toBeGreaterThanOrEqual(imageCount * 2);
+  expect(retainedImages.size).toBe(imageCount);
   expect(streamedPuts).toBe(imageCount);
   const references: CataloguePrintingImage[] = [];
   let cursor: string | null = null;
   do {
     const page = (await get(`/v1/game-candidates/${id}/partitions${cursor === null ? "" : `?after=${cursor}`}`))
       .document;
-    for (const partition of page.partitions as { ordinal: number; kind: string }[]) {
+    const partitions = page.partitions as {
+      ordinal: number;
+      kind: string;
+      byte_length: number;
+      record_count: number;
+    }[];
+    expect(partitions.length).toBeLessThanOrEqual(100);
+    for (const partition of partitions) {
+      expect(partition.byte_length).toBeLessThanOrEqual(524_288);
+      expect(partition.record_count).toBeLessThanOrEqual(500);
       if (partition.kind !== "printing_images") continue;
       const content = (await get(`/v1/game-candidates/${id}/partitions/${partition.ordinal}`)).document;
       references.push(...(content.records as CataloguePrintingImage[]));
     }
-    cursor = page.next_cursor as string | null;
+    const next = page.next_cursor as string | null;
+    if (next !== null) expect(next).not.toBe(cursor);
+    cursor = next;
   } while (cursor !== null);
   expect(references).toHaveLength(imageCount);
   expect(JSON.stringify(references)).not.toMatch(/content_base64|content_object_key/);
@@ -110,38 +122,12 @@ export async function assertNativePrintingImagePublication(workload: "2-images" 
   expect(approval.response.status, JSON.stringify(approval.document)).toBe(202);
   expect(approval.document).toMatchObject({ approval_scope: "whole_candidate", state: "approved" });
   expect((await post("/v1/publications", intent)).document).toEqual(approval.document);
+  // The shared owner driver performs real publication, SQL backup and disposable
+  // restore. Image tests add streaming/identity proofs to that complete journey.
+  const published = await approveNativeCandidate(candidate, intent.idempotency_key);
   const publication = requiredString(approval.document, "id");
-  // Each fixture Printing has one Card and one image: image verification,
-  // export/projection records and three Card search fields each take units.
-  // Reserve sixteen per Printing plus bounded partition/composition overhead.
-  const maximumPreparationUnits = references.length * 16 + 128;
-  let sequence = 0;
-  for (let unit = 0; unit < maximumPreparationUnits; unit++) {
-    const prepared = await post(`/v1/game-candidates/${id}/publication-preparation`, {
-      manifest_digest: candidate.manifest_digest,
-      generation: 0,
-      sequence,
-      idempotency_key: `native-images-artifacts-${unit}`,
-    });
-    expect(prepared.response.status, JSON.stringify(prepared.document)).toBe(200);
-    if (prepared.document.state === "verified") break;
-    expect(prepared.document.state).toBe("preparing");
-    sequence = Number(prepared.document.sequence);
-    if (unit === maximumPreparationUnits - 1)
-      throw new Error("Image publication artifacts exceeded their bounded units.");
-  }
-  for (let unit = 0; unit < maximumPreparationUnits; unit++) {
-    const prepared = await post(`/v1/publications/${publication}/export-preparation/advance`, {
-      generation: 0,
-      idempotency_key: `native-images-export-${unit}`,
-    });
-    expect(prepared.response.status, JSON.stringify(prepared.document)).toBe(200);
-    if (prepared.document.state === "verified") break;
-    expect(prepared.document.state).toBe("preparing");
-    if (unit === maximumPreparationUnits - 1) throw new Error("Image export preparation exceeded its bounded units.");
-  }
-  const published = await post(`/v1/publications/${publication}/advance`, { generation: 0 });
   expect(published.document, JSON.stringify(published.document)).toMatchObject({ state: "published" });
+  expect(published.document.id).toBe(publication);
   expect((await post(`/v1/publications/${publication}/advance`, { generation: 0 })).document).toEqual(
     published.document,
   );
@@ -168,4 +154,11 @@ export async function assertNativePrintingImagePublication(workload: "2-images" 
   expect(exported?.status).toBe(200);
   const exportDocument = await exported!.json();
   expect(JSON.stringify(exportDocument)).not.toContain("content_base64");
+  const exportedImages = await exportComponentRecords(revision, "printing-images");
+  expect(exportedImages.map(({ id }) => id).sort()).toEqual(references.map(({ id }) => id).sort());
+  const exportedById = new Map(exportedImages.map((image) => [image.id, image]));
+  for (const { id, printing_id, role, media_type, width, height, content_sha256 } of references) {
+    expect(exportedById.get(id)).toMatchObject({ id, printing_id, role, media_type, width, height, content_sha256 });
+  }
+  expect(JSON.stringify(exportedImages)).not.toMatch(/content_base64|content_object_key/);
 }

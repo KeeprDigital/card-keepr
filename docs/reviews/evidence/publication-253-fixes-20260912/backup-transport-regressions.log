@@ -1,0 +1,12 @@
+✔ restore verification reads imported SQL facts and executes reconstruction against an independent database (15.030834ms)
+✔ missing or invalid uploaded SQL cannot produce a successful restore (9.6365ms)
+✔ restore consumes streamed SQL across UTF-8, quoted text and trigger boundaries (13.851125ms)
+✔ a file-backed snapshot restores the original catalogue, schema and bytes after live data changes (39.285292ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 145.569125

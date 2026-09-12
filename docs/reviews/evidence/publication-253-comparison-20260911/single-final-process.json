@@ -1,0 +1,9 @@
+{
+  "variant": "single-final",
+  "exit_code": 0,
+  "wall_seconds": 448.81381937488914,
+  "process_tree_peak_rss_KiB": 4932928,
+  "workerd_processes_peak_rss_KiB": 4096032,
+  "samples": 436,
+  "note": "sampled process RSS, not isolate working set; no production CPU/billing"
+}

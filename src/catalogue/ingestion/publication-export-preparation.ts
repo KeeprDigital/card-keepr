@@ -1,4 +1,4 @@
-import { trackedStagingBucket } from "../shared";
+import { writeStagingObjects } from "../shared";
 import {
   type CatalogueStore,
   AdministrationProblem,
@@ -59,26 +59,62 @@ async function verify(bucket: R2Bucket, ref: Reference) {
   if (!Number.isSafeInteger(ref.byte_length) || ref.byte_length < 0 || ref.byte_length > 4_000_000)
     throw new InvalidPublicExport("public_export_capacity_exceeded");
   const object = await bucket.get(ref.object_key);
-  if (!object || object.size !== ref.byte_length) throw new InvalidPublicExport("public_export_artifact_missing");
+  if (!object) throw new InvalidPublicExport("public_export_artifact_missing");
+  if (object.size !== ref.byte_length) {
+    await object.body.cancel();
+    throw new InvalidPublicExport("public_export_artifact_missing");
+  }
   const bytes = new Uint8Array(await object.arrayBuffer());
   if ((await sha256(bytes)) !== ref.sha256) throw new InvalidPublicExport("public_export_artifact_corrupt");
 }
-async function retain(bucket: R2Bucket, bytes: Uint8Array, metadata = false): Promise<Reference> {
-  const digest = await sha256(bytes),
-    key = metadata ? `publication-artifacts/${digest}` : `catalogue-public-components/${digest}.ndjson.gz`;
-  await bucket.put(key, bytes, {
-    onlyIf: { etagDoesNotMatch: "*" },
-    httpMetadata: { contentType: metadata ? "application/json" : "application/gzip" },
-  });
-  const ref = { object_key: key, sha256: digest, byte_length: bytes.byteLength };
-  await verify(bucket, ref);
-  return ref;
+/** Keep compressed components bounded while sharing durable writer transactions. */
+function publicExportObjects(db: CatalogueStore, bucket: R2Bucket, preparation: string) {
+  let pending: { ref: Reference; bytes: Uint8Array; metadata: boolean }[] = [];
+  let pendingBytes = 0;
+  async function flush() {
+    if (!pending.length) return;
+    const batch = pending;
+    pending = [];
+    pendingBytes = 0;
+    await writeStagingObjects(
+      db,
+      bucket,
+      "CATALOGUE_EXPORTS",
+      preparation,
+      batch.map(({ ref, bytes, metadata }) => ({
+        key: ref.object_key,
+        content: bytes,
+        options: {
+          onlyIf: { etagDoesNotMatch: "*" },
+          httpMetadata: { contentType: metadata ? "application/json" : "application/gzip" },
+        },
+      })),
+    );
+    const results = await Promise.allSettled(batch.map(({ ref }) => verify(bucket, ref)));
+    for (const result of results) if (result.status === "rejected") throw result.reason;
+  }
+  return {
+    flush,
+    async stage(bytes: Uint8Array, metadata = false): Promise<Reference> {
+      if (bytes.byteLength > 4_000_000) throw new InvalidPublicExport("public_export_capacity_exceeded");
+      if (pending.length === 4 || pendingBytes + bytes.byteLength > 4_000_000) await flush();
+      const digest = await sha256(bytes);
+      const ref = {
+        object_key: metadata ? `publication-artifacts/${digest}` : `catalogue-public-components/${digest}.ndjson.gz`,
+        sha256: digest,
+        byte_length: bytes.byteLength,
+      };
+      pending.push({ ref, bytes, metadata });
+      pendingBytes += bytes.byteLength;
+      return ref;
+    },
+  };
 }
 function result(state: PublicExportState) {
   return { contract: "card-keepr-public-export-preparation@5", ...state, cursor: JSON.parse(state.cursor_json) };
 }
 
-/** One durable unit renders at most one bounded public record, or seals 32 references. */
+/** A durable unit renders up to four records within the call/byte budgets, or seals 32 references. */
 export async function advancePublicationExports(env: Environment, id: string, generation: number, key: string) {
   const db = env.CATALOGUE_DB,
     request = canonicalJson({ id, generation, key });
@@ -88,7 +124,9 @@ export async function advancePublicationExports(env: Environment, id: string, ge
       throw new AdministrationProblem(409, "idempotency_conflict", "This key belongs to another public export unit.");
     return JSON.parse(replay.result_json) as { state: string; sequence?: number };
   }
-  const owner = await repository.exportOwner(db, id).first<Owner>();
+  const [owners, preparations] = await db.batch([repository.exportOwner(db, id), repository.exportPreparation(db, id)]);
+  const owner = owners!.results[0] as Owner | undefined;
+  const current = (preparations!.results[0] as PublicExportState | undefined) ?? null;
   if (!owner)
     throw new AdministrationProblem(404, "publication_not_found", "The publication operation does not exist.");
   if (owner.generation !== generation)
@@ -97,7 +135,6 @@ export async function advancePublicationExports(env: Environment, id: string, ge
   if (owner.state === "retry_paused") return { state: "retry_paused" };
   if (owner.deadline <= new Date().toISOString() || owner.current_game_revision !== owner.expected_game_revision_id)
     return { state: "invalid" };
-  const current = await repository.exportPreparation(db, id).first<PublicExportState>();
   if (owner.private_state !== "verified") return { state: "waiting_private", sequence: current?.sequence ?? 0 };
   if (owner.recovery_health !== "healthy" || owner.search_state !== "ready")
     return { state: "waiting_recovery", sequence: current?.sequence ?? 0 };
@@ -121,16 +158,15 @@ export async function advancePublicationExports(env: Environment, id: string, ge
   const cursor = JSON.parse(state.cursor_json) as Cursor;
   const statements: D1PreparedStatement[] = [];
   try {
-    await prepareUnit(
-      {
-        CATALOGUE_DB: db,
-        CATALOGUE_EXPORTS: trackedStagingBucket(db, env.CATALOGUE_EXPORTS, "CATALOGUE_EXPORTS", owner.candidate_id),
-      },
-      owner,
-      state,
-      cursor,
-      statements,
-    );
+    const objects = publicExportObjects(db, env.CATALOGUE_EXPORTS, owner.candidate_id);
+    const phase = cursor.phase;
+    const budget = { calls: 0, bytes: 0 };
+    for (let unit = 0; unit < 4; unit++) {
+      const prepared = await prepareUnit(env, owner, state, cursor, statements, budget, objects);
+      // New components and nodes must commit before a parent reads their receipts.
+      if (prepared === false || phase === "nodes" || cursor.phase !== phase) break;
+    }
+    await objects.flush();
     state.cursor_json = canonicalJson(cursor);
   } catch (error) {
     if (!(error instanceof InvalidPublicExport)) throw error;
@@ -155,6 +191,8 @@ async function prepareUnit(
   state: PublicExportState,
   cursor: Cursor,
   statements: D1PreparedStatement[],
+  budget: { calls: number; bytes: number },
+  objects: ReturnType<typeof publicExportObjects>,
 ) {
   const db = env.CATALOGUE_DB,
     bucket = env.CATALOGUE_EXPORTS;
@@ -193,6 +231,8 @@ async function prepareUnit(
       dependencies.length +
       dependencies.reduce((n, d) => n + d.text_calls, 0);
     if (dependencies.length > 128 || calls > 80) throw new InvalidPublicExport("public_export_capacity_exceeded");
+    if (budget.calls + calls > 80) return false;
+    budget.calls += calls;
     const input = await sha256Text(
       canonicalJson({
         contract: "card-keepr-public-record@5",
@@ -214,8 +254,12 @@ async function prepareUnit(
     let ref: Reference, descriptor: Record<string, unknown>;
     if (prior) {
       ref = prior;
-      await verify(bucket, ref);
       descriptor = JSON.parse(prior.descriptor_json);
+      const bytes = Number(descriptor.uncompressed_bytes);
+      if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > 4_000_000)
+        throw new InvalidPublicExport("public_export_capacity_exceeded");
+      if (budget.bytes + bytes > 4_000_000) return false;
+      await verify(bucket, ref);
     } else {
       let value: unknown;
       try {
@@ -236,7 +280,8 @@ async function prepareUnit(
       }
       const raw = new TextEncoder().encode(`${canonicalJson(value)}\n`);
       if (raw.byteLength > 4_000_000) throw new InvalidPublicExport("public_export_capacity_exceeded");
-      ref = await retain(bucket, deterministicGzip(raw));
+      if (budget.bytes + raw.byteLength > 4_000_000) return false;
+      ref = await objects.stage(deterministicGzip(raw));
       descriptor = {
         kind: source.kind === "product_relationships" ? "relationships" : source.kind.replaceAll("_", "-"),
         media_type: "application/x-ndjson",
@@ -249,6 +294,7 @@ async function prepareUnit(
         compressed_sha256: ref.sha256,
       };
     }
+    budget.bytes += Number(descriptor.uncompressed_bytes);
     descriptor.name = `${source.supported_game}.${source.ordinal}`;
     statements.push(
       repository.retainExportComponent(
@@ -267,9 +313,10 @@ async function prepareUnit(
     return;
   }
   const refs = (
-    await (cursor.level === 0
-      ? repository.exportComponents(db, state.candidate_id, cursor.after)
-      : repository.exportNodes(db, owner.id, cursor.level - 1, cursor.after)
+    await (
+      cursor.level === 0
+        ? repository.exportComponents(db, state.candidate_id, cursor.after)
+        : repository.exportNodes(db, owner.id, cursor.level - 1, cursor.after)
     ).all<Reference & { ordinal: number; descriptor_json?: string }>()
   ).results;
   if (refs.length) {
@@ -283,7 +330,7 @@ async function prepareUnit(
     });
     if (new TextEncoder().encode(content).byteLength > 16384)
       throw new InvalidPublicExport("public_export_capacity_exceeded");
-    const ref = await retain(bucket, new TextEncoder().encode(content), true);
+    const ref = await objects.stage(new TextEncoder().encode(content), true);
     statements.push(repository.retainExportNode(db, owner.id, cursor.level, cursor.node++, ref));
     cursor.after = refs.at(-1)!.ordinal;
     return;
@@ -298,8 +345,7 @@ async function prepareUnit(
   const root = (await repository.exportNodes(db, owner.id, cursor.level, -1).all<Reference & { ordinal: number }>())
     .results[0]!;
   await verify(bucket, root);
-  const sealed = await retain(
-    bucket,
+  const sealed = await objects.stage(
     new TextEncoder().encode(
       canonicalJson({
         contract: "card-keepr-game-public-export-artifacts@5",

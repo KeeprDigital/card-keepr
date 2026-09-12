@@ -5,6 +5,8 @@ import type { ReconciliationInputRecordCursor } from "./reconciliation-input";
 import type { ReconciliationRecordSink } from "./reconciliation-record-collection";
 import type {
   CatalogueStore,
+  CatalogueDraftEntity,
+  CatalogueEntityCollection,
   CatalogueProduct,
   CatalogueDistributionContext,
   ProductRelationship,
@@ -33,6 +35,28 @@ export type ProductInputEntry = {
   cursor: ReconciliationInputRecordCursor;
   byteLength: number;
 };
+
+/** Fresh inputs can share a predecessor lookup, with bounded hydrated data and effects. */
+async function* productInputBatches(source: AsyncIterable<ProductInputEntry>, game: SupportedGame, fresh: boolean) {
+  type Entry = { entry: ProductInputEntry; parsed: Awaited<ReturnType<typeof parseProductReleaseObservation>> | null };
+  let batch: Entry[] = [];
+  let bytes = 0;
+  let effects = 0;
+  for await (const entry of source) {
+    const parsed = entry.input === null ? null : await parseProductReleaseObservation(entry.input, game);
+    const size = new TextEncoder().encode(JSON.stringify([entry.input, parsed])).byteLength;
+    const count = parsed ? parsed.products.length + parsed.distributionContexts.length : 0;
+    if (batch.length && (!fresh || batch.length === 8 || bytes + size > 131072 || effects + count > 16)) {
+      yield batch;
+      batch = [];
+      bytes = effects = 0;
+    }
+    batch.push({ entry, parsed });
+    bytes += size;
+    effects += count;
+  }
+  if (batch.length) yield batch;
+}
 type Stage =
   | "prior_products"
   | "prior_contexts"
@@ -102,7 +126,9 @@ export async function reconcileProductReleaseState(
     for (const [name, retained] of Object.entries(indexes)) retained.resumeAt(checkpoint.value.indexes[name]!);
     warnings.resumeAt(checkpoint.value.warnings);
   }
+  let flushResults = async () => {};
   const save = async () => {
+    await flushResults();
     await retainReconciliationCheckpoint(database, runId, phase, ordinal, {
       stage,
       after,
@@ -126,9 +152,9 @@ export async function reconcileProductReleaseState(
   const recordLimit = () => {
     if (stage === "inputs") return fresh() ? 16 : 4;
     if (stage === "existing_products") return 8;
-    if (stage === "new_products" && priorProductCount === 0) return 32;
-    if (stage === "new_contexts" && priorContexts.position === 0) return 32;
-    if (stage === "new_relationships" && priorRelationships.position === 0) return 32;
+    if (stage === "new_products" && priorProductCount === 0) return 128;
+    if (stage === "new_contexts" && priorContexts.position === 0) return 128;
+    if (stage === "new_relationships" && priorRelationships.position === 0) return 128;
     return 16;
   };
   const effectLimit = () => (fresh() ? 32 : 4);
@@ -158,6 +184,34 @@ export async function reconcileProductReleaseState(
       await action(value);
       after = value.id;
       await finishRecord();
+    }
+  };
+  const consumeNew = async <T extends { id: string }, K extends CatalogueEntityCollection>(
+    values: AsyncIterable<T>,
+    kind: K,
+    transform: (value: T) => Promise<CatalogueDraftEntity<K> | undefined>,
+  ) => {
+    let pending: CatalogueDraftEntity<K>[] = [];
+    let pendingBytes = 0;
+    const flush = async () => {
+      if (pending.length) await result.setMany(kind, pending);
+      pending = [];
+      pendingBytes = 0;
+    };
+    flushResults = flush;
+    try {
+      await consume(values, async (value) => {
+        const entity = await transform(value);
+        if (!entity) return;
+        const size = new TextEncoder().encode(JSON.stringify(entity)).byteLength;
+        if (pending.length && pendingBytes + size > 262144) await flush();
+        pending.push(entity);
+        pendingBytes += size;
+        if (pending.length === 16) await flush();
+      });
+      await flush();
+    } finally {
+      flushResults = async () => {};
     }
   };
   const runStage = async (expected: Stage, next: Stage, action: () => Promise<void>) => {
@@ -191,74 +245,130 @@ export async function reconcileProductReleaseState(
   });
   await runStage("inputs", "existing_products", async () => {
     if (!options.hasInputs) return;
-    for await (const entry of inputs(inputAfter)) {
-      const input = entry.input;
-      if (input !== null) {
-        const parsed = await parseProductReleaseObservation(input, game);
-        await budget(
-          entry.byteLength,
-          parsed.products.length +
-            parsed.distributionContexts.length +
-            parsed.relationships.length +
-            parsed.warnings.length,
-        );
-        if (input.value !== undefined) checkedLineages.add(input.sourceLineage);
-        // Identity matching needs only candidates with the same normalized name or official code.
-        let matchingVisits = 0;
-        const observation = await preservePublishedProductIdentity(
-          parsed,
-          async (product) => {
-            if (priorProductCount === 0) return [];
-            const matches = new Map<string, CatalogueProduct>();
-            const add = async (match: CatalogueProduct) => {
-              if (++matchingVisits > 16)
-                throw new Error(
-                  "reconciliation_capacity_exceeded: one Product input requires too many identity visits.",
-                );
-              if (matches.has(match.id)) return;
-              if (matches.size === 8)
-                throw new Error("reconciliation_capacity_exceeded: one Product identity has too many candidates.");
-              await assertProductGroupBudget([...matches.values(), match]);
-              matches.set(match.id, match);
-            };
-            for await (const match of names.matchingBeforeObservation(normalizedProductName(product.name) ?? "", {
-              records: 8,
-              bytes: 512000,
-            }))
-              await add(match);
-            if (product.officialCode !== null) {
-              for await (const match of codes.matchingBeforeObservation(product.officialCode, {
-                records: 8,
-                bytes: 512000,
-              }))
-                await add(match);
+    for await (const batch of productInputBatches(inputs(inputAfter), game, fresh())) {
+      const productKeys = batch.flatMap(({ parsed }) => parsed?.products.map(({ id }) => id) ?? []);
+      const contextKeys = batch.flatMap(({ parsed }) => parsed?.distributionContexts.map(({ id }) => id) ?? []);
+      const canBatch = fresh() && productKeys.length + contextKeys.length <= 16;
+      const productWindow = canBatch ? await groups.getMany(productKeys) : null;
+      const contextWindow = canBatch ? await contexts.getMany(contextKeys) : null;
+      let productWrites: { key: string; value: ProductGroup }[] = [];
+      let contextWrites: { key: string; value: CatalogueDistributionContext }[] = [];
+      let writeBytes = 0;
+      const flush = async () => {
+        await groups.seedManyAlongside(productWrites, { index: contexts, entries: contextWrites });
+        productWrites = [];
+        contextWrites = [];
+        writeBytes = 0;
+      };
+      flushResults = flush;
+      try {
+        for (const { entry, parsed } of batch) {
+          const input = entry.input;
+          if (input !== null && parsed !== null) {
+            await budget(
+              entry.byteLength,
+              parsed.products.length +
+                parsed.distributionContexts.length +
+                parsed.relationships.length +
+                parsed.warnings.length,
+            );
+            if (input.value !== undefined) checkedLineages.add(input.sourceLineage);
+            // Identity matching needs only candidates with the same normalized name or official code.
+            let matchingVisits = 0;
+            const observation = await preservePublishedProductIdentity(
+              parsed,
+              async (product) => {
+                if (priorProductCount === 0) return [];
+                const matches = new Map<string, CatalogueProduct>();
+                const add = async (match: CatalogueProduct) => {
+                  if (++matchingVisits > 16)
+                    throw new Error(
+                      "reconciliation_capacity_exceeded: one Product input requires too many identity visits.",
+                    );
+                  if (matches.has(match.id)) return;
+                  if (matches.size === 8)
+                    throw new Error("reconciliation_capacity_exceeded: one Product identity has too many candidates.");
+                  await assertProductGroupBudget([...matches.values(), match]);
+                  matches.set(match.id, match);
+                };
+                for await (const match of names.matchingBeforeObservation(normalizedProductName(product.name) ?? "", {
+                  records: 8,
+                  bytes: 512000,
+                }))
+                  await add(match);
+                if (product.officialCode !== null) {
+                  for await (const match of codes.matchingBeforeObservation(product.officialCode, {
+                    records: 8,
+                    bytes: 512000,
+                  }))
+                    await add(match);
+                }
+                return [...matches.values()];
+              },
+              game,
+            );
+            await warnings.push(...observation.warnings);
+            for (
+              let index = 0;
+              index < Math.max(observation.products.length, observation.distributionContexts.length);
+              index++
+            ) {
+              const product = observation.products[index];
+              const context = observation.distributionContexts[index];
+              const [previousProduct, previousContext] =
+                productWindow && contextWindow
+                  ? [
+                      product ? productWindow.get(product.id) : undefined,
+                      context ? contextWindow.get(context.id) : undefined,
+                    ]
+                  : product && context
+                    ? await groups.getAlongside(product.id, { index: contexts, key: context.id })
+                    : [
+                        product ? await groups.get(product.id) : undefined,
+                        context ? await contexts.get(context.id) : undefined,
+                      ];
+              const group = product
+                ? { id: product.id, observations: [...(previousProduct?.observations ?? []), product] }
+                : undefined;
+              if (group) await assertProductGroupBudget(group.observations);
+              const merged = context
+                ? aggregateContexts(previousContext ? [previousContext, context] : [context])[0]!
+                : undefined;
+              if (productWindow && contextWindow) {
+                const size = new TextEncoder().encode(JSON.stringify([group, merged])).byteLength;
+                if (writeBytes && writeBytes + size > 131072) await flush();
+                if (size > 131072) {
+                  if (group) await groups.seed(group.id, group);
+                  if (merged) await contexts.seed(merged.id, merged);
+                } else {
+                  if (group) productWrites.push({ key: group.id, value: group });
+                  if (merged) contextWrites.push({ key: merged.id, value: merged });
+                  writeBytes += size;
+                }
+                if (group) productWindow.set(group.id, group);
+                if (merged) contextWindow.set(merged.id, merged);
+              } else if (group && merged) {
+                groups.beginObservation();
+                contexts.beginObservation();
+                await groups.setAlongside(group.id, group, { index: contexts, key: merged.id, value: merged });
+              } else if (group) await groups.seed(group.id, group);
+              else if (merged) await contexts.seed(merged.id, merged);
             }
-            return [...matches.values()];
-          },
-          game,
-        );
-        await warnings.push(...observation.warnings);
-        for (const product of observation.products) {
-          const previous = await groups.get(product.id);
-          const observations = [...(previous?.observations ?? []), product];
-          await assertProductGroupBudget(observations);
-          await groups.seed(product.id, { id: product.id, observations });
-        }
-        for (const context of observation.distributionContexts) {
-          const previous = await contexts.get(context.id);
-          const merged = aggregateContexts(previous ? [previous, context] : [context])[0]!;
-          await contexts.seed(context.id, merged);
-        }
-        for (const relationship of observation.relationships) {
-          const previous = await relationships.get(relationship.id);
-          const merged = aggregateRelationships(previous ? [previous, relationship] : [relationship])[0]!;
-          await relationships.seed(relationship.id, merged);
-        }
+            for (const relationship of observation.relationships) {
+              const previous = await relationships.get(relationship.id);
+              const merged = aggregateRelationships(previous ? [previous, relationship] : [relationship])[0]!;
+              await relationships.seed(relationship.id, merged);
+            }
 
-        processedInputs++;
-      } else await budget(entry.byteLength);
-      inputAfter = entry.cursor;
-      await finishRecord();
+            processedInputs++;
+          } else await budget(entry.byteLength);
+          inputAfter = entry.cursor;
+          await finishRecord();
+        }
+        await flush();
+      } finally {
+        flushResults = async () => {};
+      }
     }
   });
   const productSurfaceObserved = checkedLineages.size > 0;
@@ -295,10 +405,9 @@ export async function reconcileProductReleaseState(
     });
   });
   await runStage("new_products", "existing_contexts", async () => {
-    await consume(groups.entityValues(after), async (group) => {
+    await consumeNew(groups.entityValues(after), "products", async (group) => {
       if (priorProductCount > 0 && (await names.has(group.id))) return;
-      const product = resolveProduct(group.observations, game);
-      await result.set("products", product);
+      return resolveProduct(group.observations, game);
     });
   });
   await runStage("existing_contexts", "new_contexts", async () => {
@@ -317,9 +426,8 @@ export async function reconcileProductReleaseState(
     });
   });
   await runStage("new_contexts", "existing_relationships", async () => {
-    await consume(contexts.entityValues(after), async (context) => {
-      if (!(await priorContexts.has(context.id)))
-        await result.set("distribution_contexts", { ...context, observed: true });
+    await consumeNew(contexts.entityValues(after), "distribution_contexts", async (context) => {
+      if (!(await priorContexts.has(context.id))) return { ...context, observed: true };
     });
   });
   await runStage("existing_relationships", "new_relationships", async () => {
@@ -346,8 +454,8 @@ export async function reconcileProductReleaseState(
     });
   });
   await runStage("new_relationships", options.membershipEvidence ? "memberships" : "complete", async () => {
-    await consume(relationships.entityValues(after), async (relationship) => {
-      if (!(await priorRelationships.has(relationship.id))) await result.set("product_relationships", relationship);
+    await consumeNew(relationships.entityValues(after), "product_relationships", async (relationship) => {
+      if (!(await priorRelationships.has(relationship.id))) return relationship;
     });
   });
   let draft = result;

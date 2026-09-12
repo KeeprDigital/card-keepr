@@ -24,6 +24,7 @@
     "test:benchmark": "node scripts/acceptance-tier.mjs benchmark",
     "test:stress": "KEEPR_TEST_SUITE=stress vitest run --config apps/ingestion/vitest.config.ts apps/ingestion/test/runtime-host-pacing.stress.spec.ts apps/ingestion/test/runtime-collection-throughput.stress.spec.ts",
     "test:stress:full": "KEEPR_TEST_SUITE=stress vitest run --config apps/ingestion/vitest.config.ts",
+    "profile:reconciliation": "node scripts/reconciliation-memory.mjs",
     "check": "pnpm run lint && pnpm run format:check && pnpm run typecheck && pnpm run check:generated && pnpm run check:imports && pnpm run build",
     "lint": "eslint . --max-warnings=0",
     "format": "node scripts/format.mjs",

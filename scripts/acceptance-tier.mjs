@@ -71,10 +71,6 @@ if (files.length === 0) {
   console.error("No acceptance tests selected.");
   process.exit(1);
 }
-if (files.includes("reconciliation-capacity-probe.test.mjs") && !process.env.KEEPR_CAPACITY_OUTPUT_PREFIX) {
-  console.error("The reconciliation capacity probe requires KEEPR_CAPACITY_OUTPUT_PREFIX for its measurement report.");
-  process.exit(2);
-}
 console.log(`${tier}${shardArg ? ` ${shardArg}` : ""}: ${files.length} files`);
 const child = spawn(
   process.execPath,

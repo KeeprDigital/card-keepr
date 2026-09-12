@@ -1,0 +1,226 @@
+{
+  "contract": "isolated-publication-interruption@1",
+  "components": 228,
+  "max_group_records": 3,
+  "completed": true,
+  "phases": {
+    "unmeasured": {
+      "ms": 0,
+      "child_ms": 4132,
+      "calls": {
+        "D1.first": 391,
+        "D1.all": 57,
+        "D1.batch": 707,
+        "D1.run": 24,
+        "HTTP.GET.official-source.invalid./reconciliation/scale-64-products-experiment": 1,
+        "EVIDENCE_OBJECTS.get": 2,
+        "EVIDENCE_OBJECTS.head": 1,
+        "EVIDENCE_OBJECTS.put": 1,
+        "EVIDENCE_OBJECTS.put_success": 1,
+        "CATALOGUE_EXPORTS.get": 690
+      },
+      "rows_read": 97067,
+      "rows_written": 320,
+      "statements": 2441,
+      "returned_object_bytes": 2317107,
+      "get_object_bytes": 2317107,
+      "head_declared_bytes": 0
+    },
+    "workflow-other": {
+      "ms": 763,
+      "child_ms": 0,
+      "calls": {
+        "D1.first": 636,
+        "D1.batch": 994,
+        "D1.all": 108,
+        "EVIDENCE_OBJECTS.get": 1,
+        "CATALOGUE_EXPORTS.head": 2,
+        "CATALOGUE_EXPORTS.get": 4,
+        "CATALOGUE_EXPORTS.put": 2,
+        "CATALOGUE_EXPORTS.put_success": 2,
+        "D1.run": 7
+      },
+      "rows_read": 32274,
+      "rows_written": 4789,
+      "statements": 4484,
+      "returned_object_bytes": 3765,
+      "get_object_bytes": 3103,
+      "head_declared_bytes": 662
+    },
+    "private": {
+      "ms": 1433,
+      "child_ms": 0,
+      "calls": {
+        "D1.first": 1013,
+        "D1.batch": 543,
+        "D1.all": 252,
+        "CATALOGUE_EXPORTS.put": 865,
+        "CATALOGUE_EXPORTS.put_success": 865,
+        "D1.run": 271,
+        "CATALOGUE_EXPORTS.get": 865,
+        "CATALOGUE_EXPORTS.head": 50
+      },
+      "rows_read": 38133,
+      "rows_written": 19505,
+      "statements": 4878,
+      "returned_object_bytes": 1520492,
+      "get_object_bytes": 1520492,
+      "head_declared_bytes": 0
+    },
+    "interruption.failed-unit": {
+      "ms": 7,
+      "child_ms": 0,
+      "calls": {
+        "D1.first": 6,
+        "D1.batch": 2,
+        "CATALOGUE_EXPORTS.put": 1,
+        "CATALOGUE_EXPORTS.put_success": 1
+      },
+      "rows_read": 1576,
+      "rows_written": 11,
+      "statements": 10,
+      "returned_object_bytes": 0
+    },
+    "interruption.retried-unit": {
+      "ms": 5,
+      "child_ms": 0,
+      "calls": {
+        "D1.first": 6,
+        "D1.batch": 3,
+        "CATALOGUE_EXPORTS.put": 1,
+        "CATALOGUE_EXPORTS.conditional_reuse": 1,
+        "D1.run": 2,
+        "CATALOGUE_EXPORTS.head": 1,
+        "CATALOGUE_EXPORTS.get": 1
+      },
+      "rows_read": 1602,
+      "rows_written": 25,
+      "statements": 16,
+      "returned_object_bytes": 874,
+      "head_declared_bytes": 437,
+      "get_object_bytes": 437
+    },
+    "interruption.committed-replay": {
+      "ms": 1,
+      "child_ms": 0,
+      "calls": {
+        "D1.first": 3
+      },
+      "rows_read": 11,
+      "rows_written": 2,
+      "statements": 3,
+      "returned_object_bytes": 0
+    },
+    "public": {
+      "ms": 910,
+      "child_ms": 0,
+      "calls": {
+        "D1.first": 1450,
+        "D1.batch": 736,
+        "CATALOGUE_EXPORTS.put": 244,
+        "CATALOGUE_EXPORTS.put_success": 244,
+        "D1.run": 244,
+        "CATALOGUE_EXPORTS.get": 245,
+        "D1.all": 19
+      },
+      "rows_read": 200595,
+      "rows_written": 5360,
+      "statements": 3674,
+      "returned_object_bytes": 718348,
+      "get_object_bytes": 718348
+    },
+    "backup": {
+      "ms": 1013,
+      "child_ms": 874,
+      "calls": {
+        "D1.first": 6,
+        "D1.run": 9,
+        "D1.batch": 4,
+        "BACKUPS.get": 2,
+        "BACKUPS.put": 3,
+        "BACKUPS.put_success": 3,
+        "BACKUPS.head": 1
+      },
+      "rows_read": 11979,
+      "rows_written": 215,
+      "statements": 42,
+      "returned_object_bytes": 22451568,
+      "get_object_bytes": 11225784,
+      "head_declared_bytes": 11225784
+    },
+    "backup.snapshot": {
+      "ms": 159,
+      "child_ms": 0,
+      "calls": {
+        "D1.all": 299
+      },
+      "rows_read": 228086,
+      "rows_written": 0,
+      "statements": 299,
+      "returned_object_bytes": 0
+    },
+    "backup.artifacts": {
+      "ms": 205,
+      "child_ms": 0,
+      "calls": {
+        "D1.all": 1,
+        "CATALOGUE_EXPORTS.get": 1111
+      },
+      "rows_read": 6,
+      "rows_written": 0,
+      "statements": 1,
+      "returned_object_bytes": 2236561,
+      "get_object_bytes": 2236561
+    },
+    "backup.sql-export": {
+      "ms": 146,
+      "child_ms": 0,
+      "calls": {
+        "HTTP.POST.api.cloudflare.com./client/v4/accounts/ID/d1/database/00000000-0000-0000-0000-000000000001/export": 1,
+        "HTTP.GET.vitest-d1-export.invalid./catalogue.sql": 1
+      },
+      "rows_read": 0,
+      "rows_written": 0,
+      "statements": 0,
+      "returned_object_bytes": 0
+    },
+    "backup.target": {
+      "ms": 2,
+      "child_ms": 0,
+      "calls": {
+        "HTTP.GET.api.cloudflare.com./client/v4/accounts/ID/d1/database": 1,
+        "HTTP.DELETE.api.cloudflare.com./client/v4/accounts/ID/d1/database/00000000-0000-0000-0000-000000000002": 1,
+        "HTTP.POST.api.cloudflare.com./client/v4/accounts/ID/d1/database": 1
+      },
+      "rows_read": 0,
+      "rows_written": 0,
+      "statements": 0,
+      "returned_object_bytes": 0
+    },
+    "backup.sql-import": {
+      "ms": 139,
+      "child_ms": 0,
+      "calls": {
+        "HTTP.POST.api.cloudflare.com./client/v4/accounts/ID/d1/database/00000000-0000-4000-8000-000000000001/import": 2,
+        "HTTP.PUT.vitest-d1-upload.invalid./catalogue.sql": 1
+      },
+      "rows_read": 0,
+      "rows_written": 0,
+      "statements": 0,
+      "returned_object_bytes": 0
+    },
+    "backup.restored-verification": {
+      "ms": 223,
+      "child_ms": 0,
+      "calls": {
+        "HTTP.POST.api.cloudflare.com./client/v4/accounts/ID/d1/database/00000000-0000-4000-8000-000000000001/query": 319
+      },
+      "rows_read": 0,
+      "rows_written": 0,
+      "statements": 0,
+      "returned_object_bytes": 0
+    }
+  },
+  "replayed_equal": true,
+  "fault_applied": true
+}

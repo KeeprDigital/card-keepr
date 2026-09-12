@@ -6,9 +6,74 @@ workflow reports its own failures and its liveness must be checked by hand.
 
 The default is two bounded checks: per-host concurrency/pacing and a 60-request
 throughput window. It runs one file at a time with a five-minute job cap. The
-full nine-file capacity suite is manual only: choose `suite: full` in the
+full ten-file suite is manual only: choose `suite: full` in the
 workflow or run `pnpm run test:stress:full` locally; its job cap is 45 minutes.
 Manual and scheduled runs have separate cancellation groups.
+
+The command name covers volume, recovery, configured-limit and performance
+checks. It does not mean every test deliberately overloads the system or finds
+production capacity. See [what the stress commands prove](../testing.md#what-the-stress-commands-prove).
+Runner timing is an observation of that environment; publication integrity and
+restore outcomes are separate assertions.
+
+The full selection contains these ingestion files:
+
+| File                                            | Coverage                                                                             |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `capacity-tier-admission.stress.spec.ts`        | Tier request admission; fetches no bodies                                            |
+| `game-reconciliation-scale.stress.spec.ts`      | Native 1,001-Product completion/callback budgets and diagnostic elapsed time         |
+| `native-printing-images.stress.spec.ts`         | 128 streamed images, publication, serving, export and SQL restore                    |
+| `reconciliation-evidence-volume.stress.spec.ts` | Retained evidence volume                                                             |
+| `reconciliation-scale.stress.spec.ts`           | Large Card/Product publication and restore, inline image candidate size and warnings |
+| `runtime-capacity-resume.stress.spec.ts`        | Capacity pause and resume                                                            |
+| `runtime-collection-completion.stress.spec.ts`  | Collection completion at volume                                                      |
+| `runtime-collection-throughput.stress.spec.ts`  | Bounded collection throughput                                                        |
+| `runtime-discovery-scale.stress.spec.ts`        | Discovery at volume                                                                  |
+| `runtime-host-pacing.stress.spec.ts`            | Independent-host concurrency and pacing                                              |
+
+Run volume measurements with exclusive host resources and record the exact
+commit, runtime, complete selection and every failure. Native candidate elapsed
+time is diagnostic on uncontrolled hardware; completion and callback budgets
+remain enforced. Test deadlines detect hangs and do not measure CPU or billing.
+A bounded pass does not replace the full selection; a
+full pass does not certify the 5/50 GiB tiers, whose admission test fetches no
+bodies. Issue #275 owns usable capacity and accounting; #276 owns uncovered
+durable faults.
+
+The native candidate test reports resource and completion failures independently
+and retains phase/elapsed timings. The inline-image case retains its original 128-image input and
+candidate-size bound, but delegates publication/serving/export/restore coverage
+to the native image journey. Neither the 1,001-Product input nor its assertions
+are reduced by this consolidation.
+
+The Product publication journey has a five-minute test-body hang cap following
+the [12 September acceptance decision](../reviews/publication-253-implementation-20260912.md).
+It retains the original workload and real backup/restore/consumer checks, and
+records phase timings separately. The original two-minute failures are not
+retrospectively passes. The native preparation test retains its 120-second hang
+timeout; the [test overhaul](../reviews/testing-overhaul-20260912.md) explicitly
+replaces its former 15,000 ms requirement with diagnostic timing.
+
+Each workflow retains a seven-day `stress-results-bounded` or
+`stress-results-full` JSON artifact with the complete test selection, failures,
+durations and native callback report. Archive relevant evidence before expiry.
+If a job dies before the reporter finishes, its missing artifact is incomplete
+evidence, not an empty successful selection.
+
+Use the existing focused diagnostics workflow for an isolated stress file:
+
+```sh
+gh workflow run test-suite-diagnostics.yml --ref <branch> \
+  -f worker=ingestion -f suite=stress -f storage=memory \
+  -f files='apps/ingestion/test/game-reconciliation-scale.stress.spec.ts' \
+  -f repeats=1
+```
+
+Hosted full stress and `storage=memory` stress diagnostics use a disposable
+2 GiB tmpfs; bounded stress and routine CI use 512 MiB. Capacity fixtures exceed
+the smaller volume. The wrapper prints occupied bytes before removing the volume.
+Use `storage=disk` for a controlled storage comparison. Focused results do not
+replace full stress or routine CI.
 
 The API currently has no separate stress files; its functional checks run in
 the normal API suite. Missing expected ingestion tests remain an error. Add
@@ -19,7 +84,9 @@ API performance coverage explicitly before extending the stress selection.
 When the `stress` job fails, the `report-failure` job opens a GitHub issue
 titled `stress: scheduled stress suite failed` with the label `bug`, or
 comments on that issue while it is still open, with the run link, trigger,
-and commit. Close the issue once the run is green again; the next failure
+and commit. Close the issue once its recorded acceptance is met, including
+full-selection verification when required; a green bounded run alone does not
+resolve a tracked full-suite failure. The next failure
 opens a fresh one. The `stress` job itself keeps a read-only token; only
 `report-failure` holds `issues: write`.
 

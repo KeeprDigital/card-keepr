@@ -14,6 +14,7 @@ export class ReconciliationCardState {
   private cards: ReconciliationReducerIndex<CatalogueCard>;
   private facts: ReconciliationReducerIndex<MatchReference>;
   private unknownReferences: boolean | undefined;
+  private absentOfficialIdentities = new Set<string>();
   constructor(
     private database: CatalogueStore,
     private runId: string,
@@ -34,6 +35,7 @@ export class ReconciliationCardState {
   }
   resumeAt(position: number) {
     this.unknownReferences = undefined;
+    this.absentOfficialIdentities.clear();
     this.cards.resumeAt(position);
     this.facts.resumeAt(position);
   }
@@ -67,6 +69,7 @@ export class ReconciliationCardState {
       comparison ? { ...comparison, key: id } : undefined,
     );
     if (card.official_identity.kind === "unknown") this.unknownReferences = true;
+    this.absentOfficialIdentities.delete(canonicalJson([card.game, card.official_identity]));
   }
   entityValues(after = "") {
     return this.cards.entityValues(after);
@@ -75,7 +78,49 @@ export class ReconciliationCardState {
     return this.cards.latestValues();
   }
   sameOfficialIdentity(game: string, identity: CatalogueCard["official_identity"], includeCurrent = false) {
-    return this.references(this.namespace, canonicalJson([game, identity]), includeCurrent);
+    const key = canonicalJson([game, identity]);
+    return !includeCurrent && this.absentOfficialIdentities.has(key)
+      ? Promise.resolve([])
+      : this.references(this.namespace, key, includeCurrent);
+  }
+  /** Only cache proven absences in this small input window; writes invalidate the affected identity. */
+  async prefetchOfficialIdentities(cards: readonly Pick<CatalogueCard, "game" | "official_identity">[]) {
+    if (cards.length > 8) throw new Error("Card identity lookup window exceeds eight records.");
+    this.absentOfficialIdentities.clear();
+    const keys = [
+      ...new Set(
+        cards
+          .filter((card) => card.official_identity.kind !== "unknown")
+          .map((card) => canonicalJson([card.game, card.official_identity])),
+      ),
+    ];
+    if (!this.cards.position) {
+      this.absentOfficialIdentities = new Set(keys);
+      return;
+    }
+    if (!keys.length) return;
+    const statements = [];
+    for (const key of keys)
+      statements.push(
+        nextReducerCardReferenceStatement(
+          this.database,
+          this.runId,
+          this.namespace,
+          await sha256Text(key),
+          this.cards.position + 1,
+          "",
+          false,
+        ),
+      );
+    try {
+      const results = await this.database.batch(statements);
+      for (const [index, key] of keys.entries()) {
+        if (!results[index]) throw new Error("Card identity lookup window is incomplete.");
+        if (!results[index]!.results.length) this.absentOfficialIdentities.add(key);
+      }
+    } catch (cause) {
+      throw new ReconciliationReducerStorageError(cause);
+    }
   }
   async sameFacts(card: Omit<CatalogueCard, "id">, unknownOnly: boolean): Promise<CardReference[]> {
     if (unknownOnly) {

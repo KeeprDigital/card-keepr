@@ -9,3 +9,6 @@ pnpm-lock.yaml
 coverage
 test-results
 .artifacts
+
+# Retained machine evidence preserves original bytes and checksums.
+docs/reviews/evidence/

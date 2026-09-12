@@ -108,6 +108,9 @@ settings:
 overrides:
   parse5>entities: 8.0.0
 
+patchedDependencies:
+  '@cloudflare/vitest-plugin@1.1.6': 81c7621de3c68d8ee39c26412448ead76baa12cc11e79c2e9b58f329292c71cf
+
 importers:
 
   .:
@@ -130,7 +133,7 @@ importers:
     devDependencies:
       '@cloudflare/vitest-plugin':
         specifier: ^1.1.6
-        version: 1.1.6(@vitest/runner@4.1.11)(@vitest/snapshot@4.1.11)(vitest@4.1.11(@types/node@26.5.0)(vite@8.2.2(@types/node@26.5.0)(esbuild@0.28.2)(yaml@2.9.0)))
+        version: 1.1.6(patch_hash=81c7621de3c68d8ee39c26412448ead76baa12cc11e79c2e9b58f329292c71cf)(@vitest/runner@4.1.11)(@vitest/snapshot@4.1.11)(vitest@4.1.11(@types/node@26.5.0)(vite@8.2.2(@types/node@26.5.0)(esbuild@0.28.2)(yaml@2.9.0)))
       '@eslint/js':
         specifier: 10.0.1
         version: 10.0.1(eslint@10.10.0(supports-color@10.2.2))
@@ -2367,7 +2370,7 @@ snapshots:
     optionalDependencies:
       workerd: 1.20260908.1
 
-  '@cloudflare/vitest-plugin@1.1.6(@vitest/runner@4.1.11)(@vitest/snapshot@4.1.11)(vitest@4.1.11(@types/node@26.5.0)(vite@8.2.2(@types/node@26.5.0)(esbuild@0.28.2)(yaml@2.9.0)))':
+  '@cloudflare/vitest-plugin@1.1.6(patch_hash=81c7621de3c68d8ee39c26412448ead76baa12cc11e79c2e9b58f329292c71cf)(@vitest/runner@4.1.11)(@vitest/snapshot@4.1.11)(vitest@4.1.11(@types/node@26.5.0)(vite@8.2.2(@types/node@26.5.0)(esbuild@0.28.2)(yaml@2.9.0)))':
     dependencies:
       '@vitest/runner': 4.1.11
       '@vitest/snapshot': 4.1.11

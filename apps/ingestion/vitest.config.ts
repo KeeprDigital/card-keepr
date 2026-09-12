@@ -1,11 +1,14 @@
-import { resolve } from "node:path";
-import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { cloudflarePool, cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin";
 import { configDefaults, defineConfig } from "vitest/config";
 import {
   cloudflareApiMock,
   createFakePublisher,
   workersPoolScenarios,
 } from "../../test/support/fake-publisher/index.ts";
+import { exportSqliteFile, localCatalogueDatabase } from "../../test/support/fake-publisher/sqlite-transfer.ts";
 import { SqliteRestore } from "../../test/support/fake-publisher/sqlite-restore.ts";
 import { syntheticSourceAdapterMigration } from "../../test/support/source-adapters/migration";
 
@@ -23,68 +26,85 @@ const catalogueD1DatabaseId = "00000000-0000-0000-0000-000000000001";
 const disposableD1DatabaseId = "00000000-0000-0000-0000-000000000002";
 const d1VerificationToken = "vitest-d1-verification-token-active";
 
-// The fake internet behind every outbound fetch: the Cloudflare API mock and
-// the shared fake publisher's workers-pool scenario catalogue.
-// The installed Miniflare V4FetchHandler supplies the owning runtime as its
-// second argument. Keep each runtime's REST fixture and restore database isolated.
-const publishers = new WeakMap<object, ReturnType<typeof createFakePublisher>>();
-function publisherFor(miniflare: object, exportSql: () => Promise<string>) {
-  const existing = publishers.get(miniflare);
-  if (existing !== undefined) return existing;
-  const publisher = createFakePublisher({
-    scenarios: [
-      cloudflareApiMock({
-        accountId: cloudflareAccountId,
-        disposableDatabaseId: disposableD1DatabaseId,
-        verificationToken: d1VerificationToken,
-        restore: new SqliteRestore(),
-        exportSql,
-      }),
-      ...workersPoolScenarios,
-    ],
-  });
-  publishers.set(miniflare, publisher);
-  return publisher;
-}
-
 export default defineConfig({
   plugins: [
-    cloudflareTest({
-      main: resolve(import.meta.dirname, "../../test/support/ingestion-worker.ts"),
-      wrangler: {
-        configPath: resolve(import.meta.dirname, "wrangler.jsonc"),
+    cloudflareTest({}),
+    {
+      name: "owned-publication-test-storage",
+      configureVitest({ project }) {
+        project.config.poolRunner = {
+          name: "cloudflare-pool",
+          createPoolWorker(options) {
+            const directory = mkdtempSync(join(tmpdir(), "keepr-ingestion-runtime-"));
+            const restore = new SqliteRestore();
+            let disposed = false;
+            const dispose = () => {
+              if (disposed) return;
+              disposed = true;
+              try {
+                restore.close();
+              } finally {
+                rmSync(directory, { recursive: true, force: true });
+              }
+            };
+            const publisher = createFakePublisher({
+              scenarios: [
+                cloudflareApiMock({
+                  accountId: cloudflareAccountId,
+                  disposableDatabaseId: disposableD1DatabaseId,
+                  verificationToken: d1VerificationToken,
+                  restore,
+                  exportSql: async () =>
+                    exportSqliteFile(await localCatalogueDatabase(join(directory, "runtime", "d1")), directory),
+                }),
+                ...workersPoolScenarios,
+              ],
+            });
+            try {
+              const worker = cloudflarePool({
+                main: resolve(import.meta.dirname, "../../test/support/ingestion-worker.ts"),
+                wrangler: {
+                  configPath: resolve(import.meta.dirname, "wrangler.jsonc"),
+                },
+                miniflare: {
+                  resourcePersistencePath: join(directory, "runtime"),
+                  d1Databases: ["SCRATCH_DB"],
+                  bindings: {
+                    // Tests mount at the root; the mounted-path behaviour is covered
+                    // by the public-mount spec, which overrides the base per request.
+                    PUBLIC_BASE_URL: "http://127.0.0.1:8788",
+                    SOURCE_HOST_PACING_MODE: stressSuite ? "production" : "immediate",
+                    CLOUDFLARE_ACCOUNT_ID: cloudflareAccountId,
+                    CATALOGUE_D1_DATABASE_ID: catalogueD1DatabaseId,
+                    DISPOSABLE_D1_DATABASE_ID: disposableD1DatabaseId,
+                    ADMINISTRATION_KEY: "vitest-administration-key",
+                    ADMINISTRATION_KEY_REPLACEMENT: "vitest-administration-key-replacement-slot",
+                    ADMINISTRATION_CLOCK_MODE: "request",
+                    D1_VERIFICATION_TOKEN: d1VerificationToken,
+                    D1_EXPORT_TOKEN: "vitest-d1-export-token-active",
+                    TEST_MIGRATIONS: [...migrations, syntheticSourceAdapterMigration],
+                  },
+                  // Only the provider HTTP control plane is simulated; SQL and restore remain real.
+                  outboundService: (request) => publisher.fetch(request as unknown as Request),
+                },
+              }).createPoolWorker(options);
+              const stop = worker.stop.bind(worker);
+              worker.stop = async () => {
+                try {
+                  await stop();
+                } finally {
+                  dispose();
+                }
+              };
+              return worker;
+            } catch (error) {
+              dispose();
+              throw error;
+            }
+          },
+        };
       },
-      miniflare: {
-        d1Databases: ["SCRATCH_DB"],
-        bindings: {
-          // Tests mount at the root; the mounted-path behaviour is covered
-          // by the public-mount spec, which overrides the base per request.
-          PUBLIC_BASE_URL: "http://127.0.0.1:8788",
-          SOURCE_HOST_PACING_MODE: stressSuite ? "production" : "immediate",
-          CLOUDFLARE_ACCOUNT_ID: cloudflareAccountId,
-          CATALOGUE_D1_DATABASE_ID: catalogueD1DatabaseId,
-          DISPOSABLE_D1_DATABASE_ID: disposableD1DatabaseId,
-          ADMINISTRATION_KEY: "vitest-administration-key",
-          ADMINISTRATION_KEY_REPLACEMENT: "vitest-administration-key-replacement-slot",
-          ADMINISTRATION_CLOCK_MODE: "request",
-          D1_VERIFICATION_TOKEN: d1VerificationToken,
-          D1_EXPORT_TOKEN: "vitest-d1-export-token-active",
-          TEST_MIGRATIONS: [...migrations, syntheticSourceAdapterMigration],
-        },
-        // Miniflare hands over undici's Request; the publisher speaks the
-        // Workers Request the scenarios were written against.
-        outboundService: (request, miniflare) =>
-          publisherFor(miniflare, async () => {
-            const database = await miniflare.getD1Database("CATALOGUE_DB");
-            // Use the plugin's owning runtime rather than the separate acceptance
-            // Miniflare instance. This is Wrangler's installed local SQL export seam.
-            const rows = await database.prepare("PRAGMA miniflare_d1_export(?,?,?);").bind(0, 0).raw<string[]>();
-            const statements = rows[0];
-            if (statements === undefined) throw new Error("Local D1 export returned no SQL.");
-            return statements.join("\n");
-          }).fetch(request as unknown as Request),
-      },
-    }),
+    },
   ],
   test: {
     maxWorkers: stressSuite ? 1 : 2,

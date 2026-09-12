@@ -1,0 +1,109 @@
+{
+  "contract": "isolated-publication-interruption@1",
+  "phases": {
+    "unmeasured": {
+      "ms": 0,
+      "child_ms": 2262,
+      "calls": {
+        "D1.first": 157,
+        "D1.all": 56,
+        "D1.batch": 17,
+        "D1.run": 22,
+        "HTTP.GET.official-source.invalid./reconciliation/scale-64-products-experiment": 1,
+        "EVIDENCE_OBJECTS.get": 2,
+        "EVIDENCE_OBJECTS.head": 1,
+        "EVIDENCE_OBJECTS.put": 1,
+        "EVIDENCE_OBJECTS.put_success": 1
+      },
+      "rows_read": 11755,
+      "rows_written": 320,
+      "statements": 366,
+      "returned_object_bytes": 1113622,
+      "get_object_bytes": 1113622,
+      "head_declared_bytes": 0
+    },
+    "workflow-other": {
+      "ms": 742,
+      "child_ms": 0,
+      "calls": {
+        "D1.first": 583,
+        "D1.batch": 990,
+        "D1.all": 106,
+        "EVIDENCE_OBJECTS.get": 1,
+        "D1.run": 1
+      },
+      "rows_read": 30758,
+      "rows_written": 4725,
+      "statements": 4401,
+      "returned_object_bytes": 976,
+      "get_object_bytes": 976
+    },
+    "private": {
+      "ms": 1473,
+      "child_ms": 0,
+      "calls": {
+        "D1.first": 1013,
+        "D1.batch": 543,
+        "D1.all": 252,
+        "CATALOGUE_EXPORTS.put": 865,
+        "CATALOGUE_EXPORTS.put_success": 865,
+        "D1.run": 271,
+        "CATALOGUE_EXPORTS.get": 865,
+        "CATALOGUE_EXPORTS.head": 50
+      },
+      "rows_read": 38133,
+      "rows_written": 19505,
+      "statements": 4878,
+      "returned_object_bytes": 1520492,
+      "get_object_bytes": 1520492,
+      "head_declared_bytes": 0
+    },
+    "interruption.failed-unit": {
+      "ms": 13,
+      "child_ms": 0,
+      "calls": {
+        "D1.first": 11,
+        "D1.batch": 2,
+        "CATALOGUE_EXPORTS.put": 4,
+        "CATALOGUE_EXPORTS.put_success": 4,
+        "D1.run": 1
+      },
+      "rows_read": 3171,
+      "rows_written": 47,
+      "statements": 16,
+      "returned_object_bytes": 0
+    },
+    "interruption.retried-unit": {
+      "ms": 33,
+      "child_ms": 0,
+      "calls": {
+        "D1.first": 11,
+        "D1.batch": 3,
+        "CATALOGUE_EXPORTS.put": 4,
+        "CATALOGUE_EXPORTS.conditional_reuse": 4,
+        "D1.run": 5,
+        "CATALOGUE_EXPORTS.head": 4,
+        "CATALOGUE_EXPORTS.get": 4
+      },
+      "rows_read": 3212,
+      "rows_written": 64,
+      "statements": 27,
+      "returned_object_bytes": 3092,
+      "head_declared_bytes": 1546,
+      "get_object_bytes": 1546
+    },
+    "interruption.committed-replay": {
+      "ms": 1,
+      "child_ms": 0,
+      "calls": {
+        "D1.first": 3
+      },
+      "rows_read": 11,
+      "rows_written": 2,
+      "statements": 3,
+      "returned_object_bytes": 0
+    }
+  },
+  "replayed_equal": false,
+  "fault_applied": true
+}

@@ -89,7 +89,7 @@ export async function retainSourceMappings(
     bytes += length + (records.length ? 1 : 0);
     records.push(content);
     cursor.after = entry.key;
-    if (records.length === 16) await flush();
+    if (records.length === 64) await flush();
   }
   cursor.complete = true;
   await flush();
