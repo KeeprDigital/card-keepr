@@ -42,6 +42,11 @@ export class ReconciliationPlanState implements AsyncIterable<ObservationPlan> {
   async append(plan: ObservationPlan) {
     await this.index.seed(plan.sourceObservationId, { id: plan.sourceObservationId, plan });
   }
+  async appendMany(plans: readonly ObservationPlan[]) {
+    await this.index.seedMany(
+      plans.map((plan) => ({ key: plan.sourceObservationId, value: { id: plan.sourceObservationId, plan } })),
+    );
+  }
   async get(observationId: string) {
     return (await this.index.get(observationId))?.plan;
   }

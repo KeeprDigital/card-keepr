@@ -1,0 +1,21 @@
+diff --git a/dist/pool/index.mjs b/dist/pool/index.mjs
+index 5b9a323649b5b986c9e8c05354d6626b3aa08c0c..25adefc2c6173aad6e8ad1f2f23a7aa5757fbd93 100644
+--- a/dist/pool/index.mjs
++++ b/dist/pool/index.mjs
+@@ -62838,7 +62838,7 @@ async function parseCustomPoolOptions(rootPath, value, mode) {
+ 	const rootPathOption = getRootPath(options.miniflare);
+ 	rootPath = path.resolve(rootPath, rootPathOption);
+ 	try {
+-		options.miniflare = parseWorkerOptions(rootPath, options.miniflare, true, ["miniflare"]);
++		options.miniflare = { resourcePersistencePath: options.miniflare.resourcePersistencePath, ...parseWorkerOptions(rootPath, options.miniflare, true, ["miniflare"]) };
+ 	} catch (e) {
+ 		coalesceZodErrors(errorRef, e);
+ 	}
+@@ -63526,6 +63526,7 @@ async function buildProjectMiniflareOptions(ctx, project, customOptions, main) {
+ 	}
+ 	return convertV4MiniflareOptions({
+ 		...SHARED_MINIFLARE_OPTIONS,
++		resourcePersistencePath: customOptions.miniflare?.resourcePersistencePath,
+ 		verbose: customOptions.verbose ?? true,
+ 		inspectorPort,
+ 		unsafeModuleFallbackService: moduleFallbackService,

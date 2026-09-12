@@ -41,7 +41,7 @@ export async function prepareOfficialCandidate(
     errata: ReconciliationErrataState;
     plans: ReconciliationPlanState;
     games: ReadonlySet<SupportedGame>;
-    observedCard: (id: string) => Promise<boolean>;
+    observedCards: (ids: readonly string[]) => Promise<ReadonlySet<string>>;
     observedPrinting: (id: string) => Promise<boolean>;
   },
   diagnostics: ReconciliationRecordSink<{
@@ -128,33 +128,50 @@ export async function prepareOfficialCandidate(
     bytes = 0;
   };
   if (stage === "cards") {
-    await consume(sources.cards.entityValues(after), async (card) => {
-      const errata = await sources.errata.forCard(card.game, card.id);
-      let resolved = card;
-      if (sources.games.has(card.game)) {
-        try {
-          resolved = { ...card, effective_rules_text: deriveEffectiveRulesText(card, errata, observedAt) };
-        } catch (error) {
-          const plans = await sources.plans.forCard(card.id);
-          await diagnostics.push({
-            code: "canonical_card_conflict",
-            source_observation_id: plans[0]?.sourceObservationId ?? null,
-            locator: plans[0]?.locator ?? null,
-            matched_printing_ids: plans.flatMap((plan) => (plan.printingId === null ? [] : [plan.printingId])),
-            detail:
-              error instanceof ErratumRulesTextError
-                ? error.message
-                : "The Card has an unresolved Effective Rules Text conflict.",
-          });
+    for await (const page of cardGroups(sources.cards.entityValues(after), sources.errata.position > 0 ? 1 : 8)) {
+      const size = new TextEncoder().encode(canonicalJson(page)).byteLength;
+      if (records > 0 && bytes + size > 512000) {
+        await save();
+        records = bytes = 0;
+      }
+      const observed = await sources.observedCards(page.map((card) => card.id));
+      const resolvedCards: CatalogueCard[] = [];
+      for (const card of page) {
+        const errata = await sources.errata.forCard(card.game, card.id);
+        let resolved = card;
+        if (sources.games.has(card.game)) {
+          try {
+            resolved = { ...card, effective_rules_text: deriveEffectiveRulesText(card, errata, observedAt) };
+          } catch (error) {
+            const plans = await sources.plans.forCard(card.id);
+            await diagnostics.push({
+              code: "canonical_card_conflict",
+              source_observation_id: plans[0]?.sourceObservationId ?? null,
+              locator: plans[0]?.locator ?? null,
+              matched_printing_ids: plans.flatMap((plan) => (plan.printingId === null ? [] : [plan.printingId])),
+              detail:
+                error instanceof ErratumRulesTextError
+                  ? error.message
+                  : "The Card has an unresolved Effective Rules Text conflict.",
+            });
+          }
         }
+        resolvedCards.push(omitUndefinedValues(resolved) as CatalogueCard);
+        if (observed.has(card.id)) {
+          await cardIds.append(card.id);
+          observedCards++;
+        }
+        cards++;
+        after = card.id;
       }
-      await draft.set("cards", omitUndefinedValues(resolved) as CatalogueCard);
-      if (await sources.observedCard(card.id)) {
-        await cardIds.append(card.id);
-        observedCards++;
+      await draft.setMany("cards", resolvedCards);
+      records += page.length;
+      bytes += size;
+      if (records >= (sources.errata.position > 0 ? 1 : 16) || bytes >= 512000) {
+        await save();
+        records = bytes = 0;
       }
-      cards++;
-    });
+    }
     await finish("printings");
   }
   if (stage === "printings") {
@@ -192,4 +209,21 @@ export function omitUndefinedValues(value: unknown): unknown {
     );
   }
   return value;
+}
+
+/** Hydrated Card groups remain small even when retained rows contain text references. */
+async function* cardGroups(source: AsyncIterable<CatalogueCard>, limit: number) {
+  let page: CatalogueCard[] = [];
+  let bytes = 0;
+  for await (const card of source) {
+    const size = new TextEncoder().encode(canonicalJson(card)).byteLength;
+    if (page.length && (page.length === limit || bytes + size > 131072)) {
+      yield page;
+      page = [];
+      bytes = 0;
+    }
+    page.push(card);
+    bytes += size;
+  }
+  if (page.length) yield page;
 }

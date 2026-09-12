@@ -133,6 +133,20 @@ test("bounded snapshot pages preserve the single-row digest across private and p
   await assert.rejects(verifyCompositionSnapshot(batched.query, expected), /snapshot differs/);
 });
 
+test("snapshot hashing preserves an existing digest for Unicode, escapes and null fields", async () => {
+  const provider = snapshotProvider(2);
+  provider.rows.set("publication_query_documents", [
+    { snapshot_rowid: 1, content: "café 界\n😀", nullable: null },
+    { snapshot_rowid: 3, content: '"escaped"\t\u0000', nullable: 0 },
+  ]);
+  const snapshot = await captureCompositionSnapshot(provider.query, "current");
+  // Retained with the original resumable SHA-256 implementation before using native hashing.
+  assert.equal(
+    snapshot.tables.find(({ table }) => table === "publication_query_documents").sha256,
+    "717c9e3e3403668f6126753e67166093cf01d9d9925d96e3b6ca58a3b0ddcdfa",
+  );
+});
+
 test("snapshot SQL pages every UTF-8 row and preserves a single large legacy row", async () => {
   const { DatabaseSync } = await import("node:sqlite");
   const { compositionVerificationQuery } =
@@ -257,6 +271,41 @@ test("the SQLite schema query pages every entry within its row and UTF-8 byte bo
     }
     assert.equal(partialBytePage, true);
     assert.deepEqual(actual, expected);
+  } finally {
+    database.close();
+  }
+});
+
+test("snapshot SQL resumes after a full page of small rows", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const { compositionVerificationQuery } =
+    await import("../../src/catalogue/backup-recovery/composition-verification-repository.ts");
+  const database = new DatabaseSync(":memory:");
+  try {
+    database.exec("CREATE TABLE reconciliation_checkpoints (content TEXT)");
+    const insert = database.prepare("INSERT INTO reconciliation_checkpoints VALUES (?)");
+    for (let index = 0; index < 129; index++) insert.run(`record ${index}`);
+    const records = [];
+    let after = 0;
+    let pages = 0;
+    for (;;) {
+      const query = compositionVerificationQuery({
+        kind: "composition-page",
+        table: "reconciliation_checkpoints",
+        after,
+        columns: ["content"],
+      });
+      const page = database.prepare(query.sql).all(...query.params);
+      if (!page.length) break;
+      pages++;
+      records.push(...page.map((row) => row.content));
+      after = page.at(-1).snapshot_rowid;
+    }
+    assert.ok(pages > 1);
+    assert.deepEqual(
+      records,
+      Array.from({ length: 129 }, (_, index) => `record ${index}`),
+    );
   } finally {
     database.close();
   }

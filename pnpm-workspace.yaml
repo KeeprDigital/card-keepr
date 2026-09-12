@@ -13,3 +13,5 @@ allowBuilds:
 # Keep the parser edge distinct from the direct entities@8.1.0 dependency.
 overrides:
   "parse5>entities": 8.0.0
+patchedDependencies:
+  "@cloudflare/vitest-plugin@1.1.6": patches/@cloudflare__vitest-plugin@1.1.6.patch

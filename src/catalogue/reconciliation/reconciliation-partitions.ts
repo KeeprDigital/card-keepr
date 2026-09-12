@@ -86,7 +86,7 @@ export async function persistCandidatePartitions(
       workBytes += new TextEncoder().encode(canonicalJson(entry.value)).byteLength;
       parts.push(encoded);
       cursor.after = entry.key;
-      if (parts.length === 32 || workBytes >= 512000) await flush();
+      if (parts.length === 128 || workBytes >= 512000) await flush();
     }
     await flush();
     cursor.kind++;

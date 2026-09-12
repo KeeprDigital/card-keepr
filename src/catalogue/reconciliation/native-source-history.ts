@@ -53,8 +53,10 @@ export async function prepareNativeSourceHistory(
   preparation: string,
   finishCurrent: boolean,
   yieldAtCheckpoint: boolean,
+  retainedCandidate?: SourceHistoryCandidate,
 ) {
-  const current = await sourceHistoryCandidateStatement(db, preparation).first<SourceHistoryCandidate>();
+  const current =
+    retainedCandidate ?? (await sourceHistoryCandidateStatement(db, preparation).first<SourceHistoryCandidate>());
   if (!current) return null;
   requireCandidate(current, current.supported_game, false);
   let checkpoint = await reconciliationCheckpoint<SharedCheckpoint>(db, preparation, "disappearance_warnings");
@@ -84,7 +86,15 @@ export async function prepareNativeSourceHistory(
   const visited = new ReconciliationReducerIndex<boolean>(db, preparation, "source_history_visited");
   walk.resumeAt(cursor.walkPosition);
   visited.resumeAt(cursor.visitedPosition);
+  let pendingHistory: SourceHistoryRecord[] = [];
+  let pendingHistoryBytes = 2;
+  const flushHistory = async () => {
+    if (pendingHistory.length) await history.retainObservations(pendingHistory);
+    pendingHistory = [];
+    pendingHistoryBytes = 2;
+  };
   const save = async () => {
+    await flushHistory();
     cursor.history = history.cursor;
     cursor.walkPosition = walk.position;
     cursor.visitedPosition = visited.position;
@@ -95,137 +105,183 @@ export async function prepareNativeSourceHistory(
     if (yieldAtCheckpoint) throw new ReconciliationContinuation({ phase: "disappearance_warnings", ordinal });
   };
   let work = 0;
-  while (cursor.stage !== "complete") {
-    if (cursor.stage === "prior_ready") {
-      if (!finishCurrent) break;
-      cursor.finishing = true;
-      cursor.frame = await requiredFrame(db, current);
-      cursor.stage = "missing";
-      cursor.through = history.cursor;
-      cursor.after = "";
-      cursor.scanned = 0;
-    } else if (cursor.stage === "walk") {
-      if (cursor.next === null) cursor.stage = "legacy";
-      else {
-        if (cursor.next === current.id || (await visited.has(cursor.next)))
-          throw new Error("Native source history predecessor chain contains a cycle.");
-        const candidate = await sourceHistoryCandidateStatement(db, cursor.next).first<SourceHistoryCandidate>();
-        requireCandidate(candidate, current.supported_game, true);
-        if (candidate.game_revision_id !== cursor.boundary)
-          throw new Error("Native source history predecessor differs from its pinned game revision.");
-        await visited.seed(candidate.id, true);
-        const retained = await reconciliationCheckpoint<SharedCheckpoint>(
-          db,
-          candidate.preparation_id,
-          "disappearance_warnings",
-        );
-        const previous = retained?.value.sourceHistory;
-        if (previous) {
-          if (previous.version !== 1 || previous.stage !== "complete" || previous.current !== candidate.id)
-            throw new Error("Published native source history is incomplete.");
-          cursor.copy = { preparation: candidate.preparation_id, history: previous.history };
-          cursor.stage = "copy";
-        } else {
-          await walk.seed(String(++cursor.depth), await requiredFrame(db, candidate));
-          cursor.next = candidate.predecessor_candidate_id;
-          cursor.boundary = candidate.expected_game_revision_id;
-        }
-      }
-    } else if (cursor.stage === "copy") {
-      if (!cursor.copy) throw new Error("Native source history copy lost its predecessor.");
-      const prior = new NativeSourceHistory(db, cursor.copy.preparation, cursor.copy.history);
-      const next = await prior.entries(cursor.after).next();
-      if (next.done) {
-        if (cursor.scanned !== cursor.copy.history.count)
-          throw new Error("Native source history predecessor prefix is missing records.");
-        cursor.stage = "frame";
-        cursor.after = "";
-        cursor.scanned = 0;
-      } else {
-        await history.retain(next.value.value);
-        cursor.after = next.value.key;
-        cursor.scanned++;
-      }
-    } else if (cursor.stage === "legacy") {
-      const row = await legacySourceHistoryStatement(
-        db,
-        current.supported_game,
-        cursor.legacyKind,
-        cursor.legacyAfter,
-      ).first<LegacyHistoryRow>();
-      if (row) {
-        const record = legacyHistoryRecord(cursor.legacyKind, row);
-        // Several retained Card observations can prove one current source authority.
-        const prior = await history.index.get(record.id);
-        if (record.kind === "card" && prior?.current && !record.current) record.current = true;
-        await history.retain(record);
-        cursor.legacyAfter = row.history_rowid;
-      } else {
-        cursor.legacyAfter = 0;
-        if (cursor.legacyKind === "card") cursor.legacyKind = "locator";
-        else if (cursor.legacyKind === "locator") cursor.legacyKind = "membership";
-        else cursor.stage = "frame";
-      }
-    } else if (cursor.stage === "frame") {
-      if (cursor.depth === 0) {
-        cursor.prior = history.cursor;
-        cursor.stage = "prior_ready";
-      } else {
-        const frame = await walk.get(String(cursor.depth--));
-        if (!frame) throw new Error("Native source history reconstruction lost a retained frame.");
-        cursor.frame = frame;
+  let historyBytes = 0;
+  let planEntries: AsyncGenerator<ObservationPlan> | undefined;
+  let planEntry: IteratorResult<ObservationPlan> | undefined;
+  let planFrame: Frame | undefined;
+  try {
+    while (cursor.stage !== "complete") {
+      if (cursor.stage !== "observations") await flushHistory();
+      if (cursor.stage === "prior_ready") {
+        if (!finishCurrent) break;
+        cursor.finishing = true;
+        cursor.frame = await requiredFrame(db, current);
         cursor.stage = "missing";
         cursor.through = history.cursor;
         cursor.after = "";
         cursor.scanned = 0;
-      }
-    } else if (cursor.stage === "missing") {
-      const frame = requiredCursorFrame(cursor);
-      const before = new NativeSourceHistory(db, preparation, cursor.through);
-      const next = await before.entries(cursor.after).next();
-      if (next.done) {
-        if (cursor.scanned !== cursor.through.count)
-          throw new Error("Native source history prefix is missing records during disappearance.");
-        cursor.stage = "observations";
-        cursor.after = "";
-        cursor.planPart = 0;
-        cursor.scanned = 0;
-      } else {
-        const record = next.value.value;
-        if (record.current && (await checkedHistory(db, frame, record)))
-          await history.retain({ ...record, current: false, missing: { candidate: frame.id } });
-        cursor.after = next.value.key;
-        cursor.scanned++;
-      }
-    } else if (cursor.stage === "observations") {
-      const frame = requiredCursorFrame(cursor);
-      const plans = new ReconciliationPlanState(db, frame.preparation);
-      plans.resumeAt(frame.plans);
-      const next = await plans.values(cursor.after).next();
-      if (next.done) {
-        if (cursor.scanned !== frame.plans)
-          throw new Error("Native source history observation prefix is missing records.");
-        cursor.stage = cursor.finishing ? "complete" : "frame";
-        cursor.after = "";
-      } else {
-        const plan = next.value;
-        const events = historyObservation(frame, plan);
-        if (cursor.planPart < events.length) {
-          const event = events[cursor.planPart++]!;
-          await history.retain(event, { preserveFirst: true });
+      } else if (cursor.stage === "walk") {
+        if (cursor.next === null) cursor.stage = "legacy";
+        else {
+          if (cursor.next === current.id || (await visited.has(cursor.next)))
+            throw new Error("Native source history predecessor chain contains a cycle.");
+          const candidate = await sourceHistoryCandidateStatement(db, cursor.next).first<SourceHistoryCandidate>();
+          requireCandidate(candidate, current.supported_game, true);
+          if (candidate.game_revision_id !== cursor.boundary)
+            throw new Error("Native source history predecessor differs from its pinned game revision.");
+          await visited.seed(candidate.id, true);
+          const retained = await reconciliationCheckpoint<SharedCheckpoint>(
+            db,
+            candidate.preparation_id,
+            "disappearance_warnings",
+          );
+          const previous = retained?.value.sourceHistory;
+          if (previous) {
+            if (previous.version !== 1 || previous.stage !== "complete" || previous.current !== candidate.id)
+              throw new Error("Published native source history is incomplete.");
+            cursor.copy = { preparation: candidate.preparation_id, history: previous.history };
+            cursor.stage = "copy";
+          } else {
+            await walk.seed(String(++cursor.depth), await requiredFrame(db, candidate));
+            cursor.next = candidate.predecessor_candidate_id;
+            cursor.boundary = candidate.expected_game_revision_id;
+          }
         }
-        if (cursor.planPart === events.length) {
-          cursor.after = plan.sourceObservationId;
-          cursor.planPart = 0;
+      } else if (cursor.stage === "copy") {
+        if (!cursor.copy) throw new Error("Native source history copy lost its predecessor.");
+        const prior = new NativeSourceHistory(db, cursor.copy.preparation, cursor.copy.history);
+        const next = await prior.entries(cursor.after).next();
+        if (next.done) {
+          if (cursor.scanned !== cursor.copy.history.count)
+            throw new Error("Native source history predecessor prefix is missing records.");
+          cursor.stage = "frame";
+          cursor.after = "";
+          cursor.scanned = 0;
+        } else {
+          await history.retain(next.value.value);
+          cursor.after = next.value.key;
           cursor.scanned++;
         }
+      } else if (cursor.stage === "legacy") {
+        const row = await legacySourceHistoryStatement(
+          db,
+          current.supported_game,
+          cursor.legacyKind,
+          cursor.legacyAfter,
+        ).first<LegacyHistoryRow>();
+        if (row) {
+          const record = legacyHistoryRecord(cursor.legacyKind, row);
+          // Several retained Card observations can prove one current source authority.
+          const prior = await history.index.get(record.id);
+          if (record.kind === "card" && prior?.current && !record.current) record.current = true;
+          await history.retain(record);
+          cursor.legacyAfter = row.history_rowid;
+        } else {
+          cursor.legacyAfter = 0;
+          if (cursor.legacyKind === "card") cursor.legacyKind = "locator";
+          else if (cursor.legacyKind === "locator") cursor.legacyKind = "membership";
+          else cursor.stage = "frame";
+        }
+      } else if (cursor.stage === "frame") {
+        if (cursor.depth === 0) {
+          cursor.prior = history.cursor;
+          cursor.stage = "prior_ready";
+        } else {
+          const frame = await walk.get(String(cursor.depth--));
+          if (!frame) throw new Error("Native source history reconstruction lost a retained frame.");
+          cursor.frame = frame;
+          cursor.stage = "missing";
+          cursor.through = history.cursor;
+          cursor.after = "";
+          cursor.scanned = 0;
+        }
+      } else if (cursor.stage === "missing") {
+        const frame = requiredCursorFrame(cursor);
+        const before = new NativeSourceHistory(db, preparation, cursor.through);
+        const next = await before.entries(cursor.after).next();
+        if (next.done) {
+          if (cursor.scanned !== cursor.through.count)
+            throw new Error("Native source history prefix is missing records during disappearance.");
+          cursor.stage = "observations";
+          cursor.after = "";
+          cursor.planPart = 0;
+          cursor.scanned = 0;
+        } else {
+          const record = next.value.value;
+          if (record.current && (await checkedHistory(db, frame, record)))
+            await history.retain({ ...record, current: false, missing: { candidate: frame.id } });
+          cursor.after = next.value.key;
+          cursor.scanned++;
+        }
+      } else if (cursor.stage === "observations") {
+        const frame = requiredCursorFrame(cursor);
+        if (planFrame !== frame) {
+          await planEntries?.return(undefined);
+          const plans = new ReconciliationPlanState(db, frame.preparation);
+          plans.resumeAt(frame.plans);
+          planEntries = plans.values(cursor.after);
+          planFrame = frame;
+          planEntry = undefined;
+        }
+        if (!planEntry) {
+          const next = await planEntries!.next();
+          if (!next.done) {
+            const size = new TextEncoder().encode(canonicalJson(next.value)).byteLength;
+            if (work > 0 && historyBytes + size > 256000) {
+              await save();
+              work = historyBytes = 0;
+            }
+            historyBytes += size;
+          }
+          planEntry = next;
+        }
+        const next = planEntry;
+        if (next.done) {
+          if (cursor.scanned !== frame.plans)
+            throw new Error("Native source history observation prefix is missing records.");
+          cursor.stage = cursor.finishing ? "complete" : "frame";
+          cursor.after = "";
+        } else {
+          const plan = next.value;
+          const events = historyObservation(frame, plan);
+          if (cursor.planPart < events.length) {
+            const event = events[cursor.planPart]!;
+            const size = new TextEncoder().encode(canonicalJson(event)).byteLength + 1;
+            if (work > 0 && historyBytes + size > 256000) {
+              await save();
+              work = historyBytes = 0;
+            }
+            cursor.planPart++;
+            historyBytes += size;
+            if (pendingHistory.length && (pendingHistory.length === 8 || pendingHistoryBytes + size > 131072))
+              await flushHistory();
+            if (size + 2 > 131072) await history.retain(event, { preserveFirst: true });
+            else {
+              pendingHistory.push(event);
+              pendingHistoryBytes += size;
+            }
+          }
+          if (cursor.planPart === events.length) {
+            cursor.after = plan.sourceObservationId;
+            cursor.planPart = 0;
+            cursor.scanned++;
+            planEntry = undefined;
+          }
+        }
+      }
+      // Batched observations can advance further; predecessor traversals keep their smaller bound.
+      if (
+        ++work >= (cursor.stage === "observations" ? 32 : 8) ||
+        historyBytes >= 256000 ||
+        cursor.stage === "prior_ready" ||
+        cursor.stage === "complete"
+      ) {
+        await save();
+        work = historyBytes = 0;
       }
     }
-    // Eight bounded records per durable unit avoid a new Workflow dispatch for every small history row.
-    if (++work === 8 || cursor.stage === "prior_ready" || cursor.stage === "complete") {
-      await save();
-      work = 0;
-    }
+  } finally {
+    await planEntries?.return(undefined);
   }
   if (!cursor.prior) throw new Error("Native source history has no completed predecessor prefix.");
   return { prior: new NativeSourceHistory(db, preparation, cursor.prior), current: history };

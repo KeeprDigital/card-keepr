@@ -19,9 +19,36 @@ import {
   composedPublicExportReadyStatement,
 } from "./composition-read-repository";
 
-async function requirePublicExport(db: CatalogueStore, revisionId: string) {
-  if (!(await composedPublicExportReadyStatement(db, revisionId).first()))
+function requirePublicExport(ready: boolean) {
+  if (!ready)
     throw new ReadProblem(503, "catalogue_export_unavailable", "The current public export artifacts are unavailable.");
+}
+
+/** Read immutable revision identity and current export availability in one snapshot. */
+async function exportReadState(db: CatalogueStore, revisionId: string) {
+  const [revisions, receipts, readiness] = await db.batch([
+    nativeRevisionStatement(db, revisionId, false, false),
+    catalogueExportStatement(db, revisionId),
+    composedPublicExportReadyStatement(db, revisionId),
+  ]);
+  return {
+    revision: revisions!.results[0] as
+      | {
+          id: string;
+          published_at: string;
+          content_digest: string;
+          publication_operation_id: string | null;
+        }
+      | undefined,
+    receipt: receipts!.results[0] as
+      | {
+          maintenance_state: string;
+          manifest_key: string;
+          manifest_digest: string;
+        }
+      | undefined,
+    ready: readiness!.results.length === 1,
+  };
 }
 
 type Artifact = {
@@ -41,18 +68,8 @@ export async function compositionExportResponse(
   revisionId: string,
   bucket?: R2Bucket,
 ): Promise<Response | null | undefined> {
-  const revision = await nativeRevisionStatement(db, revisionId, false, false).first<{
-    id: string;
-    published_at: string;
-    content_digest: string;
-    publication_operation_id: string | null;
-  }>();
+  const { revision, receipt, ready } = await exportReadState(db, revisionId);
   if (!revision) return null;
-  const receipt = await catalogueExportStatement(db, revisionId).first<{
-    maintenance_state: string;
-    manifest_key: string;
-    manifest_digest: string;
-  }>();
   if (receipt && receipt.maintenance_state !== "available")
     throw new ReadProblem(410, "catalogue_export_deleted", "This known Catalogue Export has been deleted.");
   if (!revision.publication_operation_id) return undefined;
@@ -63,7 +80,7 @@ export async function compositionExportResponse(
     if (!object || object.size > 16384 || (await sha256Text(await object.text())) !== receipt.manifest_digest)
       throw new ReadProblem(503, "catalogue_export_unavailable", "The immutable package manifest failed verification.");
   }
-  await requirePublicExport(db, revisionId);
+  requirePublicExport(ready);
   const url = new URL(request.url);
   collectionParameters(url, ["after"]);
   const raw = url.searchParams.get("after");
@@ -76,9 +93,11 @@ export async function compositionExportResponse(
       cursor.ordinal! < 0)
   )
     throw new ReadProblem(400, "invalid_cursor", "Use this export composition cursor.");
-  const artifacts = (
-    await composedExportArtifactsStatement(db, revisionId, cursor?.game ?? "", cursor?.ordinal ?? -1).all<Artifact>()
-  ).results;
+  const [artifactRows, gameRows] = await db.batch([
+    composedExportArtifactsStatement(db, revisionId, cursor?.game ?? "", cursor?.ordinal ?? -1),
+    composedSupportedGamesStatement(db, revisionId),
+  ]);
+  const artifacts = artifactRows!.results as Artifact[];
   const components = artifacts.map((artifact) => JSON.parse(artifact.descriptor_json) as { name: string });
   const next =
     artifacts.length === 4
@@ -88,9 +107,7 @@ export async function compositionExportResponse(
           ordinal: artifacts.at(-1)!.ordinal,
         })
       : null;
-  const games = (await composedSupportedGamesStatement(db, revisionId).all<{ supported_game: string }>()).results.map(
-    (g) => g.supported_game,
-  );
+  const games = (gameRows!.results as { supported_game: string }[]).map((g) => g.supported_game);
   const manifest = {
     format: "card-keepr-catalogue-export-manifest@5",
     serialization_profile: "card-keepr-ndjson-gzip@1",
@@ -124,11 +141,8 @@ export async function compositionExportComponentResponse(
   revisionId: string,
   name: string,
 ): Promise<Response | null | undefined> {
-  const revision = await nativeRevisionStatement(db, revisionId, false, false).first<{
-    publication_operation_id: string | null;
-  }>();
+  const { revision, receipt, ready } = await exportReadState(db, revisionId);
   if (!revision) return null;
-  const receipt = await catalogueExportStatement(db, revisionId).first<{ maintenance_state: string }>();
   if (!revision.publication_operation_id) {
     if (receipt && receipt.maintenance_state !== "available") {
       if (!(await pendingExportComponentDeletionStatement(db, { revisionId, componentName: name }).first()))
@@ -137,7 +151,7 @@ export async function compositionExportComponentResponse(
     }
     return undefined;
   }
-  await requirePublicExport(db, revisionId);
+  requirePublicExport(ready);
   const match = /^(one-piece|fusion-world|digimon|gundam|riftbound)\.(0|[1-9]\d*)$/.exec(name);
   if (!match || !Number.isSafeInteger(Number(match[2]))) return null;
   const artifact = await composedExportArtifactStatement(db, revisionId, match[1]!, Number(match[2])).first<Artifact>();

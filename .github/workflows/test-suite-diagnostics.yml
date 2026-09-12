@@ -40,6 +40,7 @@ jobs:
       TEST_STORAGE: ${{ inputs.storage }}
       TEST_FILES: ${{ inputs.files }}
       TEST_REPEATS: ${{ inputs.repeats }}
+      CI_TEST_TMPFS_SIZE: ${{ inputs.suite == 'stress' && '2g' || '512m' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up repository tooling

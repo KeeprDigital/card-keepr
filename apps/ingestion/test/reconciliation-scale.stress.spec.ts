@@ -1,5 +1,5 @@
 import * as cardSearchQueries from "./query-helpers/card-search";
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 import { catalogueStore, sha256, type CataloguePrintingImage } from "../../../src/catalogue/shared";
 import { compositionEntityResponse, compositionImageResponse } from "../../../src/catalogue/read/composition-read";
 import { currentGameMembers, publicComponents } from "./query-helpers/atomic-publication";
@@ -87,16 +87,37 @@ test("a 1001-entity reconciliation publishes atomically within bounded D1 statem
   expect(compressedBytes).toBeGreaterThan(1_048_576);
 }, 180_000);
 
-test("a Product-heavy export publishes bounded verified R2 components", async () => {
+test("a Product-heavy export publishes bounded verified R2 components", async ({ task }) => {
+  const started = performance.now();
+  const phases: Record<string, number> = {};
+  let phase = "collection";
+  let phaseStarted = started;
+  const timing = { environment: "Cloudflare emulator", phases, phase, completed: false, elapsed_ms: 0 };
+  Object.assign(task.meta, { publicationTiming: timing });
+  onTestFinished(() => {
+    timing.elapsed_ms = performance.now() - started;
+    if (!timing.completed) phases[phase] = performance.now() - phaseStarted;
+    console.info("PRODUCT_PUBLICATION_TIMING", timing);
+  });
+  function nextPhase(next: string) {
+    phases[phase] = performance.now() - phaseStarted;
+    phase = next;
+    phaseStarted = performance.now();
+    Object.assign(timing, { phase, elapsed_ms: phaseStarted - started });
+    console.info("PRODUCT_PUBLICATION_PHASE", phase, phases);
+  }
   const run = await collect(
     "/reconciliation/scale-1001-products",
     "bounded-export-scale-1001-products",
     undefined,
     45_000,
   );
+  nextPhase("candidate_and_inspection");
   const candidate = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", "bounded-products-candidate");
   await candidatePartitions(candidate);
+  nextPhase("publication_including_verified_backup_and_restore");
   const published = await approveNativeCandidate(candidate, "bounded-products-approval");
+  nextPhase("consumer_verification");
   expect(published.response.status).toBe(200);
   const revisionId = requiredString(published.document, "resulting_revision_id");
   const [products, releases, contexts] = await Promise.all([
@@ -124,7 +145,11 @@ test("a Product-heavy export publishes bounded verified R2 components", async ()
     // Native components retain an independently verified digest, not an R2 checksum field.
     expect(await sha256(await stored!.arrayBuffer())).toBe(component.sha256);
   }
-}, 120_000);
+  nextPhase("complete");
+  Object.assign(timing, { completed: true });
+  // #253 acceptance revision, approved 12 September: finite hang detection;
+  // elapsed phase measurements are separate from correctness and the native 15s assertion.
+}, 300_000);
 
 test("128 synthetic images of 100 KiB reconcile and publish as immutable references", async () => {
   const { collectRequests } = await import("./reconciliation-helpers");

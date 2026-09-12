@@ -36,7 +36,7 @@ import {
 import { sourceAdapterRegistrations } from "../adapters";
 import { newestReconciliationCheckpointStatement } from "./reconciliation-checkpoint-repository";
 
-type GameCandidate = {
+export type GameCandidate = {
   id: string;
   preparation_id: string;
   ingestion_run_id: string;
@@ -115,7 +115,7 @@ export async function prepareGameCandidateManifests(
       scopes.push(scope);
       cursor.after = record.id;
       bytes += new TextEncoder().encode(canonicalJson(record)).byteLength;
-      if (++work === 32 || bytes >= 512000) {
+      if (++work === 64 || bytes >= 512000) {
         await flush();
         await save();
       }
@@ -344,7 +344,10 @@ export async function prepareGameCandidateManifests(
 }
 
 export async function inspectGameCandidate(database: CatalogueStore, candidateId: string) {
-  const candidate = await gameCandidateStatement(database, candidateId).first<GameCandidate>();
+  return gameCandidateDocument(await gameCandidateStatement(database, candidateId).first<GameCandidate>());
+}
+
+export function gameCandidateDocument(candidate: GameCandidate | null) {
   if (!candidate)
     throw new AdministrationProblem(404, "game_candidate_not_found", "This Game Catalogue Candidate does not exist.");
   const { terminal_result_json, ...identity } = candidate;
