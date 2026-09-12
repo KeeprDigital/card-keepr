@@ -1,9 +1,0 @@
-
- RUN  v4.1.10 /Users/marcus/.codex/worktrees/55a9/card-keepr
-
-
- Test Files  2 passed (2)
-      Tests  7 passed (7)
-   Start at  18:56:44
-   Duration  508ms (transform 535ms, setup 0ms, import 683ms, tests 123ms, environment 0ms)
-

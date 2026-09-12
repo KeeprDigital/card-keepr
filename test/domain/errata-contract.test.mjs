@@ -9,7 +9,7 @@ import { test } from "vitest";
 const root = resolve(import.meta.dirname, "../..");
 
 test("Official Errata evidence has an explicit normative contract", async () => {
-  const schema = JSON.parse(await readFile(resolve(root, "docs/contracts/official-errata.schema.json"), "utf8"));
+  const schema = JSON.parse(await readFile(resolve(root, "contracts/schemas/official-errata.schema.json"), "utf8"));
   assert.deepEqual(schema.required, [
     "authority",
     "field",

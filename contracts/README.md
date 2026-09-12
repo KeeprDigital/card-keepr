@@ -12,7 +12,7 @@ them directly. They are included in normal JSON lint and changed-file formatting
 
 Update the relevant schema alongside its implementation and existing behavioral
 tests. Keep schema identities and relative references consistent. Before Go-Live,
-definitions evolve in place under [ADR 0008](../docs/adr/0008-no-version-retention-before-go-live.md).
+definitions evolve in place under [definition policy](../docs/architecture.md#definition-changes-and-go-live).
 Domain language and invariants live in [CONTEXT.md](../CONTEXT.md).
 
 Administration request definitions live under `$defs`. The administration
@@ -20,5 +20,5 @@ schema's root retains historical snapshot decoding; it does not describe the
 current status response or authorize run-owned publication. Native candidate,
 artifact preparation, approval and resume inputs have separate named definitions.
 
-Historical scenario demonstrations remain under [prototype/](../prototype/formalize-implementation-contracts/README.md).
-Their original proposals do not override the maintained interfaces here or later ADRs.
+Source Erratum evidence uses [official-errata.schema.json](schemas/official-errata.schema.json).
+The [architecture guide](../docs/architecture.md) owns design rationale.

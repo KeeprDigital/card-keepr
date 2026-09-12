@@ -1,7 +1,0 @@
-Temporary disabled real host pacing wait
-Expected exit code: 1
-AssertionError: expected 22 to be greater than or equal to 500
- Test Files  1 failed (1)
-      Tests  1 failed (1)
-   Duration  3.71s (transform 838ms, setup 0ms, import 1.68s, tests 1.58s, environment 0ms)
-Both temporary mutations were restored.

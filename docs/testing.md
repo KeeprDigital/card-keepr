@@ -2,286 +2,198 @@
 
 ## Everyday workflow
 
-Run `pnpm install --frozen-lockfile` after a lockfile change, then `pnpm test` while developing. It runs
-domain rules, API Worker tests and two small offline CLI/publication/SQL-restore
-smoke tests. For ingestion changes, also run the affected file:
+After a lockfile change, run `pnpm install --frozen-lockfile`. Use `pnpm test` for
+fast feedback and the affected ingestion file for storage/Workflow changes.
+Before code review, run `pnpm run check` and `pnpm run test:full`, or use successful
+full ready-PR CI on the exact code. The quick suite is not the merge/release gate.
+Documentation-only changes need formatting, link/schema checks and any tests that
+consume changed documentation; they do not require the full runtime suites.
 
-```sh
-pnpm run test:ingestion apps/ingestion/test/evidence-cleanup.spec.ts
-pnpm run test:api apps/api/test/health.spec.ts
-pnpm run test:domain source-host-pacing-mode
-```
+| Command                                        | Scope                                                               |
+| ---------------------------------------------- | ------------------------------------------------------------------- |
+| `pnpm test`                                    | Domain, API and two offline CLI/publication/SQL-restore smoke files |
+| `pnpm run test:full`                           | All routine domain, API, ingestion and acceptance                   |
+| `pnpm run test:domain [filter]`                | Runtime-free rules and contracts                                    |
+| `pnpm run test:api [file]`                     | API routes and bindings                                             |
+| `pnpm run test:ingestion [file]`               | D1/R2/Workflow transitions and recovery                             |
+| `pnpm run test:acceptance [scenario]`          | Routine HTTP/CLI, migrations, providers and restore                 |
+| `pnpm run test:acceptance:smoke`               | Small external CLI and native publication/restore                   |
+| `pnpm run test:acceptance:extended <scenario>` | Explicit long retained-data/recovery journey                        |
+| `pnpm run test:benchmark <scenario>`           | Explicit capacity/profiling experiment                              |
+| `pnpm run test:stress`                         | Two bounded pacing/throughput checks                                |
+| `pnpm run test:stress:full`                    | Full ingestion volume, recovery and resource selection              |
 
-Before review, run `pnpm run check` and `pnpm run test:full`, or use the full
-ready-PR CI result. A quick pass is iteration feedback; full CI is the merge and
-release standard. No production credentials or live publisher access are needed.
+Vitest accepts file filters and `-t 'test name'`. Acceptance accepts exact filenames
+or scenario names, `--list` and `--shard=1/3`. Selection stays within the requested
+tier. Extended and benchmark commands require a scenario or explicit `--all`;
+listing boots no services. `acceptance/helpers/test-tiers.mjs` owns membership;
+new acceptance files enter routine coverage by default. Routine acceptance runs
+at most two files concurrently and partitions exactly once across three CI shards.
 
-## Strategy: test transitions, then wiring
+## Test transitions, then wiring
 
-Test maintenance is a design cost. Correctness should depend on explicit inputs,
-ordering and durable outcomes. A timeout detects a hang; it should not assert a
-hosted machine's CPU or disk speed. The [September reassessment](testing-reassessment.md)
-records the failures, decisions and validation behind this strategy.
+| Boundary           | Exercise for real                                      | Control or omit                            |
+| ------------------ | ------------------------------------------------------ | ------------------------------------------ |
+| Domain             | Parsing, identity and business rules                   | Storage and scheduling                     |
+| Storage transition | D1/R2, transactions, fences and owner intent           | Scheduling through direct Workflow drivers |
+| Platform binding   | Dispatch, events, contention, termination and recovery | Unrelated setup and large data             |
+| Acceptance         | Selected HTTP/CLI and export/restore journeys          | Live publishers; use offline fixtures      |
+| Capacity           | Volume, resource limits and measurements               | Select separately from routine correctness |
 
-Choose the narrowest boundary that proves the behavior:
+Use the smallest input crossing the behavior's boundary: two pages, one record
+beyond a batch, two competing writers, or bytes beyond one stream chunk. Keep
+real D1/R2 and production functions; a second application built in mocks proves
+little. Retain dedicated binding tests because controlled execution cannot prove
+the platform scheduler.
 
-| Boundary           | Exercise for real                                                    | Control or omit                                         |
-| ------------------ | -------------------------------------------------------------------- | ------------------------------------------------------- |
-| Domain             | Parsers, identity and business rules                                 | Worker startup, storage and scheduling                  |
-| Storage transition | D1/R2, transactions, fences and owner intent                         | Scheduling through the existing direct Workflow drivers |
-| Platform binding   | Dispatch, events, contention, termination or recovery of an instance | Unrelated setup and large datasets                      |
-| Acceptance         | Selected HTTP/CLI journeys, process wiring and export/restore        | Offline publisher fixtures and bounded data             |
-| Capacity           | Volume, throughput and resource measurements                         | Select explicitly through stress or benchmark commands  |
+Prepare verified state in a scoped `beforeEach`, then exercise one transition.
+Each test owns fresh state. Chain stages only when their interaction is the
+regression, such as competing publications or recovery across history. Keep setup
+and test-body deadlines bounded; reduce unrelated work instead of extending them
+to hide failures. Timeouts detect hangs, not machine speed.
 
-For ordinary rule and storage tests, prepare a verified starting state in a
-scoped `beforeEach` and exercise one transition in the body. Every test owns fresh
-state; do not make cases depend on earlier tests' writes. Setup retains its own
-bounded hook deadline. A hook timeout still fails CI and needs diagnosis.
+Control ordering with promises/barriers, not sleeps or hopes about concurrency.
+Separate dispatch acknowledgement from durable completion, and settle late work
+before teardown. Derive retention clocks from recorded values or an injected
+clock. Dispose Workflow introspectors before resetting storage. Always release
+servers, Workflows and temporary databases on success and failure.
 
-Multi-stage tests are appropriate when interaction between those stages is the
-regression: for example, historical recovery or competing publication writers.
-Do not chain independent cases under one deadline. Splitting them can add total
-setup work; the purpose is isolation and shorter individual test bodies.
-
-Keep dedicated binding tests in routine CI. Controlled execution does not prove
-the platform scheduler. Conversely, repeating every rule through asynchronous
-HTTP polling adds cost without a new wiring assertion. Retain real D1/R2 and
-production functions instead of building a second application in mocks.
-
-Use the smallest input crossing the actual boundary: two pages for pagination,
-one record beyond a batch, two competing writers, or a streamed payload beyond
-one chunk. The native image assertion runs with two distinct 100 KiB images in
-routine coverage and 128 images in stress coverage. Both verify streaming,
-publication, serving bytes, exported record identities and real SQL backup/restore.
-The separate 128-image inline-source case stops at candidate preparation: its
-sub-1 MiB candidate bound applies to that source layout, while the native
-transport fixture includes more structured evidence. It does not repeat the
-publication journey. The missing-capture regression
-uses nine requests to cross an eight-request batch.
-
-## What the stress commands prove
-
-The existing `stress` commands select a mixed suite of large-workload, recovery,
-resource-limit and performance checks. Most are volume tests, not experiments
-that find the system's breaking point. Keep the command names for compatibility;
-describe a result by the behavior it actually tested.
-
-| Example                                                      | What it establishes                                            |
-| ------------------------------------------------------------ | -------------------------------------------------------------- |
-| 1,001 Products, public exports and actual SQL backup/restore | Complete, correct publication and recovery for that workload   |
-| 128 images, large evidence and 5,000-request graphs          | Streaming, partitioning and completion at the specified volume |
-| One request beyond adapter capacity; concurrent admission    | Enforcement of configured limits, including competing requests |
-| Host pacing and pause/resume                                 | Scheduling rules and recovery behavior                         |
-| Native candidate elapsed time                                | Diagnostic timing on that runner and toolchain                 |
-| Collection throughput window                                 | Existing per-request overhead requirement on that runner       |
-
-A stress experiment deliberately exceeds expected load or constrains resources,
-then checks how the system degrades, rejects work and recovers. Uncontrolled
-hardware does not prevent that experiment, but makes timing and a repeatable
-breaking point harder to interpret. The current suite does not establish maximum
-production throughput. Report timings with the environment; use comparable,
-sequential runs for performance comparisons. Finite hang guards remain useful
-without becoming speed requirements. Native preparation elapsed time is diagnostic:
-uncontrolled hardware cannot distinguish application regressions from runner contention.
-The separate collection throughput requirement is unchanged.
-
-The native resource test reports completion and callback limits independently
-with soft assertions, and retains elapsed/phase timings as diagnostics. Its observer
-must record successful storage work; the implementation's number of callback
-subdivisions is not a minimum requirement. Host concurrency uses a controlled
-fetch barrier, while same-host non-overlap and completion-to-next-start pacing
-are asserted separately. See the [test overhaul](reviews/testing-overhaul-20260912.md)
-for the audit dispositions and validation.
-
-## Publication large-workload acceptance
-
-The 1,001-Product publication journey retains its full workload, integrity,
-consumer and real SQL backup/restore checks. Its test-body hang cap is five
-minutes following the [12 September acceptance decision](reviews/publication-253-implementation-20260912.md).
-The previous two-minute failures remain failures under the original acceptance.
-Phase timings are measurements, not a publication completion SLA. Native
-preparation retains its 1,001-Product workload, callback bound and 120-second
-hang timeout. The former 15,000 ms preparation requirement became diagnostic
-in the test overhaul; earlier results keep their original verdicts.
-The public one-record component/four-component page contract
-is unchanged. A passing routine suite or revised timeout cannot close #253.
-
-The ingestion provider mock snapshots the owning runtime's actual SQLite file,
-streams SQL through production backup storage and upload, and executes it in an
-independent disposable restore database. It requires `/usr/bin/sqlite3` on the
-supported macOS/Linux toolchains. The pinned Cloudflare test-plugin patch forwards
-the owned persistence directory; keep its manifest, lockfile and patch together.
-The routine `publication-backup-transport` acceptance test covers parser boundaries,
-schema, blobs, snapshot isolation and rejection of invalid SQL. The
-`publication-caller-retirement` Worker file verifies controlled and binding
-publication/checkpoint behavior through this transport.
+Assert observable outcomes. Add one regression at the responsible boundary;
+repeat it only for a different contract. Avoid tests of documentation wording,
+helper names or source text; keep structural checks for actual schema and release
+constraints. Query helpers own named fixed SQL; tests own values, execution,
+assertions and transaction composition. Generated release SQL remains the tested
+output. Do not add generic helpers that accept arbitrary fixture SQL.
 
 ## Fixture contracts
 
-Collection, preparation, publication and backup are separate contracts:
+| Needed state                     | Helper                                            | Guarantee                                                        |
+| -------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------- |
+| Collected evidence               | `collect`, `collectFixtureEvidence`               | Real capture/parsing and storage; no implicit native preparation |
+| Prepared candidate               | `prepareNativeCandidate`, `prepareNativeEvidence` | Explicit run, game, predecessor and returned candidate ID        |
+| Predecessor only for preparation | `seedNativePredecessor`                           | Published storage with backup explicitly pending                 |
+| Complete publication/history     | `approveNativeCandidate`                          | Production publication and actual SQL export/import verification |
+| Scheduling/interruption          | Explicit `ThroughBinding` helpers                 | Real platform instances with normal disposal                     |
+| Automatic native dispatch        | `waitForDispatchedNativeCandidates`               | Parent `game_preparations` receipt and those exact candidates    |
 
-| Needed state                                   | Helper                                            | Guarantee                                                                                                             |
-| ---------------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Retained evidence                              | `collect`, `collectFixtureEvidence`               | Real capture/parsing and D1/R2; no implicit native preparation                                                        |
-| Candidate rules/persistence                    | `prepareNativeCandidate`, `prepareNativeEvidence` | Explicit run, game, predecessor and returned candidate ID; controlled preparation reaches the expected terminal state |
-| Published predecessor for preparation only     | `seedNativePredecessor`                           | Real owner approval, artifacts and published storage; backup is queued and **pending**                                |
-| Complete publication or multi-revision history | `approveNativeCandidate`                          | Controlled production publication plus real SQL export/import and verified backup                                     |
-| Actual scheduling or interruption              | Explicit `ThroughBinding` helpers                 | Platform instances with normal disposal                                                                               |
-| Automatic native dispatch                      | `waitForDispatchedNativeCandidates`               | Parent `game_preparations` receipt followed by those exact candidate IDs                                              |
-
-`seedNativePredecessor` is only for a next transition that stops at preparation.
-Its typed result says `checkpoint: "pending"`; it never fabricates verification.
-Do not use it for publication histories, backup health, restore, release preflight
-or retention, and do not resume its deferred backup through a real binding. The
-next publication must remain blocked by the real backup gate.
+Use `seedNativePredecessor` only when the next transition stops at preparation.
+It must not stand in for backup health, complete publication, retention, release
+or restore, and its deferred backup must not resume through a real binding.
+The next publication remains blocked by the actual pending checkpoint.
 
 A completed collection does not imply native dispatch. Synthetic single-game
-adapters can deliberately take a legacy aggregate path. Semantic fixtures request
-native preparation explicitly. Waiters must neither create missing candidates
-nor infer their identity by counting candidates attached to a collection.
+adapters can use a legacy aggregate path. Request native preparation explicitly
+when needed; waiters must not create missing candidates or infer identity from
+candidate counts. The controlled driver rejects unrelated background dispatch.
+Preserve the caller-retirement file's controlled/binding equivalence, exact IDs
+and backup fences when changing shared helpers. Validate a small hosted selection
+before full CI for such a change.
 
-The controlled owner driver rejects unrelated background dispatch. Dedicated
-caller-retirement tests compare controlled and binding publication/checkpoint
-behavior, verify zero preparation dispatch, candidate identity and pending-backup
-fences. Preserve them when changing shared fixture contracts. Audit callers and
-run a small hosted selection before full CI for a shared helper change.
+Read only needed partitions, for example `nativeCandidateRecords(id, ["cards",
+"printings"])`. Header-only setup should not hydrate records. Complete reads
+still traverse and verify every selected manifest page.
 
-## Commands
+## Publication large-workload acceptance
 
-`pnpm run check` runs all non-test validation, including build dry runs. The
-[command reference](commands.md) also covers development, formatting, generated
-files and the renamed commands.
+The native image journey uses two distinct 100 KiB images routinely and 128 in
+stress; both verify publication, served bytes, export identity and actual SQL
+restore. The separate 128-image inline-source case stops at preparation and
+checks its sub-1 MiB candidate bound. Different source layouts have different
+metadata overhead. The missing-capture case uses nine requests across a batch of eight.
 
-| Command                                        | Coverage / use                                                  |
-| ---------------------------------------------- | --------------------------------------------------------------- |
-| `pnpm test`                                    | Everyday domain, API and two acceptance smoke paths             |
-| `pnpm run test:full`                           | All routine domain, API, ingestion and acceptance               |
-| `pnpm run test:domain`                         | Runtime-free rules and contracts                                |
-| `pnpm run test:api`                            | API routes, authentication, reads and bindings                  |
-| `pnpm run test:ingestion`                      | D1/R2/Workflow transitions, concurrency and recovery            |
-| `pnpm run test:acceptance`                     | Routine HTTP/CLI, migrations, provider failures and SQL restore |
-| `pnpm run test:acceptance:smoke`               | Small CLI and publication/restore paths                         |
-| `pnpm run test:acceptance:extended <scenario>` | Explicit long recovery or retained-data journey                 |
-| `pnpm run test:benchmark <scenario>`           | Explicit capacity/profiling experiment                          |
-| `pnpm run test:stress`                         | Two bounded production-pacing checks used weekly                |
-| `pnpm run test:stress:full`                    | All ingestion volume, recovery, limit and performance checks    |
+The 1,001-Product publication journey retains integrity, consumer and real
+backup/restore assertions with a five-minute body hang cap. Native preparation
+retains 1,001 Products, the 100-call callback bound and a 120-second hang timeout;
+elapsed time is diagnostic. Report successful storage work, not a minimum number
+of implementation subdivisions. Earlier failures keep their original verdicts.
 
-Vitest accepts file filters and `-t 'test name'`. Acceptance commands accept
-an exact filename or scenario name (for example `pnpm run test:acceptance http-fixture`),
-`--list` and `--shard=1/3`. Selection stays within the chosen tier.
-Extended/benchmark commands require a scenario
-or `--all`; listing never boots services. Selection lives in
-`acceptance/helpers/test-tiers.mjs`, with a contract test proving that routine
-files appear exactly once across three shards. New acceptance files enter routine
-coverage by default. See [acceptance details](../acceptance/README.md).
+The ingestion provider mock snapshots the owning runtime's SQLite file, streams
+SQL through production backup storage/upload and imports it into an independent
+disposable database. It requires `/usr/bin/sqlite3` on supported macOS/Linux hosts
+and the [pinned test-plugin patch](../patches/README.md). Keep the manifest,
+lockfile and patch together. `publication-backup-transport` covers snapshot,
+parser and import boundaries; `publication-caller-retirement` covers controlled
+and real binding publication/checkpoint behavior.
 
-“Full” means routine regression coverage. Extended, benchmark and stress cases
-are deliberately separate. Weekly source recapture checks publisher freshness.
+## Extended journeys and benchmarks
 
-`profile:reconciliation` is a separate manual memory diagnostic, excluded even
-from `test:benchmark --all`. It reports the observed heap, comparison with the
-historical 64 MiB reference, and incomplete sampling without a memory pass/fail
-verdict. Workload failures or unusable reports still return an error. See the
-[profiling command and report policy](../acceptance/README.md#extended-journeys-and-benchmarks).
+`composed-recovery`, `one-piece-two-source` and `riftbound-catalogue` are explicit
+extended journeys. Routine mixed-game recovery already crosses current-plus-two
+retention and performs actual SQL restore; it has no large-disk preflight.
+Only the full Riftbound journey requires 6 GiB free space. Its retained source
+inventory and incomplete image coverage are described with the
+[fixtures](../acceptance/fixtures/real-sources/2026-09-08-riftbound/README.md).
+
+Benchmarks include `native-sqlite-export` crossing 64 MiB and
+`native-isolate-metrics` for heap calibration. The reconciliation memory diagnostic
+is excluded even from `test:benchmark --all` and all configured CI:
+
+```sh
+KEEPR_CAPACITY_OUTPUT_PREFIX=/tmp/keepr-capacity pnpm run profile:reconciliation
+```
+
+It requires a destination and writes `-summary.json`, `-workload.json` and
+`-isolate-1.json`. Keep the variable scoped to this invocation; a global export
+adds profiling overhead to other acceptance Workers. The source script documents
+external-source and declared-length variants. Temporary state is removed after
+reporting; failure may retain it with its location printed for inspection.
+
+The former 64 MiB target is a historical comparison, not an enforced application
+memory budget. Sampling gaps/errors remain `incomplete`; error-free observations
+are `sampled`, never proof of complete peak memory. Exit zero requires a sealed
+workload and valid nonempty samples, even if sampling is incomplete. Workload,
+report or sample failures and the 120-second hang guard return an error.
+
+## What the stress commands prove
+
+Stress commands mix volume, recovery, configured-limit and performance checks.
+A successful workload establishes its asserted behavior at that size, not maximum
+production capacity. Tier admission without fetched bodies cannot prove 5/50 GiB
+capture. Native elapsed time is diagnostic; collection's per-request overhead
+requirement remains. Timing is neither active CPU nor provider billing.
+
+Run comparable heavy experiments sequentially with exclusive host resources.
+Record the exact commit, runtime, complete selection and failed/incomplete results.
+Resource-bound arguments do not replace measured heap/CPU or real-source coverage.
+Use the [scheduled stress procedure](runbooks/scheduled-stress.md) for hosted runs.
 
 ## CI and resource policy
 
-| Event                                                    | Checks                                                                                       |
-| -------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Draft PR opened, updated, reopened or converted to draft | Lint/format, types, generated files, boundaries/cycles, build dry run, domain, API and smoke |
-| Ready PR opened, updated, reopened or marked ready       | Full checks, even if marking ready adds no commit                                            |
-| Push to `main` or manual `ci` dispatch                   | Full checks on the resulting or selected commit                                              |
-| Weekly/default manual `stress`                           | Two bounded pacing tests; five-minute job cap                                                |
-| Manual `stress` with `suite: full`                       | Full volume/recovery/limit/performance selection; 45-minute cap; no merge/release gate       |
-| Manual focused diagnostics                               | Selected files; diagnostic evidence only                                                     |
+| Event                                        | Required coverage                                                 |
+| -------------------------------------------- | ----------------------------------------------------------------- |
+| Draft PR                                     | Static checks, build dry runs, domain, API and smoke              |
+| Ready PR, including ready-without-new-commit | Full checks and routine suites                                    |
+| Push to `main` or manual CI                  | Full checks on that exact commit                                  |
+| Weekly/default stress                        | Two bounded tests; five-minute job cap                            |
+| Manual full stress                           | Full stress selection; 45-minute cap; separate from merge/release |
+| Focused diagnostics                          | Selected files, one or three independent runs; any failure fails  |
 
-[ci.yml](../.github/workflows/ci.yml) retains three ingestion and three acceptance
-shards. Each has an independent runner and at most two concurrent files. Local
-layers run sequentially; domain, API, ingestion and routine acceptance use at
-most two files, while stress/extended run one. These are concurrency limits,
-not hard RAM quotas. Use `--maxWorkers=1` to investigate contention.
+Production Release requires the complete successful CI check set on its selected
+commit contained in `main`. Local tests, a green PR head or a newer commit cannot
+substitute for that evidence. Ordinary tests require no production credentials or
+live publisher access. Weekly source recapture is a separate networked workflow.
 
-Main protection requires PRs, an up-to-date branch, `lint`, `checks`,
-`domain-tests`, all three ingestion and all three acceptance shards. The
-production release guard separately requires every job to succeed on the exact
-main commit being deployed. Changing job IDs or shard counts requires updating
-protection, that guard and its contract test together. Diagnostic workflows
-cannot satisfy the release gate. Superseded CI runs are cancelled within an event
-type; manual runs cannot cancel push-main evidence.
+Worker setup hooks and ingestion bodies default to 30 seconds; API bodies to five
+seconds; routine acceptance to two minutes. Explicit scenario bounds live with
+the tests. Hosted ingestion, acceptance, smoke and bounded stress use disposable
+512 MiB tmpfs; full stress and memory-based stress diagnostics use 2 GiB. Local
+storage is unchanged. `scripts/ci-test.sh` owns allocation, occupancy reporting
+and cleanup. Retain the existing three large-suite shards until measurements
+justify a change. Test/operational results are never cached.
 
-Quick checks should stay around one minute on a warm developer machine. CI caps
-are five minutes for lint/domain and twelve for checks and each large shard,
-including installation. Caps catch stuck runs; they are neither targets nor
-performance guarantees. Recent hosted samples and their limits are in the
-reassessment, rather than treated as promises of zero flakes.
-
-Worker setup hooks and ordinary ingestion tests have 30-second defaults; API
-bodies use the five-second Vitest default. Routine acceptance uses two minutes.
-Some existing multi-stage/volume tests have explicit bounds; do not extend them
-to mask failures. Reduce unrelated work or move a volume case after retaining a
-bounded behavioral proof. Fixture setup and teardown must remain bounded too.
-
-Ingestion, acceptance and draft smoke use a disposable 512 MiB tmpfs per hosted
-runner for temporary databases. It allocates space as files grow and is removed
-when the test step exits. Real storage isolation, transactions and SQL restore
-remain enabled. Bounded stress uses the same volume; full stress and focused
-stress diagnostics use 2 GiB because the capacity fixtures exceed 512 MiB.
-The wrapper reports occupied bytes before cleanup. Local storage settings are unchanged.
-
-Routine tests use small offline fixtures and disposable state. They must not
-require full catalogue replay or multi-gigabyte disk preflights. Full Riftbound
-capacity remains opt-in with its 6 GiB preflight. Always clean up servers,
-Workflows and temporary state after failures. Dispose Workflow introspectors
-before resetting storage; the existing helper reactivates idle R2 buckets before
-reset. Cloudflare documents [per-file isolation and explicit disposal](https://developers.cloudflare.com/workers/testing/vitest-integration/test-apis/).
-
-## Maintaining and diagnosing tests
-
-- Assert observable behavior. Avoid import paths, helper names, source text or
-  documentation wording as proxies. Keep structural tests for actual structural
-  contracts such as migration constraints and the production release gate.
-- Add one regression at the responsible boundary. Repeat it elsewhere only to
-  prove a different contract. Reuse existing fixtures and drivers; a failing
-  test does not by itself justify another helper mode or an overlapping test.
-- Control ordering with promises/barriers, not sleeps or hopes about
-  `Promise.all`. Distinguish an admission response from the eventual durable
-  outcome, and settle late work before checking it.
-- Derive retention times from recorded timestamps or an injected clock. Never
-  rely on a fixed future date. Poll real asynchronous work with bounded deadlines;
-  controlled fixtures should complete explicitly rather than wait for scheduling.
-- Keep independent case identities distinct and reset storage between tests.
-  Helpers should read only required identities/manifests; inspect all partitions
-  only when their records are the assertion. Use
-  `nativeCandidateRecords(id, ["cards", "printings"])` to hydrate selected kinds;
-  omit the selection for whole-candidate comparisons. Header-only setup should
-  not load candidate records at all. Selected reads still traverse every page of
-  partition metadata and verify each requested partition through the real API.
-- Run the affected file first. For CI-only failures, use a focused hosted
-  selection, fix the cause, then repeat that selection before full validation.
-  Do not chase green with repeated full runs, larger timeouts, rate-limit changes
-  or automatic retries.
-
-Ingestion CI retains `ingestion-results-N` JSON artifacts for seven days with
-test names, failures and durations. Successful tests suppress operational output;
-failed tests retain it. Quieter reporting improves diagnosis, not timing.
-
-The separate [focused workflow](../.github/workflows/test-suite-diagnostics.yml)
-accepts exact Worker files and one or three independent runs. Any failed run
-fails the job. Use it without creating another temporary workflow:
+For CI-only failures, select the failing file first, fix the cause, then rerun it
+before full validation. Do not chase green with repeated full runs, automatic
+retries, larger deadlines or changed rate limits. Ingestion CI retains seven-day
+JSON results with names, failures and durations; successful operational logs are
+suppressed, failed ones retained.
 
 ```sh
 gh workflow run test-suite-diagnostics.yml --ref <branch> \
   -f worker=ingestion \
-  -f files='apps/ingestion/test/source-refresh-publication.spec.ts apps/ingestion/test/native-printing-images.spec.ts' \
-  -f repeats=3
+  -f files='apps/ingestion/test/publication-caller-retirement.spec.ts' \
+  -f repeats=1
 ```
 
-Keep Vitest within the installed Cloudflare plugin's peer range (currently
-Vitest 4.1; Vitest 5 fails before Worker tests execute). Commit manifest and
-lockfile together and validate a small Worker file after upgrades. The CI
-pnpm store cache includes OS, architecture, exact Node and pnpm versions,
-manifest, lockfile, pnpm settings and the Corepack setup script. Every job runs
-`pnpm install --frozen-lockfile`, including cache hits, to recreate links and
-run approved native builds. Test and operational results are never cached.
-Use the Node 26.8.2 version pinned in `.node-version` on Linux, and retain the existing three shards until
-hosted measurements justify changing them. See [toolchain policy](toolchain.md).
+Keep Vitest within the installed Cloudflare plugin's peer range. Validate an
+affected Worker after upgrades before broader suites; the separate acceptance
+and plugin runtimes must both remain compatible.

@@ -1,9 +1,0 @@
-{
-  "variant": "grouped-final",
-  "exit_code": 0,
-  "wall_seconds": 404.56480700010434,
-  "process_tree_peak_rss_KiB": 4732848,
-  "workerd_processes_peak_rss_KiB": 4530496,
-  "samples": 392,
-  "note": "sampled process RSS, not isolate working set; no production CPU/billing"
-}

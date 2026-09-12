@@ -3,140 +3,120 @@
     "full_body_sha256": "aa54372640aea9a5961ca3925899a330e04a7275a6a26b048db93f05561c1375",
     "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522204&cardcategory=Digimon&color=Purple",
     "retrieved_at": "2026-09-09T08:50:01.019Z",
-    "review": "docs/reviews/official-source-recapture-2026-09-09.md",
     "reason": "Card and Printing facts unchanged; adds category 522038 listing and ver26 product image navigation."
   },
   "digimon-en-card-list-bt01-leaf.json": {
     "full_body_sha256": "ec21fa46a80f9d06d5293f18e8b9e591e50e828a4097b4dd907f20c456d4cb66",
     "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522001&cardcategory=Digimon&color=Blue",
     "retrieved_at": "2026-09-09T08:50:02.662Z",
-    "review": "docs/reviews/official-source-recapture-2026-09-09.md",
     "reason": "Card and Printing facts unchanged; adds category 522038 listing and ver26 product image navigation."
   },
   "digimon-en-card-list-promo-leaf.json": {
     "full_body_sha256": "cfb9f8065f25d4d4440e956c61dceea372a91138d50976ba4cf34262e58be5d8",
     "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522901&cardcategory=Digimon&color=Red",
     "retrieved_at": "2026-09-09T08:50:04.161Z",
-    "review": "docs/reviews/official-source-recapture-2026-09-09.md",
     "reason": "Card and Printing facts unchanged; adds category 522038 listing and ver26 product image navigation."
   },
   "digimon-en-card-list-related-qa-leaf.json": {
     "full_body_sha256": "329d06ea5e9d7eb5f96bc61c65138f97e82e66a8468653624f6317c2dcd2e55b",
     "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522035&cardcategory=Digimon&color=Black",
     "retrieved_at": "2026-09-09T08:50:05.639Z",
-    "review": "docs/reviews/official-source-recapture-2026-09-09.md",
     "reason": "Card and Printing facts unchanged; adds category 522038 listing and ver26 product image navigation."
   },
   "digimon-en-product-gift-box.json": {
     "full_body_sha256": "03fd2d10500fd2ed4b6db57c7f159cefe328b89cfd68f6e78ec032ccb552ba06",
     "source_url": "https://world.digimoncard.com/products/goods/gift_box.php",
     "retrieved_at": "2026-09-09T08:50:09.687Z",
-    "review": "docs/reviews/official-source-recapture-2026-09-09.md",
     "reason": "Product and release unchanged; four official navigation publications added and asset query 260604 changes to 260818."
   },
   "digimon-en-product-theme-booster.json": {
     "full_body_sha256": "a40bf1a568b734aace146dea1ae5986aeb562aae85493b0d257ca3d40d7a0a98",
     "source_url": "https://world.digimoncard.com/products/pack/ex-01.php",
     "retrieved_at": "2026-09-09T08:50:12.961Z",
-    "review": "docs/reviews/official-source-recapture-2026-09-09.md",
     "reason": "Product and release unchanged; four official navigation publications added and asset query 260604 changes to 260818."
   },
   "digimon-en-restructured-card-search.json": {
     "full_body_sha256": "d6e1b37e930a844cf145a1c5cc0775f8b827393dae1edcc9df2fb36301164b00",
     "source_url": "https://world.digimoncard.com/cards/index.php?search=true",
     "retrieved_at": "2026-09-09T08:50:07.295Z",
-    "review": "docs/reviews/official-source-recapture-2026-09-09.md",
     "reason": "Category 522038 is present in raw source; summary count 98 to 99, plus ver26 image navigation."
   },
   "fusion-world-en-product-starter-deck.json": {
     "full_body_sha256": "f3b2691f2ff2b75f455bf584c11cda23c482d76eb2606eba1b897317129c9a09",
     "source_url": "https://www.dbs-cardgame.com/fw/en/products/02_229.html",
     "retrieved_at": "2026-09-09T08:50:36.536Z",
-    "review": "docs/reviews/official-source-recapture-2026-09-09.md",
     "reason": "Product and release unchanged; FB11 related-product link added, FB08 navigation replaced where present."
   },
   "fusion-world-en-product-story-booster.json": {
     "full_body_sha256": "d798df45b8bc48844dec7f66ae9e698bcf2aba807f86eeb19f321866bc4aa258",
     "source_url": "https://www.dbs-cardgame.com/fw/en/products/01_401.html",
     "retrieved_at": "2026-09-09T08:50:38.924Z",
-    "review": "docs/reviews/official-source-recapture-2026-09-09.md",
     "reason": "Product and release unchanged; FB11 related-product link added, FB08 navigation replaced where present."
   },
   "fusion-world-en-product-winter-booster.json": {
     "full_body_sha256": "077b20b10fe40360d1be124ed5c080c491315806dc1effe477aa074cecacf134",
     "source_url": "https://www.dbs-cardgame.com/fw/en/products/01_477.html",
     "retrieved_at": "2026-09-09T08:50:41.096Z",
-    "review": "docs/reviews/official-source-recapture-2026-09-09.md",
     "reason": "Product and release unchanged; FB11 related-product link added, FB08 navigation replaced where present."
   },
   "fusion-world-en-products-hub.json": {
     "full_body_sha256": "3d002472100d427ffd8506d1c968b56d2a59f4edaf3448fd5ae6d72c55773253",
     "source_url": "https://www.dbs-cardgame.com/fw/en/products/",
     "retrieved_at": "2026-09-09T08:50:43.520Z",
-    "review": "docs/reviews/official-source-recapture-2026-09-09.md",
     "reason": "Retained pagination and section changes: ST01 released; new sleeves excluded; Card-bearing PLAYMAT & CARD SET02 and Premium Card Collection03 announced with explicit unknown dates; older publications move between pages."
   },
   "fusion-world-en-products-page2.json": {
     "full_body_sha256": "560f63a6c67fcd1debe64861ac13a91769c3f6df13f4d788ad00efe9949413ef",
     "source_url": "https://www.dbs-cardgame.com/fw/en/products/?page=2",
     "retrieved_at": "2026-09-09T08:50:46.506Z",
-    "review": "docs/reviews/official-source-recapture-2026-09-09.md",
     "reason": "Retained pagination and section changes: ST01 released; new sleeves excluded; Card-bearing PLAYMAT & CARD SET02 and Premium Card Collection03 announced with explicit unknown dates; older publications move between pages."
   },
   "fusion-world-en-products-starter-tag.json": {
     "full_body_sha256": "fb6ae7cfb0372676c4c5bf6acd8258f57ec019357a887b5531255a955ca826b6",
     "source_url": "https://www.dbs-cardgame.com/fw/en/products/?tags=StarterDecks&page=1",
     "retrieved_at": "2026-09-09T08:50:49.013Z",
-    "review": "docs/reviews/official-source-recapture-2026-09-09.md",
     "reason": "Retained pagination and section changes: ST01 released; new sleeves excluded; Card-bearing PLAYMAT & CARD SET02 and Premium Card Collection03 announced with explicit unknown dates; older publications move between pages."
   },
   "fusion-world-en-restructured-card-search.json": {
     "full_body_sha256": "7d200b1e47ce87078ec9216eeb754dcc4e7a72a94988ba8266146e143a77c98b",
     "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B0%5D=583301",
     "retrieved_at": "2026-09-09T08:50:52.417Z",
-    "review": "docs/reviews/official-source-recapture-2026-09-09.md",
     "reason": "All 172 retained listing observations preserve product catalogue; category583011 FB11 added to discovery and source links."
   },
   "gundam-en-asia-card-detail-dash-live.json": {
     "full_body_sha256": "ee953c992615c8667ed1c9a3b5e95c32f8569d34e0663a8b2c0a460155689f69",
     "source_url": "https://www.gundam-gcg.com/asia-en/cards/detail.php?detailSearch=GD02-016",
     "retrieved_at": "2026-09-09T08:50:54.026Z",
-    "review": "docs/reviews/official-source-recapture-2026-09-09.md",
     "reason": "Card and Printing facts unchanged; evidence-bearing image query260710 changes to260818. No new Printing inferred."
   },
   "gundam-en-asia-card-list-complete-live.json": {
     "full_body_sha256": "09f2b911b7ea629c63fad5aca63e10ce465c7215b9d700a09fdbc438ca6e7e13",
     "source_url": "https://www.gundam-gcg.com/asia-en/cards/index.php?package=619102",
     "retrieved_at": "2026-09-09T08:50:55.624Z",
-    "review": "docs/reviews/official-source-recapture-2026-09-09.md",
     "reason": "First COMPLETE monitoring baseline; old range cannot prove whole-response equivalence. Raw187 Card-detail locators and page coverage retained; image query260818. Registered Products root detail-role bug fixed separately. Historical uncertainty preserved."
   },
   "gundam-en-asia-errata-listing.json": {
     "full_body_sha256": "9ccfff805aa30b9914d6f5ee3325cf3597e25c964f7fb43b2f99777e9c5d03d0",
     "source_url": "https://www.gundam-gcg.com/asia-en/news/?subcategory=news&tag=all&page=1",
     "retrieved_at": "2026-09-09T08:50:58.420Z",
-    "review": "docs/reviews/official-source-recapture-2026-09-09.md",
     "reason": "Errata discovery and product facts unchanged; three collaboration thumbnail query tokens and raw navigation ordering/labels changed."
   },
   "gundam-en-asia-product-booster.json": {
     "full_body_sha256": "9d959e3ca80e0468bdade3bb7df6e64fda8a1c93f54e033af9bf962f4023a02b",
     "source_url": "https://www.gundam-gcg.com/asia-en/products/gd05.html",
     "retrieved_at": "2026-09-09T08:51:03.543Z",
-    "review": "docs/reviews/official-source-recapture-2026-09-09.md",
     "reason": "Product, release and requests unchanged; raw Rarity breakdown adds138+10 Card Types and counts retained as optional evidence."
   },
   "one-piece-en-card-list.json": {
     "full_body_sha256": "9ad39cdad8993fa3564185d3536dcbd1abbc7c19e5a13b19a30465c8a9c371da",
     "source_url": "https://en.onepiece-cardgame.com/cardlist/?series=569001&freewords=ST01-001",
     "retrieved_at": "2026-09-09T08:51:16.054Z",
-    "review": "docs/reviews/official-source-recapture-2026-09-09.md",
     "reason": "All retained Card and Printing facts unchanged; image query260731 changes to260828 and Recording569117 added. No new Printing inferred."
   },
   "one-piece-en-restructured-discovery.json": {
     "full_body_sha256": "9efff60c30161e3835e998832b2d33784359e710bdf263bad122f18c8d347a7e",
     "source_url": "https://en.onepiece-cardgame.com/cardlist/?series=569116",
     "retrieved_at": "2026-09-09T08:51:25.514Z",
-    "review": "docs/reviews/official-source-recapture-2026-09-09.md",
     "reason": "All retained Card and Printing facts unchanged; image query260731 changes to260828 and Recording569117 added. No new Printing inferred."
   }
 }

@@ -142,7 +142,6 @@ function nextAction() {
   renderScenario();
 }
 
-readFileSync(join(here, "CONTRACT.md"), "utf8");
 process.stdin.setEncoding("utf8");
 process.stdin.setRawMode?.(true);
 process.stdin.resume();

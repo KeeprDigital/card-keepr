@@ -1,4 +1,0 @@
-
-> typecheck
-> tsc --project apps/api/tsconfig.json && tsc --project apps/api/test/tsconfig.json && tsc --project apps/ingestion/tsconfig.json && tsc --project apps/ingestion/test/tsconfig.json && tsc --project test/domain/tsconfig.json
-
