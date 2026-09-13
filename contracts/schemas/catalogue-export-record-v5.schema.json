@@ -1,0 +1,823 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://card-keepr.invalid/schemas/catalogue-export-record@5",
+  "title": "Card Keepr Catalogue Export record",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/SupportedGameRecord"
+    },
+    {
+      "$ref": "#/$defs/GameProfileRecord"
+    },
+    {
+      "$ref": "#/$defs/CardRecord"
+    },
+    {
+      "$ref": "#/$defs/PrintingRecord"
+    },
+    {
+      "$ref": "#/$defs/PrintingImageRecord"
+    },
+    {
+      "$ref": "#/$defs/ProductRecord"
+    },
+    {
+      "$ref": "#/$defs/ReleaseRecord"
+    },
+    {
+      "$ref": "#/$defs/DistributionContextRecord"
+    },
+    {
+      "$ref": "#/$defs/ErratumRecord"
+    },
+    {
+      "$ref": "#/$defs/RelationshipRecord"
+    },
+    {
+      "$ref": "#/$defs/IdentityCorrectionRecord"
+    }
+  ],
+  "$defs": {
+    "OpaqueId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "Sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "SupportedGame": {
+      "enum": ["one-piece", "fusion-world", "digimon", "gundam", "riftbound"]
+    },
+    "Locale": {
+      "enum": ["EN-OCEANIA", "EN-ASIA", "EN-US", "unknown"]
+    },
+    "Date": {
+      "type": "string",
+      "format": "date"
+    },
+    "NullableDate": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Date"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "Text": {
+      "type": "string"
+    },
+    "NullableText": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Text"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "Lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["first_revision_id", "last_observed_revision_id", "withdrawn"],
+      "properties": {
+        "first_revision_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "last_observed_revision_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "withdrawn": {
+          "type": "boolean"
+        },
+        "withdrawal": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["revision_id"],
+              "properties": {
+                "revision_id": {
+                  "$ref": "#/$defs/OpaqueId"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "RelationshipLifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["first_revision_id", "last_observed_revision_id", "current", "last_missing_revision_id"],
+      "properties": {
+        "first_revision_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "last_observed_revision_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "current": {
+          "type": "boolean"
+        },
+        "last_missing_revision_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/OpaqueId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "OfficialIdentity": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": {
+              "const": "card_number"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": {
+              "const": "publisher_name"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": {
+              "const": "functional_designation"
+            },
+            "value": {
+              "const": "DON!!"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": {
+              "const": "unknown"
+            },
+            "value": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "GameData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "attributes"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "pattern": "^(one-piece|fusion-world|digimon|gundam|riftbound)@[1-9][0-9]*$"
+        },
+        "attributes": {
+          "type": "object",
+          "description": "Validated by the named accepted Game Profile."
+        }
+      }
+    },
+    "Rarity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["normalized", "raw"],
+      "properties": {
+        "normalized": {
+          "$ref": "#/$defs/NullableText"
+        },
+        "raw": {
+          "$ref": "#/$defs/NullableText"
+        }
+      }
+    },
+    "SupportedGameRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "key", "name", "supported_locales", "game_profile"],
+      "properties": {
+        "type": {
+          "const": "supported_game"
+        },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "key": {
+          "$ref": "#/$defs/SupportedGame"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "supported_locales": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Locale"
+          }
+        },
+        "game_profile": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "GameProfileRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "profile", "game", "schema"],
+      "properties": {
+        "type": {
+          "const": "game_profile"
+        },
+        "profile": {
+          "type": "string",
+          "minLength": 1
+        },
+        "game": {
+          "$ref": "#/$defs/SupportedGame"
+        },
+        "schema": {
+          "type": "object"
+        }
+      }
+    },
+    "CardRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "game", "official_identity", "name", "effective_rules_text", "game_data", "lifecycle"],
+      "properties": {
+        "type": {
+          "const": "card"
+        },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "game": {
+          "$ref": "#/$defs/SupportedGame"
+        },
+        "official_identity": {
+          "$ref": "#/$defs/OfficialIdentity"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "effective_rules_text": {
+          "$ref": "#/$defs/NullableText"
+        },
+        "game_data": {
+          "$ref": "#/$defs/GameData"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/Lifecycle"
+        }
+      }
+    },
+    "PrintingProductProjection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "official_code", "name"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "official_code": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "required": [],
+          "properties": {}
+        },
+        {
+          "required": [],
+          "not": {
+            "required": []
+          },
+          "properties": {}
+        }
+      ]
+    },
+    "PrintingDistributionContextProjection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "label", "product_id"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "kind": {
+          "enum": ["product", "tournament_pack", "winner_prize", "promotion", "other"]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "product_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/OpaqueId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "required": [],
+          "properties": {}
+        },
+        {
+          "required": [],
+          "not": {
+            "required": []
+          },
+          "properties": {}
+        }
+      ]
+    },
+    "PrintingRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "card_id", "rarity", "printed_rules_text", "game_data", "lifecycle"],
+      "properties": {
+        "type": {
+          "const": "printing"
+        },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "card_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "rarity": {
+          "$ref": "#/$defs/Rarity"
+        },
+        "printed_rules_text": {
+          "$ref": "#/$defs/NullableText"
+        },
+        "game_data": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/GameData"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "products": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PrintingProductProjection"
+          }
+        },
+        "distribution_contexts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PrintingDistributionContextProjection"
+          }
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/Lifecycle"
+        }
+      }
+    },
+    "PrintingImageRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "printing_id", "role", "media_type", "width", "height", "content_sha256"],
+      "properties": {
+        "type": {
+          "const": "printing_image"
+        },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "printing_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "role": {
+          "enum": ["front", "back", "other"]
+        },
+        "media_type": {
+          "type": "string",
+          "pattern": "^image/"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "content_sha256": {
+          "$ref": "#/$defs/Sha256"
+        }
+      }
+    },
+    "ProductRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "game", "official_code", "name", "lifecycle"],
+      "properties": {
+        "type": {
+          "const": "product"
+        },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "game": {
+          "$ref": "#/$defs/SupportedGame"
+        },
+        "official_code": {
+          "$ref": "#/$defs/NullableText"
+        },
+        "name": {
+          "$ref": "#/$defs/NullableText"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/Lifecycle"
+        }
+      }
+    },
+    "ReleaseRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "product_id", "event_key", "region", "date", "status"],
+      "properties": {
+        "type": {
+          "const": "release"
+        },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "event_key": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "product_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "region": {
+          "$ref": "#/$defs/Locale"
+        },
+        "date": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["precision", "value"],
+          "properties": {
+            "precision": {
+              "enum": ["day", "month", "quarter", "year", "unknown"]
+            },
+            "value": {
+              "$ref": "#/$defs/NullableText"
+            }
+          }
+        },
+        "status": {
+          "oneOf": [
+            {
+              "enum": ["announced", "released"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "DistributionContextRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "game", "kind", "label", "product_id"],
+      "properties": {
+        "type": {
+          "const": "distribution_context"
+        },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "game": {
+          "$ref": "#/$defs/SupportedGame"
+        },
+        "kind": {
+          "enum": ["product", "tournament_pack", "winner_prize", "promotion", "other"]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "product_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/OpaqueId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "ErratumRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "game",
+        "target_type",
+        "target_id",
+        "effective_from",
+        "official_wording",
+        "corrected_value"
+      ],
+      "properties": {
+        "type": {
+          "const": "erratum"
+        },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "game": {
+          "$ref": "#/$defs/SupportedGame"
+        },
+        "target_type": {
+          "enum": ["card", "printing"]
+        },
+        "target_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "effective_from": {
+          "$ref": "#/$defs/NullableDate"
+        },
+        "official_wording": {
+          "type": "string",
+          "minLength": 1
+        },
+        "corrected_value": {
+          "type": ["string", "null"],
+          "minLength": 1
+        }
+      }
+    },
+    "RelationshipRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "kind", "from", "to", "relationship_value", "lifecycle"],
+      "properties": {
+        "type": {
+          "const": "relationship"
+        },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "kind": {
+          "enum": [
+            "printing-distribution-context",
+            "printing-product",
+            "distribution-context-product",
+            "product-card",
+            "erratum-target"
+          ]
+        },
+        "from": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "id"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "minLength": 1
+            },
+            "id": {
+              "$ref": "#/$defs/OpaqueId"
+            }
+          }
+        },
+        "to": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "id"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "minLength": 1
+            },
+            "id": {
+              "$ref": "#/$defs/OpaqueId"
+            }
+          }
+        },
+        "relationship_value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/RelationshipLifecycle"
+        }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "kind": {
+                  "const": "printing-distribution-context"
+                },
+                "from": {
+                  "properties": {
+                    "type": {
+                      "const": "printing"
+                    }
+                  }
+                },
+                "to": {
+                  "properties": {
+                    "type": {
+                      "const": "distribution_context"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "printing-product"
+                },
+                "from": {
+                  "properties": {
+                    "type": {
+                      "const": "printing"
+                    }
+                  }
+                },
+                "to": {
+                  "properties": {
+                    "type": {
+                      "const": "product"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "distribution-context-product"
+                },
+                "from": {
+                  "properties": {
+                    "type": {
+                      "const": "distribution_context"
+                    }
+                  }
+                },
+                "to": {
+                  "properties": {
+                    "type": {
+                      "const": "product"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "product-card"
+                },
+                "from": {
+                  "properties": {
+                    "type": {
+                      "const": "product"
+                    }
+                  }
+                },
+                "to": {
+                  "properties": {
+                    "type": {
+                      "const": "card"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "erratum-target"
+                },
+                "from": {
+                  "properties": {
+                    "type": {
+                      "const": "erratum"
+                    }
+                  }
+                },
+                "to": {
+                  "properties": {
+                    "type": {
+                      "enum": ["card", "printing"]
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "IdentityCorrectionRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "game", "entity_kind", "action", "replacement_ids"],
+      "properties": {
+        "type": {
+          "const": "identity_correction"
+        },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "game": {
+          "$ref": "#/$defs/SupportedGame"
+        },
+        "entity_kind": {
+          "enum": ["card", "printing"]
+        },
+        "action": {
+          "enum": ["merge", "split"]
+        },
+        "replacement_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/OpaqueId"
+          }
+        }
+      }
+    }
+  }
+}

@@ -256,6 +256,7 @@ export async function initializeReconciliationProgress(
   runId: string,
   at: string,
   gamePreparation?: GamePreparationCreation,
+  retainedDefinitions?: string | null,
 ) {
   const definitions = JSON.stringify({
     profiles: gameProfileRegistrations(),
@@ -265,11 +266,13 @@ export async function initializeReconciliationProgress(
       ),
     ),
   });
-  const existing = await reconciliationOperationHeaderStatement(database, runId).first<{
-    definition_pins_json: string;
-  }>();
-  if (existing) {
-    assertPinnedDefinitions(existing.definition_pins_json, definitions);
+  const existing =
+    retainedDefinitions === undefined
+      ? (await reconciliationOperationHeaderStatement(database, runId).first<{ definition_pins_json: string }>())
+          ?.definition_pins_json
+      : retainedDefinitions;
+  if (existing != null) {
+    assertPinnedDefinitions(existing, definitions);
     return false;
   }
   const selected = gamePreparation

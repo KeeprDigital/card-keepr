@@ -29,7 +29,7 @@ async function exported(directory) {
         clearTimeout(timer);
         resolve(result);
       });
-      worker.once("error", (error) => {
+      worker.once("error", (/** @type {Error} */ error) => {
         clearTimeout(timer);
         reject(error);
       });

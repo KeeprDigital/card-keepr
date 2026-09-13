@@ -13,3 +13,5 @@ coverage/
 
 # Generated isolated dev configs contain observed resource identities.
 apps/*/wrangler.dev.json
+
+test-results/

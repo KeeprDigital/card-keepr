@@ -144,6 +144,10 @@ test("one collection exposes separate sealed game manifests containing only each
     expect(header.response.status).toBe(200);
     expect(header.document).toMatchObject({ state: "sealed", deadline: candidate.deadline });
     const records = await nativeCandidateRecords(String(candidate.id));
+    expect(await nativeCandidateRecords(String(candidate.id), ["cards", "printings"])).toEqual({
+      cards: records.cards,
+      printings: records.printings,
+    });
     expect(records.cards!.length).toBeGreaterThan(0);
     expect(records.cards!.every((card) => card.game === candidate.supported_game)).toBe(true);
     expect(records.printings!.length).toBeGreaterThan(0);
@@ -814,9 +818,8 @@ test.each(["before commit", "after commit", "after commit with receipt outage"])
       expect(preparationBatches).toBeGreaterThan(3);
       const sealed = await get(`/v1/ingestion-runs/${run.id}/reconciliation`);
       expect(sealed.document).toMatchObject({ state: "sealed", generation: 0, completed_batches: preparationBatches });
-      const { preparationBatchStatement } = await import(
-        "../../../src/catalogue/reconciliation/reconciliation-preparation-repository"
-      );
+      const { preparationBatchStatement } =
+        await import("../../../src/catalogue/reconciliation/reconciliation-preparation-repository");
       const { catalogueStore } = await import("../../../src/catalogue/shared");
       const receipt = () =>
         preparationBatchStatement(
@@ -839,9 +842,8 @@ test.each(["before commit", "after commit", "after commit with receipt outage"])
       completed_batches: boundary === "before commit" ? 2 : 3,
       candidate_digest: null,
     });
-    const { preparationBatchStatement } = await import(
-      "../../../src/catalogue/reconciliation/reconciliation-preparation-repository"
-    );
+    const { preparationBatchStatement } =
+      await import("../../../src/catalogue/reconciliation/reconciliation-preparation-repository");
     const { catalogueStore } = await import("../../../src/catalogue/shared");
     const receipt = () =>
       preparationBatchStatement(
@@ -1623,15 +1625,12 @@ test("a Product reducer committed tombstone replays without restoring a curated 
   const { testEnv, post, exportComponentRecords } = await import("./reconciliation-helpers");
   const { catalogueStore, canonicalJson, sha256Text } = await import("../../../src/catalogue/shared");
   const { applyPinnedCuratedRevisions, pinCuratedRevisionsForRun } = await import("../../../src/catalogue/curated");
-  const { initializeReconciliationProgress } = await import(
-    "../../../src/catalogue/reconciliation/reconciliation-progress"
-  );
-  const { ReconciliationCandidateState } = await import(
-    "../../../src/catalogue/reconciliation/reconciliation-candidate-state"
-  );
-  const { ReconciliationRecordCollection } = await import(
-    "../../../src/catalogue/reconciliation/reconciliation-record-collection"
-  );
+  const { initializeReconciliationProgress } =
+    await import("../../../src/catalogue/reconciliation/reconciliation-progress");
+  const { ReconciliationCandidateState } =
+    await import("../../../src/catalogue/reconciliation/reconciliation-candidate-state");
+  const { ReconciliationRecordCollection } =
+    await import("../../../src/catalogue/reconciliation/reconciliation-record-collection");
   const { reconcileProductReleaseState } = await import("../../../src/catalogue/reconciliation/product-release-state");
   const seedRun = await collect("/reconciliation/product-typed-relationships", "tombstone-seed");
   const seed = await prepareNativeCandidate(seedRun.id, "one-piece", "catrev_spine_000", "tombstone-seed-candidate");
@@ -1640,12 +1639,10 @@ test("a Product reducer committed tombstone replays without restoring a curated 
   const revision = published.revisionId;
   const cards = await exportComponentRecords(revision, "cards");
   const printings = await exportComponentRecords(revision, "printings");
-  const { reconciliationSourceDocument } = await import(
-    "../../../test/support/fake-publisher/reconciliation-documents"
-  );
-  const { reconcileProductReleaseCatalogue } = await import(
-    "../../../src/catalogue/reconciliation/product-release-catalogue"
-  );
+  const { reconciliationSourceDocument } =
+    await import("../../../test/support/fake-publisher/reconciliation-documents");
+  const { reconcileProductReleaseCatalogue } =
+    await import("../../../src/catalogue/reconciliation/product-release-catalogue");
   const source = reconciliationSourceDocument(
     "product-typed-relationships",
     "cards",
@@ -1825,7 +1822,7 @@ test.each(["entity", "selection", "entity after commit"])(
       "catrev_spine_000",
       `curated-draft-candidate-${fixture}`,
     );
-    const original = requiredFirst(await nativeCandidateRecords(requiredString(seed, "id")), "cards");
+    const original = requiredFirst(await nativeCandidateRecords(requiredString(seed, "id"), ["cards"]), "cards");
     const publishedSeed = await approveNativeCandidate(seed, `curated-draft-publish-${fixture}`);
     expect(publishedSeed.response.status).toBe(200);
     const proposal = {
@@ -2014,7 +2011,9 @@ test.each(["entity", "selection", "entity after commit"])(
       requiredString(accepted.document, "resulting_revision_id"),
       `curated-draft-refresh-candidate-${fixture}`,
     );
-    expect(requiredFirst(await nativeCandidateRecords(requiredString(refreshed, "id")), "cards")).toMatchObject({
+    expect(
+      requiredFirst(await nativeCandidateRecords(requiredString(refreshed, "id"), ["cards"]), "cards"),
+    ).toMatchObject({
       id: original.id,
       name: "Synthetic curated name",
       curated_provenance: [expect.objectContaining({ reviewed_source_value: original.name })],
@@ -2027,7 +2026,7 @@ test("persistent curated comparison records every changed source field before fa
   const { canonicalJson, sha256Text } = await import("../../../src/catalogue/shared");
   const seedRun = await collect("/reconciliation/base", "curated-conflicts-seed");
   const seed = await prepareNativeCandidate(seedRun.id, "one-piece", "catrev_spine_000", "curated-conflicts-candidate");
-  const card = requiredFirst(await nativeCandidateRecords(requiredString(seed, "id")), "cards");
+  const card = requiredFirst(await nativeCandidateRecords(requiredString(seed, "id"), ["cards"]), "cards");
   const published = await seedNativePredecessor(seed, "curated-conflicts-publish");
   expect(published.checkpoint).toBe("pending");
   const revisions: string[] = [];
@@ -2142,7 +2141,7 @@ test("persistent curated edits retain Release ownership and official relationshi
   const { canonicalJson, sha256Text } = await import("../../../src/catalogue/shared");
   const seedRun = await collect("/reconciliation/product-release", "curated-links-seed");
   const seed = await prepareNativeCandidate(seedRun.id, "one-piece", "catrev_spine_000", "curated-links-candidate");
-  const product = requiredFirst(await nativeCandidateRecords(requiredString(seed, "id")), "products");
+  const product = requiredFirst(await nativeCandidateRecords(requiredString(seed, "id"), ["products"]), "products");
   const release = (product.releases as Record<string, unknown>[])[0]!;
   const published = await approveNativeCandidate(seed, "curated-links-publish");
   expect(published.response.status).toBe(200);

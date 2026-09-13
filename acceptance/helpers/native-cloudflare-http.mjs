@@ -1,8 +1,8 @@
-import { createServer } from "node:http";
+import { createFixtureServer } from "./http-fixture.mjs";
 
 /** Real Wrangler uses this HTTP boundary instead of Miniflare's outboundService hook. */
 export async function nativeCloudflareHttp(t, cloudflare) {
-  const server = createServer(async (incoming, outgoing) => {
+  const server = createFixtureServer(async (incoming, outgoing) => {
     try {
       const target = new URL(incoming.url, "http://fixture.local").searchParams.get("target");
       if (

@@ -1,9 +1,11 @@
-import { canonicalJson, StreamingSha256 } from "../shared";
+import { createHash } from "node:crypto";
+import { canonicalJson } from "../shared";
 import {
   type CompositionVerificationQuery,
   type AcceptedEvidenceArtifactRoot,
   compositionSnapshotTables,
-  maximumPrivateSnapshotPageBytes,
+  maximumSnapshotPageRows,
+  maximumSnapshotPageBytes,
   maximumSchemaSnapshotPageRows,
   maximumSchemaSnapshotPageBytes,
 } from "./composition-verification-repository";
@@ -58,7 +60,7 @@ export async function captureCompositionSnapshot(
       throw new Error("Accepted private evidence roots are unavailable or invalid.");
     acceptedRoots = rows as AcceptedEvidenceArtifactRoot[];
   }
-  const schema = new StreamingSha256();
+  const schema = createHash("sha256");
   let schemaAfter = "";
   for (;;) {
     const page = await query({ kind: "composition-schema", after: schemaAfter });
@@ -90,20 +92,24 @@ export async function captureCompositionSnapshot(
       ].includes(table)
     )
       continue;
-    const digest = new StreamingSha256();
+    const columns = (await query({ kind: "composition-columns", table })).map((row) => {
+      if (typeof row.name !== "string") throw new Error("Invalid composition snapshot columns.");
+      return row.name;
+    });
+    const digest = createHash("sha256");
     let after = 0,
       rows = 0;
     for (;;) {
-      const page = await query({ kind: "composition-page", table, after });
+      const page = await query({ kind: "composition-page", table, after, columns });
       if (page.length === 0) break;
       const privatePage = table === "reconciliation_checkpoints" || table === "reconciliation_reducer_state";
-      if (page.length > (privatePage ? 4 : 1)) throw new Error("Snapshot page exceeds its row budget.");
+      if (page.length > maximumSnapshotPageRows) throw new Error("Snapshot page exceeds its row budget.");
       let pageBytes = 0;
       for (const row of page) {
         if (typeof row.snapshot_rowid !== "number" || row.snapshot_rowid <= after)
           throw new Error("Invalid snapshot cursor.");
         pageBytes += new TextEncoder().encode(canonicalJson(row)).byteLength;
-        if (privatePage && pageBytes > maximumPrivateSnapshotPageBytes)
+        if (pageBytes > maximumSnapshotPageBytes && (privatePage || page.length > 1))
           throw new Error("Private snapshot page exceeds its byte budget.");
         after = row.snapshot_rowid;
         const { snapshot_rowid: _, ...record } = row;
@@ -111,7 +117,7 @@ export async function captureCompositionSnapshot(
         rows++;
       }
     }
-    tables.push({ table, rows, sha256: digest.digestHex() });
+    tables.push({ table, rows, sha256: digest.digest("hex") });
   }
   return {
     revision_id: revisionId,
@@ -121,7 +127,7 @@ export async function captureCompositionSnapshot(
     schema_migration_level: state.migration_level,
     ...(acceptedRoots === undefined ? {} : { accepted_evidence_roots: acceptedRoots }),
     members: state.members,
-    schema_sha256: schema.digestHex(),
+    schema_sha256: schema.digest("hex"),
     tables,
   };
 }

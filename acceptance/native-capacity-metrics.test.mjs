@@ -5,11 +5,49 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { onePieceEvidenceMetrics } from "./helpers/one-piece-evidence-metrics.mjs";
+import { summarizeReconciliationMemory } from "../scripts/reconciliation-memory.mjs";
 import {
   nativeOperationalTimeline,
   nativeRetainedOccupancy,
   operationalCapacityMetrics,
 } from "./helpers/native-capacity-metrics.mjs";
+
+test("memory diagnostics retain a missed historical target and incomplete observations without a budget verdict", () => {
+  const report = {
+    isolates: [{ target: "core:user:card-keepr-ingestion", heap_samples: [{ usedSize: 101_421_768 }] }],
+    errors: ["Inspector timed out: Runtime.getHeapUsage"],
+    skipped_sampling_intervals: 0,
+  };
+  const result = { candidate: { state: "sealed" }, elapsed_ms: 8_257 };
+  const summary = summarizeReconciliationMemory(result, report);
+  assert.equal(summary.sampled_used_heap_maximum, 101_421_768);
+  assert.equal(summary.exceeds_historical_heap_reference, true);
+  assert.equal(summary.measurement_status, "incomplete");
+  assert.deepEqual(summary.observer_errors, report.errors);
+  assert.equal(summarizeReconciliationMemory(result, { ...report, errors: [] }).measurement_status, "sampled");
+  assert.equal(
+    summarizeReconciliationMemory(result, { ...report, errors: [], skipped_sampling_intervals: 1 }).measurement_status,
+    "incomplete",
+  );
+});
+
+test("memory diagnostics reject an unfinished workload and missing or invalid samples", () => {
+  const result = { candidate: { state: "sealed" }, elapsed_ms: 1 };
+  const report = (samples) => ({
+    isolates: [{ target: "core:user:card-keepr-ingestion", heap_samples: samples }],
+    errors: [],
+    skipped_sampling_intervals: 0,
+  });
+  assert.throws(
+    () => summarizeReconciliationMemory({ ...result, candidate: { state: "failed" } }, report([{ usedSize: 1 }])),
+    /workload must complete/u,
+  );
+  assert.throws(() => summarizeReconciliationMemory(result, { ...report([]), isolates: [] }), /ingestion isolate/u);
+  assert.throws(() => summarizeReconciliationMemory(result, report([])), /actual heap samples/u);
+  for (const usedSize of [0, -1, NaN, Infinity, null]) {
+    assert.throws(() => summarizeReconciliationMemory(result, report([{ usedSize }])), /finite positive/u);
+  }
+});
 
 test("storage census includes automatic indexes and separates retained rows from allocations", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "keepr-capacity-census-"));

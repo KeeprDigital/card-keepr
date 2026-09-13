@@ -119,14 +119,12 @@ test("partial object staging exhausts bounded retry and resumes without replacin
     status = (await post(path, { ...intent, sequence: status.sequence, idempotency_key: `images-${status.sequence}` }))
       .document;
   const before = status.artifact_count;
-  let puts = 0;
-  let stagedKey = "";
+  const puts = new Map<string, number>();
   const bucket = new Proxy(testEnv.CATALOGUE_EXPORTS, {
     get(target, property) {
       if (property === "put")
         return async (...args: Parameters<R2Bucket["put"]>) => {
-          puts++;
-          stagedKey = args[0];
+          puts.set(args[0], (puts.get(args[0]) ?? 0) + 1);
           await target.put(...args);
           throw new Error("Injected lost object PUT response");
         };
@@ -153,16 +151,21 @@ test("partial object staging exhausts bounded retry and resumes without replacin
     failures: 3,
     artifact_count: before,
   });
-  expect(puts).toBe(1);
-  const retainedBytes = await (await testEnv.CATALOGUE_EXPORTS.get(stagedKey))!.arrayBuffer();
+  expect(puts.size).toBeGreaterThan(0);
+  expect([...puts.values()]).toEqual([...puts.keys()].map(() => 1));
+  const retainedBytes = new Map<string, ArrayBuffer>();
+  for (const key of puts.keys())
+    retainedBytes.set(key, await (await testEnv.CATALOGUE_EXPORTS.get(key))!.arrayBuffer());
   const paused = status;
   status = (await post(path, { ...intent, sequence: status.sequence, resume: true, idempotency_key: "resume-partial" }))
     .document;
   expect(status).toMatchObject({ state: "preparing", deadline: paused.deadline, artifact_count: before });
   await finish(path, intent, status);
   const artifacts = (await get(`${path}/artifacts`)).document.artifacts as { object_key: string; reused: number }[];
-  expect(artifacts).toEqual(expect.arrayContaining([expect.objectContaining({ object_key: stagedKey, reused: 1 })]));
-  expect(await (await testEnv.CATALOGUE_EXPORTS.get(stagedKey))!.arrayBuffer()).toEqual(retainedBytes);
+  for (const [key, bytes] of retainedBytes) {
+    expect(artifacts).toEqual(expect.arrayContaining([expect.objectContaining({ object_key: key, reused: 1 })]));
+    expect(await (await testEnv.CATALOGUE_EXPORTS.get(key))!.arrayBuffer()).toEqual(bytes);
+  }
 });
 
 test("corrupt immutable image bytes fail distinctly and cannot be resumed", async () => {
@@ -431,7 +434,10 @@ test.each(["projections", "composition"])(
         if (property === "batch")
           return async (statements: D1PreparedStatement[]) => {
             const result = await target.batch(statements);
-            if (!lost) {
+            const committed = await target
+              .prepare("SELECT 1 FROM publication_preparation_actions WHERE idempotency_key='lost-commit'")
+              .first();
+            if (!lost && committed) {
               lost = true;
               throw new Error("Injected lost D1 commit response");
             }
@@ -453,7 +459,10 @@ test.each(["projections", "composition"])(
 test.each(["prepare publication artifacts", "dispatch publication preparation successor"])(
   "exhausted %s steps retain a retry pause",
   async (failedStep) => {
-    const candidate = await sealedCandidate();
+    // Keep the successor fault beyond one shard after bounded artifact batching.
+    const candidate = await sealedCandidate(
+      failedStep === "dispatch publication preparation successor" ? "three-role-image-work-units" : "base",
+    );
     const path = `/v1/game-candidates/${candidate.id}/publication-preparation`;
     let parameters: import("../../../src/catalogue/reconciliation").ReconciliationWorkflowParams | undefined;
     const workflow = {
@@ -473,6 +482,7 @@ test.each(["prepare publication artifacts", "dispatch publication preparation su
     const started = await advanceWith({ ...testEnv, RECONCILIATION_WORKFLOW: workflow }, `${path}/start`, intent);
     expect(started.response.status).toBe(202);
     const { runReconciliationWorkflow } = await import("../src/reconciliation-workflow");
+    let injected = false;
     await runReconciliationWorkflow(
       testEnv,
       {
@@ -484,13 +494,16 @@ test.each(["prepare publication artifacts", "dispatch publication preparation su
       >,
       {
         do: async (name: string, _config: unknown, callback: () => Promise<string>) => {
-          if (name.startsWith(failedStep))
+          if (name.startsWith(failedStep)) {
+            injected = true;
             throw new Error("Injected Workflow step has exhausted its transport retries");
+          }
           return callback();
         },
       } as unknown as import("cloudflare:workers").WorkflowStep,
     );
     const status = (await get(path)).document;
+    expect(injected).toBe(true);
     expect(status).toMatchObject({
       state: "retry_paused",
       failure_code: "publication_workflow_retry_exhausted",

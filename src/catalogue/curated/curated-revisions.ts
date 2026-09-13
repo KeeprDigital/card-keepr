@@ -208,7 +208,7 @@ export async function createCuratedRevision(
     throw new AdministrationProblem(
       422,
       "production_target_required",
-      "Curated Revision mutations require environment production.",
+      `Curated Revision mutations require environment ${targetEnvironment}.`,
     );
   }
   const expected = requiredString(input.expected_current_revision_id, "expected_current_revision_id");
@@ -1252,7 +1252,7 @@ async function* validateCuratedDraft(draft: CatalogueDraft, cursor: CuratedDraft
   for (let kind = cursor.kind; kind < curatedDraftKinds.length; kind++) {
     const collection = curatedDraftKinds[kind]!;
     for await (const entity of draft.values(collection, kind === cursor.kind ? cursor.after : "")) {
-      let valid = true;
+      let valid: boolean;
       if (collection === "product_relationships") {
         const relationship = entity as ProductRelationship;
         valid = relationshipEndpointPairs[relationship.kind] === `${relationship.from.type}->${relationship.to.type}`;
@@ -1555,7 +1555,7 @@ async function existingRevisionMutation(
     throw new AdministrationProblem(
       422,
       "production_target_required",
-      "Curated Revision mutations require environment production.",
+      `Curated Revision mutations require environment ${targetEnvironment}.`,
     );
   }
   const currentRevisionId = await currentCatalogueRevisionId(database);
@@ -1969,19 +1969,6 @@ async function currentTarget(
     ) as CatalogueCandidate,
   );
   return candidateTarget(candidate, proposal);
-}
-
-async function catalogueCardsAtRevision(
-  database: CatalogueStore,
-  revisionId: string,
-): Promise<CatalogueCandidate["cards"]> {
-  const rows = await curatedStatements
-    .curatedCatalogueCardDocumentsStatement(database, { revisionId })
-    .all<{ document_json: string }>();
-  return rows.results.map(({ document_json }) => {
-    const document = JSON.parse(document_json) as Record<string, unknown>;
-    return (record(document.data) ? document.data : document) as CatalogueCandidate["cards"][number];
-  });
 }
 
 function stripCuratedEntityEffects(input: Record<string, unknown>): Record<string, unknown> {

@@ -1,0 +1,14 @@
+{
+  "eslint.validate": ["javascript", "typescript", "json", "jsonc"],
+  "eslint.codeActionsOnSave.mode": "problems",
+  "editor.codeActionsOnSave": { "source.fixAll.eslint": "explicit" },
+  "[javascript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[typescript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[json]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[jsonc]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[markdown]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[yaml]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "js/ts.experimental.useTsgo": true,
+  "js/ts.tsdk.path": "node_modules/.pnpm/typescript@7.0.2/node_modules/typescript/lib",
+  "js/ts.tsdk.additionalLocations": ["node_modules/.pnpm/typescript@7.0.2/node_modules/typescript/lib"]
+}

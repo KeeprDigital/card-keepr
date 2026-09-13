@@ -398,7 +398,7 @@ function richText(value: unknown): string | null {
   if (rich.type !== "html") throw new AdapterParseFailure("Riftbound rules text encoding changed.");
   return decodeHTML(
     text(rich.body)
-      .replace(/<br\s*\/?\s*>|<\/p>/giu, "\n")
+      .replace(/<br\s*(?:\/\s*)?>|<\/p>/giu, "\n")
       .replace(/<[^>]*>/gu, ""),
   ).trim();
 }

@@ -76,7 +76,7 @@ export const digimonAdapter = createBandaiAdapter(
     productDetail: (html, lineage, url) =>
       parseProductDetail(
         html,
-        { titleSuffix: /\s*(?:[−–-]\s*PRODUCTS)?\s*[|｜]\s*Digimon Card Game$/u, seasonPrecisionReleases: false },
+        { titleSuffix: /(?:\s*[−–-]\s*PRODUCTS)?\s*[|｜]\s*Digimon Card Game$/u, seasonPrecisionReleases: false },
         lineage,
         url,
       ),
@@ -629,7 +629,7 @@ function digimonQaRelatedCards(answerBody: string): { answerHtml: string; relate
   const box = boxes[0]!;
   const boxHtml = box[0]!;
   const boxBody = box[1]!;
-  if (/<div/iu.test(boxBody)) {
+  if (/<div\b/iu.test(boxBody)) {
     throw new AdapterParseFailure("Official Digimon Card Q&A related-cards evidence is unrecognized.");
   }
   if (!/<p\b[^>]*\bclass=["'][^"']*\brelatedTit\b[^"']*["'][^>]*>\s*Related Cards\s*<\/p>/iu.test(boxBody)) {

@@ -13,10 +13,7 @@ import { type CatalogueCandidate, catalogueRevisionIdentity, catalogueStore } fr
 import ingestionWorker from "../src/index";
 import { recoverHistoricalPublication } from "./historical-publication-fixture";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
-import {
-  approveNativeCandidateThroughBinding as approveNativeCandidate,
-  prepareNativeCandidateThroughBinding as prepareNativeCandidate,
-} from "./native-publication-helpers";
+import { seedNativePredecessor, prepareNativeCandidate } from "./native-publication-helpers";
 import * as catalogueExportQueries from "./query-helpers/catalogue-export";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
@@ -988,15 +985,15 @@ describe.each([
   beforeEach(async () => {
     const run = await collect(`/reconciliation/observation-count-${previous}`, `${caseKey}-first`);
     const seed = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", `${caseKey}-first-candidate`);
-    const published = await approveNativeCandidate(seed, `${caseKey}-first-publication`);
-    expect(published.response.status).toBe(200);
-    previousRevision = requiredString(published.document, "resulting_revision_id");
+    // The next transition only inspects a candidate. Its real predecessor is
+    // published, with backup explicitly pending; no restore is needed here.
+    previousRevision = (await seedNativePredecessor(seed, `${caseKey}-first-publication`)).revisionId;
   });
 
   test("uses the normative absolute threshold", async () => {
     const run = await collect(`/reconciliation/observation-count-${current}`, `${caseKey}-next`);
     const candidate = await prepareNativeCandidate(run.id, "one-piece", previousRevision, `${caseKey}-next-candidate`);
-    const records = await nativeCandidateRecords(String(candidate.id));
+    const records = await nativeCandidateRecords(String(candidate.id), ["warnings", "shared_warnings"]);
     const warnings = [...(records.warnings ?? []), ...(records.shared_warnings ?? [])];
     if (!warns) {
       expect(warnings).not.toContainEqual(expect.objectContaining({ code: "source_observation_count_changed" }));
@@ -1123,7 +1120,7 @@ test("an interrupted reconciliation publication recovers the exact digest-bound 
 
 test("reserved recovery never adopts or cleans an existing published export prefix", async () => {
   const firstRun = await collect("/reconciliation/new-locator", "reservation-owner-existing-export");
-  const firstReconciled = await reconcile(firstRun.id);
+  await reconcile(firstRun.id);
   const firstPublished = await recoverHistoricalPublication(firstRun.id, "historical-reservation-owner");
   expect(firstPublished.response.status).toBe(200);
   const existingRevision = requiredString(firstPublished.document, "resulting_revision_id");

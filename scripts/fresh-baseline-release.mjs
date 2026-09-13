@@ -137,7 +137,7 @@ export async function cancelFreshBaselineRelease(environment, adapter) {
 
 async function command(args) {
   await new Promise((resolve, reject) => {
-    const child = spawn("npx", ["--no-install", "wrangler", ...args], { stdio: "inherit" });
+    const child = spawn("pnpm", ["exec", "wrangler", ...args], { stdio: "inherit" });
     child.on("error", reject);
     child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`wrangler_release_step_failed:${code}`))));
   });

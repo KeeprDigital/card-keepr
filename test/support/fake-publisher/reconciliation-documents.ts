@@ -5,7 +5,7 @@ import { capacityPageDocument, syntheticCapacityTier } from "./capacity-workload
 // https://<scenario>-official-source.invalid/reconciliation/<scenario>. Every
 // document is a pure function of the scenario, surface, and request URL.
 export function reconciliationSourceDocument(scenario: string, surface: string, requestUrl: string) {
-  const capacity = /^capacity-(tier-[12]|128-images)-page-([0-9]+)$/u.exec(scenario);
+  const capacity = /^capacity-(tier-[12]|2-images|128-images)-page-([0-9]+)$/u.exec(scenario);
   if (capacity) return capacityPageDocument(syntheticCapacityTier(capacity[1]!), Number(capacity[2]));
   if (scenario.startsWith("inspection-")) {
     const observation = printingObservation({
@@ -1312,28 +1312,6 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
           source_buckets: [],
         },
       })),
-    };
-  }
-  if (scenario === "export-component-over-budget") {
-    return {
-      cards: Array.from({ length: 26 }, (_, index) =>
-        printingObservation({
-          game: "one-piece",
-          profile: "one-piece@1",
-          cardNumber: `OP30-${String(index + 100).padStart(3, "0")}`,
-          name: `Export budget card ${index}`,
-          cardAttributes: onePieceLeaderAttributes(),
-          printingAttributes: { illustration_types: [] },
-          locator: `export-budget-${index}`,
-          lineageMarker: `export-budget-${index}`,
-          printedRulesText: deterministicNoise(index + 1, 490_000),
-          memberships: {
-            products: [],
-            distribution_contexts: [],
-            source_buckets: ["export-budget"],
-          },
-        }),
-      ),
     };
   }
   if (scenario === "scale-1001-products") {

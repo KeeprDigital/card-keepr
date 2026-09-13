@@ -1,9 +1,10 @@
 # Isolated dev
 
-Issue #236 implements the dev slice of #216/ADR 0016. It reuses #151/PR199's
-resource inventory and scratch-isolation findings. PR199's automatic staging and
-manual production triggers are superseded: this workflow deploys only dev.
-Production and staging release behavior is outside this slice.
+[Issue #236](https://github.com/KeeprDigital/card-keepr/issues/236) implements the
+dev slice of the accepted [software release direction](../architecture.md#software-release-direction).
+The automatic dev path is available after the guarded first installation below.
+Staging selection and production promotion remain separate work under
+[issue #216](https://github.com/KeeprDigital/card-keepr/issues/216).
 
 ## Authority and exact commits
 
@@ -11,6 +12,11 @@ Production and staging release behavior is outside this slice.
 in this repository. Checkout pins the triggering run's full SHA. It never resolves
 `main` again as the deployment revision, never triggers staging, and never cancels
 an active dev deployment. CI itself remains non-mutating.
+
+The checked-out commit's shared `.github/actions/setup-toolchain` action selects
+the repository-pinned Node, Corepack and pnpm versions and installs the frozen
+lockfile. The required complete CI check set applies even while this PR is a draft;
+reduced draft CI cannot authorize deployment.
 
 GitHub documents `workflow_run`'s `GITHUB_SHA` as the last commit on the default
 branch, while `github.event.workflow_run.head_sha` identifies the triggering CI
@@ -56,13 +62,13 @@ resets data, accepts a recovery, or approves a Catalogue Candidate.
 
 ## Credentials and resources
 
-| Location | Required configuration |
-| --- | --- |
-| GitHub `dev` environment variables | `DEV_CLOUDFLARE_ACCOUNT_ID`, `DEV_CATALOGUE_DATABASE_ID`, `DEV_DISPOSABLE_DATABASE_ID` |
-| GitHub `dev` environment secrets | `DEV_DEPLOYMENT_TOKEN`, `DEV_API_TRAFFIC_TOKEN` |
-| API Worker secret file, owner-held | `API_BEARER_KEY`, `API_BEARER_KEY_REPLACEMENT` |
+| Location                                 | Required configuration                                                                             |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| GitHub `dev` environment variables       | `DEV_CLOUDFLARE_ACCOUNT_ID`, `DEV_CATALOGUE_DATABASE_ID`, `DEV_DISPOSABLE_DATABASE_ID`             |
+| GitHub `dev` environment secrets         | `DEV_DEPLOYMENT_TOKEN`, `DEV_API_TRAFFIC_TOKEN`                                                    |
+| API Worker secret file, owner-held       | `API_BEARER_KEY`, `API_BEARER_KEY_REPLACEMENT`                                                     |
 | Ingestion Worker secret file, owner-held | `ADMINISTRATION_KEY`, `ADMINISTRATION_KEY_REPLACEMENT`, `D1_EXPORT_TOKEN`, `D1_VERIFICATION_TOKEN` |
-| Owner CLI dev profile | `KEEPR_DEV_API_KEY`, `KEEPR_DEV_ADMINISTRATION_KEY` |
+| Owner CLI dev profile                    | `KEEPR_DEV_API_KEY`, `KEEPR_DEV_ADMINISTRATION_KEY`                                                |
 
 Secrets must be independently issued for dev, with minimum provider-supported
 permissions. No production credential is copied. No administration credential is
@@ -72,14 +78,24 @@ defines D1 Edit and Workers Scripts Edit at account scope. A separate token on t
 existing shared account therefore has provider authority over production resources
 too; its name does not enforce a dev-only boundary. Application namespace/binding
 checks constrain this executor's requests, but cannot contain a compromised token.
-Before configuring live credentials, the owner must explicitly choose and accept
-shared-account authority or provide a separate dev account/bounded provider service.
-That architecture decision is currently pending; live credential configuration is
-blocked. No such token has been created or stored by this implementation.
+Before configuring live credentials, record the owner's choice of shared-account
+authority or a separate non-production account. The selected account must also
+own the configured `keepr.digital` route zone: the current compiler preserves
+that zone and the provider verifier rejects foreign-account zones. A separate
+account therefore needs its zone/DNS arrangement resolved before installation;
+changing the account ID alone does not establish a usable isolated route.
 
-Dev uses `card-keepr-api-dev` and `card-keepr-ingestion-dev`, one catalogue D1 and
-one `card-keepr-disposable-verification-dev`, four `-dev` R2 buckets, four `-dev`
-Workflow names, its own service binding and rate-limit namespaces 2001–2005.
+The config compiler owns the exact target inventory:
+
+| Resource                          | Dev identity                                                                                                                            |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| API / ingestion Workers           | `card-keepr-api-dev`, `card-keepr-ingestion-dev`                                                                                        |
+| Catalogue / Disposable Restore D1 | `card-keepr-catalogue-dev`, `card-keepr-disposable-verification-dev`; distinct provider-issued UUIDs                                    |
+| Private R2                        | `card-keepr-evidence-dev`, `card-keepr-printing-images-dev`, `card-keepr-catalogue-exports-dev`, `card-keepr-backups-dev`               |
+| Workflows                         | `card-keepr-evidence-ingestion-dev`, `card-keepr-evidence-host-dev`, `card-keepr-reconciliation-dev`, `card-keepr-catalogue-backup-dev` |
+| Service binding                   | `OFFICIAL_SOURCE_TRANSPORT` → `card-keepr-ingestion-dev` / `OfficialSourceTransport`                                                    |
+| Rate limits                       | API 2001, image 2002, administration 2003, API liveness 2004, ingestion liveness 2005                                                   |
+
 Routes are `dev.card.keepr.digital/api[/…]` and `/ingest[/…]`. Configure a proxied
 DNS placeholder for that hostname in `keepr.digital`; do not change production
 DNS. R2 public access stays disabled. Workers.dev and preview URLs stay disabled.
@@ -110,8 +126,12 @@ recovery, beyond the two steady-state dev databases. Storage reserves four full
 500 MB new/replacement targets. This establishes provisioning headroom, not
 measured ingestion capacity or a future staging allocation.
 
-Current read-only evidence is in `docs/evidence/236-dev-prerequisites.json`.
-Refresh it before an operation; it deliberately does not authorize deployment.
+Keep dated inventory, plan output and validation in ignored `.artifacts/` while
+working; record the relevant evidence with the issue or PR. Refresh observations
+before each operation. Capacity evidence does not authorize deployment and a
+conservative Free count/storage check does not establish runtime-plan suitability.
+The configured Worker CPU/subrequest limits must be supported by the selected
+account before installation.
 
 The owner-only first installation is outside the administration CLI:
 
@@ -143,12 +163,11 @@ The owner-only first installation is outside the administration CLI:
    first-install failure, inspect the retained fence/preparation; the tool refuses
    to overwrite the used baseline. Do not reset it to retry.
 
-For ordinary owner operations, `node cli/keepr.mjs status --target dev --json`
-selects only scoped keys and canonical dev URLs. Mutations that require an
-`--environment` confirmation use `--environment dev` with `--target dev`; exact
-resolved-target confirmations remain required. Curated Revision operations retain
-their separate stdin-secret interface. Omitting `--target` preserves existing local
-and production CLI behavior. `release production --target dev` is rejected.
+For ordinary owner operations, `pnpm --silent run keepr status --target dev --json`
+selects the dev profile. The [administration contract](../../contracts/ADMINISTRATION.md#interaction-rules)
+owns scoped credentials, environment confirmations and command behavior. Dev uses
+the same [native publication](publication.md) and [backup/recovery](backup-recovery.md)
+protocols as production against its own data; collection alone does not publish.
 
 ## Evidence and remaining live gates
 
@@ -157,9 +176,8 @@ real SQLite migrations and the canonical preparation code. They are not evidence
 of an actual GitHub runner or Cloudflare deployment, and contain no real Source
 captures. Live acceptance requires the real exact-SHA CI run, resource receipt,
 verified secret/route/binding inventory, first-install result and subsequent
-automatic dev smoke result. At implementation time Actions run 34033467488 failed
-before all nine jobs started due billing/spending allowance; no local override was
-added and no billing or production operation was performed.
+automatic dev smoke result. Keep CI evidence bound to the actual integrated commit;
+historical main, draft or local results do not establish live automatic deployment.
 
 References: [GitHub OIDC](https://docs.github.com/en/actions/reference/security/oidc),
 [D1 limits](https://developers.cloudflare.com/d1/platform/limits/),

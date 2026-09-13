@@ -12,7 +12,6 @@ import {
 import * as cardSearchQueries from "./query-helpers/card-search";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import {
-  approve,
   collect,
   get,
   installReconciliationSuite,
@@ -540,30 +539,3 @@ test("Card search repair rejects an oversized legacy Card before materializing i
     detail: "A retained Card exceeds the durable 65536-byte search repair source bound.",
   });
 }, 60_000);
-
-test("retired aggregate approval cannot start an over-budget publication or write immutable objects", async () => {
-  const run = await collect("/reconciliation/export-component-over-budget", "reconcile-export-component-over-budget");
-  const reconciled = await reconcile(run.id);
-  if (reconciled.response.status !== 200) {
-    throw new Error(JSON.stringify(reconciled.document));
-  }
-  const currentBefore = await publishedCatalogueQueries
-    .readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB)
-    .first<{ current_revision_id: string }>();
-  const objectsBefore = (await testEnv.CATALOGUE_EXPORTS.list()).objects.map((object) => object.key).sort();
-
-  const blocked = await approve(reconciled.document);
-  const objectsAfter = (await testEnv.CATALOGUE_EXPORTS.list()).objects.map((object) => object.key).sort();
-  const currentAfter = await publishedCatalogueQueries
-    .readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB)
-    .first<{ current_revision_id: string }>();
-
-  expect(blocked.response.status).toBe(410);
-  expect(blocked.document).toMatchObject({ code: "run_approval_retired" });
-  expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({
-    state: "awaiting_approval",
-    failure_code: null,
-  });
-  expect(objectsAfter).toEqual(objectsBefore);
-  expect(currentAfter).toEqual(currentBefore);
-});

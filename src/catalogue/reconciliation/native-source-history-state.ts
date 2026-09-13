@@ -46,13 +46,47 @@ export class NativeSourceHistory {
     this.count = cursor.count;
     this.entities.resumeAt(cursor.entities);
   }
-  async retain(value: SourceHistoryRecord) {
-    if (!(await this.index.has(value.id))) {
-      this.count++;
+  async retain(value: SourceHistoryRecord, options?: { preserveFirst: boolean }) {
+    const previous = await this.index.get(value.id);
+    if (options?.preserveFirst && previous) value = { ...value, first: previous.first };
+    if (!previous) {
       const group = sourceHistoryGroup(value);
-      await this.entities.seed(group, ((await this.entities.get(group)) ?? 0) + 1);
+      const count = ((await this.entities.get(group)) ?? 0) + 1;
+      this.entities.beginObservation();
+      this.index.beginObservation();
+      await this.index.setAlongside(value.id, value, { index: this.entities, key: group, value: count });
+      this.count++;
+    } else {
+      await this.index.seed(value.id, value);
     }
-    await this.index.seed(value.id, value);
+  }
+  async retainObservations(records: readonly SourceHistoryRecord[]) {
+    if (records.length > 8 || new TextEncoder().encode(canonicalJson(records)).byteLength > 131072)
+      throw new Error("Source history observation batch exceeds its bounded allowance.");
+    const previous = await this.index.getMany(records.map((record) => record.id));
+    const counts = previous && (await this.entities.getMany(records.map(sourceHistoryGroup)));
+    if (!previous || !counts) {
+      for (const record of records) await this.retain(record, { preserveFirst: true });
+      return;
+    }
+    const entries = [],
+      entityEntries = [];
+    let added = 0;
+    for (const record of records) {
+      const prior = previous.get(record.id);
+      const value = prior ? { ...record, first: prior.first } : record;
+      if (!prior) {
+        const group = sourceHistoryGroup(value);
+        const count = (counts.get(group) ?? 0) + 1;
+        counts.set(group, count);
+        entityEntries.push({ key: group, value: count });
+        added++;
+      }
+      entries.push({ key: value.id, value });
+      previous.set(value.id, value);
+    }
+    await this.index.seedManyAlongside(entries, { index: this.entities, entries: entityEntries });
+    this.count += added;
   }
   async *entries(after = "") {
     for await (const entry of this.index.latestEntries(after)) {

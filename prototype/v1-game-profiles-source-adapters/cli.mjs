@@ -1,20 +1,9 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-import {
-  evaluateScenario,
-  validatePrintingIdentityContract,
-} from "./contract.mjs";
+import { evaluateScenario } from "./contract.mjs";
 import { scenarios } from "./scenarios.mjs";
 
 const BOLD = "\x1b[1m";
 const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
-const here = dirname(fileURLToPath(import.meta.url));
-
-validatePrintingIdentityContract(
-  readFileSync(join(here, "CONTRACT.md"), "utf8"),
-);
 
 let selected = null;
 

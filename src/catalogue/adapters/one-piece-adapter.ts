@@ -85,7 +85,7 @@ const fullOnePieceAdapter = createBandaiAdapter(
       parseProductDetail(
         html,
         {
-          titleSuffix: /\s*(?:[−–-]\s*PRODUCTS)?\s*[|｜]\s*ONE PIECE CARD GAME - Official Web Site$/u,
+          titleSuffix: /(?:\s*[−–-]\s*PRODUCTS)?\s*[|｜]\s*ONE PIECE CARD GAME - Official Web Site$/u,
           seasonPrecisionReleases: false,
         },
         lineage,
@@ -337,7 +337,7 @@ function parseOnePieceBandaiCardListV1(
   }
   const modalMatches = [
     ...html.matchAll(
-      /<dl\b[^>]*\bclass=["'][^"']*\bmodalCol\b[^"']*["'][^>]*\s+id=["']([^"']+)["'][^>]*>([\s\S]*?)<\/dl>/giu,
+      /<dl\b[^>]*\bclass=["'][^"']*\bmodalCol\b[^"']*["'][^>]*\sid=["']([^"']+)["'][^>]*>([\s\S]*?)<\/dl>/giu,
     ),
   ];
   const declaredCount = Number.parseInt(declaredMatch[1]!, 10);

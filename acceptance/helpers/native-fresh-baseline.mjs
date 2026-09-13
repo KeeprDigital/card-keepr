@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { createServer } from "node:http";
+import { createFixtureServer } from "./http-fixture.mjs";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -72,7 +72,7 @@ export async function proveNativePopulatedHandoff({
   assert.equal(stale.status, 409);
   assert.equal(stale.body.code, "cursor_revision_unavailable");
   const dispatches = [];
-  const github = createServer(async (req, res) => {
+  const github = createFixtureServer(async (req, res) => {
     let text = "";
     for await (const bytes of req) text += bytes;
     dispatches.push(JSON.parse(text));

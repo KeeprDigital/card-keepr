@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://card-keepr.invalid/schemas/catalogue-export-manifest@5",
+  "title": "Card Keepr Catalogue Export manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "serialization_profile",
+    "export_schema_major",
+    "catalogue_revision",
+    "published_at",
+    "export_created_at",
+    "supported_games",
+    "components",
+    "manifest_sha256",
+    "page"
+  ],
+  "properties": {
+    "format": {
+      "const": "card-keepr-catalogue-export-manifest@5"
+    },
+    "serialization_profile": {
+      "const": "card-keepr-ndjson-gzip@1"
+    },
+    "export_schema_major": {
+      "const": 5
+    },
+    "catalogue_revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "content_sha256"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "content_sha256": {
+          "$ref": "#/$defs/Sha256"
+        }
+      }
+    },
+    "published_at": {
+      "$ref": "#/$defs/Timestamp"
+    },
+    "export_created_at": {
+      "$ref": "#/$defs/Timestamp"
+    },
+    "supported_games": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/SupportedGame"
+      }
+    },
+    "components": {
+      "type": "array",
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/Component"
+      }
+    },
+    "manifest_sha256": {
+      "$ref": "#/$defs/Sha256"
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["next_cursor"],
+      "properties": {
+        "next_cursor": {
+          "type": ["string", "null"]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "OpaqueId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "Sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "Timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "SupportedGame": {
+      "enum": ["one-piece", "fusion-world", "digimon", "gundam", "riftbound"]
+    },
+    "Component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "media_type",
+        "compression",
+        "record_schema",
+        "records",
+        "uncompressed_bytes",
+        "content_sha256",
+        "compressed_bytes",
+        "compressed_sha256",
+        "kind"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^(one-piece|fusion-world|digimon|gundam|riftbound)\\.(0|[1-9][0-9]*)$"
+        },
+        "media_type": {
+          "const": "application/x-ndjson"
+        },
+        "compression": {
+          "const": "gzip"
+        },
+        "record_schema": {
+          "enum": [
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/SupportedGameRecord",
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/GameProfileRecord",
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/CardRecord",
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/PrintingRecord",
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/PrintingImageRecord",
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/ProductRecord",
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/ReleaseRecord",
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/DistributionContextRecord",
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/ErratumRecord",
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/RelationshipRecord",
+            "https://card-keepr.invalid/schemas/catalogue-export-record@5#/$defs/IdentityCorrectionRecord"
+          ]
+        },
+        "records": {
+          "const": 1
+        },
+        "uncompressed_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "content_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "compressed_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "compressed_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "kind": {
+          "enum": [
+            "supported-games",
+            "game-profiles",
+            "cards",
+            "printings",
+            "printing-images",
+            "products",
+            "releases",
+            "distribution-contexts",
+            "errata",
+            "relationships",
+            "identity-corrections"
+          ]
+        }
+      }
+    }
+  }
+}

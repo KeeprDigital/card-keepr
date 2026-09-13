@@ -7,7 +7,7 @@
   "limits": { "cpu_ms": 10000, "subrequests": 5000 },
   "routes": [
     { "pattern": "card.keepr.digital/ingest", "zone_name": "keepr.digital" },
-    { "pattern": "card.keepr.digital/ingest/*", "zone_name": "keepr.digital" }
+    { "pattern": "card.keepr.digital/ingest/*", "zone_name": "keepr.digital" },
   ],
   "vars": {
     "PUBLIC_BASE_URL": "https://card.keepr.digital/ingest",
@@ -17,65 +17,65 @@
     "CLOUDFLARE_ACCOUNT_ID": "3ec389380c7b82e6a172e6f351d4aad9",
     "CATALOGUE_D1_DATABASE_ID": "2469f888-1530-4bef-bc58-17dc298bb598",
     "DISPOSABLE_D1_DATABASE_ID": "cd5807b4-cde9-44ea-8a37-e650d1182ee8",
-    "KEEPR_ENVIRONMENT": "production"
+    "KEEPR_ENVIRONMENT": "production",
   },
   "placement": {
-    "mode": "smart"
+    "mode": "smart",
   },
   "workflows": [
     {
       "name": "card-keepr-evidence-ingestion",
       "binding": "EVIDENCE_INGESTION_WORKFLOW",
-      "class_name": "EvidenceIngestionWorkflow"
+      "class_name": "EvidenceIngestionWorkflow",
     },
     {
       "name": "card-keepr-evidence-host",
       "binding": "EVIDENCE_HOST_WORKFLOW",
-      "class_name": "EvidenceHostWorkflow"
+      "class_name": "EvidenceHostWorkflow",
     },
     {
       "name": "card-keepr-reconciliation",
       "binding": "RECONCILIATION_WORKFLOW",
-      "class_name": "ReconciliationWorkflow"
+      "class_name": "ReconciliationWorkflow",
     },
     {
       "name": "card-keepr-catalogue-backup",
       "binding": "CATALOGUE_BACKUP_WORKFLOW",
-      "class_name": "CatalogueBackupWorkflow"
-    }
+      "class_name": "CatalogueBackupWorkflow",
+    },
   ],
   "services": [
     {
       "binding": "OFFICIAL_SOURCE_TRANSPORT",
       "service": "card-keepr-ingestion",
-      "entrypoint": "OfficialSourceTransport"
-    }
+      "entrypoint": "OfficialSourceTransport",
+    },
   ],
   "d1_databases": [
     {
       "binding": "CATALOGUE_DB",
       "database_name": "card-keepr-catalogue",
       "database_id": "2469f888-1530-4bef-bc58-17dc298bb598",
-      "migrations_dir": "../../migrations"
-    }
+      "migrations_dir": "../../migrations",
+    },
   ],
   "r2_buckets": [
     {
       "binding": "EVIDENCE_OBJECTS",
-      "bucket_name": "card-keepr-evidence"
+      "bucket_name": "card-keepr-evidence",
     },
     {
       "binding": "PRINTING_IMAGES",
-      "bucket_name": "card-keepr-printing-images"
+      "bucket_name": "card-keepr-printing-images",
     },
     {
       "binding": "CATALOGUE_EXPORTS",
-      "bucket_name": "card-keepr-catalogue-exports"
+      "bucket_name": "card-keepr-catalogue-exports",
     },
     {
       "binding": "BACKUPS",
-      "bucket_name": "card-keepr-backups"
-    }
+      "bucket_name": "card-keepr-backups",
+    },
   ],
   "ratelimits": [
     {
@@ -83,31 +83,31 @@
       "namespace_id": "1003",
       "simple": {
         "limit": 30,
-        "period": 60
-      }
+        "period": 60,
+      },
     },
     {
       "name": "INGESTION_LIVENESS_RATE_LIMIT",
       "namespace_id": "1005",
       "simple": {
         "limit": 60,
-        "period": 60
-      }
-    }
+        "period": 60,
+      },
+    },
   ],
   "version_metadata": {
-    "binding": "CF_VERSION_METADATA"
+    "binding": "CF_VERSION_METADATA",
   },
   "observability": {
     "enabled": true,
     "logs": {
       "enabled": true,
       "head_sampling_rate": 1,
-      "invocation_logs": true
+      "invocation_logs": true,
     },
     "traces": {
       "enabled": true,
-      "head_sampling_rate": 0.01
-    }
-  }
+      "head_sampling_rate": 0.01,
+    },
+  },
 }

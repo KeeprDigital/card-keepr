@@ -320,13 +320,6 @@ export async function capturePreparedAttempt(
           request_made: false,
         };
       }
-      return recordFailedTransportAttempt(database, run, sourceRequest, operation, {
-        outcome: "storage_failure",
-        completedAt: new Date().toISOString(),
-        status: operation.http_status,
-        headers: operation.response_headers_json === null ? {} : parseStringRecord(operation.response_headers_json),
-        diagnostic: "The staged Source Snapshot object was unavailable during recovery.",
-      });
     } catch (error) {
       return recordFailedTransportAttempt(database, run, sourceRequest, operation, {
         outcome: "storage_failure",
@@ -336,6 +329,13 @@ export async function capturePreparedAttempt(
         diagnostic: errorMessage(error, "The staged Source Snapshot object could not be recovered."),
       });
     }
+    return recordFailedTransportAttempt(database, run, sourceRequest, operation, {
+      outcome: "storage_failure",
+      completedAt: new Date().toISOString(),
+      status: operation.http_status,
+      headers: operation.response_headers_json === null ? {} : parseStringRecord(operation.response_headers_json),
+      diagnostic: "The staged Source Snapshot object was unavailable during recovery.",
+    });
   }
 
   if (operation.state === "planned") {

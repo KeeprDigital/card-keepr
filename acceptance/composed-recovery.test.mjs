@@ -336,16 +336,10 @@ async function proveNativeComposition(t, proof) {
   const ajv = new Ajv2020({ allErrors: true });
   addFormats(ajv);
   const manifestSchema = JSON.parse(
-    await readFile(
-      resolve("prototype/formalize-implementation-contracts/schemas/catalogue-export-manifest-v5.schema.json"),
-      "utf8",
-    ),
+    await readFile(resolve("contracts/schemas/catalogue-export-manifest-v5.schema.json"), "utf8"),
   );
   const recordSchema = JSON.parse(
-    await readFile(
-      resolve("prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json"),
-      "utf8",
-    ),
+    await readFile(resolve("contracts/schemas/catalogue-export-record-v5.schema.json"), "utf8"),
   );
   const validateManifest = ajv.compile(manifestSchema),
     validateRecord = ajv.compile(recordSchema);
@@ -994,9 +988,8 @@ async function proveNativeComposition(t, proof) {
   };
   const restoredConfigPath = join(directory, "restored-ingestion.json");
   await writeFile(restoredConfigPath, JSON.stringify(restoredConfig));
-  const { reconstructCardSearchAfterD1RestoreStatements } = await import(
-    "../src/catalogue/backup-recovery/card-search-recovery-statements.ts"
-  );
+  const { reconstructCardSearchAfterD1RestoreStatements } =
+    await import("../src/catalogue/backup-recovery/card-search-recovery-statements.ts");
   const sqlPath = join(directory, "restored.sql");
   await writeFile(
     sqlPath,

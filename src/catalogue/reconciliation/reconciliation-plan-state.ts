@@ -1,4 +1,8 @@
-import { observedPlanStatement, previouslyObservedEntitiesStatement } from "./reconciliation-plan-repository";
+import {
+  membershipPlanStatement,
+  observedPlanStatement,
+  previouslyObservedEntitiesStatement,
+} from "./reconciliation-plan-repository";
 import { type CatalogueStore, type SupportedGame, sha256Text } from "../shared";
 import type { Memberships, PrintingCompatibility, ProvenancedWithdrawal } from "./reconciliation-model";
 import { ReconciliationReducerIndex, ReconciliationReducerStorageError } from "./reconciliation-reducer-state";
@@ -38,6 +42,11 @@ export class ReconciliationPlanState implements AsyncIterable<ObservationPlan> {
   async append(plan: ObservationPlan) {
     await this.index.seed(plan.sourceObservationId, { id: plan.sourceObservationId, plan });
   }
+  async appendMany(plans: readonly ObservationPlan[]) {
+    await this.index.seedMany(
+      plans.map((plan) => ({ key: plan.sourceObservationId, value: { id: plan.sourceObservationId, plan } })),
+    );
+  }
   async get(observationId: string) {
     return (await this.index.get(observationId))?.plan;
   }
@@ -49,6 +58,21 @@ export class ReconciliationPlanState implements AsyncIterable<ObservationPlan> {
   }
   async *values(after = "") {
     for await (const value of this.index.entityValues(after)) yield value.plan;
+  }
+  async hasMemberships(game: SupportedGame): Promise<boolean> {
+    let row: { content: string; sha256: string } | null;
+    try {
+      row = await membershipPlanStatement(this.database, this.runId, this.index.position, game).first<{
+        content: string;
+        sha256: string;
+      }>();
+    } catch (cause) {
+      throw new ReconciliationReducerStorageError(cause);
+    }
+    if (!row) return false;
+    if ((await sha256Text(row.content)) !== row.sha256)
+      throw new Error("Observation plan failed integrity verification.");
+    return true;
   }
   async hasObserved(kind: "card" | "printing", entityId: string, lineage?: string): Promise<boolean> {
     let row: { content: string; sha256: string } | null;

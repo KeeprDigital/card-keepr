@@ -427,7 +427,6 @@ function digimonCompleteDiscoveryFacets(lineage, surface, marker) {
 
 function officialFixtureSurface(lineage, requestUrl, requestSurface) {
   if (requestSurface !== null) return requestSurface;
-  const path = `${requestUrl.pathname}${requestUrl.search}`;
   if (
     (lineage === "one-piece-en" && requestUrl.pathname === "/products/") ||
     (lineage === "fusion-world-en" && requestUrl.pathname === "/fw/en/products/") ||

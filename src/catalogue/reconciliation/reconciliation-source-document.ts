@@ -10,7 +10,7 @@ import { type CatalogueStore, type StreamingSha256State, canonicalJson, sha256Te
 import { documentStorage } from "./reconciliation-document";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
-import { readSourceObservation } from "./reconciliation-source-observation";
+import { readSourceObservations } from "./reconciliation-source-observation";
 import {
   sourceDocumentHeaderStatement,
   retainSourceDocumentHeaderStatement,
@@ -135,7 +135,11 @@ export async function prepareSourceDocuments<T extends SourceRow>(
         throw new Error("Source record manifest is not sealed to its persisted records.");
       cursor.values = { ...manifest, observations: true };
       cursor.recordDigest = await sourceRecordInitialDigest(row.observation_set_id, bounded.header_json);
+      // Retain the verified R2 manifest before entering the independently paged D1 scan.
+      await save();
     }
+    let pages = 0,
+      verifiedBytes = 0;
     while (cursor.observations < bounded.next_ordinal) {
       const records = (
         await documentStorage(() =>
@@ -148,8 +152,12 @@ export async function prepareSourceDocuments<T extends SourceRow>(
           throw new Error("Source record manifest failed integrity verification.");
         cursor.recordDigest = await sourceRecordNextDigest(cursor.recordDigest, record);
         cursor.observations++;
+        verifiedBytes += new TextEncoder().encode(record.content).byteLength;
       }
-      await save();
+      if (++pages === 8 || verifiedBytes >= 512000) {
+        await save();
+        pages = verifiedBytes = 0;
+      }
     }
     if (cursor.recordDigest !== bounded.digest) throw new Error("Source record root digest changed.");
     validate(row, cursor.values, cursor.observations);
@@ -191,8 +199,8 @@ export async function readSourceDocument<T extends SourceRow>(database: Catalogu
     ...header,
     observations: {
       async *[Symbol.asyncIterator]() {
-        for (let index = 0; index < header.observationCount; index++)
-          yield await readSourceObservation(database, row.observation_set_id, index);
+        for await (const entry of readSourceObservations(database, row.observation_set_id, 0, header.observationCount))
+          yield entry.value;
       },
     },
   };

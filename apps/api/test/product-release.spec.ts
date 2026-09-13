@@ -3,7 +3,7 @@ import { exports } from "cloudflare:workers";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { beforeEach, expect, test, vi } from "vitest";
-import apiSchema from "../../../prototype/formalize-implementation-contracts/schemas/api.schema.json";
+import apiSchema from "../../../contracts/schemas/api.schema.json";
 import { productReleasePublicationStatements } from "../../../src/catalogue/reconciliation";
 import { type CatalogueCandidate, catalogueCandidateContract, catalogueStore } from "../../../src/catalogue/shared";
 import * as curatedQueries from "../../ingestion/test/query-helpers/curated";

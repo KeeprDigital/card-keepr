@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { verifyCompositionArtifacts } from "./composition-artifacts";
 import {
   captureCompositionSnapshot,
@@ -6,7 +7,7 @@ import {
 } from "./composition-verification";
 import { publicationBackupReservationStatement } from "../shared";
 import { storedProductApiProjection } from "../read";
-import { AdministrationProblem, type CatalogueStore, canonicalJson, StreamingSha256, sha256Text } from "../shared";
+import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { backupDispatchStatus } from "./backup-dispatch";
 import * as backupStatements from "./backup-repository";
 import {
@@ -609,7 +610,7 @@ export async function createVerifiedCatalogueBackup(
         }
         exportedBookmark = exported.bookmark;
         const sized = new FixedLengthStream(exported.size);
-        const contentDigest = new StreamingSha256();
+        const contentDigest = createHash("sha256");
         const hashing = new TransformStream<Uint8Array, Uint8Array>({
           transform(chunk, controller) {
             contentDigest.update(chunk);
@@ -635,7 +636,7 @@ export async function createVerifiedCatalogueBackup(
         if (retained === null || retained.size !== exported.size) {
           throw new Error("Retained backup digest is unavailable.");
         }
-        contentSha256 = contentDigest.digestHex();
+        contentSha256 = contentDigest.digest("hex");
         exportBytes = retained.size;
       }
       await transitionExportedAttempt(
@@ -895,7 +896,7 @@ async function verifyRestoredCatalogueQueries(
           representativeCardId: expected.representative_card_id,
           searchText: expected.representative_search_text,
         });
-  let representativeDocuments = false;
+  let representativeDocuments: boolean;
   try {
     representativeDocuments = await validRepresentativeDocuments(row, expected, input.expectedRepresentativeDocuments);
   } catch {
@@ -1412,7 +1413,7 @@ function apiCardId(row: Record<string, unknown>): string | null {
 }
 
 async function digestRetainedObject(object: R2ObjectBody): Promise<{ sha256: string; size: number }> {
-  const digest = new StreamingSha256();
+  const digest = createHash("sha256");
   const reader = object.body.getReader();
   let size = 0;
   for (;;) {
@@ -1424,7 +1425,7 @@ async function digestRetainedObject(object: R2ObjectBody): Promise<{ sha256: str
   if (size !== object.size) {
     throw new Error("Retained backup object size does not match its evidence.");
   }
-  return { sha256: digest.digestHex(), size };
+  return { sha256: digest.digest("hex"), size };
 }
 
 function assertCompleteRestoredVerification(result: RestoredCatalogueVerification): void {

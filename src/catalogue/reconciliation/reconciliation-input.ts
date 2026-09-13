@@ -271,6 +271,22 @@ export async function* verifiedReconciliationRecordEntries<T>(
     yield { ...entry, value: entry.value as T };
 }
 
+/** Group a few hydrated inputs while preserving their exact per-record continuation cursors. */
+export async function* reconciliationInputGroups<T extends { byteLength: number }>(source: AsyncIterable<T>) {
+  let records: T[] = [];
+  let bytes = 0;
+  for await (const entry of source) {
+    if (records.length && (records.length === 8 || bytes + entry.byteLength > 131072)) {
+      yield records;
+      records = [];
+      bytes = 0;
+    }
+    records.push(entry);
+    bytes += entry.byteLength;
+  }
+  if (records.length) yield records;
+}
+
 /** Advance across every verified envelope; restore text only for the selected record kind. */
 export async function* scannedReconciliationRecordEntries<T>(
   database: CatalogueStore,

@@ -4,7 +4,7 @@ import { get, requiredString, testEnv } from "./reconciliation-helpers";
 /** Observe the operation returned by creation, never whichever candidate happens to share its collection. */
 export async function waitForNativeCandidate(id: string, expectedState = "sealed", timeoutMs = 8_000) {
   const deadline = Date.now() + timeoutMs;
-  let observed: Record<string, unknown> = {};
+  let observed: Record<string, unknown>;
   do {
     const header = await get(`/v1/game-candidates/${id}`);
     expect(header.response.status, JSON.stringify(header.document)).toBe(200);
@@ -35,8 +35,7 @@ export async function waitForDispatchedNativeCandidates(
     const status = await parent.status();
     if (status.status === "complete") {
       const output = status.output as
-        | { ingestion_run_id?: string; game_preparations?: Record<string, unknown>[] }
-        | undefined;
+        { ingestion_run_id?: string; game_preparations?: Record<string, unknown>[] } | undefined;
       if (!Array.isArray(output?.game_preparations))
         throw new Error(
           `Collection ${runId} completed without native dispatch; request native preparation explicitly.`,
@@ -64,7 +63,8 @@ export async function waitForDispatchedNativeCandidates(
   throw new Error(`Collection ${runId} has not returned its native dispatch receipt.`);
 }
 
-export async function nativeCandidateRecords(candidateId: string) {
+/** Read only the requested record kinds; omit kinds when the complete candidate is the assertion. */
+export async function nativeCandidateRecords(candidateId: string, kinds?: readonly string[]) {
   const records: Record<string, Record<string, unknown>[]> = {};
   let cursor: string | null = null;
   do {
@@ -73,6 +73,7 @@ export async function nativeCandidateRecords(candidateId: string) {
     );
     expect(page.response.status).toBe(200);
     for (const partition of page.document.partitions as { kind: string; ordinal: number }[]) {
+      if (kinds !== undefined && !kinds.includes(partition.kind)) continue;
       const detail = await get(`/v1/game-candidates/${candidateId}/partitions/${partition.ordinal}`);
       expect(detail.response.status).toBe(200);
       records[partition.kind] ??= [];

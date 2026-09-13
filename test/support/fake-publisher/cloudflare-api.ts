@@ -1,12 +1,12 @@
-import { createHash } from "node:crypto";
 import type { PublisherScenario } from "./scenario.ts";
 import type { SqliteRestore } from "./sqlite-restore.ts";
+import { sqliteExportResponse, type SqliteExportFile } from "./sqlite-transfer.ts";
 
 export interface CloudflareApiMockOptions {
   readonly accountId: string;
   readonly disposableDatabaseId: string;
   readonly verificationToken: string;
-  readonly exportSql: () => Promise<string>;
+  readonly exportSql: () => Promise<SqliteExportFile>;
   readonly restore: SqliteRestore;
 }
 
@@ -17,7 +17,7 @@ export interface CloudflareApiMockOptions {
 // clean.
 export function cloudflareApiMock(options: CloudflareApiMockOptions): PublisherScenario {
   const { restore } = options;
-  let exported: string | undefined;
+  let exported: SqliteExportFile | undefined;
   const ambiguousD1Tables = new Map<string, string>();
   const unconfirmedD1Drops = new Set<string>();
   let disposableD1Generation = 0;
@@ -57,15 +57,11 @@ export function cloudflareApiMock(options: CloudflareApiMockOptions): PublisherS
     }
     if (url.hostname === "vitest-d1-export.invalid") {
       if (exported === undefined) throw new Error("No source SQL has been exported.");
-      const body = exported;
-      return new Response(body, {
-        headers: { "content-length": String(Buffer.byteLength(body)) },
-      });
+      return sqliteExportResponse(exported);
     }
     if (url.hostname === "vitest-d1-upload.invalid") {
-      const bytes = new Uint8Array(await request.arrayBuffer());
-      restore.upload(new TextDecoder().decode(bytes));
-      const etag = createHash("md5").update(bytes).digest("hex");
+      if (request.body === null) throw new Error("SQL upload has no body.");
+      const etag = await restore.upload(request.body);
       return new Response(null, { headers: { etag: `"${etag}"` } });
     }
     if (url.hostname === "api.cloudflare.com" && url.pathname.endsWith("/export")) {
@@ -89,7 +85,7 @@ export function cloudflareApiMock(options: CloudflareApiMockOptions): PublisherS
       const body = await request.clone().json<{
         action?: string;
       }>();
-      if (body.action === "ingest") restore.import();
+      if (body.action === "ingest") await restore.import();
       return Response.json({
         success: true,
         result:

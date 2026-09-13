@@ -56,6 +56,10 @@ export class ReconciliationCandidateState implements CatalogueDraft {
     this.collections.add(kind);
     await this.index(kind).seed(entity.id, { id: entity.id, entity });
   }
+  async setMany<K extends CatalogueEntityCollection>(kind: K, entities: CatalogueDraftEntity<K>[]): Promise<void> {
+    this.collections.add(kind);
+    await this.index(kind).seedMany(entities.map((entity) => ({ key: entity.id, value: { id: entity.id, entity } })));
+  }
   async delete(kind: CatalogueEntityCollection, id: string): Promise<void> {
     this.collections.add(kind);
     await this.index(kind).seed(id, { id, entity: null });

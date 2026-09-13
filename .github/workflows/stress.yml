@@ -29,17 +29,24 @@ jobs:
   stress:
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.suite == 'full' && 45 || 5 }}
+    env:
+      CI_TEST_TMPFS_SIZE: ${{ inputs.suite == 'full' && '2g' || '512m' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
+      - name: Set up repository tooling
+        uses: ./.github/actions/setup-toolchain
       - if: inputs.suite != 'full'
-        run: npm run test:stress
+        run: bash scripts/ci-test.sh pnpm run test:stress --reporter=default --reporter=json --outputFile=stress-results.json
       - if: inputs.suite == 'full'
-        run: npm run test:stress:full
+        run: bash scripts/ci-test.sh pnpm run test:stress:full --reporter=default --reporter=json --outputFile=stress-results.json
+      - name: Retain complete stress results and callback measurements
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: stress-results-${{ inputs.suite || 'bounded' }}
+          path: stress-results.json
+          if-no-files-found: warn
+          retention-days: 7
 
   # Nobody watches a scheduled run, so a failure opens one `bug` issue (or
   # comments on the open one) with the run link. The issue is the only place

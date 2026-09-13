@@ -1,0 +1,11 @@
+node_modules
+.claude/worktrees
+.wrangler
+prototype
+acceptance/fixtures
+**/worker-configuration.d.ts
+src/catalogue/shared/document-validators.mjs
+pnpm-lock.yaml
+coverage
+test-results
+.artifacts

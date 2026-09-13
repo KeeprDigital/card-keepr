@@ -19,10 +19,14 @@ import {
   StreamingSha256,
 } from "../shared";
 import { assertIdentifier } from "../source-evidence";
-import { inspectGameCandidate } from "./game-candidate";
-import { gameCandidatePartitionStatement } from "./game-candidate-repository";
+import { inspectGameCandidate, gameCandidateDocument, type GameCandidate } from "./game-candidate";
+import { gameCandidatePartitionStatement, gameCandidateStatement } from "./game-candidate-repository";
 import { reconciliationTextStatement } from "./reconciliation-text-repository";
-import { retainPublicationObject, verifyPublicationObject } from "./publication-artifact-storage";
+import {
+  publicationObjectBatch,
+  retainPublicationObject,
+  verifyPublicationObject,
+} from "./publication-artifact-storage";
 import * as repository from "./publication-preparation-repository";
 import {
   PublicationIntegrityError,
@@ -115,13 +119,12 @@ export async function advancePublicationPreparation(
     .publicationPreparationActionStatement(db, input.idempotency_key)
     .first<{ request_json: string; result_json: string }>();
   if (replay) return replayResult(replay, request);
-  const candidate = await inspectGameCandidate(db, id);
-  env = {
-    CATALOGUE_DB: db,
-    PRINTING_IMAGES: env.PRINTING_IMAGES,
-    CATALOGUE_EXPORTS: trackedStagingBucket(db, env.CATALOGUE_EXPORTS, "CATALOGUE_EXPORTS", candidate.preparation_id),
-  };
-  const current = await repository.publicationPreparationStatement(db, id).first<PreparationState>();
+  const [candidates, preparations] = await db.batch([
+    gameCandidateStatement(db, id),
+    repository.publicationPreparationStatement(db, id),
+  ]);
+  const candidate = gameCandidateDocument((candidates!.results[0] as GameCandidate | undefined) ?? null);
+  const current = (preparations!.results[0] as PreparationState | undefined) ?? null;
   try {
     await repository
       .publicationPreparationGuard(db, id, input.manifest_digest, input.generation, at, input.sequence)
@@ -138,7 +141,6 @@ export async function advancePublicationPreparation(
         "publication_preparation_not_paused",
         "Only an exhausted transient retry can resume.",
       );
-    const initial = await initialCursor(db, candidate);
     const state: PreparationState = current
       ? { ...current }
       : {
@@ -148,7 +150,7 @@ export async function advancePublicationPreparation(
           sequence: 0,
           state: "preparing",
           phase: "images",
-          cursor_json: canonicalJson(initial),
+          cursor_json: canonicalJson(await initialCursor(db, candidate)),
           failures: 0,
           failure_code: null,
           artifact_count: 0,
@@ -164,7 +166,33 @@ export async function advancePublicationPreparation(
     } else {
       try {
         const cursor = JSON.parse(state.cursor_json) as PreparationCursor;
-        await prepareUnit(env, candidate, state, cursor, statements);
+        const phase = state.phase;
+        const readPartition = publicationPartitionReader(db, id);
+        const objects = publicationObjectBatch(db, env.CATALOGUE_EXPORTS, candidate.preparation_id);
+        const artifacts: (() => D1PreparedStatement)[] = [];
+        // A phase boundary commits before the next phase reads the receipts we staged.
+        // Composition nodes also commit individually before a parent reads them.
+        for (let unit = 0; unit < 6; unit++) {
+          const continueBatch = await prepareUnit(
+            env,
+            candidate,
+            state,
+            cursor,
+            statements,
+            readPartition,
+            objects,
+            artifacts,
+          );
+          if (
+            continueBatch === false ||
+            phase === "composition" ||
+            state.phase !== phase ||
+            state.state !== "preparing"
+          )
+            break;
+        }
+        await objects.flush();
+        statements.push(...artifacts.map((receipt) => receipt()));
         state.cursor_json = canonicalJson(cursor);
         state.failures = 0;
         state.failure_code = null;
@@ -259,43 +287,79 @@ async function initialCursor(db: CatalogueStore, c: Candidate): Promise<Preparat
     ),
   };
 }
+/** One verified partition per callback; the next durable unit always reads storage again. */
+function publicationPartitionReader(db: CatalogueStore, id: string) {
+  const read = async (ordinal: number) => {
+    const partition = await gameCandidatePartitionStatement(db, id, ordinal).first<{
+      kind: string;
+      content: string;
+      sha256: string;
+      byte_length: number;
+      record_count: number;
+    }>();
+    if (
+      !partition ||
+      new TextEncoder().encode(partition.content).byteLength !== partition.byte_length ||
+      partition.byte_length > 524288 ||
+      (await sha256Text(partition.content)) !== partition.sha256
+    )
+      throw new PublicationIntegrityError("publication_partition_corrupt");
+    const records = JSON.parse(partition.content) as Envelope[];
+    if (!Array.isArray(records) || records.length !== partition.record_count || records.length > 500)
+      throw new PublicationIntegrityError("publication_partition_corrupt");
+    return { ordinal, partition, records };
+  };
+  let retained: Awaited<ReturnType<typeof read>> | undefined;
+  return async (ordinal: number) => {
+    if (retained?.ordinal !== ordinal) retained = await read(ordinal);
+    return retained;
+  };
+}
 async function prepareUnit(
   env: Environment,
   candidate: Candidate,
   state: PreparationState,
   cursor: PreparationCursor,
   statements: D1PreparedStatement[],
+  readPartition: ReturnType<typeof publicationPartitionReader>,
+  objects: ReturnType<typeof publicationObjectBatch>,
+  artifacts: (() => D1PreparedStatement)[],
 ) {
   const db = env.CATALOGUE_DB,
     id = candidate.id;
+  let boundBytes = 0;
   const artifact = (
     kind: string,
-    ref: { object_key: string; sha256: string; byte_length: number; reused: boolean },
+    reference:
+      | Awaited<ReturnType<typeof objects.stage>>
+      | { object_key: string; sha256: string; byte_length: number; reused: boolean },
   ) => {
-    statements.push(
-      repository.retainPublicationArtifact(
+    const ordinal = state.artifact_count++;
+    artifacts.push(() => {
+      const ref = "receipt" in reference ? reference.receipt() : reference;
+      return repository.retainPublicationArtifact(
         db,
         id,
-        state.artifact_count++,
+        ordinal,
         kind,
         ref.object_key,
         ref.sha256,
         ref.byte_length,
         ref.reused,
-      ),
-    );
+      );
+    });
   };
   if (state.phase === "composition") {
     const refs = (
-      await (cursor.level === 0
-        ? repository.publicationArtifacts(db, id, cursor.after)
-        : repository.publicationNodes(db, id, cursor.level - 1, cursor.after)
+      await (
+        cursor.level === 0
+          ? repository.publicationArtifacts(db, id, cursor.after)
+          : repository.publicationNodes(db, id, cursor.level - 1, cursor.after)
       ).all<ArtifactReference>()
     ).results;
     if (!refs.length) {
       if (cursor.level === 0 && cursor.node === 0) {
-        const empty = await retainPublicationObject(
-          env.CATALOGUE_EXPORTS,
+        const empty = await objects.stage(
           canonicalJson({ contract: "card-keepr-publication-composition-node@1", level: 0, children: [] }),
         );
         statements.push(
@@ -306,8 +370,7 @@ async function prepareUnit(
       }
       if (cursor.node === 1) {
         const root = (await repository.publicationNodes(db, id, cursor.level, -1).all<ArtifactReference>()).results[0]!;
-        const sealed = await retainPublicationObject(
-          env.CATALOGUE_EXPORTS,
+        const sealed = await objects.stage(
           canonicalJson({
             contract: "card-keepr-game-publication-artifacts@1",
             candidate_id: id,
@@ -328,8 +391,7 @@ async function prepareUnit(
       }
       return;
     }
-    const ref = await retainPublicationObject(
-      env.CATALOGUE_EXPORTS,
+    const ref = await objects.stage(
       canonicalJson({
         contract: "card-keepr-publication-composition-node@1",
         level: cursor.level,
@@ -361,23 +423,7 @@ async function prepareUnit(
     cursor.partition = cursor.record = cursor.text = cursor.chunk = cursor.subrecord = 0;
     return;
   }
-  const partition = await gameCandidatePartitionStatement(db, id, cursor.partition).first<{
-    kind: string;
-    content: string;
-    sha256: string;
-    byte_length: number;
-    record_count: number;
-  }>();
-  if (
-    !partition ||
-    new TextEncoder().encode(partition.content).byteLength !== partition.byte_length ||
-    partition.byte_length > 524288 ||
-    (await sha256Text(partition.content)) !== partition.sha256
-  )
-    throw new PublicationIntegrityError("publication_partition_corrupt");
-  const records = JSON.parse(partition.content) as Envelope[];
-  if (!Array.isArray(records) || records.length !== partition.record_count || records.length > 500)
-    throw new PublicationIntegrityError("publication_partition_corrupt");
+  const { partition, records } = await readPartition(cursor.partition);
   const nextPartition = async () => {
     if (state.phase === "images")
       cursor.chain = await sha256Text(
@@ -461,11 +507,7 @@ async function prepareUnit(
     hash.update(bytes);
     cursor.text_hash = hash.checkpoint;
     cursor.text_bytes = (cursor.text_bytes ?? 0) + bytes.byteLength;
-    const ref = await retainPublicationObject(
-      env.CATALOGUE_EXPORTS,
-      chunk.content,
-      `publication-text/${part.sha256}/${cursor.chunk}`,
-    );
+    const ref = await objects.stage(chunk.content, `publication-text/${part.sha256}/${cursor.chunk}`);
     artifact("text", ref);
     statements.push(repository.retainPublicReadText(db, id, part.sha256, cursor.chunk, chunk.content));
     cursor.chunk++;
@@ -477,7 +519,8 @@ async function prepareUnit(
       delete cursor.text_hash;
       delete cursor.text_bytes;
     }
-    return;
+    // Five small text chunks plus one 128 KiB chunk stay below the D1 batch bound.
+    return bytes.byteLength <= 65536;
   }
   if (state.phase === "projections" && kind === "cards" && cursor.text < 3) {
     const paths = [["official_identity", "value"], ["name"], ["effective_rules_text"]];
@@ -519,7 +562,7 @@ async function prepareUnit(
       ordinal: cursor.search_ordinal ?? 0,
       text: chunk,
     });
-    const ref = await retainPublicationObject(env.CATALOGUE_EXPORTS, content);
+    const ref = await objects.stage(content);
     statements.push(
       repository.retainPublicationSearchChunk(db, id, String(value.id), cursor.text, cursor.search_ordinal ?? 0, chunk),
     );
@@ -544,7 +587,7 @@ async function prepareUnit(
   });
   if (new TextEncoder().encode(content).byteLength > 524288)
     throw new PublicationIntegrityError("publication_capacity_exceeded");
-  if (state.phase === "exports") artifact(kind, await retainPublicationObject(env.CATALOGUE_EXPORTS, content));
+  if (state.phase === "exports") artifact(kind, await objects.stage(content));
   else {
     const projection = canonicalJson({
       contract: "card-keepr-game-query-batch@1",
@@ -564,9 +607,9 @@ async function prepareUnit(
             ]
           : [],
     });
-    if (new TextEncoder().encode(projection).byteLength > 524288)
-      throw new PublicationIntegrityError("publication_capacity_exceeded");
-    const ref = await retainPublicationObject(env.CATALOGUE_EXPORTS, projection);
+    boundBytes = new TextEncoder().encode(projection).byteLength;
+    if (boundBytes > 524288) throw new PublicationIntegrityError("publication_capacity_exceeded");
+    const ref = await objects.stage(projection);
     statements.push(repository.retainPublicationProjection(db, id, state.artifact_count, kind, projection, ref.sha256));
     statements.push(repository.retainPublicationQueryDocument(db, id, kind, String(value.id), state.artifact_count));
     statements.push(
@@ -581,11 +624,11 @@ async function prepareUnit(
     artifact("query_search", ref);
     const lifecycle = await preparePublicLifecycle(db, candidate, kind, envelope.value);
     if (lifecycle) {
+      boundBytes += new TextEncoder().encode(canonicalJson(lifecycle)).byteLength;
       statements.push(retainPublicLifecycle(db, lifecycle));
       artifact(
         "public_lifecycle",
-        await retainPublicationObject(
-          env.CATALOGUE_EXPORTS,
+        await objects.stage(
           canonicalJson({
             contract: "card-keepr-game-export-record@1",
             kind: "public_lifecycle",
@@ -602,6 +645,9 @@ async function prepareUnit(
     cursor.subrecord = 0;
   }
   cursor.text = cursor.chunk = 0;
+  // Five <=64 KiB units plus one <=512 KiB projection and <=128 KiB
+  // lifecycle leave room for the fixed receipts/cursor within a 1 MiB D1 batch.
+  return boundBytes <= 65536;
 }
 
 /** Preparation of a composition only retains references; #228 owns selecting a published head. */

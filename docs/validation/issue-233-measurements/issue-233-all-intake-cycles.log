@@ -1,6 +1,0 @@
-
-> check:catalogue-cycles
-> node scripts/catalogue-import-cycles.mjs
-
-Scanned 319 modules in src/catalogue (including type-only imports).
-No strongly connected component larger than one module.

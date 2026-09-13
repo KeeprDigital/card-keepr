@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+  },
+  "include": [
+    "cli/lib/config.mjs",
+    "cli/lib/http-client.mjs",
+    "scripts/dev.mjs",
+    "scripts/format.mjs",
+    "scripts/production-release-d1.mjs",
+    "scripts/production-release-state.mjs",
+  ],
+}

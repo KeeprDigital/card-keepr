@@ -9,7 +9,7 @@ import { test } from "vitest";
 const root = resolve(import.meta.dirname, "../..");
 
 test("Official Errata evidence has an explicit normative contract", async () => {
-  const schema = JSON.parse(await readFile(resolve(root, "docs/contracts/official-errata.schema.json"), "utf8"));
+  const schema = JSON.parse(await readFile(resolve(root, "contracts/schemas/official-errata.schema.json"), "utf8"));
   assert.deepEqual(schema.required, [
     "authority",
     "field",
@@ -23,10 +23,7 @@ test("Official Errata evidence has an explicit normative contract", async () => 
   assert.deepEqual(schema.properties.target_type.enum, ["card", "printing"]);
   assert.deepEqual(schema.properties.corrected_value.type, ["string", "null"]);
   const exportSchema = JSON.parse(
-    await readFile(
-      resolve(root, "prototype/formalize-implementation-contracts/schemas/catalogue-export-record-v5.schema.json"),
-      "utf8",
-    ),
+    await readFile(resolve(root, "contracts/schemas/catalogue-export-record-v5.schema.json"), "utf8"),
   );
   assert.deepEqual(exportSchema.$defs.ErratumRecord.properties.corrected_value.type, ["string", "null"]);
 });
@@ -154,10 +151,8 @@ test("the baseline enforces the reconciliation workflow and Errata constraints",
 
 test("the Card collection contract normatively exposes projection unavailability as 503", async () => {
   const [openapi, apiSchema] = await Promise.all([
-    readFile(resolve(root, "prototype/formalize-implementation-contracts/openapi.json"), "utf8").then(JSON.parse),
-    readFile(resolve(root, "prototype/formalize-implementation-contracts/schemas/api.schema.json"), "utf8").then(
-      JSON.parse,
-    ),
+    readFile(resolve(root, "contracts/openapi.json"), "utf8").then(JSON.parse),
+    readFile(resolve(root, "contracts/schemas/api.schema.json"), "utf8").then(JSON.parse),
   ]);
   assert.equal(openapi.paths["/cards"].get.responses["503"].$ref, "#/components/responses/CatalogueQueryUnavailable");
   assert.equal(

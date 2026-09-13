@@ -82,7 +82,7 @@ export const backupRecoveryRoutes = [
       throw new AdministrationProblem(
         422,
         "production_target_required",
-        "Catalogue recovery requires environment production.",
+        `Catalogue recovery requires environment ${env.KEEPR_ENVIRONMENT ?? "production"}.`,
       );
     }
     const method = requiredString(body, "method");

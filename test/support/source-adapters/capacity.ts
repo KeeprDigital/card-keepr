@@ -25,9 +25,11 @@ export const capacitySourceAdapter = {
   reconciliationCapability: "catalogue",
   recordExtraction: {
     matches: ({ url }) =>
-      /^https:\/\/official-source\.invalid\/reconciliation\/capacity-(tier-[12]|128-images)-page-[0-9]+$/u.test(url),
+      /^https:\/\/official-source\.invalid\/reconciliation\/capacity-(tier-[12]|2-images|128-images)-page-[0-9]+$/u.test(
+        url,
+      ),
     async extract(source, context) {
-      const match = /\/capacity-(tier-[12]|128-images)-page-([0-9]+)$/u.exec(context.url);
+      const match = /\/capacity-(tier-[12]|2-images|128-images)-page-([0-9]+)$/u.exec(context.url);
       if (!match) throw new Error("Capacity source page URL is outside the fixture contract");
       const workload = syntheticCapacityTier(match[1]!);
       const page = Number(match[2]);

@@ -13,7 +13,7 @@ if (
   args.some((arg) => arg !== "--list" && arg !== "--all" && arg !== shardArg && arg !== scenario) ||
   (scenario && args.filter((arg) => !arg.startsWith("--")).length !== 1) ||
   (scenario && args.includes("--all")) ||
-  (!investigation && (scenario || args.includes("--all"))) ||
+  (!investigation && args.includes("--all")) ||
   (shardArg &&
     (!match ||
       !Number.isSafeInteger(Number(match[1])) ||
@@ -22,14 +22,15 @@ if (
       Number(match[1]) > Number(match[2])))
 ) {
   console.error(
-    "usage: node scripts/acceptance-tier.mjs [default|smoke|runtime|extended|benchmark] [scenario|--all] [--shard=1/3] [--list]",
+    "usage: node scripts/acceptance-tier.mjs [default|smoke|extended|benchmark] [scenario|--all] [--shard=1/3] [--list]",
   );
   process.exit(2);
 }
 const root = resolve(import.meta.dirname, "..");
 let files = selectAcceptanceFiles(await readdir(resolve(root, "acceptance")), tier);
 if (scenario) {
-  const filename = scenario.endsWith(".test.mjs") ? scenario : `${scenario}.test.mjs`;
+  const name = scenario.replace(/^acceptance\//u, "");
+  const filename = name.endsWith(".test.mjs") ? name : `${name}.test.mjs`;
   if (!files.includes(filename)) {
     console.error(`Unknown ${tier} scenario: ${scenario}. Use --list to see available scenarios.`);
     process.exit(2);
@@ -69,10 +70,6 @@ if (args.includes("--list")) {
 if (files.length === 0) {
   console.error("No acceptance tests selected.");
   process.exit(1);
-}
-if (files.includes("reconciliation-capacity-probe.test.mjs") && !process.env.KEEPR_CAPACITY_OUTPUT_PREFIX) {
-  console.error("The reconciliation capacity probe requires KEEPR_CAPACITY_OUTPUT_PREFIX for its measurement report.");
-  process.exit(2);
 }
 console.log(`${tier}${shardArg ? ` ${shardArg}` : ""}: ${files.length} files`);
 const child = spawn(

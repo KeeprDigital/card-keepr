@@ -56,7 +56,7 @@ test("Curated validation resolves a published native Printing through its exact 
   await t.test("native validation does not generate code during the request", async () => {
     const OriginalFunction = globalThis.Function;
     const originalError = console.error;
-    // biome-ignore lint/complexity/useArrowFunction: the replacement must remain constructible to reproduce new Function rejection.
+    // The replacement must remain constructible to reproduce new Function rejection.
     globalThis.Function = function () {
       throw new EvalError("Code generation from strings disallowed for this context");
     };

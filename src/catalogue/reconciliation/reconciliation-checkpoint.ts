@@ -4,9 +4,10 @@ import {
   exactReconciliationCheckpointStatement,
   latestReconciliationCheckpointStatement,
   retainReconciliationCheckpointStatement,
+  reconciliationCheckpointWindowStatement,
 } from "./reconciliation-checkpoint-repository";
 
-type CheckpointRow = { ordinal: number; content: string; sha256: string };
+export type CheckpointRow = { ordinal: number; content: string; sha256: string };
 const readWindow = Symbol("reconciliation checkpoint read window");
 type WindowStore = CatalogueStore & {
   [readWindow]?: { runId: string; rows: Map<string, CheckpointRow | null> };
@@ -17,18 +18,19 @@ export async function prepareCheckpointReadWindow(database: CatalogueStore, runI
   if (phases.length > 16 || new Set(phases).size !== phases.length)
     throw new Error("Invalid reconciliation checkpoint read window.");
   const rows = new Map<string, CheckpointRow | null>();
-  for (let offset = 0; offset < phases.length; offset += 6) {
-    const group = phases.slice(offset, offset + 6);
-    // Six immutable 64 KiB checkpoints stay within the metadata fetch allowance.
-    const results = await documentStorage(async () => {
-      const batch = await database.batch<CheckpointRow>(
-        group.map((phase) => latestReconciliationCheckpointStatement(database, runId, phase)),
-      );
-      if (batch.length !== group.length || batch.some((result) => !result.success || !Array.isArray(result.results)))
-        throw new Error("Reconciliation checkpoint read window returned an incomplete batch.");
-      return batch;
-    });
-    for (const [index, phase] of group.entries()) rows.set(phase, results[index]!.results[0] ?? null);
+  let remaining = [...phases].sort();
+  while (remaining.length) {
+    const page = (
+      await documentStorage(() =>
+        database.batch<CheckpointRow & { phase: string }>([
+          reconciliationCheckpointWindowStatement(database, runId, remaining),
+        ]),
+      )
+    )[0];
+    if (!page?.success || !page.results.length || page.results.some((row, index) => row.phase !== remaining[index]))
+      throw new Error("Reconciliation checkpoint read window returned an incomplete page.");
+    for (const row of page.results) rows.set(row.phase, row.content === null ? null : row);
+    remaining = remaining.slice(page.results.length);
   }
   (database as WindowStore)[readWindow] = { runId, rows };
 }
@@ -36,14 +38,17 @@ export async function reconciliationCheckpoint<T>(
   database: CatalogueStore,
   runId: string,
   phase: string,
+  retained?: CheckpointRow | null,
 ): Promise<{ ordinal: number; value: T } | null> {
   const window = (database as WindowStore)[readWindow];
   const row =
-    window?.runId === runId && window.rows.has(phase)
-      ? (window.rows.get(phase) ?? null)
-      : await documentStorage(() =>
-          latestReconciliationCheckpointStatement(database, runId, phase).first<CheckpointRow>(),
-        );
+    retained !== undefined
+      ? retained
+      : window?.runId === runId && window.rows.has(phase)
+        ? (window.rows.get(phase) ?? null)
+        : await documentStorage(() =>
+            latestReconciliationCheckpointStatement(database, runId, phase).first<CheckpointRow>(),
+          );
   if (!row) return null;
   if ((await sha256Text(row.content)) !== row.sha256)
     throw new Error("Reconciliation checkpoint failed integrity verification.");

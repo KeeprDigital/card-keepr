@@ -1,246 +1,97 @@
-# Catalogue clusters
+# Catalogue implementation
 
-`src/catalogue` is ten cluster directories. It got there by an
-expand-contract series:
+Use [domain language](../../CONTEXT.md) and [architecture](../../docs/architecture.md)
+for meaning and decisions. Each cluster exposes an explicit `index.ts`; internal
+modules are implementation details. The import gate counts type imports too.
 
-- **#96 (expand)**: each cluster directory gained an `index.ts` that
-  re-exported its intended public surface from the flat files.
-- **#97 (migrate)**: each flat file moved into its cluster and imports were
-  repointed at the cluster indexes.
-- **#98 (contract)**: the compatibility re-exports were removed, the read
-  paths that reached past published projections were given
-  projection-backed alternatives (migration `0004_read_projection_facts.sql`),
-  and the boundary below became a CI gate.
+## Ownership and imports
 
-## The contract, and how it is enforced
+| Cluster           | Owns                                                                                   | May import                                         |
+| ----------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `shared`          | Canonical serialization, domain types, CatalogueStore, workflow and storage primitives | No other cluster                                   |
+| `adapters`        | Source registrations, acquisition surfaces and pure parsers                            | `shared`                                           |
+| `read`            | Published consumer projections, filtering, pagination and HTTP representations         | `shared`, `adapters`                               |
+| `curated`         | Curated Revision validation, immutable lifecycle and pinned selection                  | `shared`                                           |
+| `source-evidence` | Collection, retained bytes, authority, intake, collection recovery and cleanup         | `shared`, `adapters`, `curated`                    |
+| `reconciliation`  | Canonical identity, per-game preparation, inspection, artifacts and native publication | `shared`, `adapters`, `curated`, `source-evidence` |
+| `export`          | Export validation and guarded package deletion                                         | `shared`, `reconciliation`                         |
+| `backup-recovery` | Backup dispatch, SQL export/restore and verified recovery                              | `shared`, `read`                                   |
+| `ingestion`       | Administration composition, release guards and retained historical operations          | Every cluster                                      |
 
-Two scripts run in the `checks` job of `.github/workflows/ci.yml`:
+Cross-cluster imports target the owning index; indexes enumerate exports from their
+actual defining modules. The API Worker imports only `read`, `shared`, `src/http`
+and runtime capabilities. `src/http` is a leaf and imports no catalogue code.
+Tests and tools may import internals. `pnpm run check:imports` enforces boundaries
+and detects cycles; its `allowedImports` table is the executable dependency rule.
 
-- `npm run check:catalogue-cycles` (`scripts/catalogue-import-cycles.mjs`)
-  walks every module under `src/catalogue` and fails on any import cycle.
-- `npm run check:catalogue-boundary`
-  (`scripts/catalogue-import-boundary.mjs`) walks the worker entrypoints,
-  `src/http`, and every module under `src/catalogue`, resolves each
-  relative import, and fails on any edge that breaks a rule below. A
-  violation names the importing file, the import specifier, and the rule.
+## Persistence and transitions
 
-The rules:
+Domain functions choose reads, execute writes and compose transactions.
+Repository factories prepare and bind named SQL statements without executing
+queries or making domain decisions. The branded CatalogueStore exposes atomic
+execution; only repositories obtain statement-preparation capability.
 
-| Rule | What it enforces |
-| --- | --- |
-| `api-worker-surface` | `apps/api/src/**` imports, out of `src/`, only the `read` and `shared` cluster indexes, `src/http/**`, and `src/runtime-capabilities.mjs`. The api worker never reaches an administration cluster or a cluster internal. |
-| `worker-cluster-index` | A worker entrypoint imports a catalogue cluster only through its `index.ts`. |
-| `cluster-direction` | A module under `src/catalogue/<cluster>/` imports only the clusters listed for it under "Dependency direction" below. In particular no `read` module imports `ingestion`, `reconciliation`, `curated`, or `source-evidence`, and `shared` imports no other cluster. |
-| `cluster-index` | A cross-cluster import targets the cluster's `index.ts`, never a module inside it. Within a cluster, modules import each other by relative path. |
-| `http-leaf` | `src/http/**` imports nothing under `src/catalogue`, so the api worker cannot reach a cluster through it. |
+`atomicRepositoryStatement` binds a primary mutation to its authority/state
+guards and effects. CatalogueStore expands recipes into one native D1 batch,
+returns primary results in order and rejects oversized batches before writing.
+A failed guard rolls back sibling writes. Callers still check affected-row counts.
+Dynamic table choices stay inside the repository.
 
-Type-only imports count. Tests, scripts, the CLI, and acceptance may
-import cluster internals by path; they are not scanned.
+Ingestion Run identity remains immutable. Current state is a projection of
+append-only run events; accepted CAS transitions update both atomically. Rejected
+writes append nothing. State-authorized effects verify the projection against its
+latest event. Projection rebuild requires release/recovery maintenance authority,
+validates history and payloads, and does not replay external effects. State-table
+changes must keep the database transition guard and parity test aligned.
 
-The boundary is also a data contract: the `read` cluster queries only
-published projections (`catalogue_state`, `catalogue_revisions`,
-`catalogue_query_revisions`, `revision_*`, `card_search_fts_state`,
-`catalogue_exports`, `catalogue_export_deletion*`,
-`catalogue_curated_provenance`, `source_freshness`), never a
-reconciliation, source-evidence, or curated table. The facts it serves are
-written into those tables at publication time by the owning cluster:
+## Adapters and reconciliation
 
-- Printing Image content (`read.ts`) used to join
-  `reconciled_printing_images`; `revision_printing_images` now carries
-  `media_type`, `content_sha256`, `content_byte_length`, and `object_key`,
-  written by the `ingestion` cluster's publication statements.
-- Historical Legality Status and Product evidence sidecars used published
-  evidence projections. Issue #217 removes these consumer surfaces under ADRs
-  0013–0014; their retained administrative and recovery evidence remains intact.
+Adapters parse retained bytes and discover requests without I/O. Transport
+permission does not designate fact authority. Production registrations live in
+`adapters/source-adapters.ts`; synthetic adapters are explicitly composed under
+`test/support`. Classify expected source-contract rejection separately from
+configuration/programming failures. Retained-byte tests verify representative
+outputs; their golden matrix has no automatic update path.
 
-Migration 0004 backfills the two new column sets on a populated database
-and adds an `AFTER INSERT` guard on each table that rejects a revision row
-without them (`acceptance/schema-hygiene.test.mjs` proves both).
+Source collection IDs identify provenance. Preparation IDs own checkpoints,
+input/record/text partitions, pinned decision cutoffs and staging mappings;
+candidates own game partitions. Published visibility follows candidate publication,
+never the collection's state. Empty pinned decision selections are meaningful:
+later owner decisions cannot leak into an existing preparation through a fallback.
 
-## Which cluster owns which file
+Workflow history carries bounded references. D1 records generation/shard budgets
+before attempts; lost results and restarts cannot replenish them. Successor IDs
+are deterministic. Pause/resume uses owner generation transitions and preserves
+the original deadline. Use `shared/workflow-driver.ts` for binding control calls;
+reconcile ambiguous dispatch against the exact retained instance.
 
-Every module belongs to exactly one cluster directory (the former flat
-file names are unchanged). The right-hand column is the public surface the
-cluster's `index.ts` re-exports; anything a module exports that is not
-listed there is cluster-internal. The rule for what an index exposes:
-whatever a worker entrypoint, another cluster, a script, the CLI,
-acceptance, or a test consumes. No index uses `export *`; every re-export
-is enumerated, and each is re-exported from the module that defines it.
+Storage-error wrappers take `() => Promise<T>`. Construct and bind statements
+inside that callback so synchronous failures are classified too. Digest, ordinal,
+receipt and capacity validation stay outside it; semantic errors must not become
+transient storage failures. Large text is separately chunked and digest-verified;
+metadata caches never retain hydrated unbounded content.
 
-| Cluster | Files | Public surface (`index.ts`) |
-| --- | --- | --- |
-| `shared` | `serialization.ts`, `export-compression.ts`, `calendar-date.ts`, `streaming-sha256.ts`, `idempotent-identities.ts`, `administration-problem.ts`, `operational-diagnostics.ts`, `spine-revision.mjs` (+ `.d.mts`), `catalogue-candidate-types.ts`, `ingestion-run-state.ts`, `workflow-driver.ts`, `workflow-steps.ts`, `workflow-progress.ts`, `curated-provenance.ts`, `reconciliation-profile.ts`, `reconciliation-payload.ts`, `export-limits.ts` | Canonical JSON and hashing, deterministic gzip, calendar-date check, streaming SHA-256, idempotent identities, `AdministrationProblem`, operational diagnostics, `SPINE_REVISION_ID`, the Catalogue Candidate contract and its leaf types, Curated Provenance types, Game Profile contract helpers, D1 payload chunking and the guarded atomic batch, export limits, Ingestion Run state and transition contract, Workflow driver and named-step contract |
-| `read` | `read.ts`, `detail-representation.ts`, `card-collection-read.ts`, `printing-collection-read.ts`, `product-release-read.ts`, `card-search.ts`, `source-freshness.ts` | The api worker's response builders and read problems (cards, printings, products, exports, status), the card-search text and query contract, source-freshness storage helpers |
-| `ingestion` | `ingestion.ts`, `candidate-inspection.ts`, `catalogue-revision-retention.ts`, `card-search-materialization.ts`, `card-search-repair-administration.ts`, `production-release.ts` | Ingestion Run administration (`observeHistoricalRunApproval`, `rejectRun`, `retryRun`, `retryPublicationCleanup`, `showRun`, `inspectCandidate`, `administrationStatus`), Production Release smoke targets, guarded card-search repair, `prepareProductionRelease` |
-| `reconciliation` | `card-printing-reconciliation.ts`, `digimon-reconciliation.ts`, `errata-rules-text.ts`, `reconciliation-candidate-store.ts`, `reconciliation-evidence.ts`, `reconciliation-model.ts`, `reconciliation-observation.ts`, `reconciliation-publication.ts`, `reconciliation-read.ts`, `reconciliation-relationships.ts`, `reconciliation-repository.ts`, `reconciliation-workflow.ts`, `product-release-catalogue.ts`, `product-release-projection.ts`, `product-release-publication.ts`, `publication-lifecycle-types.ts` | Card and Printing reconciliation entry points, the reconciliation Workflow, candidate persistence (`digestBoundCandidatePayload`, `failReconciliationWorkflow`, `retainedReconciliationResult`), the publication plan and its evidence types, observation parsing, Gundam listing-graph validation, erratum export helpers, Product and Release reconciliation, projection, and publication statements |
-| `source-evidence` | `source-evidence.ts`, `source-evidence-batch.ts`, `source-evidence-capture.ts`, `source-evidence-model.ts`, `source-evidence-parsing.ts`, `source-evidence-repository.ts`, `source-evidence-repository-types.ts`, `collection-inspection.ts`, `collection-recovery.ts`, `workflow-progress.ts` | Evidence run administration (start, retry, show, extend capacity, reparse, snapshot and observation-set content), request batch collection, capture and host pacing, Evidence Plan parsing and request failure policy, the evidence repository's run, request, pause, resume, terminate, and Workflow Attempt operations, collection Workflow classification |
-| `adapters` | `source-adapters.ts`, `source-adapter-registration-types.ts`, `product-release-source-adapters.ts`, `one-piece-source-adapter.ts`, `one-piece-official-errata-html.ts`, `official-artwork-identity.ts`, `official-source-field-coverage.ts`, `official-source-release-normalization.ts`, `official-source-scope.ts` | Source Adapter Version registrations and lookups, adapter binding and request-surface assertions, the Official Source scope, discovery requests, official artwork identity, the One Piece errata parser, card-content observations |
-| `curated` | `curated-revisions.ts` | Curated Revision administration (validate, create, reaffirm, retire, supersede, list, show), run pinning and application, curated publication statements |
-| `backup-recovery` | `backup-recovery.ts`, `backup-workflow.ts`, `recovery.ts`, `card-search-recovery.ts`, `card-search-recovery-statements.ts` | Backup Attempt creation, status, and verification, the backup Workflow, Catalogue Recovery (begin, inspect, verify, accept, restore guard), the D1 providers, card-search export and restore reconstruction |
-| `export` | `export.ts`, `export-validation.ts`, `catalogue-export-deletion.ts` | `buildCatalogueExport` and its types, export record and manifest verification, Catalogue Export deletion |
+## Published reads
 
-## Dependency direction
+Read models consume published composition/projections. Cursors bind revision and
+normalized filters; unavailable first-page projections return 503, stale pinned
+cursors return 409 with an absolute restart link. Validate filters before
+conditional responses. Keep ETags canonical and stored content independent of the
+public host. Query builders use indexed facts rather than parsing stored JSON.
+Public export reads serve verified immutable bytes and remain independent of
+query-projection archival.
 
-`shared` imports nothing outside itself. The direction between the other
-clusters, read as "may import from", is the `allowedImports` table the
-boundary check enforces:
+## Backup and cleanup
 
-- `adapters` -> `shared`
-- `read` -> `shared`, `adapters`
-- `curated` -> `shared`
-- `source-evidence` -> `shared`, `adapters`, `curated`
-- `reconciliation` -> `shared`, `adapters`, `curated`, `source-evidence`
-- `export` -> `shared`, `reconciliation`
-- `backup-recovery` -> `shared`, `read`
-- `ingestion` -> every cluster
+Publication reserves its backup and dispatch identity atomically with the new
+revision. Dispatch acknowledgement is distinct from successful restore. SQL
+export temporarily fences writers and reconstructs derived search before releasing
+the fence; actual recovery stays blocked through owner acceptance. Verification
+checks schema, retained rows and the private/public R2 artifact closure.
 
-The api worker imports `read` and `shared` only. Consumer serialization uses the
-shared card-content projection; source-health and evidence metadata remain
-administrative. The ingestion worker imports the other domain clusters.
-
-## Edges #97 repointed to keep the cluster graph acyclic
-
-The flat module graph was acyclic, but three edges crossed clusters against
-the direction above. Each was a compatibility re-export whose real owner is
-`shared`, so #97 repointed the import at the owner, removing the edge:
-
-- `source-evidence-*.ts`, `card-printing-reconciliation.ts`,
-  `reconciliation-workflow.ts`, and `card-search-repair-administration.ts`
-  import `AdministrationProblem` from `./ingestion`; the owner is
-  `administration-problem.ts` (`shared`). The `ingestion` index deliberately
-  does not re-export it.
-- `curated-revisions.ts` imports `type ProductRelationship` from
-  `./product-release-catalogue`; the type is defined in
-  `catalogue-candidate-types.ts` (`shared`).
-
-The other compatibility re-exports (`catalogue-candidate.ts`, the
-`ListingReconciliationTraits` re-export on `source-adapters.ts`, the type
-re-exports on `product-release-catalogue.ts`, `errata-rules-text.ts`,
-`reconciliation-publication.ts`, and `source-evidence-repository.ts`,
-`AdministrationProblem` on `ingestion.ts`, and `deterministicGzip` on
-`serialization.ts`) were removed by #98 once nothing imported them.
-
-## Placement notes
-
-- `card-search.ts` sits in `read` because the API serves it; ingestion
-  materialises against the same contract. The historical `source-freshness.ts`
-  storage helpers remain used by ingestion, while consumer freshness is removed.
-- `reconciliation-profile.ts` and `reconciliation-payload.ts` sit in
-  `shared` despite their names: the Game Profile contract is consumed by
-  `curated`, `export`, and `reconciliation`, and the payload
-  chunking by every cluster that writes publication statements. They kept
-  their names when they moved.
-- `curated-provenance.ts` sits in `shared` because
-  `catalogue-candidate-types.ts` imports it; keeping it in `curated` would
-  make `shared` depend on `curated`.
-- `collection-recovery.ts` is collection Workflow recovery (Workflow Pause,
-  Workflow Attempt), so it belongs to `source-evidence`, not to
-  `backup-recovery`, which is Backup Attempt and Catalogue Recovery.
-- `official-source-scope.ts` declares Official Source scope in `adapters`.
-
-## Aggregate repositories (#103 expand, #104 migrate)
-
-The repository functions introduced by #103 prepare and bind SQL; their callers
-still execute reads and writes and compose atomic batches. Query row types live
-beside the statements (or in the existing retained-evidence types module), and
-the existing typed readers preserve missing-row and validation behavior. No
-statement factory executes a query, checks a capability, or opens a transaction.
-The existing reconciliation repository also retains its older read helpers during
-this expansion.
-
-| Aggregate | Repository | First adopted path |
-| --- | --- | --- |
-| Catalogue Revision | `ingestion/catalogue-revision-repository.ts` | Retained revision window and repair target readers |
-| Ingestion Run | `source-evidence/ingestion-run-repository.ts` | Evidence run start/retry insertion and evidence run readers |
-| Source evidence | `source-evidence/evidence-repository.ts` | Fetch Attempt insertion and reused Source Snapshot reader |
-| Reconciliation | `reconciliation/reconciliation-repository.ts` | Terminal result insertion and reader |
-| Curated Revision | `curated/curated-repository.ts` | Revision readers and reaffirm/retire lifecycle batch |
-| Backup Attempt | `backup-recovery/backup-repository.ts` | Attempt evidence reader and Restore Phase transition |
-| Catalogue Export | `export/export-repository.ts` | Export reader and deletion plan insertion |
-
-These are cluster-internal seams. #104 moves the remaining SQL into named
-repository factories, including published read queries, retained evidence,
-reconciliation publication, Workflow progress, and the Card/Printing query
-projections. Existing cluster entrypoints stay unchanged. Domain callers own
-execution and batch composition; the repositories prepare statements and bind
-closed, typed inputs. Dynamic table choices are selected inside the repository.
-#105 contracts that argument to `CatalogueStore`: a branded port exposing atomic
-batch execution, without SQL preparation or other D1 operations. Worker
-composition adapts the binding; only repository factories can request the
-statement-preparation capability. The boundary gate rejects raw D1 types and
-repository capability access in domain modules.
-Every supported database has the current lifecycle shape; there is no capability
-probe or legacy write branch. Curated lifecycle batches retain statement
-ordering, event-version predicates, and append-only audit/idempotency writes.
-Backup transitions retain their owner-token, state, and phase predicates, with
-the caller still checking the affected-row count.
-
-
-## Repository guards and materialization
-
-Migration `0011_repository_guards.sql` moves mutable authority and state checks
-into named repository recipes. `atomicRepositoryStatement` binds each primary
-mutation to its before/after guards and side effects. CatalogueStore expands
-those recipes into one native D1 batch and returns only primary results in the
-caller's original order. A failed guard rolls back every sibling write; direct
-execution uses the same transaction path. Expanded batches above 900 statements
-are rejected before any write.
-
-The level-10 schema had 175 triggers and 98 tables. Level 11 has 103 triggers,
-all protecting immutable rows or fields, and 95 tables. Export
-Deletion identity protection is retained separately from its former state guard.
-The two transition audit tables, short-search terms, and legacy lease columns
-are removed. Run progress and resume identity use retained run/attempt facts;
-release transfer uses the prepared request, idempotency result, state, and lease.
-Short search uses existing indexed chunks. Search repair now names its progress
-`repair_chunk_offset`; partial cursors restart safely during migration.
-
-Search FTS rows, archived query cleanup, and retained
-source evidence are explicit atomic repository effects. Tests remove the old
-trigger family before exercising real repository rejection and rollback paths.
-Bulk writers guard byte-bounded groups rather than adding one query per row.
-Repeated Product Relationship IDs split groups in input order so evidence from
-intermediate updates is retained within the same native transaction.
-
-
-## Ingestion Run events
-
-Migration `0012_ingestion_run_events.sql` preserves the `ingestion_runs` identity
-anchor and its foreign keys. Mutable run facts live in `ingestion_run_current`,
-with ordered selected games in a child projection. Each accepted repository CAS
-updates the typed projection, checks its guards, and appends an immutable event
-containing the accepted scalar result in the same native transaction. Rejected
-writes and losing replays append nothing. Candidate and diagnostic payloads are
-stored once in immutable, byte-bounded event chunks; later events retain their
-references. Existing reconciliation candidate markers still refer to the
-original immutable candidate chunks.
-
-The read view renders the existing administration representation from those
-facts, including progress and ordered approval decisions. State-authorized
-mutations and external-effect authority checks verify the current projection
-against the latest event and its birth selection. An absent or corrupted
-projection cannot release an existing run's active reservation.
-
-`projectIngestionRunEvent` validates and folds retained events without a clock or
-external effects. `rebuildRunProjection` requires an existing production-release
-or blocked-recovery maintenance owner, pages the history, validates payload
-completeness, and replaces one run's projection and selection atomically. A final
-history CAS rejects concurrent advancement. Rebuild neither appends events nor
-replays retrieval, publication, backup, or Workflow operations. Level 12 requires
-an empty pre-Go-Live run dataset: release preflight reports regeneration required
-before claiming that migration, and the migration independently rejects existing
-runs. Production recreation remains an explicit operational action.
-
-Unused terminal capture and positively inventoried preparation objects are managed
-through the owner cleanup intents described in [evidence cleanup](../../docs/runbooks/evidence-cleanup.md).
-`source-evidence/evidence-cleanup.ts` and `staging-cleanup.ts` own bounded progress;
-`shared/staging-object-storage.ts` records exact binding/key write incarnations.
-Guarded Catalogue Export deletion retains its distinct package scope.
-
-Cleanup retains a deliberate database fence at the physical-object boundary:
-reservation/ticket/reference constraints apply across the existing producer
-repositories and remain present in restored snapshots. These constraints prevent
-resurrection of an object whose deletion may still be executing. Unlike ordinary
-run transition policy, that negative storage fact cannot be released by a lease
-or replayed owner command. Run projection integrity remains an atomic repository
-authority guard before cleanup claims and physical deletion.
+Evidence/staging writers register before I/O. Cleanup requires positive ownership,
+reference guards and settled write/delete tickets for the exact key incarnation.
+Neither a timeout, missing HEAD nor another successful delete settles an ambiguous
+writer. Permanent decision references must pin physical evidence in the same batch
+as the decision. Backup retention and recovery also protect those references.
+See [maintenance](../../docs/runbooks/maintenance.md) for operator actions.

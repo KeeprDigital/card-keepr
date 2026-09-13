@@ -6,7 +6,6 @@ import {
   readAdministrationBody,
   requiredString,
 } from "../../http/administration";
-import { validatedProductionTarget } from "../../http/production-target.mjs";
 import { absoluteDocumentLinks } from "../../http/public-base";
 import { type RouteContext, route } from "../../http/routes";
 import { publicationBackupReservation, startOrObserveCatalogueBackupWorkflow } from "../backup-recovery";

@@ -9,10 +9,9 @@ export const extendedAcceptanceFiles = Object.freeze([
 export const benchmarkAcceptanceFiles = Object.freeze([
   "native-isolate-metrics.test.mjs",
   "native-sqlite-export.test.mjs",
-  "reconciliation-capacity-probe.test.mjs",
 ]);
 const smokeFiles = new Set(["source-evidence-cli.test.mjs", "riftbound-bounded-intake.test.mjs"]);
-export const acceptanceTiers = Object.freeze(["default", "smoke", "runtime", "extended", "benchmark"]);
+export const acceptanceTiers = Object.freeze(["default", "smoke", "extended", "benchmark"]);
 
 export function selectAcceptanceFiles(files, tier = "default") {
   if (!acceptanceTiers.includes(tier)) throw new Error(`Unknown acceptance tier: ${tier}`);
@@ -25,7 +24,6 @@ export function selectAcceptanceFiles(files, tier = "default") {
       if (tier === "benchmark") return benchmark;
       if (extended || benchmark) return false;
       if (tier === "smoke") return smokeFiles.has(file);
-      if (tier === "runtime") return !smokeFiles.has(file);
       return true;
     })
     .sort();

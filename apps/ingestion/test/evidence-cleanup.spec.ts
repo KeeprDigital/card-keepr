@@ -69,24 +69,32 @@ async function capturedObject(run: string, key = `source-snapshots/${run}.bin`) 
     "SELECT * FROM source_adapter_versions WHERE source_lineage='one-piece-en'",
   ).first<{ adapter_version: string; game_profile_version: string; source_lineage: string; supported_game: string }>();
   if (!registration) throw new Error("missing registration");
-  await env.CATALOGUE_DB.prepare(`INSERT INTO source_requests
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO source_requests
     (ingestion_run_id,request_id,sequence_number,method,url,request_headers_json,representation_fingerprint,state)
-    VALUES (?,'request',1,'GET','https://official-source.invalid/cards','{}','fixture','captured')`)
+    VALUES (?,'request',1,'GET','https://official-source.invalid/cards','{}','fixture','captured')`,
+  )
     .bind(run)
     .run();
-  await env.CATALOGUE_DB.prepare(`INSERT INTO source_capture_operations
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO source_capture_operations
     (attempt_id,ingestion_run_id,request_id,attempt_number,source_snapshot_id,content_object_key,state,requested_at)
-    VALUES (?,?,'request',1,?,?,'finalized','2026-08-01T00:00:00.000Z')`)
+    VALUES (?,?,'request',1,?,?,'finalized','2026-08-01T00:00:00.000Z')`,
+  )
     .bind(run, run, run, key)
     .run();
-  await env.CATALOGUE_DB.prepare(`INSERT INTO source_fetch_attempts
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO source_fetch_attempts
     (id,ingestion_run_id,request_id,attempt_number,requested_at,completed_at,outcome,response_headers_json)
-    VALUES (?,?,'request',1,'2026-08-01T00:00:00.000Z','2026-08-01T00:00:00.000Z','success','{}')`)
+    VALUES (?,?,'request',1,'2026-08-01T00:00:00.000Z','2026-08-01T00:00:00.000Z','success','{}')`,
+  )
     .bind(run, run)
     .run();
-  await env.CATALOGUE_DB.prepare(`INSERT INTO source_snapshots
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO source_snapshots
     (id,ingestion_run_id,request_id,fetch_attempt_id,request_method,request_url,request_headers_json,representation_fingerprint,response_vary_json,retrieved_at,http_status,response_headers_json,content_digest,content_byte_length,content_object_key,source_lineage,supported_game,game_profile_version,adapter_version)
-    VALUES (?,?,'request',?,'GET','https://official-source.invalid/cards','{}','fixture','[]','2026-08-01T00:00:00.000Z',200,'{}',?,7,?,?,?,?,?)`)
+    VALUES (?,?,'request',?,'GET','https://official-source.invalid/cards','{}','fixture','[]','2026-08-01T00:00:00.000Z',200,'{}',?,7,?,?,?,?,?)`,
+  )
     .bind(
       run,
       run,
@@ -186,9 +194,11 @@ test("cleanup cannot race a reference acquisition during the R2 delete and retri
 });
 
 async function verifiedBackup(id: string, started: string, completed: string) {
-  await env.CATALOGUE_DB.prepare(`INSERT INTO catalogue_backup_attempts
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO catalogue_backup_attempts
     (idempotency_key,request_json,owner_token,catalogue_revision_id,state,object_key,d1_bookmark,started_at,completed_at,manifest_key,content_sha256,manifest_sha256,export_bytes,schema_migration_level,disposable_database_id,restore_generation,restore_phase)
-    VALUES (?,'{}',?,'catrev_spine_000','verified',?,'bookmark',?,?,? ,?,?,1,24,'fixture-disposable',1,'verified')`)
+    VALUES (?,'{}',?,'catrev_spine_000','verified',?,'bookmark',?,?,? ,?,?,1,24,'fixture-disposable',1,'verified')`,
+  )
     .bind(id, id, `backups/${id}`, started, completed, `backups/${id}.json`, "a".repeat(64), "b".repeat(64))
     .run();
   await env.CATALOGUE_DB.prepare(
@@ -280,8 +290,10 @@ test("newly acquired paused shared snapshot preserves its physical bytes", async
   await seedRunFixtureStatement(env.CATALOGUE_DB, { id: "cleanup_new_reference", state: "paused" }).run();
   // A native revalidation retains a new snapshot identity pointing at the same
   // physical content, acquired after cleanup's owner intent.
-  await env.CATALOGUE_DB.prepare(`INSERT INTO source_fetch_attempts(id,ingestion_run_id,request_id,attempt_number,requested_at,completed_at,outcome,response_headers_json)
-    SELECT 'shared-fetch',ingestion_run_id,request_id,2,requested_at,completed_at,'cache_revalidated',response_headers_json FROM source_fetch_attempts WHERE id='cleanup_shared'`).run();
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO source_fetch_attempts(id,ingestion_run_id,request_id,attempt_number,requested_at,completed_at,outcome,response_headers_json)
+    SELECT 'shared-fetch',ingestion_run_id,request_id,2,requested_at,completed_at,'cache_revalidated',response_headers_json FROM source_fetch_attempts WHERE id='cleanup_shared'`,
+  ).run();
   await env.CATALOGUE_DB.prepare(
     `INSERT INTO source_snapshots SELECT 'shared-snapshot','cleanup_new_reference',request_id,'shared-fetch',request_method,request_url,request_headers_json,representation_fingerprint,response_vary_json,retrieved_at,http_status,response_headers_json,media_type,content_digest,content_byte_length,content_object_key,source_lineage,supported_game,game_profile_version,adapter_version,id FROM source_snapshots WHERE id='cleanup_shared'`,
   ).run();
@@ -292,9 +304,11 @@ test("newly acquired paused shared snapshot preserves its physical bytes", async
 
 async function abandonedStaging(preparation: string, key: string, extraKey?: string) {
   await terminalRun(preparation);
-  await env.CATALOGUE_DB.prepare(`INSERT INTO reconciliation_operations
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO reconciliation_operations
     (id,ingestion_run_id,state,created_at,deadline,definition_pins_json,observation_cutoff,identity_decision_cutoff,authority_decision_cutoff,terminal_at)
-    VALUES (?,?,'preparing','2026-08-01T00:00:00.000Z','2026-08-08T00:00:00.000Z','{}',0,0,0,NULL)`)
+    VALUES (?,?,'preparing','2026-08-01T00:00:00.000Z','2026-08-08T00:00:00.000Z','{}',0,0,0,NULL)`,
+  )
     .bind(preparation, preparation)
     .run();
   await env.CATALOGUE_DB.prepare(`INSERT INTO staging_objects(binding,object_key) VALUES ('CATALOGUE_EXPORTS',?)`)
@@ -361,9 +375,11 @@ test("owner reclaims a positively inventoried abandoned preparation orphan witho
 
 async function activeStaging(preparation: string) {
   await terminalRun(preparation);
-  await env.CATALOGUE_DB.prepare(`INSERT INTO reconciliation_operations
+  await env.CATALOGUE_DB.prepare(
+    `INSERT INTO reconciliation_operations
     (id,ingestion_run_id,state,created_at,deadline,definition_pins_json,observation_cutoff,identity_decision_cutoff,authority_decision_cutoff)
-    VALUES (?,?,'preparing','2026-09-08T00:00:00.000Z','2026-09-15T00:00:00.000Z','{}',0,0,0)`)
+    VALUES (?,?,'preparing','2026-09-08T00:00:00.000Z','2026-09-15T00:00:00.000Z','{}',0,0,0)`,
+  )
     .bind(preparation, preparation)
     .run();
 }
@@ -700,6 +716,87 @@ test.each(["capture", "staging"] as const)(
   },
 );
 
+test("a staging batch waits for late writes and leaves only ambiguous writer tickets open", async () => {
+  await activeStaging("staging_batch");
+  const { catalogueStore, writeStagingObjects } = await import("../../../src/catalogue/shared");
+  let releaseLate!: () => void;
+  const late = new Promise<void>((resolve) => {
+    releaseLate = resolve;
+  });
+  let completeKnown!: () => void;
+  let failKnown!: (error: unknown) => void;
+  const completed = new Promise<void>((resolve, reject) => {
+    completeKnown = resolve;
+    failKnown = reject;
+  });
+  const keys = [
+    "publication-artifacts/lost-batch",
+    "publication-artifacts/late-batch",
+    "publication-artifacts/known-batch",
+  ];
+  const bucket = new Proxy(env.CATALOGUE_EXPORTS, {
+    get(target, property) {
+      if (property === "put")
+        return async (...args: Parameters<R2Bucket["put"]>) => {
+          try {
+            const ticket = await env.CATALOGUE_DB.prepare(
+              "SELECT object_key,completed_at FROM staging_object_writes WHERE token=?",
+            )
+              .bind(args[2]?.customMetadata?.cleanup_writer_token)
+              .first();
+            expect(ticket).toEqual({ object_key: args[0], completed_at: null });
+            if (args[0] === keys[1]) await late;
+            const result = await target.put(...args);
+            if (args[0] === keys[0]) throw new Error("synthetic ambiguous batch write");
+            if (args[0] === keys[2]) completeKnown();
+            return result;
+          } catch (error) {
+            if (args[0] === keys[2]) failKnown(error);
+            throw error;
+          }
+        };
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  let settled = false;
+  const writing = writeStagingObjects(
+    catalogueStore(env.CATALOGUE_DB),
+    bucket,
+    "CATALOGUE_EXPORTS",
+    "staging_batch",
+    keys.map((key) => ({ key, content: "retained bytes", options: { onlyIf: { etagDoesNotMatch: "*" } } })),
+  ).then(
+    () => {
+      settled = true;
+      return null;
+    },
+    (error: unknown) => {
+      settled = true;
+      return error;
+    },
+  );
+  let outcome: unknown;
+  try {
+    await Promise.race([completed, writing]);
+    const open = await env.CATALOGUE_DB.prepare(
+      "SELECT object_key FROM staging_object_writes WHERE preparation_id='staging_batch' AND completed_at IS NULL",
+    ).all();
+    expect(open.results).toHaveLength(3);
+    expect(settled).toBe(false);
+  } finally {
+    releaseLate();
+    outcome = await writing;
+  }
+  expect(outcome).toMatchObject({ message: "synthetic ambiguous batch write" });
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      "SELECT object_key FROM staging_object_writes WHERE preparation_id='staging_batch' AND completed_at IS NULL",
+    ).all(),
+  ).toMatchObject({ results: [{ object_key: keys[0] }] });
+  for (const key of keys) expect(await (await env.CATALOGUE_EXPORTS.get(key))!.text()).toBe("retained bytes");
+});
+
 test("staging retry settles only the writer token actually observed in object metadata", async () => {
   await activeStaging("staging_lost_response");
   const { catalogueStore, trackedStagingBucket } = await import("../../../src/catalogue/shared");
@@ -740,4 +837,28 @@ test("staging retry settles only the writer token actually observed in object me
       .bind(key)
       .all(),
   ).toMatchObject({ results: [{ token: "unrelated-lost-writer" }] });
+});
+
+test("a new staging identity cannot replace corrupt pre-registry bytes or receipt a partial artifact batch", async () => {
+  await activeStaging("staging_unregistered");
+  const { catalogueStore } = await import("../../../src/catalogue/shared");
+  const { publicationObjectBatch } = await import("../../../src/catalogue/reconciliation/publication-artifact-storage");
+  const objects = publicationObjectBatch(
+    catalogueStore(env.CATALOGUE_DB),
+    env.CATALOGUE_EXPORTS,
+    "staging_unregistered",
+  );
+  const conflict = await objects.stage("expected bytes");
+  const fresh = await objects.stage("fresh bytes");
+  await env.CATALOGUE_EXPORTS.put(conflict.object_key, "corrupt bytes");
+  await expect(objects.flush()).rejects.toMatchObject({ code: "publication_artifact_corrupt" });
+  expect(await (await env.CATALOGUE_EXPORTS.get(conflict.object_key))!.text()).toBe("corrupt bytes");
+  expect(await (await env.CATALOGUE_EXPORTS.get(fresh.object_key))!.text()).toBe("fresh bytes");
+  expect(() => conflict.receipt()).toThrow("has not been verified");
+  expect(() => fresh.receipt()).toThrow("has not been verified");
+  expect(
+    await env.CATALOGUE_DB.prepare(
+      "SELECT token FROM staging_object_writes WHERE preparation_id='staging_unregistered' AND completed_at IS NULL",
+    ).all(),
+  ).toMatchObject({ results: [] });
 });

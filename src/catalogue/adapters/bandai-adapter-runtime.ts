@@ -1222,15 +1222,6 @@ function knownPublisherNavigationLinks(sourceLineage: string): Set<string> {
   return allowed;
 }
 
-function publicationText(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return "";
-  }
-  const label = (value as Record<string, unknown>).label;
-  return typeof label === "string" ? label : "";
-}
-
 function bandaiDiscoveryRecords(
   html: string,
   sourceLineage: string,

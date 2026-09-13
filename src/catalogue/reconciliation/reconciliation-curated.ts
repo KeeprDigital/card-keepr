@@ -50,7 +50,8 @@ export async function prepareCuratedDraft(
           records++;
           bytes += new TextEncoder().encode(canonicalJson(record)).byteLength;
         }
-        const recordLimit = progress.stage === "validate" && progress.kind < 5 ? 32 : 4;
+        // Entity validation is a paged read; relationship validation still performs endpoint lookups.
+        const recordLimit = progress.stage === "validate" && progress.kind < 5 ? 128 : 4;
         if (record !== undefined && records < recordLimit && bytes < 512000) return;
         await retainReconciliationCheckpoint(database, runId, "curated_revisions", ordinal, {
           progress,

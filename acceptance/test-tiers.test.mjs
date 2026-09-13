@@ -33,7 +33,6 @@ test("routine acceptance retains bounded restore and excludes full catalogue jou
     "riftbound-catalogue.test.mjs",
     "native-isolate-metrics.test.mjs",
     "native-sqlite-export.test.mjs",
-    "reconciliation-capacity-probe.test.mjs",
   ]) {
     assert.ok(!routine.includes(file));
   }
@@ -52,11 +51,29 @@ test("CI shards run every routine file exactly once without reintroducing expens
   assert.deepEqual(sharded.sort(), list("default"));
 });
 
-test("smoke and runtime partition the routine tier and unknown tiers fail", () => {
+test("focused acceptance selects one routine file without admitting expensive or unknown scenarios", () => {
+  assert.deepEqual(list("default", "http-fixture"), ["http-fixture.test.mjs"]);
+  assert.deepEqual(list("default", "acceptance/http-fixture.test.mjs"), ["http-fixture.test.mjs"]);
+  assert.deepEqual(list("smoke", "source-evidence-cli.test.mjs"), ["source-evidence-cli.test.mjs"]);
+  for (const args of [
+    ["default", "native-sqlite-export"],
+    ["default", "riftbound-catalogue"],
+    ["default", "../package.json"],
+    ["default", "typo"],
+    ["smoke", "http-fixture"],
+  ]) {
+    assert.throws(
+      () => list(...args),
+      (error) => error.status === 2,
+    );
+  }
+});
+
+test("smoke retains the two everyday paths within routine coverage and unknown tiers fail", () => {
   const smoke = selectAcceptanceFiles(files, "smoke");
-  const runtime = selectAcceptanceFiles(files, "runtime");
-  assert.deepEqual([...smoke, ...runtime].sort(), selectAcceptanceFiles(files));
-  assert.equal(new Set([...smoke, ...runtime]).size, smoke.length + runtime.length);
+  assert.deepEqual(smoke, ["riftbound-bounded-intake.test.mjs", "source-evidence-cli.test.mjs"]);
+  const routine = selectAcceptanceFiles(files);
+  assert.ok(smoke.every((file) => routine.includes(file)));
   assert.throws(() => selectAcceptanceFiles(files, "typo"), /Unknown acceptance tier/u);
   const invalid = ["--shard=0/3", "--shard=4/3", "--shard=1/0", "--shard=invalid", "--shard=1/1000000000"];
   for (const shard of invalid) {
@@ -67,9 +84,10 @@ test("smoke and runtime partition the routine tier and unknown tiers fail", () =
   }
 });
 
-test("expensive investigations require an explicit valid scenario and probes cannot silently skip", () => {
+test("expensive investigations require an explicit valid scenario and exclude the manual memory diagnostic", () => {
   assert.deepEqual(list("benchmark", "native-sqlite-export"), ["native-sqlite-export.test.mjs"]);
   assert.deepEqual(list("extended", "riftbound-catalogue.test.mjs"), ["riftbound-catalogue.test.mjs"]);
+  assert.deepEqual(list("benchmark", "--all"), ["native-isolate-metrics.test.mjs", "native-sqlite-export.test.mjs"]);
   for (const args of [
     ["extended"],
     ["benchmark"],

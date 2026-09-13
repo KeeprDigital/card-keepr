@@ -1,0 +1,17 @@
+# Corepack selects pnpm; neither pnpm nor a task runner downloads another runtime.
+pmOnFail: error
+runtimeOnFail: error
+strictPeerDependencies: true
+# Review native builds explicitly and rerun them after restoring the source store.
+strictDepBuilds: true
+sideEffectsCache: false
+allowBuilds:
+  esbuild: true
+  workerd: true
+  # Reviewed native binding/version preparation for the TS import resolver.
+  unrs-resolver: true
+# Keep the parser edge distinct from the direct entities@8.1.0 dependency.
+overrides:
+  "parse5>entities": 8.0.0
+patchedDependencies:
+  "@cloudflare/vitest-plugin@1.1.6": patches/@cloudflare__vitest-plugin@1.1.6.patch

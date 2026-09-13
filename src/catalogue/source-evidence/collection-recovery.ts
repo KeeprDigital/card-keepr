@@ -17,10 +17,7 @@ export type SafeWorkflowStatus =
   | "unavailable";
 
 export type WorkflowPauseReason =
-  | "source_workflow_stalled"
-  | "source_workflow_errored"
-  | "source_workflow_terminated"
-  | "source_workflow_unavailable";
+  "source_workflow_stalled" | "source_workflow_errored" | "source_workflow_terminated" | "source_workflow_unavailable";
 
 // The owner's deliberate pause of a collecting run is recorded as a Workflow
 // Pause too: it abandons the current parent Workflow Attempt exactly like a
@@ -39,9 +36,7 @@ export type CollectionWorkflowFacts = Readonly<{
 }>;
 
 export type CollectionWorkflowClassification =
-  | { kind: "active" }
-  | { kind: "instance_paused" }
-  | { kind: "recover"; reason: WorkflowPauseReason };
+  { kind: "active" } | { kind: "instance_paused" } | { kind: "recover"; reason: WorkflowPauseReason };
 
 // The longest legitimate silence between persisted lifecycle events while a
 // running collection Workflow is healthy: one transport step may spend its
@@ -89,7 +84,10 @@ export function classifyCollectionWorkflow(facts: CollectionWorkflowFacts): Coll
       // A paused Workflow instance is the platform's own condition, distinct
       // from a paused Ingestion Run: the instance resumes in place.
       return { kind: "instance_paused" };
-    default: {
+    case "queued":
+    case "running":
+    case "waiting":
+    case "waiting_for_pause": {
       const waitUntil = Math.max(
         facts.last_progress_ms ?? Number.NEGATIVE_INFINITY,
         facts.pacing_deadline_ms ?? Number.NEGATIVE_INFINITY,
