@@ -2,6 +2,7 @@ import { readAdministrationBody } from "../../http/administration";
 import { verifyDevWorkflow } from "../../http/dev-workflow-identity.mjs";
 import { environmentNames } from "../../http/environment-target.mjs";
 import { validatedEnvironmentTarget } from "../../http/production-target.mjs";
+import { currentDisposableRestoreDatabaseId } from "../backup-recovery";
 import { AdministrationProblem, type CatalogueStore } from "../shared";
 import { administrationStatus } from "./administration-inspection";
 import { resolveProductionRelease } from "./production-release-preparation";
@@ -16,7 +17,7 @@ export async function handleDevDeployment(
     CATALOGUE_EXPORTS: R2Bucket;
     CLOUDFLARE_ACCOUNT_ID: string;
     CATALOGUE_D1_DATABASE_ID: string;
-    DISPOSABLE_D1_DATABASE_ID: string;
+    D1_VERIFICATION_TOKEN: string;
   },
 ): Promise<Response> {
   if (env.KEEPR_ENVIRONMENT !== "dev" || request.method !== "POST")
@@ -37,13 +38,18 @@ export async function handleDevDeployment(
     );
   }
   const names = environmentNames("dev");
+  const disposableId = await currentDisposableRestoreDatabaseId(
+    env.CLOUDFLARE_ACCOUNT_ID,
+    env.D1_VERIFICATION_TOKEN,
+    names.disposable,
+  );
   const target = validatedEnvironmentTarget(
     {
       cloudflare_account_id: env.CLOUDFLARE_ACCOUNT_ID,
       worker_scripts: names.workers,
       d1_databases: [
         { name: names.catalogue, id: env.CATALOGUE_D1_DATABASE_ID },
-        { name: names.disposable, id: env.DISPOSABLE_D1_DATABASE_ID },
+        { name: names.disposable, id: disposableId },
       ],
       r2_buckets: names.buckets,
     },

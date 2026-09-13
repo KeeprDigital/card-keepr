@@ -18,7 +18,7 @@ const denied = () => {
 const bytes = (value) => Uint8Array.from(atob(value.replaceAll("-", "+").replaceAll("_", "/")), (c) => c.charCodeAt(0));
 async function document(url, token) {
   const response = await fetch(url, {
-    redirect: "error",
+    redirect: "manual",
     signal: AbortSignal.timeout(10_000),
     headers: token
       ? { authorization: `Bearer ${token}`, "User-Agent": "card-keepr-dev", accept: "application/vnd.github+json" }

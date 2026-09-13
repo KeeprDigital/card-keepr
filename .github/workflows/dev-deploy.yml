@@ -42,12 +42,12 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
       - uses: ./.github/actions/setup-toolchain
-      - name: Compile isolated dev identities
-        run: node scripts/dev-environment.mjs
       - name: Authenticate workflow intent and exact-commit CI to dev
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/dev-prepare.mjs
+      - name: Compile isolated dev identities from the prepared target
+        run: node scripts/dev-environment.mjs
       - name: Execute the guarded dev deployment
         env:
           GH_TOKEN: ${{ github.token }}

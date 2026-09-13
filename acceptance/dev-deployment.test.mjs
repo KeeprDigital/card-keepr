@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { parseEnv } from "node:util";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { createServer } from "vite";
 import { devAudience, requiredCiChecks } from "../src/http/dev-workflow-identity.mjs";
+import {
+  activeReleaseIdentity,
+  countReleaseCompletionEvidence,
+  countSuccessfulReleaseEvidence,
+} from "./helpers/query-helpers/production-release.mjs";
 import { d1Adapter } from "./helpers/query-helpers/sqlite-d1-adapter.mjs";
 
 // Synthetic GitHub attestations are cryptographically signed with a test-only
@@ -52,12 +60,27 @@ async function fixture(t, sha = "a".repeat(40)) {
     status: "completed",
     conclusion: "success",
   }));
+  const scratch = {
+    databases: [{ name: "card-keepr-disposable-verification-dev", uuid: "00000000-0000-0000-0000-000000000002" }],
+    nextId: "00000000-0000-0000-0000-000000000003",
+  };
+  const { cloudflareD1BackupProvider } = await vite.ssrLoadModule("/src/catalogue/backup-recovery/index.ts");
   const originalFetch = globalThis.fetch;
   t.after(() => {
     globalThis.fetch = originalFetch;
   });
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, options = {}) => {
     const path = new URL(url).pathname;
+    if (new URL(url).hostname === "api.cloudflare.com") {
+      if (options.method === "DELETE")
+        scratch.databases = scratch.databases.filter((entry) => entry.uuid !== path.split("/").at(-1));
+      if (options.method === "POST") {
+        const entry = { name: JSON.parse(options.body).name, uuid: scratch.nextId };
+        scratch.databases.push(entry);
+        return Response.json({ success: true, result: entry });
+      }
+      return Response.json({ success: true, result: scratch.databases });
+    }
     let result;
     if (path.endsWith("/.well-known/jwks")) result = { keys: [jwk] };
     else if (path.endsWith("/actions/runs/456"))
@@ -92,23 +115,49 @@ async function fixture(t, sha = "a".repeat(40)) {
     CLOUDFLARE_ACCOUNT_ID: "0123456789abcdef0123456789abcdef",
     CATALOGUE_D1_DATABASE_ID: "00000000-0000-0000-0000-000000000001",
     DISPOSABLE_D1_DATABASE_ID: "00000000-0000-0000-0000-000000000002",
+    D1_VERIFICATION_TOKEN: "synthetic-verification-token",
   };
-  const call = async (overrides = {}, environment = env, intent = { head_sha: sha, ci_run_id: "123" }) => {
+  const workflowToken = async (overrides = {}) => {
     const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
     const message = `${encode({ alg: "RS256", typ: "JWT", kid: "synthetic" })}.${encode({ ...claims, ...overrides })}`;
     const signature = Buffer.from(
       await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key.privateKey, new TextEncoder().encode(message)),
     ).toString("base64url");
+    return `${message}.${signature}`;
+  };
+  const call = async (overrides = {}, environment = env, intent = { head_sha: sha, ci_run_id: "123" }) => {
     return handleDevDeployment(
       new Request(devAudience, {
         method: "POST",
-        headers: { authorization: `Bearer ${message}.${signature}`, "x-github-token": "synthetic-github-token" },
+        headers: {
+          authorization: `Bearer ${await workflowToken(overrides)}`,
+          "x-github-token": "synthetic-github-token",
+        },
         body: JSON.stringify(intent),
       }),
       environment,
     );
   };
-  return { call, env, checks, database };
+  const rotateDisposable = () =>
+    cloudflareD1BackupProvider.prepareRestoreTarget({
+      accountId: env.CLOUDFLARE_ACCOUNT_ID,
+      configuredDatabaseId: env.DISPOSABLE_D1_DATABASE_ID,
+      disposableDatabaseName: "card-keepr-disposable-verification-dev",
+      token: env.D1_VERIFICATION_TOKEN,
+      attemptId: "synthetic-backup",
+      previousDatabaseId: null,
+      generation: 1,
+    });
+  return {
+    call,
+    env,
+    checks,
+    database,
+    scratch,
+    rotateDisposable,
+    workflowToken,
+    receive: (request) => handleDevDeployment(request, env),
+  };
 }
 
 test("verified dev workflow prepares only its exact commit and rejects replay", async (t) => {
@@ -121,6 +170,40 @@ test("verified dev workflow prepares only its exact commit and rejects replay", 
   assert.deepEqual(plan.production_target.worker_scripts, ["card-keepr-api-dev", "card-keepr-ingestion-dev"]);
   assert.equal(plan.bootstrap, true);
   await assert.rejects(call(), (error) => error.code === "dev_intent_replayed");
+});
+
+test("dev preparation discovers the current scratch identity after a real provider rotation", async (t) => {
+  const { call, env, scratch, rotateDisposable } = await fixture(t);
+  const foreign = { name: "card-keepr-disposable-verification", uuid: "00000000-0000-0000-0000-000000000004" };
+  scratch.databases.push(foreign);
+  const rotated = await rotateDisposable();
+  assert.equal(rotated.databaseId, "00000000-0000-0000-0000-000000000003");
+  assert.ok(scratch.databases.includes(foreign));
+  const prepared = await (await call()).json();
+  assert.equal(JSON.parse(prepared.prepared_plan_json).production_target.d1_databases[1].id, rotated.databaseId);
+  assert.equal(env.DISPOSABLE_D1_DATABASE_ID, "00000000-0000-0000-0000-000000000002");
+});
+
+test("dev preparation requires uniquely owned available scratch inventory before retaining intent", async (t) => {
+  const { call, scratch } = await fixture(t);
+  const current = scratch.databases[0];
+  for (const inventory of [
+    [],
+    [{ ...current, name: "card-keepr-disposable-verification" }],
+    [current, { ...current, uuid: scratch.nextId }],
+  ]) {
+    scratch.databases = inventory;
+    await assert.rejects(call(), /Disposable D1 identity is missing or ambiguous/u);
+  }
+  scratch.databases = [current];
+  const providerFetch = globalThis.fetch;
+  globalThis.fetch = (url, options) =>
+    new URL(url).hostname === "api.cloudflare.com"
+      ? Promise.resolve(Response.json({ success: false }, { status: 403 }))
+      : providerFetch(url, options);
+  await assert.rejects(call(), /Cloudflare D1 management operation failed/u);
+  globalThis.fetch = providerFetch;
+  assert.equal((await call()).status, 201);
 });
 
 test("dev preparation rejects signed identity substitution, stale tokens and failed exact-SHA shards", async (t) => {
@@ -216,19 +299,67 @@ test("a signed dev run cannot substitute another independently passing main comm
 // preparation, generated release SQL, SQLite state and all observers are real.
 for (const [scenario, expectedError] of [
   ["approved", null],
+  ["rotated scratch", null],
   ["older version", /release_active_version_mismatch/u],
   ["split traffic", /release_active_version_mismatch/u],
   ["foreign route", /release_route_mismatch/u],
 ])
   test(`dev executor ${scenario} preserves exact activation before releasing its fence`, async (t) => {
     const head = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-    const { call, env, database } = await fixture(t, head);
-    const prepared = await (await call()).json();
+    const { call, env, database, scratch, rotateDisposable, workflowToken, receive } = await fixture(t, head);
+    let prepared;
+    let disposableId = env.DISPOSABLE_D1_DATABASE_ID;
+    let dispatchEnvironment;
+    if (scenario === "rotated scratch") {
+      await rotateDisposable();
+      const directory = await mkdtemp(join(tmpdir(), "keepr-dev-preparation-"));
+      t.after(() => rm(directory, { recursive: true, force: true }));
+      const workflowEnvironment = {
+        ACTIONS_ID_TOKEN_REQUEST_URL: "https://synthetic.actions.example/oidc",
+        ACTIONS_ID_TOKEN_REQUEST_TOKEN: "synthetic-oidc-request",
+        GH_TOKEN: "synthetic-github-token",
+        EXPECTED_HEAD_SHA: head,
+        CI_RUN_ID: "123",
+        DEV_CLOUDFLARE_ACCOUNT_ID: env.CLOUDFLARE_ACCOUNT_ID,
+        DEV_CATALOGUE_DATABASE_ID: env.CATALOGUE_D1_DATABASE_ID,
+        DEV_DISPOSABLE_DATABASE_ID: env.DISPOSABLE_D1_DATABASE_ID,
+        GITHUB_ENV: join(directory, "environment"),
+      };
+      const previousEnvironment = { ...process.env };
+      Object.assign(process.env, workflowEnvironment);
+      t.after(() => {
+        for (const name of Object.keys(workflowEnvironment)) {
+          if (previousEnvironment[name] === undefined) delete process.env[name];
+          else process.env[name] = previousEnvironment[name];
+        }
+      });
+      const providerFetch = globalThis.fetch;
+      globalThis.fetch = async (url, options) => {
+        if (new URL(url).hostname === "synthetic.actions.example")
+          return Response.json({ value: await workflowToken() });
+        if (String(url) === devAudience) {
+          const response = await receive(new Request(url, options));
+          prepared = await response.clone().json();
+          return response;
+        }
+        return providerFetch(url, options);
+      };
+      await import("../scripts/dev-prepare.mjs");
+      dispatchEnvironment = parseEnv(await readFile(workflowEnvironment.GITHUB_ENV, "utf8"));
+      disposableId = dispatchEnvironment.DEV_DISPOSABLE_DATABASE_ID;
+      assert.equal(disposableId, "00000000-0000-0000-0000-000000000003");
+      assert.equal(process.env.DEV_DISPOSABLE_DATABASE_ID, "00000000-0000-0000-0000-000000000002");
+    } else {
+      prepared = await (await call()).json();
+      dispatchEnvironment = Object.fromEntries(
+        Object.entries(prepared.dispatch_inputs).map(([key, value]) => [key.toUpperCase(), value]),
+      );
+    }
     const { devConfigurations } = await import("../scripts/dev-environment.mjs");
     const configs = await devConfigurations({
       accountId: env.CLOUDFLARE_ACCOUNT_ID,
       catalogueId: env.CATALOGUE_D1_DATABASE_ID,
-      disposableId: env.DISPOSABLE_D1_DATABASE_ID,
+      disposableId,
     });
     for (const [app, config] of Object.entries(configs)) {
       const path = `apps/${app}/wrangler.dev.json`;
@@ -289,7 +420,12 @@ for (const [scenario, expectedError] of [
       else if (url.pathname.includes("/r2/buckets/")) result = { name: url.pathname.split("/").at(-1) };
       else if (url.pathname.includes("/d1/database/")) {
         const id = url.pathname.split("/").at(-1);
-        result = { uuid: id, name: target.d1_databases.find((item) => item.id === id)?.name };
+        const name =
+          id === env.CATALOGUE_D1_DATABASE_ID
+            ? target.d1_databases[0].name
+            : scratch.databases.find((entry) => entry.uuid === id)?.name;
+        if (!name) return Response.json({ success: false }, { status: 404 });
+        result = { uuid: id, name };
       } else {
         const worker = /\/workers\/scripts\/([^/]+)/u.exec(url.pathname)?.[1];
         const config = byName[worker];
@@ -335,7 +471,7 @@ for (const [scenario, expectedError] of [
     };
     const { deployDev } = await import("../scripts/deploy-dev.mjs");
     const input = {
-      ...Object.fromEntries(Object.entries(prepared.dispatch_inputs).map(([key, value]) => [key.toUpperCase(), value])),
+      ...dispatchEnvironment,
       RELEASE_ENVIRONMENT: "dev",
       EXPECTED_HEAD_SHA: head,
       CI_RUN_ID: "123",
@@ -343,25 +479,14 @@ for (const [scenario, expectedError] of [
       CLOUDFLARE_ACCOUNT_ID: env.CLOUDFLARE_ACCOUNT_ID,
       DEV_CLOUDFLARE_ACCOUNT_ID: env.CLOUDFLARE_ACCOUNT_ID,
       DEV_CATALOGUE_DATABASE_ID: env.CATALOGUE_D1_DATABASE_ID,
-      DEV_DISPOSABLE_DATABASE_ID: env.DISPOSABLE_D1_DATABASE_ID,
+      DEV_DISPOSABLE_DATABASE_ID: disposableId,
       CLOUDFLARE_API_TOKEN: "synthetic-provider",
       API_TRAFFIC_TOKEN: "synthetic-traffic",
     };
     if (expectedError) {
       await assert.rejects(deployDev(input, executeCommand), expectedError);
-      assert.equal(
-        database.prepare("SELECT active_production_release_id FROM operation_state WHERE singleton=1").get()
-          .active_production_release_id,
-        prepared.release_id,
-      );
-      assert.equal(
-        database
-          .prepare(
-            "SELECT count(*) AS count FROM administration_idempotency WHERE operation IN ('production_release_binding_observed','production_release_succeeded')",
-          )
-          .get().count,
-        0,
-      );
+      assert.equal(activeReleaseIdentity(database).get().active_production_release_id, prepared.release_id);
+      assert.equal(countReleaseCompletionEvidence(database).get().count, 0);
       assert.equal(
         requests.some((path) => path === "/api/health"),
         false,
@@ -370,19 +495,8 @@ for (const [scenario, expectedError] of [
     } else {
       const result = await deployDev(input, executeCommand);
       assert.equal(result.head_sha, head);
-      assert.equal(
-        database.prepare("SELECT active_production_release_id FROM operation_state WHERE singleton=1").get()
-          .active_production_release_id,
-        null,
-      );
-      assert.equal(
-        database
-          .prepare(
-            "SELECT count(*) AS count FROM administration_idempotency WHERE operation='production_release_succeeded'",
-          )
-          .get().count,
-        1,
-      );
+      assert.equal(activeReleaseIdentity(database).get().active_production_release_id, null);
+      assert.equal(countSuccessfulReleaseEvidence(database).get().count, 1);
       assert.equal(requests.filter((path) => path.endsWith("/deployments")).length, 2);
     }
   });

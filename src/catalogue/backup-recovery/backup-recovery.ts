@@ -1048,24 +1048,8 @@ export const cloudflareD1BackupProvider: D1BackupProvider = {
 
   async prepareRestoreTarget(input) {
     const name = input.disposableDatabaseName ?? "card-keepr-disposable-verification";
-    if (!/^card-keepr-disposable-verification(?:-dev|-staging)?$/u.test(name)) {
-      throw new Error("Disposable D1 namespace is invalid.");
-    }
     const collectionPath = `/accounts/${encodeURIComponent(input.accountId)}/d1/database`;
-    const listed = await cloudflareD1ManagementRequest(
-      `${collectionPath}?name=${encodeURIComponent(name)}`,
-      input.token,
-      "GET",
-    );
-    if (!Array.isArray(listed)) {
-      throw new Error("Disposable D1 database inventory is invalid.");
-    }
-    const databaseIds = new Set<string>();
-    for (const entry of listed) {
-      if (isRecord(entry) && entry.name === name && typeof entry.uuid === "string") {
-        databaseIds.add(entry.uuid);
-      }
-    }
+    const databaseIds = await disposableRestoreDatabaseIds(input.accountId, input.token, name);
     // Configured/prior IDs are hints, never deletion authority. Every deletion
     // must be present in the provider inventory under this exact namespace.
     for (const databaseId of databaseIds) {
@@ -1131,6 +1115,34 @@ export const cloudflareD1BackupProvider: D1BackupProvider = {
   },
 };
 
+/** Resolve a rotated scratch identity without granting authority to another namespace. */
+export async function currentDisposableRestoreDatabaseId(
+  accountId: string,
+  token: string,
+  name: string,
+): Promise<string> {
+  const ids = await disposableRestoreDatabaseIds(accountId, token, name);
+  if (ids.length !== 1) throw new Error("Disposable D1 identity is missing or ambiguous.");
+  return ids[0]!;
+}
+
+async function disposableRestoreDatabaseIds(accountId: string, token: string, name: string): Promise<string[]> {
+  if (!/^card-keepr-disposable-verification(?:-dev|-staging)?$/u.test(name)) {
+    throw new Error("Disposable D1 namespace is invalid.");
+  }
+  const listed = await cloudflareD1ManagementRequest(
+    `/accounts/${encodeURIComponent(accountId)}/d1/database?name=${encodeURIComponent(name)}`,
+    token,
+    "GET",
+  );
+  if (!Array.isArray(listed)) throw new Error("Disposable D1 database inventory is invalid.");
+  const ids = new Set<string>();
+  for (const entry of listed) {
+    if (isRecord(entry) && entry.name === name && typeof entry.uuid === "string") ids.add(entry.uuid);
+  }
+  return [...ids];
+}
+
 async function cloudflareD1ManagementRequest(
   pathname: string,
   token: string,
@@ -1139,6 +1151,8 @@ async function cloudflareD1ManagementRequest(
 ): Promise<unknown> {
   const response = await fetch(`https://api.cloudflare.com/client/v4${pathname}`, {
     method,
+    redirect: "manual",
+    signal: AbortSignal.timeout(30_000),
     headers: {
       authorization: `Bearer ${token}`,
       ...(body === undefined ? {} : { "content-type": "application/json" }),

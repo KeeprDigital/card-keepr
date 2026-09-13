@@ -53,6 +53,13 @@ not renewed by recompiling SQL. The record and its actual target remain auditabl
 legacy `production_release` wire/ledger names are reused only inside the isolated
 dev database and do not confer production authority.
 
+Backup verification replaces the Disposable Restore database, so its initial
+UUID is not a permanent identity. After authenticating the workflow, preparation
+uses the ingestion Worker's D1 verification credential to resolve the single
+live database with the exact dev scratch name. Missing, ambiguous or unavailable
+inventory refuses preparation. The workflow passes that observed UUID to the
+config compiler before deployment; provider UUID/name checks still apply.
+
 `scripts/deploy-dev.mjs` is the shared guarded executor. Before mutation it checks
 checkout SHA, CI and exact dev configs/resources/secrets. It claims the retained
 plan, migrates, verifies uploaded version bindings, activates the compatible pair,
@@ -69,6 +76,10 @@ resets data, accepts a recovery, or approves a Catalogue Candidate.
 | API Worker secret file, owner-held       | `API_BEARER_KEY`, `API_BEARER_KEY_REPLACEMENT`                                                     |
 | Ingestion Worker secret file, owner-held | `ADMINISTRATION_KEY`, `ADMINISTRATION_KEY_REPLACEMENT`, `D1_EXPORT_TOKEN`, `D1_VERIFICATION_TOKEN` |
 | Owner CLI dev profile                    | `KEEPR_DEV_API_KEY`, `KEEPR_DEV_ADMINISTRATION_KEY`                                                |
+
+`DEV_DISPOSABLE_DATABASE_ID` starts with the provisioned UUID for first installation.
+Automatic deployment replaces that value for its job from authenticated preparation;
+backup rotation does not require manually updating the saved GitHub variable.
 
 Secrets must be independently issued for dev, with minimum provider-supported
 permissions. No production credential is copied. No administration credential is

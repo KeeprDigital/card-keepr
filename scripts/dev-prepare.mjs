@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { appendFile } from "node:fs/promises";
 import { devAudience } from "../src/http/dev-workflow-identity.mjs";
+import { validatedEnvironmentTarget } from "../src/http/production-target.mjs";
 
 // This exchanges GitHub workflow identity for a dev-only prepared artifact.
 // Neither administration credentials nor Cloudflare credentials are needed.
@@ -29,6 +30,14 @@ if (!response.ok) throw new Error(`dev_preparation_failed:${response.status}`);
 const document = await response.json();
 if (document.environment !== "dev" || document.dispatch_inputs?.expected_head_sha !== process.env.EXPECTED_HEAD_SHA)
   throw new Error("dev_preparation_mismatch");
+const target = validatedEnvironmentTarget(JSON.parse(document.dispatch_inputs.production_target_json), "dev");
+if (
+  target === null ||
+  target.cloudflare_account_id !== process.env.DEV_CLOUDFLARE_ACCOUNT_ID ||
+  target.d1_databases[0].id !== process.env.DEV_CATALOGUE_DATABASE_ID ||
+  target.d1_databases[1].id === target.d1_databases[0].id
+)
+  throw new Error("dev_preparation_target_mismatch");
 const names = [
   "release_id",
   "expected_head_sha",
@@ -57,4 +66,4 @@ const output = names
     return `${name.toUpperCase()}=${value}\n`;
   })
   .join("");
-await appendFile(process.env.GITHUB_ENV, output);
+await appendFile(process.env.GITHUB_ENV, `${output}DEV_DISPOSABLE_DATABASE_ID=${target.d1_databases[1].id}\n`);

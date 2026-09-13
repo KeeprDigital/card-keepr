@@ -15,10 +15,8 @@ import type { PublisherRequest, PublisherScenario } from "./scenario.ts";
 
 export type { OfficialLineage } from "./hostnames.ts";
 export type { PublisherRequest, PublisherScenario } from "./scenario.ts";
-export {
-  cloudflareApiMock,
-  type CloudflareApiMockOptions,
-} from "./cloudflare-api.ts";
+export { githubDevApiMock } from "./github-dev-api.ts";
+export { cloudflareApiMock, type CloudflareApiMockOptions } from "./cloudflare-api.ts";
 export {
   createFailureInjection,
   failureInjectionScope,

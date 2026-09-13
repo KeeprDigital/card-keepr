@@ -8,6 +8,7 @@ export {
   catalogueRevisionBackupStatus,
   cloudflareD1BackupProvider,
   createVerifiedCatalogueBackup,
+  currentDisposableRestoreDatabaseId,
   failActiveCatalogueBackupAttempt,
   publicationBackupReservation,
   verifyRestoredCatalogue,
@@ -15,10 +16,7 @@ export {
   type PublicationBackupReservation,
   type RestoredCatalogueVerification,
 } from "./backup-recovery";
-export {
-  startOrObserveCatalogueBackupWorkflow,
-  type CatalogueBackupWorkflowParams,
-} from "./backup-workflow";
+export { startOrObserveCatalogueBackupWorkflow, type CatalogueBackupWorkflowParams } from "./backup-workflow";
 export {
   acceptCatalogueRecovery,
   beginCatalogueRecovery,
