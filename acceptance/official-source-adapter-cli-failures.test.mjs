@@ -1,16 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readWorkerConfig } from "../cli/lib/config.mjs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
-import {
-  runCli,
-  startWorker,
-  stopWorker,
-  waitForResponse,
-  waitForRunState,
-} from "./helpers/acceptance-runtime.mjs";
+import { runCli, startWorker, stopWorker, waitForResponse, waitForRunState } from "./helpers/acceptance-runtime.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const failureCases = [
@@ -38,25 +32,14 @@ const failureCases = [
 
 for (const failureCase of failureCases) {
   test(`the CLI-to-Worker boundary fails closed for ${failureCase.name}`, async (t) => {
-    const directory = await mkdtemp(
-      join(tmpdir(), "card-keepr-official-failure-"),
-    );
+    const directory = await mkdtemp(join(tmpdir(), "card-keepr-official-failure-"));
     const administrationKey = crypto.randomUUID();
     const ingestionEnv = join(directory, "ingestion.env");
     const ingestionConfig = join(directory, "ingestion.wrangler.json");
     const planPath = join(directory, "source-plan.json");
     const ingestionState = join(directory, "ingestion-state");
-    await writeFile(
-      ingestionEnv,
-      `ADMINISTRATION_KEY=${administrationKey}\n`,
-      { mode: 0o600 },
-    );
-    const config = JSON.parse(
-      readFileSync(
-        resolve(root, "apps/ingestion/wrangler.jsonc"),
-        "utf8",
-      ),
-    );
+    await writeFile(ingestionEnv, `ADMINISTRATION_KEY=${administrationKey}\n`, { mode: 0o600 });
+    const config = await readWorkerConfig(resolve(root, "apps/ingestion/wrangler.jsonc"));
     delete config.$schema;
     config.main = resolve(root, "apps/ingestion/src/index.ts");
     config.d1_databases[0].migrations_dir = resolve(root, "migrations");
@@ -72,19 +55,20 @@ for (const failureCase of failureCases) {
       requests.pop();
     } else {
       requests[0].headers = {
-        "user-agent":
-          `card-keepr-acceptance-parser/${failureCase.failure}`,
+        "user-agent": `card-keepr-acceptance-parser/${failureCase.failure}`,
       };
     }
     await writeFile(
       planPath,
       JSON.stringify({
-        plans: [{
-          supported_game: "one-piece",
-          source_lineage: "one-piece-en",
-          adapter_version: "one-piece-en@6",
-          requests,
-        }],
+        plans: [
+          {
+            supported_game: "one-piece",
+            source_lineage: "one-piece-en",
+            adapter_version: "one-piece-en@6",
+            requests,
+          },
+        ],
       }),
     );
 
@@ -103,17 +87,10 @@ for (const failureCase of failureCases) {
       await rm(directory, { recursive: true, force: true });
     });
     await Promise.all([
-      waitForResponse(
-        `${source.url}${failureCase.path}`,
-        source,
-        "synthetic Official Source",
-      ),
-      waitForResponse(
-        `${ingestion.url}/health`,
-        ingestion,
-        "ingestion Worker",
-        { authorization: `Bearer ${administrationKey}` },
-      ),
+      waitForResponse(`${source.url}${failureCase.path}`, source, "synthetic Official Source"),
+      waitForResponse(`${ingestion.url}/health`, ingestion, "ingestion Worker", {
+        authorization: `Bearer ${administrationKey}`,
+      }),
     ]);
 
     const cliEnvironment = {
@@ -138,60 +115,40 @@ for (const failureCase of failureCases) {
         contract: "card-keepr-cli-problem@1",
         status: "error",
         code: "invalid_parameter",
-        detail:
-          "requests must contain between 1 and 100 Official Source requests.",
+        detail: "requests must contain between 1 and 100 Official Source requests.",
       });
       return;
     }
-    assert.equal(
-      collected.code,
-      0,
-      `${collected.stdout}\n${collected.stderr}\n${ingestion.getOutput()}`,
-    );
+    assert.equal(collected.code, 0, `${collected.stdout}\n${collected.stderr}\n${ingestion.getOutput()}`);
     const run = JSON.parse(collected.stdout);
-    const resumed = await runCli(
-      ["source", "resume", "--run-id", run.id, "--json"],
-      cliEnvironment,
-    );
-    assert.equal(
-      resumed.code,
-      0,
-      `${resumed.stdout}\n${resumed.stderr}\n${ingestion.getOutput()}`,
-    );
+    const resumed = await runCli(["source", "resume", "--run-id", run.id, "--json"], cliEnvironment);
+    assert.equal(resumed.code, 0, `${resumed.stdout}\n${resumed.stderr}\n${ingestion.getOutput()}`);
 
-    const failed = await waitForRunState(
-      run.id,
-      "failed",
-      cliEnvironment,
-      ingestion,
-      { deadlineMs: 90_000 },
-    );
+    const failed = await waitForRunState(run.id, "failed", cliEnvironment, ingestion, { deadlineMs: 90_000 });
     assert.equal(failed.failure_code, "source_parse_failed");
     const snapshotUrls = failed.snapshots.map(({ request }) => request.url);
     assert.ok(snapshotUrls.length >= 2);
-    assert.ok(snapshotUrls.every((url) =>
-      new URL(url).origin === "https://en.onepiece-cardgame.com"
-    ));
-    assert.ok(snapshotUrls.filter((url) =>
-      url === "https://en.onepiece-cardgame.com/cardlist/?series=569116"
-    ).length >= 2);
+    assert.ok(snapshotUrls.every((url) => new URL(url).origin === "https://en.onepiece-cardgame.com"));
+    assert.ok(
+      snapshotUrls.filter((url) => url === "https://en.onepiece-cardgame.com/cardlist/?series=569116").length >= 2,
+    );
     assert.equal(
       failed.observation_sets.length,
       failed.snapshots.length - 1,
-      `every successfully parsed root, stage, and final snapshot retains one observation set; missing: ${
-        JSON.stringify(failed.snapshots.filter(({ id }) =>
-          !failed.observation_sets.some(
-            ({ source_snapshot_id }) => source_snapshot_id === id,
-          )
-        ).map(({ request }) => request.url))
-      }`,
+      `every successfully parsed root, stage, and final snapshot retains one observation set; missing: ${JSON.stringify(
+        failed.snapshots
+          .filter(({ id }) => !failed.observation_sets.some(({ source_snapshot_id }) => source_snapshot_id === id))
+          .map(({ request }) => request.url),
+      )}`,
     );
   });
 }
 
 function exactOnePieceRequests() {
-  return [{
-    id: "one-piece-en:discovery",
-    url: "https://en.onepiece-cardgame.com/cardlist/?series=569116",
-  }];
+  return [
+    {
+      id: "one-piece-en:discovery",
+      url: "https://en.onepiece-cardgame.com/cardlist/?series=569116",
+    },
+  ];
 }

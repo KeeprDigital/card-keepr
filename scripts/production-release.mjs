@@ -133,7 +133,11 @@ export async function validateDispatchAndWriteSql(environment, directory) {
   const claimKey = `release-dispatch:${environment.DISPATCH_DIGEST}`;
   const migrationKey = `release-migration-started:${environment.DISPATCH_DIGEST}`;
   const failureKey = `release-migration-failed:${environment.DISPATCH_DIGEST}`;
-  const durableClaim = `INSERT INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) SELECT ${q(claimKey)},'claim_production_release',request_json,${q(JSON.stringify({ release_id: plan.release_id, state: "preflight", dispatch_digest: environment.DISPATCH_DIGEST }))},201,'success',${productionReleaseOutcomeTimestampSql(claimKey)} FROM administration_idempotency WHERE ${preparedWhere} AND ${liveGate};`;
+  const freshPreparation =
+    environment.RELEASE_ENVIRONMENT === "dev"
+      ? " AND created_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-5 minutes') AND created_at <= strftime('%Y-%m-%dT%H:%M:%fZ','now')"
+      : "";
+  const durableClaim = `INSERT INTO administration_idempotency (idempotency_key,operation,request_json,response_json,http_status,outcome,created_at) SELECT ${q(claimKey)},'claim_production_release',request_json,${q(JSON.stringify({ release_id: plan.release_id, state: "preflight", dispatch_digest: environment.DISPATCH_DIGEST }))},201,'success',${productionReleaseOutcomeTimestampSql(claimKey)} FROM administration_idempotency WHERE ${preparedWhere}${freshPreparation} AND ${liveGate};`;
   const claimedEvidence = `EXISTS (SELECT 1 FROM administration_idempotency WHERE idempotency_key=${q(claimKey)} AND operation='claim_production_release')`;
   const leaseIdentity = `active_production_release_id=${q(plan.release_id)} AND active_production_release_expires_at=${q(expires)}`;
   const activeFence = `${leaseIdentity} AND active_ingestion_run_id IS NULL`;
@@ -141,7 +145,7 @@ export async function validateDispatchAndWriteSql(environment, directory) {
   const claim = `UPDATE operation_state SET ${productionReleaseLeaseAssignmentsSql(plan.release_id, expires)} WHERE singleton=1 AND ${claimedEvidence} AND ${liveGate};`;
   await writeFile(
     `${directory}/live-preflight.sql`,
-    `SELECT CASE WHEN EXISTS (SELECT 1 FROM administration_idempotency WHERE ${preparedWhere}) AND ${liveGate} THEN 1 ELSE 0 END AS ready, CASE WHEN NOT (${regenerationGate}) THEN 'ingestion_run_regeneration_required' ELSE NULL END AS problem;\n`,
+    `SELECT CASE WHEN EXISTS (SELECT 1 FROM administration_idempotency WHERE ${preparedWhere}${freshPreparation}) AND ${liveGate} THEN 1 ELSE 0 END AS ready, CASE WHEN NOT (${regenerationGate}) THEN 'ingestion_run_regeneration_required' ELSE NULL END AS problem;\n`,
     { mode: 0o600 },
   );
   await writeFile(

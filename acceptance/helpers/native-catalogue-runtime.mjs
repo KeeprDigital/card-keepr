@@ -1,4 +1,5 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readWorkerConfig } from "../../cli/lib/config.mjs";
+import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { isWranglerSmokeFile } from "./smoke-tier.mjs";
 import { nativeCloudflareHttp } from "./native-cloudflare-http.mjs";
@@ -38,7 +39,7 @@ export async function nativeCheckpointTransport(t, statePath, directory, configF
   t.after(() => cloudflare.close());
   if (isWranglerSmokeFile(process.argv[1])) {
     const proxy = await nativeCloudflareHttp(t, cloudflare);
-    const config = JSON.parse(await readFile(configFile, "utf8"));
+    const config = await readWorkerConfig(configFile);
     config.main = resolve("acceptance/fixtures/native-ingestion-cloudflare-transport.ts");
     config.define = { ...config.define, NATIVE_CLOUDFLARE_REST_PROXY: JSON.stringify(proxy) };
     await writeFile(configFile, JSON.stringify(config));

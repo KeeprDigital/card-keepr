@@ -1,10 +1,12 @@
 #!/usr/bin/env node
+import { environmentNames } from "../src/http/environment-target.mjs";
+import { devConfigurations } from "./dev-environment.mjs";
 import { isDeepStrictEqual } from "node:util";
 import { readWorkerConfig } from "../cli/lib/config.mjs";
 import { request as httpRequest } from "../cli/lib/http-client.mjs";
 
 const api = "https://api.cloudflare.com/client/v4";
-const workerConfigs = {
+const productionWorkerConfigs = {
   "card-keepr-api": "apps/api/wrangler.jsonc",
   "card-keepr-ingestion": "apps/ingestion/wrangler.jsonc",
 };
@@ -18,10 +20,29 @@ const expectedSecrets = {
   ],
 };
 
+function profile(environment) {
+  const target = environment.RELEASE_ENVIRONMENT ?? "production";
+  if (!["production", "dev"].includes(target)) throw new Error("invalid_release_environment");
+  const names = environmentNames(target);
+  return {
+    names,
+    workerConfigs:
+      target === "production"
+        ? productionWorkerConfigs
+        : {
+            [names.workers[0]]: "apps/api/wrangler.dev.json",
+            [names.workers[1]]: "apps/ingestion/wrangler.dev.json",
+          },
+  };
+}
+function secretsFor(worker) {
+  return expectedSecrets[worker.replace(/-dev$/u, "")];
+}
+
 export async function verifyProductionTarget(environment, fetchImpl = fetch) {
   const token = required(environment, "CLOUDFLARE_API_TOKEN");
   const target = parseTarget(environment);
-  const configs = await configuredWorkers();
+  const configs = await configuredWorkers(environment);
   assertExactTarget(environment, target, configs);
   await Promise.all([
     verifyDatabases(fetchImpl, token, environment, target),
@@ -46,6 +67,7 @@ export async function verifyUploadedVersion(environment, fetchImpl = fetch) {
   const worker = required(environment, "RELEASE_WORKER");
   const tag = required(environment, "RELEASE_VERSION_TAG");
   const configPath = required(environment, "RELEASE_WORKER_CONFIG");
+  const { workerConfigs } = profile(environment);
   if (!(worker in workerConfigs)) throw new Error(`unknown_release_worker:${worker}`);
   const config = await readWorkerConfig(configPath);
   if (config.name !== worker) throw new Error("worker_config_name_mismatch");
@@ -69,7 +91,7 @@ export async function verifyUploadedVersion(environment, fetchImpl = fetch) {
     throw new Error(`malformed_worker_version:${worker}:${versionId}`);
   }
   const actual = normalizedBindings(version.result.resources.bindings, worker);
-  const expected = expectedBindings(config, expectedSecrets[worker], worker);
+  const expected = expectedBindings(config, secretsFor(worker), worker);
   if (!isDeepStrictEqual(actual, expected)) throw new Error(`uploaded_version_binding_mismatch:${worker}:${versionId}`);
   return { worker, version_tag: tag, version_id: versionId };
 }
@@ -77,7 +99,7 @@ export async function verifyUploadedVersion(environment, fetchImpl = fetch) {
 export async function observeCatalogueBindings(environment, fetchImpl = fetch) {
   const token = required(environment, "CLOUDFLARE_API_TOKEN");
   const target = parseTarget(environment);
-  const configs = await configuredWorkers();
+  const configs = await configuredWorkers(environment);
   assertExactTarget(environment, target, configs);
   const expectedDatabase =
     environment.REPLACEMENT_DATABASE_ID === "none"
@@ -85,7 +107,7 @@ export async function observeCatalogueBindings(environment, fetchImpl = fetch) {
       : required(environment, "REPLACEMENT_DATABASE_ID");
   for (const config of Object.values(configs)) {
     config.d1_databases[0].database_id = expectedDatabase;
-    if (config.name === "card-keepr-ingestion") {
+    if (config.name === profile(environment).names.workers[1]) {
       config.vars.CATALOGUE_D1_DATABASE_ID = expectedDatabase;
     }
   }
@@ -98,6 +120,7 @@ export async function observeCatalogueBindings(environment, fetchImpl = fetch) {
 
 /** Observe actual traffic versions and configured zone routes, not settings alone. */
 export async function observeReleaseActivation(environment, expectedVersions, configPaths, fetchImpl = fetch) {
+  const { workerConfigs } = profile(environment);
   const token = required(environment, "CLOUDFLARE_API_TOKEN");
   const observations = [];
   for (const path of configPaths) {
@@ -133,7 +156,7 @@ export async function observeReleaseActivation(environment, expectedVersions, co
         !Array.isArray(version.result?.resources?.bindings) ||
         !isDeepStrictEqual(
           normalizedBindings(version.result.resources.bindings, worker),
-          expectedBindings(config, expectedSecrets[worker], worker),
+          expectedBindings(config, secretsFor(worker), worker),
         )
       )
         throw new Error("release_active_version_binding_mismatch");
@@ -174,7 +197,8 @@ export async function observeReleaseActivation(environment, expectedVersions, co
   return { contract: "card-keepr-activated-release-pair@1", workers: observations };
 }
 
-async function configuredWorkers() {
+async function configuredWorkers(environment) {
+  const { workerConfigs } = profile(environment);
   const entries = await Promise.all(
     Object.entries(workerConfigs).map(async ([worker, path]) => {
       const config = await readWorkerConfig(path);
@@ -182,25 +206,37 @@ async function configuredWorkers() {
       return [worker, config];
     }),
   );
-  return Object.fromEntries(entries);
+  const configs = Object.fromEntries(entries);
+  if (environment.RELEASE_ENVIRONMENT === "dev") {
+    const expected = await devConfigurations({
+      accountId: environment.CLOUDFLARE_ACCOUNT_ID,
+      catalogueId: environment.DEV_CATALOGUE_DATABASE_ID,
+      disposableId: environment.DEV_DISPOSABLE_DATABASE_ID,
+    });
+    if (!isDeepStrictEqual(Object.values(configs), [expected.api, expected.ingestion]))
+      throw new Error("dev_config_isolation_mismatch");
+  }
+  return configs;
 }
 
 // Independent deployment attestation compares the server-resolved target with
 // the checked-out Worker bindings before any provider mutation. This is not
 // owner-input target resolution (owned by the ingestion administration route).
 function assertExactTarget(environment, target, configs) {
-  const configuredD1 = configs["card-keepr-ingestion"].d1_databases[0];
+  const { names, workerConfigs } = profile(environment);
+  const ingestion = configs[names.workers[1]];
+  const configuredD1 = ingestion.d1_databases[0];
   const expected = {
     cloudflare_account_id: account(environment),
     worker_scripts: Object.keys(workerConfigs),
     d1_databases: [
       { name: configuredD1.database_name, id: configuredD1.database_id },
       {
-        name: "card-keepr-disposable-verification",
-        id: configs["card-keepr-ingestion"].vars.DISPOSABLE_D1_DATABASE_ID,
+        name: names.disposable,
+        id: ingestion.vars.DISPOSABLE_D1_DATABASE_ID,
       },
     ],
-    r2_buckets: configs["card-keepr-ingestion"].r2_buckets.map((binding) => binding.bucket_name),
+    r2_buckets: ingestion.r2_buckets.map((binding) => binding.bucket_name),
   };
   if (!isDeepStrictEqual(target, expected)) throw new Error("production_target_mismatch");
 }
@@ -283,7 +319,7 @@ async function verifyWorkerSecrets(fetchImpl, token, environment, configs) {
       const actual = normalizedBindings(document.result.bindings, worker)
         .filter((binding) => binding.type === "secret_text")
         .map((binding) => binding.name);
-      const expected = [...expectedSecrets[worker]].sort((left, right) => left.localeCompare(right));
+      const expected = [...secretsFor(worker)].sort((left, right) => left.localeCompare(right));
       if (!isDeepStrictEqual(actual, expected)) throw new Error(`worker_secret_inventory_mismatch:${worker}`);
     }),
   );
@@ -300,7 +336,7 @@ async function verifyWorkers(fetchImpl, token, environment, configs) {
       if (!record(document.result) || !Array.isArray(document.result.bindings))
         throw new Error(`malformed_worker_settings:${worker}`);
       const actual = normalizedBindings(document.result.bindings, worker);
-      const expected = expectedBindings(config, expectedSecrets[worker], worker);
+      const expected = expectedBindings(config, secretsFor(worker), worker);
       if (!isDeepStrictEqual(actual, expected)) throw new Error(`worker_binding_inventory_mismatch:${worker}`);
     }),
   );

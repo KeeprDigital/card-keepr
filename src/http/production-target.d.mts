@@ -4,3 +4,8 @@ export function validatedProductionTarget(value: unknown): null | {
   d1_databases: { name: string; id: string }[];
   r2_buckets: string[];
 };
+
+export function validatedEnvironmentTarget(
+  value: unknown,
+  environment: string,
+): ReturnType<typeof validatedProductionTarget>;

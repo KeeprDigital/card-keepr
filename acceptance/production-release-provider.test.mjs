@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readWorkerConfig } from "../cli/lib/config.mjs";
 import test from "node:test";
 import {
   observeReleaseActivation,
@@ -11,7 +11,7 @@ import {
 // The provider derives its expected target from the checked-in wrangler
 // configuration, so the acceptance fixture derives the same way instead of
 // pinning identifiers that drift when production resources are provisioned.
-const ingestionConfig = JSON.parse(await readFile("apps/ingestion/wrangler.jsonc", "utf8"));
+const ingestionConfig = await readWorkerConfig("apps/ingestion/wrangler.jsonc");
 const account = ingestionConfig.vars.CLOUDFLARE_ACCOUNT_ID;
 const target = {
   cloudflare_account_id: account,
@@ -286,7 +286,7 @@ async function providerFetch(mutate = () => {}) {
       [
         ["card-keepr-api", "apps/api/wrangler.jsonc"],
         ["card-keepr-ingestion", "apps/ingestion/wrangler.jsonc"],
-      ].map(async ([name, path]) => [name, JSON.parse(await readFile(path, "utf8"))]),
+      ].map(async ([name, path]) => [name, await readWorkerConfig(path)]),
     ),
   );
   return async (input, init) => {

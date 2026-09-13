@@ -1,3 +1,4 @@
+import { readWorkerConfig } from "../cli/lib/config.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -69,7 +70,7 @@ test("native publication: the CLI publishes separated Product catalogue data con
     ),
   ]);
   await applyMigrations(statePath);
-  const config = JSON.parse(await readFile(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
+  const config = await readWorkerConfig(resolve(root, "apps/ingestion/wrangler.jsonc"));
   delete config.$schema;
   config.main = resolve(root, "apps/ingestion/src/index.ts");
   config.d1_databases[0].migrations_dir = resolve(root, "migrations");

@@ -6,6 +6,7 @@ import { configDefaults, defineConfig } from "vitest/config";
 import {
   cloudflareApiMock,
   createFakePublisher,
+  githubDevApiMock,
   workersPoolScenarios,
 } from "../../test/support/fake-publisher/index.ts";
 import { exportSqliteFile, localCatalogueDatabase } from "../../test/support/fake-publisher/sqlite-transfer.ts";
@@ -49,6 +50,7 @@ export default defineConfig({
             };
             const publisher = createFakePublisher({
               scenarios: [
+                githubDevApiMock,
                 cloudflareApiMock({
                   accountId: cloudflareAccountId,
                   disposableDatabaseId: disposableD1DatabaseId,

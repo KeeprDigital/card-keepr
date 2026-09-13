@@ -1,3 +1,4 @@
+import { readWorkerConfig } from "../../cli/lib/config.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -103,7 +104,7 @@ export async function applyMigrations(statePath, config, testMigrations = []) {
 
 async function templateKey(config) {
   const configPath = resolve(root, config);
-  const parsed = JSON.parse(await readFile(configPath, "utf8"));
+  const parsed = await readWorkerConfig(configPath);
   const database = parsed.d1_databases?.find((entry) => entry.binding === "CATALOGUE_DB");
   assert.ok(database, `${config} does not bind CATALOGUE_DB`);
   const migrationsDir = resolve(dirname(configPath), database.migrations_dir ?? "migrations");

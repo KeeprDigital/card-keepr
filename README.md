@@ -47,6 +47,7 @@ its first approved publication.
 | Inspect and publish a candidate                             | [Publication](docs/runbooks/publication.md)                                                                                        |
 | Verify backups or restore the catalogue                     | [Backup and recovery](docs/runbooks/backup-recovery.md)                                                                            |
 | Deploy software or change database bindings                 | [Production Release](docs/runbooks/production-release.md)                                                                          |
+| Configure automatic dev deployment                          | [Isolated dev](docs/runbooks/isolated-dev.md)                                                                                      |
 | Diagnose failures, repair search or reclaim unused objects  | [Maintenance](docs/runbooks/maintenance.md)                                                                                        |
 | Check scheduled tests and source freshness                  | [Scheduled stress](docs/runbooks/scheduled-stress.md), [source monitoring](acceptance/fixtures/retained-official-source/README.md) |
 

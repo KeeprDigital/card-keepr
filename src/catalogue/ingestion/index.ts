@@ -13,18 +13,12 @@ export {
 } from "./administration-inspection";
 export { runGuardedCardSearchRepair } from "./card-search-repair-administration";
 export { enforceFreshBaselineMutationGuard } from "./fresh-baseline";
-export {
-  type ProductionTarget,
-  prepareProductionRelease,
-} from "./production-release";
+export { type ProductionTarget, prepareProductionRelease } from "./production-release";
 export { advancePublicationExports, reservePublicExportAttempt } from "./publication-export-preparation";
 export { observeHistoricalRunApproval } from "./publication-lifecycle";
 export type { PublicationBackupWaiter } from "./routes";
 export { ingestionRoutes } from "./routes";
 export { rejectRun, retryPublicationCleanup, retryRun, showRun } from "./run-lifecycle";
-export type {
-  ApproveRunRequest,
-  RejectRunRequest,
-  RetryPublicationCleanupRequest,
-  RetryRunRequest,
-} from "./run-types";
+export type { ApproveRunRequest, RejectRunRequest, RetryPublicationCleanupRequest, RetryRunRequest } from "./run-types";
+
+export { handleDevDeployment } from "./dev-deployment";

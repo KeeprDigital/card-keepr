@@ -16,8 +16,10 @@ strings, which the HTTP adapter converts to numbers.
 
 The repository CLI is the only initial owner interface. It talks to the
 ingestion Worker for catalogue operations, to GitHub for a production release
-dispatch. The
-ingestion Worker never receives GitHub or Cloudflare deployment credentials.
+dispatch. The dev deployment endpoint receives a short-lived GitHub token only
+for read-only exact-commit checks; no Worker receives Cloudflare deployment
+credentials. See [isolated dev](../docs/runbooks/isolated-dev.md) for its signed
+workflow authentication and release guards.
 
 ## Interaction rules
 
@@ -26,10 +28,17 @@ URL and administration key. `game-candidate prepare` and `abandon` require
 `--yes`; native artifact preparation and publication commands bind the explicit
 candidate or operation without a production-target confirmation option.
 
-Commands that implement production-target confirmation (including release,
+Pass `--target dev`, `--target staging` or `--target production` to select a
+canonical remote profile. It uses only `KEEPR_<TARGET>_API_KEY` and
+`KEEPR_<TARGET>_ADMINISTRATION_KEY`, with canonical environment URLs; unscoped
+credentials and URL overrides are not inherited. Curated Revision commands
+retain their separate stdin-secret interface. Omitting `--target` preserves
+the existing configured URLs and unscoped credentials.
+
+Commands that implement target confirmation (including release,
 recovery and maintenance):
 
-- require `--environment production`;
+- require `--environment` to match the selected target, defaulting to `production`;
 - print the resolved Cloudflare account, Worker, D1, and R2 identities before
   confirmation;
 - name every target by opaque identity;
@@ -44,6 +53,9 @@ or backup digest, and an idempotency key. The production-target document binds
 the Cloudflare account, both Worker scripts, both D1 databases, and every
 private R2 bucket. Missing, partial, reordered, or altered confirmation fails
 before mutation.
+
+`release production` requires the production target. Selecting a staging profile
+does not provision staging or introduce a staging deployment trigger.
 
 Exit codes are `0` success, `2` usage, `3` confirmation declined, `4`
 authentication, `5` authorization, `6` not found, `7` conflict or stale

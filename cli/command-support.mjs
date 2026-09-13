@@ -55,3 +55,7 @@ export function exitCodeForStatus(status) {
   if (status === 400 || status === 413 || status === 422) return 8;
   return 9;
 }
+
+export function targetConfirmationDetail(action, environment) {
+  return `${action} requires --environment ${environment.KEEPR_TARGET ?? "production"}.`;
+}

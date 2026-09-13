@@ -140,3 +140,12 @@ not establish that the environment rollout or Go-Live has occurred. Use the
 [release procedure](runbooks/production-release.md) for the available path and
 [issue #216](https://github.com/KeeprDigital/card-keepr/issues/216) for readiness.
 [Environment decision](https://github.com/KeeprDigital/card-keepr/issues/215#issuecomment-5558986254).
+
+The isolated dev implementation uses signed GitHub workflow identity to prepare
+the exact passing main commit against its own catalogue, then reuses the guarded
+release executor and canonical lease. It verifies uploaded versions against the
+fully activated pair before binding and smoke success. Resource namespaces,
+CLI profiles and Disposable Restore deletion are environment-scoped; provider
+deployment authority still depends on the owner's account-isolation choice.
+The [dev procedure](runbooks/isolated-dev.md) requires a guarded first installation
+and real automatic-deployment evidence before the rollout is established.

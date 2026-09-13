@@ -11,6 +11,7 @@ import {
 } from "./recovery";
 
 type Environment = {
+  KEEPR_ENVIRONMENT?: string;
   BACKUPS: R2Bucket;
   CATALOGUE_EXPORTS: R2Bucket;
   PRINTING_IMAGES: R2Bucket;
@@ -77,11 +78,11 @@ export const backupRecoveryRoutes = [
       "idempotency_key",
       "linked_operation_id",
     ]);
-    if (requiredString(body, "environment") !== "production") {
+    if (requiredString(body, "environment") !== (env.KEEPR_ENVIRONMENT ?? "production")) {
       throw new AdministrationProblem(
         422,
         "production_target_required",
-        "Catalogue recovery requires environment production.",
+        `Catalogue recovery requires environment ${env.KEEPR_ENVIRONMENT ?? "production"}.`,
       );
     }
     const method = requiredString(body, "method");

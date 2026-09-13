@@ -1,3 +1,4 @@
+import { readWorkerConfig } from "../cli/lib/config.mjs";
 import { gunzipSync } from "node:zlib";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
@@ -16,7 +17,7 @@ test("one owner CLI start verifies native artifacts without exposing any unfinis
   const statePath = join(directory, "shared-state"),
     adminKey = randomUUID(),
     apiKey = randomUUID();
-  const config = JSON.parse(await readFile(resolve("apps/ingestion/wrangler.jsonc"), "utf8"));
+  const config = await readWorkerConfig(resolve("apps/ingestion/wrangler.jsonc"));
   delete config.$schema;
   config.main = resolve("apps/ingestion/src/index.ts");
   config.d1_databases[0].migrations_dir = resolve("migrations");

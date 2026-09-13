@@ -1,3 +1,4 @@
+import { readWorkerConfig } from "../cli/lib/config.mjs";
 import {
   inspectNativeCollection,
   publishNativeCollection,
@@ -63,7 +64,7 @@ test("native publication: the owner publishes a complete Fusion World source for
     ),
   ]);
   await applyMigrations(statePath);
-  const config = JSON.parse(await readFile(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
+  const config = await readWorkerConfig(resolve(root, "apps/ingestion/wrangler.jsonc"));
   delete config.$schema;
   config.main = resolve(root, "apps/ingestion/src/index.ts");
   config.d1_databases[0].migrations_dir = resolve(root, "migrations");

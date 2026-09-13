@@ -1,3 +1,4 @@
+import { readWorkerConfig } from "../../cli/lib/config.mjs";
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { createFixtureServer } from "./http-fixture.mjs";
@@ -55,7 +56,7 @@ export function inprocessDatabaseDirectory(statePath) {
 
 async function configuration(config, statePath) {
   const path = resolve(root, config);
-  const raw = JSON.parse(await readFile(path, "utf8"));
+  const raw = await readWorkerConfig(path);
   const converted = unstable_getMiniflareWorkerOptions(path);
   const options = converted.workerOptions;
   for (const kind of ["d1Databases", "r2Buckets"]) {

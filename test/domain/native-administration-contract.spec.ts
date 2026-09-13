@@ -66,6 +66,23 @@ test.each([
   if ("supported_game" in request) expect(validate!({ ...request, supported_game: "unregistered" })).toBe(false);
 });
 
+test.each(["dev", "staging", "production"])("recovery accepts the complete %s environment intent", (environment) => {
+  const validate = ajv.getSchema(`${schema.$id}#/$defs/CatalogueRecoveryBeginCommandRequest`)!;
+  const request = {
+    environment,
+    recovery_id: "recovery_exact_backup",
+    method: "time_travel",
+    target_revision_id: "catrev_recoverable",
+    target_bookmark: "retained-bookmark",
+    target_digest: "c".repeat(64),
+    backup_attempt_id: "backup_verified",
+    expected_current_revision_id: "catrev_current",
+    idempotency_key: "recover-exact-backup",
+  };
+  expectCompleteRequest(validate, request);
+  expect(validate({ ...request, environment: "other" })).toBe(false);
+});
+
 function expectCompleteRequest(validate: ValidateFunction, request: Record<string, unknown>) {
   expect(validate(request)).toBe(true);
   for (const field of Object.keys(request)) {

@@ -1,3 +1,4 @@
+import { readWorkerConfig } from "../cli/lib/config.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -61,7 +62,7 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
       manifest.captures.map(async (c) => [c.url, { ...c, bodyBytes: await readFile(join(c.root, c.body)) }]),
     ),
   );
-  const config = JSON.parse(await readFile("apps/ingestion/wrangler.jsonc", "utf8"));
+  const config = await readWorkerConfig("apps/ingestion/wrangler.jsonc");
   delete config.$schema;
   config.main = resolve("apps/ingestion/src/index.ts");
   config.d1_databases[0].migrations_dir = resolve("migrations");

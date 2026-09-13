@@ -1,6 +1,7 @@
+import { readWorkerConfig } from "../cli/lib/config.mjs";
 import { collectNativeFixtureSource } from "./helpers/native-catalogue-runtime.mjs";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -23,7 +24,7 @@ test("owner CLI admission remains administrative until publication and serves or
   const key = crypto.randomUUID();
   await writeFile(ingestionEnv, `ADMINISTRATION_KEY=${key}\nADMINISTRATION_CLOCK_MODE=request\n`);
   await writeFile(apiEnv, `API_BEARER_KEY=${key}\n`);
-  const config = JSON.parse(await readFile(join(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
+  const config = await readWorkerConfig(join(root, "apps/ingestion/wrangler.jsonc"));
   delete config.$schema;
   config.main = join(root, "acceptance/fixtures/native-retained-evidence-harness.ts");
   config.d1_databases[0].migrations_dir = join(root, "migrations");

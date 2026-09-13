@@ -1,3 +1,4 @@
+import { readWorkerConfig } from "../cli/lib/config.mjs";
 import { gunzipSync } from "node:zlib";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
@@ -38,7 +39,7 @@ async function proveNativeComposition(t, proof) {
   const statePath = join(directory, "shared-state"),
     adminKey = randomUUID(),
     apiKey = randomUUID();
-  const config = JSON.parse(await readFile(resolve("apps/ingestion/wrangler.jsonc"), "utf8"));
+  const config = await readWorkerConfig(resolve("apps/ingestion/wrangler.jsonc"));
   delete config.$schema;
   config.main = resolve("acceptance/fixtures/cleanup-native-runtime.ts");
   config.d1_databases[0].migrations_dir = resolve("migrations");
@@ -1062,7 +1063,7 @@ async function proveNativeComposition(t, proof) {
   assert.equal(restoredCorrection.code, 0, restoredCorrection.stdout);
   assert.deepEqual(JSON.parse(restoredCorrection.stdout), correctionHistory);
 
-  const restoredApiConfig = JSON.parse(await readFile(resolve("apps/api/wrangler.jsonc"), "utf8"));
+  const restoredApiConfig = await readWorkerConfig(resolve("apps/api/wrangler.jsonc"));
   restoredApiConfig.main = resolve("apps/api/src/index.ts");
   restoredApiConfig.d1_databases[0].database_id = recovery.restored_database_id;
   const restoredApiPath = join(directory, "restored-api.json");

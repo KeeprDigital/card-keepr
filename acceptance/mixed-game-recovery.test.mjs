@@ -1,5 +1,6 @@
+import { readWorkerConfig } from "../cli/lib/config.mjs";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -37,7 +38,7 @@ test("mixed-game composition and current plus two survive an actual SQL import",
     outfile: migrationModule,
   });
   const { syntheticSourceAdapterMigration } = await import(pathToFileURL(migrationModule).href);
-  const config = JSON.parse(await readFile("apps/ingestion/wrangler.jsonc", "utf8"));
+  const config = await readWorkerConfig("apps/ingestion/wrangler.jsonc");
   delete config.$schema;
   config.main = resolve("acceptance/fixtures/native-retained-evidence-harness.ts");
   config.d1_databases[0].migrations_dir = resolve("migrations");

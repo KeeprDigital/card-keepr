@@ -15,7 +15,8 @@ export async function requestDocument(
   } = {},
 ) {
   const label = runtime === "api" ? "API" : "ingestion";
-  const keyName = runtime === "api" ? "KEEPR_API_KEY" : "KEEPR_ADMINISTRATION_KEY";
+  const prefix = environment.KEEPR_TARGET ? `KEEPR_${environment.KEEPR_TARGET.toUpperCase()}_` : "KEEPR_";
+  const keyName = `${prefix}${runtime === "api" ? "API_KEY" : "ADMINISTRATION_KEY"}`;
   const failure = (error, exitCode) => ({ error, exitCode, document: null });
   if (!key) return failure({ code: "configuration_error", detail: `Missing required environment: ${keyName}` }, 2);
   let response;

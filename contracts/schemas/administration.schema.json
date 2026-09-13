@@ -192,7 +192,7 @@
         "idempotency_key"
       ],
       "properties": {
-        "environment": { "const": "production" },
+        "environment": { "enum": ["dev", "staging", "production"] },
         "recovery_id": { "$ref": "#/$defs/OpaqueId" },
         "method": { "enum": ["time_travel", "replacement_database"] },
         "target_revision_id": { "$ref": "#/$defs/OpaqueId" },
