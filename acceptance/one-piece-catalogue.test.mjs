@@ -1,3 +1,4 @@
+import { readWorkerConfig } from "../cli/lib/config.mjs";
 import {
   inspectNativeCollection,
   publishNativeCollection,
@@ -7,7 +8,7 @@ import {
 } from "./helpers/native-catalogue-runtime.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -32,7 +33,7 @@ test("native publication: the owner publishes a complete One Piece catalogue for
     writeFile(planPath, JSON.stringify(completePlan("card-keepr-one-piece-complete-v1")), { mode: 0o600 }),
   ]);
   await applyMigrations(statePath);
-  const config = JSON.parse(await readFile(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
+  const config = await readWorkerConfig(resolve(root, "apps/ingestion/wrangler.jsonc"));
   delete config.$schema;
   config.main = resolve(root, "apps/ingestion/src/index.ts");
   config.d1_databases[0].migrations_dir = resolve(root, "migrations");

@@ -1,3 +1,4 @@
+import { readWorkerConfig } from "../cli/lib/config.mjs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
@@ -67,7 +68,7 @@ test("retained P-001: owner collects every declared Bandai record through native
       }),
     ),
   );
-  const config = JSON.parse(await readFile("apps/ingestion/wrangler.jsonc", "utf8"));
+  const config = await readWorkerConfig("apps/ingestion/wrangler.jsonc");
   delete config.$schema;
   config.main = resolve("apps/ingestion/src/index.ts");
   config.d1_databases[0].migrations_dir = resolve("migrations");

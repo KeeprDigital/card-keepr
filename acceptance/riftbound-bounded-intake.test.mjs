@@ -1,3 +1,4 @@
+import { readWorkerConfig } from "../cli/lib/config.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, writeFile, readdir, rm } from "node:fs/promises";
@@ -45,7 +46,7 @@ test("bounded Riftbound records retain owner review, native publication and actu
       ]),
     ),
   );
-  const config = JSON.parse(await readFile("apps/ingestion/wrangler.jsonc", "utf8"));
+  const config = await readWorkerConfig("apps/ingestion/wrangler.jsonc");
   delete config.$schema;
   config.main = resolve("apps/ingestion/src/index.ts");
   config.d1_databases[0].migrations_dir = resolve("migrations");

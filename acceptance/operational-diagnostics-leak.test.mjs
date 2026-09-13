@@ -1,5 +1,5 @@
+import { readWorkerConfig } from "../cli/lib/config.mjs";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -72,7 +72,7 @@ test("operational logs and diagnostics retain correlation fields without leaking
       .join(""),
     { mode: 0o600 },
   );
-  const config = JSON.parse(readFileSync(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
+  const config = await readWorkerConfig(resolve(root, "apps/ingestion/wrangler.jsonc"));
   delete config.$schema;
   config.main = resolve(root, "apps/ingestion/src/index.ts");
   config.d1_databases[0].migrations_dir = resolve(root, "migrations");

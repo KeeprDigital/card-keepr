@@ -1,3 +1,4 @@
+import { readWorkerConfig } from "../cli/lib/config.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -85,7 +86,7 @@ async function runDiagnostic() {
       sourceUrl = `http://127.0.0.1:${server.address().port}/source`;
     }
     await applyMigrations(statePath);
-    const config = JSON.parse(await readFile("apps/ingestion/wrangler.jsonc", "utf8"));
+    const config = await readWorkerConfig("apps/ingestion/wrangler.jsonc");
     delete config.$schema;
     config.main = resolve("acceptance/fixtures/reconciliation-capacity-probe.ts");
     config.d1_databases[0].migrations_dir = resolve("migrations");

@@ -1,3 +1,4 @@
+import { readWorkerConfig } from "../cli/lib/config.mjs";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
@@ -26,7 +27,7 @@ const migrationLevel = Math.max(
     .filter((entry) => /^\d+_.+\.sql$/.test(entry))
     .map((entry) => Number.parseInt(entry, 10)),
 );
-const ingestionConfig = JSON.parse(readFileSync(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
+const ingestionConfig = await readWorkerConfig(resolve(root, "apps/ingestion/wrangler.jsonc"));
 
 const rateLimitWindowSeconds = 60;
 const rateLimitBatchSize = 25;

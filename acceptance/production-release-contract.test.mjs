@@ -1,3 +1,4 @@
+import { readWorkerConfig } from "../cli/lib/config.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -267,13 +268,13 @@ test("the Bootstrap Mode branch keeps every data-independent gate, runs no data-
   assert.match(failure, /failure-evidence\.sql[\s\S]*cleanup\.sql/u);
 });
 
-test("each worker owns one public base and the zone routes that mount it", () => {
+test("each worker owns one public base and the zone routes that mount it", async () => {
   // Issue #123 / ADR 0007: one host, two path mounts, no router worker.
   for (const [config, mount] of [
     ["apps/api/wrangler.jsonc", "api"],
     ["apps/ingestion/wrangler.jsonc", "ingest"],
   ]) {
-    const parsed = JSON.parse(readFileSync(config, "utf8"));
+    const parsed = await readWorkerConfig(config);
     assert.equal(parsed.vars.PUBLIC_BASE_URL, `https://card.keepr.digital/${mount}`);
     assert.deepEqual(parsed.routes, [
       { pattern: `card.keepr.digital/${mount}`, zone_name: "keepr.digital" },

@@ -1,5 +1,5 @@
+import { readWorkerConfig } from "../cli/lib/config.mjs";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -21,7 +21,7 @@ test("compatibility publication: the CLI audits real retained evidence through a
   const ingestionEnv = join(directory, "ingestion.env");
   const ingestionConfig = join(directory, "ingestion.wrangler.json");
   await writeFile(ingestionEnv, `ADMINISTRATION_KEY=${administrationKey}\n`, { mode: 0o600 });
-  const config = JSON.parse(readFileSync(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
+  const config = await readWorkerConfig(resolve(root, "apps/ingestion/wrangler.jsonc"));
   delete config.$schema;
   config.main = resolve(root, "acceptance/fixtures/retained-evidence-ingestion-harness.ts");
   config.d1_databases[0].migrations_dir = resolve(root, "migrations");

@@ -1,5 +1,5 @@
+import { readWorkerConfig } from "../../cli/lib/config.mjs";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { runCli } from "./acceptance-runtime.mjs";
@@ -185,8 +185,8 @@ export async function approveCandidate(runId, idempotencyKey, environment, runti
 }
 
 export async function writeRuntimeConfig(destination, sourceEntrypoint = "AcceptanceOfficialSourceTransport") {
-  const config = JSON.parse(readFileSync(resolve(root, "apps/ingestion/wrangler.jsonc"), "utf8"));
-  const apiConfig = JSON.parse(readFileSync(resolve(root, "apps/api/wrangler.jsonc"), "utf8"));
+  const config = await readWorkerConfig(resolve(root, "apps/ingestion/wrangler.jsonc"));
+  const apiConfig = await readWorkerConfig(resolve(root, "apps/api/wrangler.jsonc"));
   delete config.$schema;
   config.name = "card-keepr-combined-acceptance-runtime";
   config.main = resolve(root, "acceptance/fixtures/native-combined-card-keepr-runtime.ts");
