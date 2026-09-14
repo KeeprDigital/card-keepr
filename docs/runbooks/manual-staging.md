@@ -87,8 +87,11 @@ scope than the server requires is refused.
 Production records the immutable SHA, owner GitHub actor, CI run, actual target
 and schema level, validation scope/reason, required checks and a 24-hour deadline.
 The CLI submits only server-issued release ID, intent digest and exact SHA to
-`staging-deploy.yml` on main. The workflow checks out that SHA even if main has
-advanced. Repeating an identical owner request returns the original intent;
+`staging-deploy.yml` on main. The workflow first checks out its trusted workflow
+SHA and claims the production intent before executing any dispatch-selected
+code. Only after that authorization does it check out the selected SHA, even if
+main has advanced. Deployment and API credentials are scoped to the final
+execution step; neither dependency setup nor the authorization gate receives them. Repeating an identical owner request returns the original intent;
 changing its choices conflicts. Lost responses do not extend deadlines.
 
 Only a signed GitHub manual workflow identity with the staging environment,
@@ -168,4 +171,5 @@ References: [D1 limits](https://developers.cloudflare.com/d1/platform/limits/),
 [Workers limits](https://developers.cloudflare.com/workers/platform/limits/),
 [R2 limits](https://developers.cloudflare.com/r2/platform/limits/),
 [GitHub OIDC](https://docs.github.com/en/actions/reference/security/oidc),
+[workflow SHA and step contexts](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts),
 [GitHub compare API](https://docs.github.com/en/rest/commits/commits#compare-two-commits).

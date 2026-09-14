@@ -5,9 +5,13 @@ import { mkdir, writeFile, open } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify, isDeepStrictEqual } from "node:util";
-import { stagingAudience, verifyReleaseCommit } from "../src/http/dev-workflow-identity.mjs";
+import { verifyReleaseCommit } from "../src/http/dev-workflow-identity.mjs";
 import { validatedEnvironmentTarget } from "../src/http/production-target.mjs";
-import { isReleaseDigest, isReleaseHead, isReleaseIdentity } from "../src/catalogue/shared/release-input-shapes.mjs";
+import {
+  authorizeStagingRelease,
+  stagingDispatchIdentity,
+  stagingWorkflowRequest,
+} from "./staging-workflow-client.mjs";
 import {
   stagingValidationRequirements,
   stagingValidationScenarios,
@@ -25,13 +29,7 @@ export async function runStagingRelease(
   executeCommand = promisify(execFile),
   runValidation = runExtendedValidation,
 ) {
-  if (
-    environment.RELEASE_ENVIRONMENT !== "staging" ||
-    !isReleaseIdentity(environment.RELEASE_ID) ||
-    !isReleaseDigest(environment.INTENT_DIGEST) ||
-    !isReleaseHead(environment.EXPECTED_HEAD_SHA)
-  )
-    throw new Error("invalid_staging_dispatch");
+  const identity = stagingDispatchIdentity(environment);
   if (execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim() !== environment.EXPECTED_HEAD_SHA)
     throw new Error("staging_checkout_mismatch");
   const directory = resolve(".artifacts/staging-release");
@@ -41,17 +39,8 @@ export async function runStagingRelease(
     await writeFile(`${directory}/${name}.json`, text, { mode: 0o600 });
     return createHash("sha256").update(text).digest("hex");
   };
-  const identity = { release_id: environment.RELEASE_ID, intent_digest: environment.INTENT_DIGEST };
-  const authorization = await workflowRequest(environment, stagingAudience, identity);
+  const authorization = await authorizeStagingRelease(environment);
   const intent = authorization.intent;
-  if (
-    authorization.contract !== "card-keepr-staging-authorization@1" ||
-    authorization.intent_digest !== identity.intent_digest ||
-    intent?.expected_head_sha !== environment.EXPECTED_HEAD_SHA ||
-    intent.release_id !== identity.release_id ||
-    Date.parse(authorization.expires_at) <= Date.now()
-  )
-    throw new Error("staging_authorization_mismatch");
   const checks = stagingValidationRequirements(intent.validation_scope);
   const scenarios = stagingValidationScenarios(intent.validation_scope);
   if (
@@ -100,7 +89,7 @@ export async function runStagingRelease(
     };
     await passed(activeCheck, migration);
     activeCheck = "live-smoke";
-    const prepared = await workflowRequest(environment, stageEndpoint, identity);
+    const prepared = await stagingWorkflowRequest(environment, stageEndpoint, identity);
     if (
       prepared.environment !== "staging" ||
       prepared.dispatch_inputs?.expected_head_sha !== intent.expected_head_sha ||
@@ -166,7 +155,7 @@ export async function runStagingRelease(
   validateStagingOutcome(outcome, intent, identity.intent_digest);
   await save("outcome", outcome);
   // Reacquire only a short-lived identity token; production returns the original claim/deadline.
-  await workflowRequest(environment, `${stageEndpoint}/${encodeURIComponent(intent.release_id)}/outcome`, {
+  await stagingWorkflowRequest(environment, `${stageEndpoint}/${encodeURIComponent(intent.release_id)}/outcome`, {
     intent_digest: identity.intent_digest,
     outcome,
   });
@@ -183,32 +172,6 @@ export async function runStagingRelease(
 function failureCause(error) {
   const code = error instanceof Error ? error.message.split(":")[0] : "";
   return /^[a-z][a-z0-9_]{0,79}$/u.test(code) ? code : "staging_operation_failed";
-}
-
-async function workflowRequest(environment, url, body) {
-  const oidc = new URL(environment.ACTIONS_ID_TOKEN_REQUEST_URL);
-  if (oidc.protocol !== "https:") throw new Error("invalid_oidc_endpoint");
-  oidc.searchParams.set("audience", stagingAudience);
-  const identityResponse = await fetch(oidc, {
-    redirect: "error",
-    headers: { authorization: `Bearer ${environment.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` },
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!identityResponse.ok) throw new Error("staging_identity_unavailable");
-  const identity = await identityResponse.json();
-  const response = await fetch(url, {
-    method: "POST",
-    redirect: "error",
-    signal: AbortSignal.timeout(60_000),
-    headers: {
-      authorization: `Bearer ${identity.value}`,
-      "x-github-token": environment.GH_TOKEN,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) throw new Error(`staging_request_failed:${response.status}`);
-  return response.json();
 }
 
 async function runExtendedValidation(scenarios, directory) {
