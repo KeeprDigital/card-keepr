@@ -277,3 +277,18 @@ both environments fit the existing `*.keepr.digital` certificate coverage.
 Production retains `card.keepr.digital`.
 The [dev procedure](runbooks/isolated-dev.md) requires a guarded first installation
 and real automatic-deployment evidence before the rollout is established.
+
+The manual staging implementation retains one immutable owner intent in
+production, including the actual production starting target/schema and exact
+selected commit. A signed manual staging workflow claims it once; lost-response
+replay preserves the original claim and deadline. Staging prepares against its
+own catalogue through the shared guarded executor and retains separate deployment,
+migration-rehearsal and required-validation outcomes. Scope is derived from
+verified active production release provenance and a complete code transition;
+unknown provenance requires full validation. No merge deploys staging, and no
+staging catalogue is copied to production. The
+[staging procedure](runbooks/manual-staging.md) distinguishes available code from
+live acceptance under [#237](https://github.com/KeeprDigital/card-keepr/issues/237).
+[#238](https://github.com/KeeprDigital/card-keepr/issues/238) owns continuation of
+that intent through fresh production guards; a short-lived staging plan cannot
+authorize a later production deployment.

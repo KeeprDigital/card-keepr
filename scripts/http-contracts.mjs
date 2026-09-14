@@ -142,6 +142,19 @@ inventory.push({
   treatment: "dev-only signed workflow identity",
   callers: callers("/v1/dev-deployments"),
 });
+for (const [path, treatment] of [
+  ["/v1/staging-release-authorizations", "production-only signed manual workflow identity"],
+  ["/v1/staging-deployments", "staging-only signed manual workflow identity"],
+  ["/v1/staging-deployments/{release}/outcome", "staging-only signed manual workflow identity"],
+])
+  inventory.push({
+    worker: "admin",
+    method: "POST",
+    path,
+    contract: "platform",
+    treatment,
+    callers: callers(path.replaceAll(/\{[^}]+\}/g, "resource")),
+  });
 inventory.sort((a, b) => `${a.worker} ${a.path} ${a.method}`.localeCompare(`${b.worker} ${b.path} ${b.method}`, "en"));
 output("contracts/http-route-inventory.json", JSON.stringify(inventory, null, 2) + "\n");
 const code = standaloneCode(ajv, validators);

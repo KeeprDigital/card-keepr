@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { environmentNames } from "../src/http/environment-target.mjs";
-import { devConfigurations } from "./dev-environment.mjs";
+import { environmentConfigurations } from "./dev-environment.mjs";
 import { isDeepStrictEqual } from "node:util";
 import { readWorkerConfig } from "../cli/lib/config.mjs";
 import { request as httpRequest } from "../cli/lib/http-client.mjs";
@@ -22,7 +22,7 @@ const expectedSecrets = {
 
 function profile(environment) {
   const target = environment.RELEASE_ENVIRONMENT ?? "production";
-  if (!["production", "dev"].includes(target)) throw new Error("invalid_release_environment");
+  if (!["production", "dev", "staging"].includes(target)) throw new Error("invalid_release_environment");
   const names = environmentNames(target);
   return {
     names,
@@ -30,13 +30,13 @@ function profile(environment) {
       target === "production"
         ? productionWorkerConfigs
         : {
-            [names.workers[0]]: "apps/api/wrangler.dev.json",
-            [names.workers[1]]: "apps/ingestion/wrangler.dev.json",
+            [names.workers[0]]: `apps/api/wrangler.${target}.json`,
+            [names.workers[1]]: `apps/ingestion/wrangler.${target}.json`,
           },
   };
 }
 function secretsFor(worker) {
-  return expectedSecrets[worker.replace(/-dev$/u, "")];
+  return expectedSecrets[worker.replace(/-(?:dev|staging)$/u, "")];
 }
 
 export async function verifyProductionTarget(environment, fetchImpl = fetch) {
@@ -207,14 +207,16 @@ async function configuredWorkers(environment) {
     }),
   );
   const configs = Object.fromEntries(entries);
-  if (environment.RELEASE_ENVIRONMENT === "dev") {
-    const expected = await devConfigurations({
+  if (["dev", "staging"].includes(environment.RELEASE_ENVIRONMENT)) {
+    const target = environment.RELEASE_ENVIRONMENT;
+    const prefix = target.toUpperCase();
+    const expected = await environmentConfigurations(target, {
       accountId: environment.CLOUDFLARE_ACCOUNT_ID,
-      catalogueId: environment.DEV_CATALOGUE_DATABASE_ID,
-      disposableId: environment.DEV_DISPOSABLE_DATABASE_ID,
+      catalogueId: environment[`${prefix}_CATALOGUE_DATABASE_ID`],
+      disposableId: environment[`${prefix}_DISPOSABLE_DATABASE_ID`],
     });
     if (!isDeepStrictEqual(Object.values(configs), [expected.api, expected.ingestion]))
-      throw new Error("dev_config_isolation_mismatch");
+      throw new Error(`${target}_config_isolation_mismatch`);
   }
   return configs;
 }

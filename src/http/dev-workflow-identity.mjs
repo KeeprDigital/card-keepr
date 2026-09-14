@@ -1,6 +1,7 @@
 const repository = "KeeprDigital/card-keepr";
 const issuer = "https://token.actions.githubusercontent.com";
 export const devAudience = "https://card-dev.keepr.digital/ingest/v1/dev-deployments";
+export const stagingAudience = "https://card.keepr.digital/ingest/v1/staging-release-authorizations";
 export const requiredCiChecks = [
   "lint",
   "checks",
@@ -32,6 +33,18 @@ async function document(url, token) {
 
 /** Verify GitHub's signature before trusting any identity or using the workflow token. */
 export async function verifyDevWorkflow(token, githubToken, intent, now = Date.now()) {
+  return verifyWorkflow(token, githubToken, intent, "dev", now);
+}
+
+/** A manual staging workflow may run from later main, but cannot replace the owner's selected SHA. */
+export async function verifyStagingWorkflow(token, githubToken, intent, now = Date.now(), requireCi = true) {
+  return verifyWorkflow(token, githubToken, intent, "staging", now, requireCi);
+}
+
+async function verifyWorkflow(token, githubToken, intent, environment, now, requireCi = true) {
+  const staging = environment === "staging";
+  const event = staging ? "workflow_dispatch" : "workflow_run";
+  const workflow = staging ? "staging-deploy.yml" : "dev-deploy.yml";
   if (typeof token !== "string" || token.length > 16384 || typeof githubToken !== "string" || githubToken.length > 4096)
     denied();
   const parts = token.split(".");
@@ -60,18 +73,18 @@ export async function verifyDevWorkflow(token, githubToken, intent, now = Date.n
   const seconds = Math.floor(now / 1000);
   if (
     claims.iss !== issuer ||
-    claims.aud !== devAudience ||
+    claims.aud !== (staging ? stagingAudience : devAudience) ||
     ![
-      "repo:KeeprDigital/card-keepr:environment:dev",
-      "repo:KeeprDigital@114643329/card-keepr@1313489088:environment:dev",
+      `repo:KeeprDigital/card-keepr:environment:${environment}`,
+      `repo:KeeprDigital@114643329/card-keepr@1313489088:environment:${environment}`,
     ].includes(claims.sub) ||
     claims.repository !== repository ||
     claims.repository_id !== "1313489088" ||
     claims.repository_owner_id !== "114643329" ||
-    claims.environment !== "dev" ||
+    claims.environment !== environment ||
     claims.ref !== "refs/heads/main" ||
-    claims.event_name !== "workflow_run" ||
-    claims.workflow_ref !== `${repository}/.github/workflows/dev-deploy.yml@refs/heads/main` ||
+    claims.event_name !== event ||
+    claims.workflow_ref !== `${repository}/.github/workflows/${workflow}@refs/heads/main` ||
     !/^[0-9a-f]{40}$/u.test(claims.sha ?? "") ||
     !/^[0-9a-f]{40}$/u.test(claims.workflow_sha ?? "") ||
     !/^\d+$/u.test(claims.run_id ?? "") ||
@@ -86,9 +99,10 @@ export async function verifyDevWorkflow(token, githubToken, intent, now = Date.n
   )
     denied();
   if (
-    Object.keys(intent).sort().join("|") !== "ci_run_id|head_sha" ||
-    intent.head_sha !== claims.sha ||
-    intent.head_sha !== claims.workflow_sha ||
+    Object.keys(intent).sort().join("|") !== (staging ? "ci_run_id|expected_actor|head_sha" : "ci_run_id|head_sha") ||
+    (!staging && intent.head_sha !== claims.sha) ||
+    claims.sha !== claims.workflow_sha ||
+    (staging && (typeof intent.expected_actor !== "string" || intent.expected_actor !== claims.actor)) ||
     !/^[0-9a-f]{40}$/u.test(intent.head_sha ?? "") ||
     !/^\d+$/u.test(intent.ci_run_id ?? "")
   )
@@ -97,15 +111,16 @@ export async function verifyDevWorkflow(token, githubToken, intent, now = Date.n
   const run = await document(`${root}/actions/runs/${claims.run_id}`, githubToken);
   if (
     String(run.repository?.id) !== claims.repository_id ||
-    run.event !== "workflow_run" ||
-    run.path !== ".github/workflows/dev-deploy.yml" ||
+    run.event !== event ||
+    run.path !== `.github/workflows/${workflow}` ||
     run.head_branch !== "main" ||
     run.head_sha !== claims.sha ||
     String(run.run_attempt) !== claims.run_attempt ||
-    run.status !== "in_progress"
+    run.status !== "in_progress" ||
+    (staging && run.actor?.login !== intent.expected_actor)
   )
     denied();
-  await verifyDevCommit(githubToken, intent);
+  if (requireCi) await verifyCommit(githubToken, { head_sha: intent.head_sha, ci_run_id: intent.ci_run_id }, staging);
   return {
     headSha: intent.head_sha,
     runId: claims.run_id,
@@ -117,6 +132,14 @@ export async function verifyDevWorkflow(token, githubToken, intent, now = Date.n
 
 /** Shared exact-merge gate for owner first install and subsequent OIDC releases. */
 export async function verifyDevCommit(githubToken, intent) {
+  return verifyCommit(githubToken, intent, false);
+}
+
+export async function verifyReleaseCommit(githubToken, intent) {
+  return verifyCommit(githubToken, intent, true);
+}
+
+async function verifyCommit(githubToken, intent, allowManual) {
   if (
     Object.keys(intent).sort().join("|") !== "ci_run_id|head_sha" ||
     !/^[0-9a-f]{40}$/u.test(intent.head_sha ?? "") ||
@@ -128,7 +151,7 @@ export async function verifyDevCommit(githubToken, intent) {
   if (
     String(ci.repository?.id) !== "1313489088" ||
     ci.path !== ".github/workflows/ci.yml" ||
-    ci.event !== "push" ||
+    !(allowManual ? ["push", "workflow_dispatch"] : ["push"]).includes(ci.event) ||
     ci.head_branch !== "main" ||
     ci.head_sha !== intent.head_sha ||
     ci.status !== "completed" ||

@@ -181,3 +181,10 @@ export {
   compareSourceFreshness,
   type SourceFreshnessStorageRow,
 } from "./source-freshness";
+export {
+  stagingValidationRequirements,
+  stagingValidationScenarios,
+  selectStagingValidation,
+  validateStagingOutcome,
+  type StagingOutcome,
+} from "./staging-validation.mjs";

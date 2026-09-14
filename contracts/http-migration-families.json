@@ -16,6 +16,27 @@
   {
     "family": "ingestion",
     "method": "POST",
+    "path": "/v1/staging-releases",
+    "slice": "Maintenance and runtime operations",
+    "cli": "release staging"
+  },
+  {
+    "family": "ingestion",
+    "method": "GET",
+    "path": "/v1/staging-releases/:release",
+    "slice": "Maintenance and runtime operations",
+    "cli": "release staging-status"
+  },
+  {
+    "family": "ingestion",
+    "method": "GET",
+    "path": "/v1/staging-deployments/:release",
+    "slice": "Maintenance and runtime operations",
+    "cli": "release staging-status"
+  },
+  {
+    "family": "ingestion",
+    "method": "POST",
     "path": "/v1/catalogue-search-materialization/repair",
     "slice": "Maintenance and runtime operations",
     "cli": "repairCatalogueSearch"

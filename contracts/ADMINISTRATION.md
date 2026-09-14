@@ -35,8 +35,8 @@ credentials and URL overrides are not inherited. Curated Revision commands
 retain their separate stdin-secret interface. Omitting `--target` preserves
 the existing configured URLs and unscoped credentials.
 
-Commands that implement target confirmation (including release,
-recovery and maintenance):
+The production-target confirmation protocol used by `release production`,
+recovery and maintenance has these requirements:
 
 - require `--environment` to match the selected target, defaulting to `production`;
 - print the resolved Cloudflare account, Worker, D1, and R2 identities before
@@ -54,8 +54,24 @@ the Cloudflare account, both Worker scripts, both D1 databases, and every
 private R2 bucket. Missing, partial, reordered, or altered confirmation fails
 before mutation.
 
-`release production` requires the production target. Selecting a staging profile
-does not provision staging or introduce a staging deployment trigger.
+`release production` requires the production target. `release staging` also uses
+`--target production`, because production records the owner intent and actual
+starting target/schema. It dispatches only the server-issued staging workflow
+inputs after one exact confirmation. Required options are `--release-id`,
+`--expected-head-sha`, `--ci-run-id`, `--validation-scope`, `--idempotency-key`
+and `--yes`; the confirmation binds the server-selected scope and required checks.
+It returns exit `10` for dispatch acknowledgement. The signed workflow protocol,
+first installation and separate immutable outcomes are defined in the
+[manual staging procedure](../docs/runbooks/manual-staging.md).
+
+`release staging-status --release-id <id> --target production` reads the retained
+intent and workflow claim from `GET /v1/staging-releases/:release`; the staging
+profile reads preparation/outcome from `GET /v1/staging-deployments/:release`.
+Both require the respective environment's administration key and return exit `0`
+for a retrieved document, including a failed outcome. `POST /v1/staging-releases`
+is an owner-authenticated production route. The production authorization and
+staging preparation/outcome POST routes accept the exact signed workflow identity,
+never an administration key. Selecting a profile alone does not provision resources.
 
 Exit codes are `0` success, `2` usage, `3` confirmation declined, `4`
 authentication, `5` authorization, `6` not found, `7` conflict or stale

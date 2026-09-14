@@ -71,3 +71,33 @@ test("deployment permits only absent or exactly dev-owned Workflow names and fai
   mode = "unavailable";
   await assert.rejects(verifyDevWorkflows(environment), /dev_workflow_inventory_unavailable/u);
 });
+
+test("staging Workflow inspection cannot accept dev ownership", async (t) => {
+  const { verifyEnvironmentWorkflows } = await import("../scripts/dev-workflows.mjs");
+  const original = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = original;
+  });
+  const seen = [];
+  globalThis.fetch = async (url) => {
+    seen.push(new URL(url).pathname);
+    return Response.json({
+      success: true,
+      result: {
+        name: "card-keepr-evidence-ingestion-staging",
+        script_name: "card-keepr-ingestion-dev",
+        class_name: "EvidenceIngestionWorkflow",
+      },
+    });
+  };
+  await assert.rejects(
+    verifyEnvironmentWorkflows({
+      RELEASE_ENVIRONMENT: "staging",
+      STAGING_CLOUDFLARE_ACCOUNT_ID: "0123456789abcdef0123456789abcdef",
+    }),
+    /staging_workflow_owner_mismatch/u,
+  );
+  assert.deepEqual(seen, [
+    "/client/v4/accounts/0123456789abcdef0123456789abcdef/workflows/card-keepr-evidence-ingestion-staging",
+  ]);
+});

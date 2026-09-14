@@ -3,17 +3,24 @@ import { execFileSync } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { createServer } from "vite";
-import { devConfigurations } from "./dev-environment.mjs";
-import { verifyDevCommit } from "../src/http/dev-workflow-identity.mjs";
+import { environmentConfigurations } from "./dev-environment.mjs";
+import { verifyDevCommit, verifyReleaseCommit } from "../src/http/dev-workflow-identity.mjs";
 import { environmentNames } from "../src/http/environment-target.mjs";
-import { verifyDevWorkerShells } from "./dev-worker-shell.mjs";
+import { verifyEnvironmentWorkerShells } from "./dev-worker-shell.mjs";
 
 /** D1's documented batch query API preserves the canonical repository transaction. */
 export function remoteDevDatabase(environment) {
+  return remoteEnvironmentDatabase({ ...environment, RELEASE_ENVIRONMENT: "dev" });
+}
+
+export function remoteEnvironmentDatabase(environment) {
+  const target = environment.RELEASE_ENVIRONMENT;
+  if (!["dev", "staging"].includes(target)) throw new Error("isolated_environment_required");
+  const prefix = target.toUpperCase();
   const statements = new WeakMap();
   const execute = async (batch) => {
     const response = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${environment.DEV_CLOUDFLARE_ACCOUNT_ID}/d1/database/${environment.DEV_CATALOGUE_DATABASE_ID}/query`,
+      `https://api.cloudflare.com/client/v4/accounts/${environment[`${prefix}_CLOUDFLARE_ACCOUNT_ID`]}/d1/database/${environment[`${prefix}_CATALOGUE_DATABASE_ID`]}/query`,
       {
         method: "POST",
         redirect: "error",
@@ -29,7 +36,7 @@ export function remoteDevDatabase(environment) {
       !Array.isArray(document.result) ||
       document.result.some((row) => row.success !== true || !Array.isArray(row.results))
     )
-      throw new Error("dev_d1_query_failed");
+      throw new Error(`${target}_d1_query_failed`);
     return document.result;
   };
   return {
@@ -58,21 +65,31 @@ export function remoteDevDatabase(environment) {
  * The target must already contain the fresh baseline, never production data.
  */
 export async function prepareFirstDevInstall(environment) {
-  const configs = await devConfigurations({
-    accountId: environment.DEV_CLOUDFLARE_ACCOUNT_ID,
-    catalogueId: environment.DEV_CATALOGUE_DATABASE_ID,
-    disposableId: environment.DEV_DISPOSABLE_DATABASE_ID,
+  return prepareFirstEnvironmentInstall({ ...environment, RELEASE_ENVIRONMENT: "dev" });
+}
+
+export async function prepareFirstEnvironmentInstall(environment) {
+  const isolatedEnvironment = environment.RELEASE_ENVIRONMENT;
+  if (!["dev", "staging"].includes(isolatedEnvironment)) throw new Error("isolated_environment_required");
+  const prefix = isolatedEnvironment.toUpperCase();
+  const configs = await environmentConfigurations(isolatedEnvironment, {
+    accountId: environment[`${prefix}_CLOUDFLARE_ACCOUNT_ID`],
+    catalogueId: environment[`${prefix}_CATALOGUE_DATABASE_ID`],
+    disposableId: environment[`${prefix}_DISPOSABLE_DATABASE_ID`],
   });
   const head = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
   if (head !== environment.EXPECTED_HEAD_SHA) throw new Error("first_install_checkout_mismatch");
-  await verifyDevCommit(environment.GH_TOKEN, { head_sha: head, ci_run_id: environment.CI_RUN_ID });
-  const names = environmentNames("dev");
+  await (isolatedEnvironment === "dev" ? verifyDevCommit : verifyReleaseCommit)(environment.GH_TOKEN, {
+    head_sha: head,
+    ci_run_id: environment.CI_RUN_ID,
+  });
+  const names = environmentNames(isolatedEnvironment);
   for (const [id, name] of [
-    [environment.DEV_CATALOGUE_DATABASE_ID, names.catalogue],
-    [environment.DEV_DISPOSABLE_DATABASE_ID, names.disposable],
+    [environment[`${prefix}_CATALOGUE_DATABASE_ID`], names.catalogue],
+    [environment[`${prefix}_DISPOSABLE_DATABASE_ID`], names.disposable],
   ]) {
     const response = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${environment.DEV_CLOUDFLARE_ACCOUNT_ID}/d1/database/${id}`,
+      `https://api.cloudflare.com/client/v4/accounts/${environment[`${prefix}_CLOUDFLARE_ACCOUNT_ID`]}/d1/database/${id}`,
       {
         redirect: "error",
         signal: AbortSignal.timeout(10_000),
@@ -83,15 +100,16 @@ export async function prepareFirstDevInstall(environment) {
     if (!response.ok || value.success !== true || value.result?.uuid !== id || value.result?.name !== name)
       throw new Error("first_install_database_identity_mismatch");
   }
-  const db = remoteDevDatabase(environment);
-  const retryOf = environment.DEV_FIRST_INSTALL_RETRY_OF;
+  const db = remoteEnvironmentDatabase(environment);
+  const retryOf = environment[`${prefix}_FIRST_INSTALL_RETRY_OF`];
   const empty = await db
     .prepare(
       "SELECT migration_level FROM catalogue_schema_state WHERE singleton=1 AND NOT EXISTS (SELECT 1 FROM catalogue_revisions) AND NOT EXISTS (SELECT 1 FROM ingestion_runs) AND (? = 1 OR NOT EXISTS (SELECT 1 FROM administration_idempotency))",
     )
     .bind(retryOf === undefined ? 0 : 1)
     .first();
-  if (!Number.isSafeInteger(empty?.migration_level)) throw new Error("first_install_requires_unused_dev_baseline");
+  if (!Number.isSafeInteger(empty?.migration_level))
+    throw new Error(`first_install_requires_unused_${isolatedEnvironment}_baseline`);
   const vite = await createServer({ logLevel: "silent", server: { middlewareMode: true } });
   try {
     const { prepareProductionRelease, validatedPlan } = await vite.ssrLoadModule(
@@ -99,11 +117,11 @@ export async function prepareFirstDevInstall(environment) {
     );
     const { catalogueStore, canonicalJson, sha256Text } = await vite.ssrLoadModule("/src/catalogue/shared/index.ts");
     const target = {
-      cloudflare_account_id: environment.DEV_CLOUDFLARE_ACCOUNT_ID,
+      cloudflare_account_id: environment[`${prefix}_CLOUDFLARE_ACCOUNT_ID`],
       worker_scripts: names.workers,
       d1_databases: [
-        { name: names.catalogue, id: environment.DEV_CATALOGUE_DATABASE_ID },
-        { name: names.disposable, id: environment.DEV_DISPOSABLE_DATABASE_ID },
+        { name: names.catalogue, id: environment[`${prefix}_CATALOGUE_DATABASE_ID`] },
+        { name: names.disposable, id: environment[`${prefix}_DISPOSABLE_DATABASE_ID`] },
       ],
       r2_buckets: names.buckets,
     };
@@ -131,8 +149,8 @@ export async function prepareFirstDevInstall(environment) {
           const plan = validatedPlan(JSON.parse(row.request_json), target);
           if (
             !plan.bootstrap ||
-            !plan.release_id.startsWith("dev-first-") ||
-            !plan.idempotency_key.startsWith("dev-first:") ||
+            !plan.release_id.startsWith(`${isolatedEnvironment}-first-`) ||
+            !plan.idempotency_key.startsWith(`${isolatedEnvironment}-first:`) ||
             canonicalJson(plan) !== row.request_json
           )
             refuse();
@@ -179,13 +197,13 @@ export async function prepareFirstDevInstall(environment) {
       const previous = groups.get(retryOf);
       if (!previous || [...groups.keys()].at(-1) !== retryOf) refuse();
       suffix = `-retry-${(await sha256Text(previous.request)).slice(0, 12)}`;
-      await verifyDevWorkerShells(environment);
+      await verifyEnvironmentWorkerShells(environment);
     }
     const prepared = await prepareProductionRelease(
       catalogueStore(db),
       {
-        release_id: `dev-first-${head}${suffix}`,
-        idempotency_key: `dev-first:${head}${suffix}`,
+        release_id: `${isolatedEnvironment}-first-${head}${suffix}`,
+        idempotency_key: `${isolatedEnvironment}-first:${head}${suffix}`,
         expected_head_sha: head,
         expected_actor: "github-actions[bot]",
         expected_current_revision_id: "catrev_spine_000",
@@ -202,21 +220,22 @@ export async function prepareFirstDevInstall(environment) {
       target,
       new Date().toISOString(),
     );
-    return { ...prepared, environment: "dev", configs };
+    return { ...prepared, environment: isolatedEnvironment, configs };
   } finally {
     await vite.close();
   }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const prepared = await prepareFirstDevInstall(process.env);
+  const environment = { ...process.env, RELEASE_ENVIRONMENT: process.env.RELEASE_ENVIRONMENT ?? "dev" };
+  const prepared = await prepareFirstEnvironmentInstall(environment);
   for (const [app, config] of Object.entries(prepared.configs))
-    await writeFile(`apps/${app}/wrangler.dev.json`, `${JSON.stringify(config, null, 2)}\n`);
-  const { deployDev } = await import("./deploy-dev.mjs");
-  await deployDev({
+    await writeFile(`apps/${app}/wrangler.${prepared.environment}.json`, `${JSON.stringify(config, null, 2)}\n`);
+  const { deployEnvironment } = await import("./deploy-dev.mjs");
+  await deployEnvironment({
     ...process.env,
     ...Object.fromEntries(Object.entries(prepared.dispatch_inputs).map(([key, value]) => [key.toUpperCase(), value])),
-    RELEASE_ENVIRONMENT: "dev",
-    CLOUDFLARE_ACCOUNT_ID: process.env.DEV_CLOUDFLARE_ACCOUNT_ID,
+    RELEASE_ENVIRONMENT: prepared.environment,
+    CLOUDFLARE_ACCOUNT_ID: process.env[`${prepared.environment.toUpperCase()}_CLOUDFLARE_ACCOUNT_ID`],
   });
 }

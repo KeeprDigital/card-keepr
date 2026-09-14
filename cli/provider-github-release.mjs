@@ -1,4 +1,5 @@
 import { request as httpRequest } from "./lib/http-client.mjs";
+import { isReleaseDigest, isReleaseHead, isReleaseIdentity } from "../src/catalogue/shared/release-input-shapes.mjs";
 
 const repository = "KeeprDigital/card-keepr";
 const releaseWorkflow = "production-release.yml";
@@ -18,6 +19,24 @@ export async function dispatchProductionRelease({
     )
   )
     return false;
+  return dispatchWorkflow(credential, inputs, workflowId, apiUrl);
+}
+
+export async function dispatchStagingRelease({ credential, inputs, apiUrl = githubApi }) {
+  if (
+    typeof credential !== "string" ||
+    credential.length < 20 ||
+    !inputs ||
+    Object.keys(inputs).sort().join("|") !== "expected_head_sha|intent_digest|release_id" ||
+    !isReleaseIdentity(inputs.release_id) ||
+    !isReleaseDigest(inputs.intent_digest) ||
+    !isReleaseHead(inputs.expected_head_sha)
+  )
+    return false;
+  return dispatchWorkflow(credential, inputs, "staging-deploy.yml", apiUrl);
+}
+
+async function dispatchWorkflow(credential, inputs, workflowId, apiUrl) {
   let response;
   try {
     response = await httpRequest(

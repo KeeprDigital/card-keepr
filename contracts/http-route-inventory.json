@@ -160,6 +160,7 @@
       "acceptance/runtime-health.test.mjs",
       "acceptance/shared-game-profiles.test.mjs",
       "acceptance/source-evidence-cli.test.mjs",
+      "acceptance/staging-execution.test.mjs",
       "apps/api/test/bearer-authentication.spec.ts",
       "apps/api/test/health.spec.ts",
       "apps/api/test/public-mount.spec.ts",
@@ -249,7 +250,8 @@
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
       "apps/ingestion/test/reconciliation-observed-erratum-recovery.spec.ts",
       "apps/ingestion/test/reconciliation-progress.spec.ts",
-      "cli/keepr.mjs"
+      "cli/keepr.mjs",
+      "cli/staging-release.mjs"
     ]
   },
   {
@@ -296,7 +298,8 @@
     "named_cli": "catalogue-export deletion status",
     "callers": [
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
-      "cli/keepr.mjs"
+      "cli/keepr.mjs",
+      "cli/staging-release.mjs"
     ]
   },
   {
@@ -338,7 +341,8 @@
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
       "apps/ingestion/test/reconciliation-export-and-repair.spec.ts",
       "apps/ingestion/test/reconciliation-workflow-binding.spec.ts",
-      "cli/keepr.mjs"
+      "cli/keepr.mjs",
+      "cli/staging-release.mjs"
     ]
   },
   {
@@ -417,7 +421,8 @@
       "apps/ingestion/test/entity-admission-card-model.spec.ts",
       "apps/ingestion/test/entity-admission.spec.ts",
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
-      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts"
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "cli/staging-release.mjs"
     ]
   },
   {
@@ -461,7 +466,8 @@
       "acceptance/composed-recovery.test.mjs",
       "apps/ingestion/test/evidence-cleanup.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
-      "cli/keepr.mjs"
+      "cli/keepr.mjs",
+      "cli/staging-release.mjs"
     ]
   },
   {
@@ -592,7 +598,8 @@
       "apps/ingestion/test/reviewed-printing-matches.spec.ts",
       "apps/ingestion/test/runtime-game-preparation-dispatch.spec.ts",
       "apps/ingestion/test/runtime-workflow-collection.spec.ts",
-      "cli/keepr.mjs"
+      "cli/keepr.mjs",
+      "cli/staging-release.mjs"
     ]
   },
   {
@@ -938,7 +945,8 @@
     "named_cli": "identity-correction inspect",
     "callers": [
       "apps/ingestion/test/identity-corrections.spec.ts",
-      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts"
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "cli/staging-release.mjs"
     ]
   },
   {
@@ -953,7 +961,8 @@
       "apps/ingestion/test/game-candidate-integrity.spec.ts",
       "apps/ingestion/test/identity-corrections.spec.ts",
       "apps/ingestion/test/native-no-change-publication.spec.ts",
-      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts"
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "cli/staging-release.mjs"
     ]
   },
   {
@@ -985,7 +994,8 @@
       "apps/ingestion/test/reconciliation-workflow-binding.spec.ts",
       "apps/ingestion/test/runtime-diagnostics.spec.ts",
       "apps/ingestion/test/runtime-workflow-collection.spec.ts",
-      "cli/keepr.mjs"
+      "cli/keepr.mjs",
+      "cli/staging-release.mjs"
     ]
   },
   {
@@ -1453,7 +1463,8 @@
       "apps/ingestion/test/runtime-workflow-collection.spec.ts",
       "apps/ingestion/test/source-authority.spec.ts",
       "apps/ingestion/test/source-refresh.spec.ts",
-      "cli/keepr.mjs"
+      "cli/keepr.mjs",
+      "cli/staging-release.mjs"
     ]
   },
   {
@@ -1539,7 +1550,8 @@
       "apps/ingestion/test/native-publication-helpers.ts",
       "apps/ingestion/test/publication-caller-retirement.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
-      "cli/keepr.mjs"
+      "cli/keepr.mjs",
+      "cli/staging-release.mjs"
     ]
   },
   {
@@ -1611,7 +1623,8 @@
       "apps/ingestion/test/native-publication-helpers.ts",
       "apps/ingestion/test/publication-caller-retirement.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
-      "cli/keepr.mjs"
+      "cli/keepr.mjs",
+      "cli/staging-release.mjs"
     ]
   },
   {
@@ -1658,7 +1671,8 @@
       "apps/ingestion/test/game-reconciliation-operations.spec.ts",
       "apps/ingestion/test/reconciliation-card-identity.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
-      "cli/keepr.mjs"
+      "cli/keepr.mjs",
+      "cli/staging-release.mjs"
     ]
   },
   {
@@ -1720,7 +1734,8 @@
       "acceptance/helpers/cli-http.mjs",
       "acceptance/ingestion-cli.test.mjs",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
-      "cli/keepr.mjs"
+      "cli/keepr.mjs",
+      "cli/staging-release.mjs"
     ]
   },
   {
@@ -1888,6 +1903,91 @@
   },
   {
     "worker": "admin",
+    "method": "POST",
+    "path": "/v1/staging-deployments",
+    "contract": "platform",
+    "treatment": "staging-only signed manual workflow identity",
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/staging-release-state.test.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "scripts/http-contracts.mjs",
+      "scripts/staging-release.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "ingestion",
+    "method": "GET",
+    "path": "/v1/staging-deployments/{release}",
+    "contract": "legacy",
+    "slice": "Maintenance and runtime operations",
+    "named_cli": "release staging-status",
+    "callers": [
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "cli/staging-release.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "method": "POST",
+    "path": "/v1/staging-deployments/{release}/outcome",
+    "contract": "platform",
+    "treatment": "staging-only signed manual workflow identity",
+    "callers": [
+      "scripts/http-contracts.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "method": "POST",
+    "path": "/v1/staging-release-authorizations",
+    "contract": "platform",
+    "treatment": "production-only signed manual workflow identity",
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/helpers/staging-workflow.mjs",
+      "acceptance/staging-release-state.test.mjs",
+      "acceptance/staging-workflow-gate.test.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/staging-release-http.spec.ts",
+      "scripts/http-contracts.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "ingestion",
+    "method": "POST",
+    "path": "/v1/staging-releases",
+    "contract": "legacy",
+    "slice": "Maintenance and runtime operations",
+    "named_cli": "release staging",
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/staging-release-cli.test.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/staging-release-http.spec.ts",
+      "cli/staging-release.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "ingestion",
+    "method": "GET",
+    "path": "/v1/staging-releases/{release}",
+    "contract": "legacy",
+    "slice": "Maintenance and runtime operations",
+    "named_cli": "release staging-status",
+    "callers": [
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "cli/staging-release.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
     "family": "ingestion",
     "method": "GET",
     "path": "/v1/status",
@@ -1967,6 +2067,7 @@
       "acceptance/runtime-health.test.mjs",
       "acceptance/shared-game-profiles.test.mjs",
       "acceptance/source-evidence-cli.test.mjs",
+      "acceptance/staging-execution.test.mjs",
       "apps/api/test/bearer-authentication.spec.ts",
       "apps/api/test/health.spec.ts",
       "apps/api/test/public-mount.spec.ts",
@@ -2081,6 +2182,7 @@
       "apps/api/test/product-release.spec.ts",
       "apps/api/test/public-mount.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "cli/staging-release.mjs",
       "scripts/production-smoke.mjs"
     ]
   },
@@ -2102,6 +2204,7 @@
       "acceptance/product-catalogue.test.mjs",
       "acceptance/production-release-smoke.test.mjs",
       "acceptance/runtime-health.test.mjs",
+      "acceptance/staging-execution.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
       "apps/api/test/health.spec.ts",
       "apps/api/test/product-release.spec.ts",
@@ -2153,6 +2256,7 @@
       "apps/ingestion/test/native-printing-images-assertions.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
       "apps/ingestion/test/reconciliation-helpers.ts",
+      "cli/staging-release.mjs",
       "scripts/production-smoke.mjs"
     ]
   },
@@ -2271,6 +2375,7 @@
       "acceptance/riftbound-catalogue.test.mjs",
       "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "cli/staging-release.mjs",
       "scripts/production-smoke.mjs"
     ]
   },
@@ -2303,7 +2408,8 @@
       "acceptance/product-catalogue.test.mjs",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
       "apps/ingestion/test/reconciliation-product-identity.spec.ts",
-      "apps/ingestion/test/reconciliation-product-release.spec.ts"
+      "apps/ingestion/test/reconciliation-product-release.spec.ts",
+      "cli/staging-release.mjs"
     ]
   }
 ]

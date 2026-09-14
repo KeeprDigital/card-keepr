@@ -5,9 +5,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { verifyDevCommit } from "../src/http/dev-workflow-identity.mjs";
-import { verifyDevWorkflows } from "./dev-workflows.mjs";
-import { restoreDevWorkerShells } from "./dev-worker-shell.mjs";
+import { verifyDevCommit, verifyReleaseCommit } from "../src/http/dev-workflow-identity.mjs";
+import { verifyEnvironmentWorkflows } from "./dev-workflows.mjs";
+import { environmentNames } from "../src/http/environment-target.mjs";
+import { restoreEnvironmentWorkerShells } from "./dev-worker-shell.mjs";
 import { validateDispatchAndWriteSql, writeEvidenceSql } from "./production-release.mjs";
 import { executeSqlFile } from "./production-release-d1.mjs";
 import {
@@ -21,24 +22,36 @@ import { runBootstrapSmoke, runProductionSmoke } from "./production-smoke.mjs";
 /** Shared guarded executor for initial installation and automatic dev updates. */
 export async function deployDev(input, executeCommand = promisify(execFile)) {
   if (input.RELEASE_ENVIRONMENT !== "dev") throw new Error("dev_target_required");
-  const environment = { ...input, RELEASE_STATE_CONFIG: "apps/ingestion/wrangler.dev.json" };
+  const { environment, head_sha, release_id, evidence_directory } = await deployEnvironment(input, executeCommand);
+  return { environment, head_sha, release_id, evidence_directory };
+}
+
+export async function deployEnvironment(input, executeCommand = promisify(execFile)) {
+  const target = input.RELEASE_ENVIRONMENT;
+  if (!["dev", "staging"].includes(target)) throw new Error("isolated_environment_required");
+  const names = environmentNames(target);
+  const configPath = (app) => `apps/${app}/wrangler.${target}.json`;
+  const environment = { ...input, RELEASE_STATE_CONFIG: configPath("ingestion") };
   const head = (await executeCommand("git", ["rev-parse", "HEAD"], { encoding: "utf8" })).stdout.trim();
-  if (head !== environment.EXPECTED_HEAD_SHA) throw new Error("dev_checkout_mismatch");
-  await verifyDevCommit(environment.GH_TOKEN, { head_sha: head, ci_run_id: environment.CI_RUN_ID });
+  if (head !== environment.EXPECTED_HEAD_SHA) throw new Error(`${target}_checkout_mismatch`);
+  await (target === "dev" ? verifyDevCommit : verifyReleaseCommit)(environment.GH_TOKEN, {
+    head_sha: head,
+    ci_run_id: environment.CI_RUN_ID,
+  });
   await verifyProductionTarget(environment);
-  await verifyDevWorkflows(environment);
-  const directory = await mkdtemp(join(tmpdir(), "keepr-dev-release-"));
+  await verifyEnvironmentWorkflows(environment);
+  const directory = await mkdtemp(join(tmpdir(), `keepr-${target}-release-`));
   await validateDispatchAndWriteSql(environment, directory);
   const sql = (name) =>
     executeSqlFile(environment, { configPath: environment.RELEASE_STATE_CONFIG, sqlPath: `${directory}/${name}.sql` });
   const requireResult = (rows, field) => {
-    if (rows.at(-1)?.results[0]?.[field] !== 1) throw new Error(`dev_gate_failed:${field}`);
+    if (rows.at(-1)?.results[0]?.[field] !== 1) throw new Error(`${target}_gate_failed:${field}`);
   };
   const run = async (command, args) => {
     try {
       await executeCommand(command, args, { env: environment, encoding: "utf8", maxBuffer: 4_000_000 });
     } catch {
-      throw new Error(`dev_command_failed:${args[0]}`);
+      throw new Error(`${target}_command_failed:${args[0]}`);
     }
   };
   const wrangler = (args) => run(resolve("node_modules/.bin/wrangler"), args);
@@ -48,9 +61,9 @@ export async function deployDev(input, executeCommand = promisify(execFile)) {
     requireResult(await sql("claim"), "claimed");
     leaseClaimed = true;
     requireResult(await sql("migration-started"), "migration_started");
-    if (environment.DEV_FIRST_INSTALL_RETRY_OF !== undefined) {
+    if (environment[`${target.toUpperCase()}_FIRST_INSTALL_RETRY_OF`] !== undefined) {
       if (environment.BOOTSTRAP !== "true") throw new Error("first_install_retry_not_safe");
-      await restoreDevWorkerShells(environment);
+      await restoreEnvironmentWorkerShells(environment);
     }
     await wrangler([
       "d1",
@@ -63,13 +76,13 @@ export async function deployDev(input, executeCommand = promisify(execFile)) {
     ]);
     requireResult(await sql("materialize"), "transferred");
     const workers = [
-      { name: "card-keepr-api-dev", app: "api" },
-      { name: "card-keepr-ingestion-dev", app: "ingestion" },
+      { name: names.workers[0], app: "api" },
+      { name: names.workers[1], app: "ingestion" },
     ];
-    await verifyDevWorkflows(environment);
+    await verifyEnvironmentWorkflows(environment);
     const uploadedVersions = [];
     for (const worker of workers) {
-      const config = `apps/${worker.app}/wrangler.dev.json`;
+      const config = configPath(worker.app);
       const tag = `release-${environment.RELEASE_ID}-${worker.app}`;
       await wrangler([
         "versions",
@@ -91,10 +104,10 @@ export async function deployDev(input, executeCommand = promisify(execFile)) {
         }),
       );
     }
-    await verifyDevWorkflows(environment);
+    await verifyEnvironmentWorkflows(environment);
     requireResult(await sql("deploying"), "transitioned");
     for (const worker of workers) {
-      const config = `apps/${worker.app}/wrangler.dev.json`;
+      const config = configPath(worker.app);
       await wrangler([
         "versions",
         "deploy",
@@ -105,13 +118,12 @@ export async function deployDev(input, executeCommand = promisify(execFile)) {
         `release-${environment.RELEASE_ID}-${worker.app}@100%`,
       ]);
     }
-    await verifyDevWorkflows(environment);
-    for (const worker of workers)
-      await wrangler(["triggers", "deploy", "--config", `apps/${worker.app}/wrangler.dev.json`]);
+    await verifyEnvironmentWorkflows(environment);
+    for (const worker of workers) await wrangler(["triggers", "deploy", "--config", configPath(worker.app)]);
     const activation = await observeReleaseActivation(
       environment,
       uploadedVersions,
-      workers.map((worker) => `apps/${worker.app}/wrangler.dev.json`),
+      workers.map((worker) => configPath(worker.app)),
     );
     await writeFile(`${directory}/activation.json`, `${JSON.stringify(activation)}\n`, { mode: 0o600 });
     const binding = await observeCatalogueBindings(environment);
@@ -124,8 +136,8 @@ export async function deployDev(input, executeCommand = promisify(execFile)) {
     );
     requireResult(await sql("binding"), "transitioned");
     const common = {
-      apiUrl: "https://card-dev.keepr.digital/api",
-      ingestionUrl: "https://card-dev.keepr.digital/ingest",
+      apiUrl: `https://${names.host}/api`,
+      ingestionUrl: `https://${names.host}/ingest`,
       apiKey: environment.API_TRAFFIC_TOKEN,
       currentRevisionId: environment.EXPECTED_CURRENT_REVISION,
     };
@@ -148,13 +160,20 @@ export async function deployDev(input, executeCommand = promisify(execFile)) {
       environment,
     );
     requireResult(await sql("smoke"), "fence_released");
-    return { environment: "dev", head_sha: head, release_id: environment.RELEASE_ID, evidence_directory: directory };
+    return {
+      environment: target,
+      head_sha: head,
+      release_id: environment.RELEASE_ID,
+      evidence_directory: directory,
+      activation,
+      smoke,
+    };
   } catch (error) {
     if (!leaseClaimed) throw error;
     try {
       await run("bash", ["scripts/production-release-failure.sh", directory]);
     } catch {
-      throw new Error(`dev_release_failed_and_requires_recovery:${directory}`);
+      throw new Error(`${target}_release_failed_and_requires_recovery:${directory}`);
     }
     throw error;
   }

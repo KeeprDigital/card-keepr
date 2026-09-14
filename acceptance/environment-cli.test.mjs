@@ -70,6 +70,55 @@ test("isolated dev config rejects production D1 identities", async () => {
   );
 });
 
+test("staging configuration owns distinct routes, bindings and rate-limit namespaces", async () => {
+  const { environmentConfigurations } = await import("../scripts/dev-environment.mjs");
+  const configs = await environmentConfigurations("staging", {
+    accountId: "3ec389380c7b82e6a172e6f351d4aad9",
+    catalogueId: "00000000-0000-0000-0000-000000000003",
+    disposableId: "00000000-0000-0000-0000-000000000004",
+  });
+  assert.equal(configs.api.name, "card-keepr-api-staging");
+  assert.equal(configs.api.vars.PUBLIC_BASE_URL, "https://card-staging.keepr.digital/api");
+  assert.equal(configs.ingestion.vars.KEEPR_ENVIRONMENT, "staging");
+  assert.equal(configs.ingestion.services[0].service, "card-keepr-ingestion-staging");
+  assert.equal(configs.ingestion.d1_databases[0].database_name, "card-keepr-catalogue-staging");
+  assert.deepEqual(
+    configs.ingestion.r2_buckets.map((item) => item.bucket_name),
+    [
+      "card-keepr-evidence-staging",
+      "card-keepr-printing-images-staging",
+      "card-keepr-catalogue-exports-staging",
+      "card-keepr-backups-staging",
+    ],
+  );
+  const { devConfigurations } = await import("../scripts/dev-environment.mjs");
+  const dev = await devConfigurations({
+    accountId: "3ec389380c7b82e6a172e6f351d4aad9",
+    catalogueId: "00000000-0000-0000-0000-000000000001",
+    disposableId: "00000000-0000-0000-0000-000000000002",
+  });
+  assert.ok(
+    configs.ingestion.ratelimits.every(
+      (limit) => !dev.ingestion.ratelimits.some((other) => other.namespace_id === limit.namespace_id),
+    ),
+  );
+  assert.ok(configs.ingestion.workflows.every((workflow) => workflow.name.endsWith("-staging")));
+  for (const config of Object.values(configs)) {
+    assert.equal(config.workers_dev, false);
+    assert.equal(config.preview_urls, false);
+    assert.ok(config.routes.every((route) => route.pattern.startsWith("card-staging.keepr.digital/")));
+  }
+  await assert.rejects(environmentConfigurations("production", {}), /isolated_environment_required/u);
+  await assert.rejects(
+    environmentConfigurations("staging", {
+      accountId: "3ec389380c7b82e6a172e6f351d4aad9",
+      catalogueId: "2469f888-1530-4bef-bc58-17dc298bb598",
+      disposableId: "00000000-0000-0000-0000-000000000004",
+    }),
+    /staging_database_isolation_required/u,
+  );
+});
+
 test("dev provisioning refuses unknown capacity and preserves replacement recovery headroom", async () => {
   const { verifyDevCapacity } = await import("../scripts/dev-capacity.mjs");
   const evidence = {
