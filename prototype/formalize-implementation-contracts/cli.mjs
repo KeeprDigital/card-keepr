@@ -10,7 +10,8 @@ const dim = "\x1b[2m";
 const reset = "\x1b[0m";
 
 for (const file of [
-  "openapi.json",
+  "read-openapi.json",
+  "admin-openapi.json",
   "schemas/catalogue-export-manifest-v5.schema.json",
   "schemas/catalogue-export-record-v5.schema.json",
   "schemas/administration.schema.json"
