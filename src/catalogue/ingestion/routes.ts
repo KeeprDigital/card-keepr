@@ -60,14 +60,14 @@ export const ingestionRoutes = [
       env.CATALOGUE_EXPORTS,
       body,
       async () =>
-        productionTarget({
-          ...env,
-          DISPOSABLE_D1_DATABASE_ID: await currentDisposableRestoreDatabaseId(
+        productionTarget(
+          env,
+          await currentDisposableRestoreDatabaseId(
             env.CLOUDFLARE_ACCOUNT_ID,
             env.D1_VERIFICATION_TOKEN,
             environmentNames().disposable,
           ),
-        }),
+        ),
       observedAt,
       env.D1_VERIFICATION_TOKEN,
     );
@@ -274,7 +274,7 @@ export const ingestionRoutes = [
   }),
 ];
 
-function productionTarget(env: Environment) {
+function productionTarget(env: Environment, disposableId = env.DISPOSABLE_D1_DATABASE_ID) {
   const names = environmentNames(env.KEEPR_ENVIRONMENT);
   const target = validatedEnvironmentTarget(
     {
@@ -282,7 +282,7 @@ function productionTarget(env: Environment) {
       worker_scripts: names.workers,
       d1_databases: [
         { name: names.catalogue, id: env.CATALOGUE_D1_DATABASE_ID },
-        { name: names.disposable, id: env.DISPOSABLE_D1_DATABASE_ID },
+        { name: names.disposable, id: disposableId },
       ],
       r2_buckets: names.buckets,
     },

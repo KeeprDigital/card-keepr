@@ -38,7 +38,7 @@ test("owner HTTP intent requires administration auth and replays without a fresh
     }),
   );
   const preview = await worker.fetch(request("/v1/staging-releases", { ...choices, prepare: true }), testEnv);
-  expect(preview.status).toBe(200);
+  expect(preview.status, await preview.clone().text()).toBe(200);
   const { confirmation } = await preview.json<{ confirmation: string }>();
   const accepted = await worker.fetch(request("/v1/staging-releases", { ...choices, confirmation }), testEnv);
   expect(accepted.status).toBe(201);
