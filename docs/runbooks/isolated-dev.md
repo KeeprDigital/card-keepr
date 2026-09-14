@@ -83,7 +83,9 @@ backup rotation does not require manually updating the saved GitHub variable.
 
 Secrets must be independently issued for dev, with minimum provider-supported
 permissions. No production credential is copied. No administration credential is
-stored in Actions. Cloudflare's
+stored in Actions. Both D1 provider credentials require D1 Write: D1 Read can
+retrieve database metadata but the SQL export endpoint rejects it. Keep export
+and restore verification credentials independently issued. Cloudflare's
 [permissions reference](https://developers.cloudflare.com/fundamentals/api/reference/permissions/)
 defines D1 Edit and Workers Scripts Edit at account scope. A separate token on the
 existing shared account therefore has provider authority over production resources
@@ -163,7 +165,9 @@ The owner-only first installation is outside the administration CLI:
    adopts resources. Review that receipt before a subsequent recovery operation.
 3. Provisioning creates only dev D1/R2 and deny-only Worker shells with secrets,
    no routes, and no data/service/Workflow bindings. Shells are needed because the
-   first `versions upload` requires an existing script. They cannot serve or
+   first `versions upload` requires an existing script. Create shells through
+   Wrangler so its later strict upload accepts their deployment provenance.
+   They cannot serve or
    mutate catalogue data. The new, still-unbound catalogue receives the baseline.
 4. Configure the proxied dev DNS placeholder before authenticated smoke checks.
    Set `DEV_CATALOGUE_DATABASE_ID` and `DEV_DISPOSABLE_DATABASE_ID` from the receipt,
@@ -175,8 +179,23 @@ The owner-only first installation is outside the administration CLI:
    The shared guarded executor performs the application installation.
 5. Configure the GitHub dev environment, then retain successful first
    installation and subsequent automatic-merge deployment evidence. After partial
-   first-install failure, inspect the retained fence/preparation; the tool refuses
-   to overwrite the used baseline. Do not reset it to retry.
+   first-install failure, inspect the retained fence/preparation; the default
+   invocation refuses to overwrite a used baseline. Do not reset it to retry.
+6. For an explicitly inspected failed bootstrap that never reached activation,
+   set `DEV_FIRST_INSTALL_RETRY_OF` to its retained release ID and invoke the same
+   first-install command with fresh successful exact-main CI. The retry requires
+   an empty, idle catalogue whose entire administration history consists of
+   completed failed bootstrap attempts, with no activation intent or release
+   completion. Both Workers must still contain the exact deny-only source,
+   secret-only bindings, no routes and disabled public endpoints; Workflow names
+   must remain absent. Both local secret files must pass the same complete,
+   distinct-credential validation used for initial provisioning. Preparation is
+   read-only with respect to Workers; the executor rechecks and refreshes the
+   shells through Wrangler only after claiming the canonical deployment lease.
+   A competing invocation cannot refresh shells or clean up another claimant's
+   fence. The new canonical preparation retains every prior outcome. An
+   activated or otherwise changed environment requires the normal recovery
+   procedure and is refused by this narrowly scoped bootstrap path.
 
 For ordinary owner operations, `pnpm --silent run keepr status --target dev --json`
 selects the dev profile. The [administration contract](../../contracts/ADMINISTRATION.md#interaction-rules)

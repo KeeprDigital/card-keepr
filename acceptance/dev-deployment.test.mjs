@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import childProcess from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +12,8 @@ import { createServer } from "vite";
 import { devAudience, requiredCiChecks } from "../src/http/dev-workflow-identity.mjs";
 import {
   activeReleaseIdentity,
+  countAdministrationOutcomes,
+  countMigrationStartedEvidence,
   countReleaseCompletionEvidence,
   countSuccessfulReleaseEvidence,
 } from "./helpers/query-helpers/production-release.mjs";
@@ -232,8 +236,40 @@ test("owner first install uses the canonical preparation transaction on an unuse
   const head = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
   const { database, env, checks } = await fixture(t, head);
   const githubFetch = globalThis.fetch;
+  const denySource = "export default { fetch() { return new Response('Dev installation pending', {status:503}); } };";
+  let shellSource = denySource;
+  let shellHasDataBinding = false;
+  let shellHasRoute = false;
   globalThis.fetch = async (url, options) => {
     if (new URL(url).hostname !== "api.cloudflare.com") return githubFetch(url, options);
+    const path = new URL(url).pathname;
+    if (path.endsWith("/zones"))
+      return Response.json({
+        success: true,
+        result: [{ id: "synthetic-zone", account: { id: env.CLOUDFLARE_ACCOUNT_ID } }],
+      });
+    if (path.endsWith("/workers/routes"))
+      return Response.json({ success: true, result: shellHasRoute ? [{ script: "card-keepr-api-dev" }] : [] });
+    if (path.includes("/workflows/")) return new Response(null, { status: 404 });
+    if (path.includes("/workers/scripts/")) {
+      if (path.endsWith("/subdomain"))
+        return Response.json({ success: true, result: { enabled: false, previews_enabled: false } });
+      if (path.endsWith("/settings"))
+        return Response.json({
+          success: true,
+          result: {
+            bindings: shellHasDataBinding
+              ? [{ name: "CATALOGUE_DB", type: "d1" }]
+              : (path.includes("-api-dev/")
+                  ? ["API_BEARER_KEY", "API_BEARER_KEY_REPLACEMENT"]
+                  : ["ADMINISTRATION_KEY", "ADMINISTRATION_KEY_REPLACEMENT", "D1_EXPORT_TOKEN", "D1_VERIFICATION_TOKEN"]
+                ).map((name) => ({ name, type: "secret_text" })),
+          },
+        });
+      const form = new FormData();
+      form.set("deny.mjs", shellSource);
+      return new Response(form);
+    }
     if (options.method !== "POST") {
       const id = String(url).split("/").at(-1);
       return Response.json({
@@ -246,17 +282,17 @@ test("owner first install uses the canonical preparation transaction on an unuse
       });
     }
     const { batch } = JSON.parse(options.body);
-    database.exec("BEGIN");
+    database.exec("SAVEPOINT dev_d1_batch");
     try {
       const result = batch.map(({ sql, params }) => {
         const statement = database.prepare(sql);
         const results = sqliteResults(statement, params);
         return { success: true, results, meta: {} };
       });
-      database.exec("COMMIT");
+      database.exec("RELEASE dev_d1_batch");
       return Response.json({ success: true, result });
     } catch (error) {
-      database.exec("ROLLBACK");
+      database.exec("ROLLBACK TO dev_d1_batch; RELEASE dev_d1_batch");
       throw error;
     }
   };
@@ -277,6 +313,79 @@ test("owner first install uses the canonical preparation transaction on an unuse
   assert.equal(JSON.parse(prepared.prepared_plan_json).expected_head_sha, head);
   assert.equal(prepared.environment, "dev");
   await assert.rejects(prepareFirstDevInstall(input), /first_install_requires_unused_dev_baseline/u);
+
+  const directory = await mkdtemp(join(tmpdir(), "keepr-dev-first-retry-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const dispatch = Object.fromEntries(
+    Object.entries(prepared.dispatch_inputs).map(([key, value]) => [key.toUpperCase(), value]),
+  );
+  const { validateDispatchAndWriteSql } = await import("../scripts/production-release.mjs");
+  await validateDispatchAndWriteSql(dispatch, directory);
+  const apply = async (...names) => {
+    for (const name of names) database.exec(await readFile(join(directory, `${name}.sql`), "utf8"));
+  };
+  const retry = {
+    ...input,
+    DEV_FIRST_INSTALL_RETRY_OF: prepared.release_id,
+    DEV_API_SECRETS_FILE: join(directory, "api.json"),
+    DEV_INGESTION_SECRETS_FILE: join(directory, "ingestion.json"),
+  };
+  for (const [app, names] of [
+    ["api", ["API_BEARER_KEY", "API_BEARER_KEY_REPLACEMENT"]],
+    ["ingestion", ["ADMINISTRATION_KEY", "ADMINISTRATION_KEY_REPLACEMENT", "D1_EXPORT_TOKEN", "D1_VERIFICATION_TOKEN"]],
+  ])
+    await writeFile(
+      join(directory, `${app}.json`),
+      JSON.stringify(Object.fromEntries(names.map((name) => [name, `synthetic-${name}-credential`]))),
+    );
+  database.exec("SAVEPOINT activated_attempt");
+  await apply("claim", "migration-started", "deploying", "failure-evidence", "cleanup");
+  await assert.rejects(prepareFirstDevInstall(retry), /first_install_(retry_not_safe|requires_unused_dev_baseline)/u);
+  database.exec("ROLLBACK TO activated_attempt; RELEASE activated_attempt");
+  await apply("claim", "migration-started", "failure-evidence", "cleanup");
+  await assert.rejects(
+    prepareFirstDevInstall({ ...retry, DEV_FIRST_INSTALL_RETRY_OF: "unrelated-release" }),
+    /first_install_(retry_not_safe|requires_unused_dev_baseline)/u,
+  );
+  const commands = [];
+  t.mock.method(childProcess, "execFileSync", (command, args) => {
+    if (command === "git") return head;
+    commands.push(args);
+    return "";
+  });
+  syncBuiltinESMExports();
+  t.after(() => {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  });
+  shellSource = "export default { fetch() { return new Response('Application'); } };";
+  await assert.rejects(prepareFirstDevInstall(retry), /first_install_retry_not_safe/u);
+  shellSource = denySource;
+  shellHasDataBinding = true;
+  await assert.rejects(prepareFirstDevInstall(retry), /first_install_retry_not_safe/u);
+  shellHasDataBinding = false;
+  shellHasRoute = true;
+  await assert.rejects(prepareFirstDevInstall(retry), /first_install_retry_not_safe/u);
+  shellHasRoute = false;
+  assert.equal(commands.length, 0, "unsafe targets cause no shell writes");
+  const ingestionSecrets = JSON.parse(await readFile(retry.DEV_INGESTION_SECRETS_FILE, "utf8"));
+  await writeFile(
+    retry.DEV_INGESTION_SECRETS_FILE,
+    JSON.stringify({ ...ingestionSecrets, D1_EXPORT_TOKEN: ingestionSecrets.D1_VERIFICATION_TOKEN }),
+  );
+  await assert.rejects(prepareFirstDevInstall(retry), /dev_secrets_must_be_distinct/u);
+  await writeFile(retry.DEV_INGESTION_SECRETS_FILE, JSON.stringify({ ADMINISTRATION_KEY: "incomplete-inventory" }));
+  await assert.rejects(prepareFirstDevInstall(retry), /invalid_dev_secret_inventory/u);
+  assert.equal(commands.length, 0, "both credential files must be valid before either shell is refreshed");
+  await writeFile(retry.DEV_INGESTION_SECRETS_FILE, JSON.stringify(ingestionSecrets));
+  const retried = await prepareFirstDevInstall(retry);
+  assert.notEqual(retried.release_id, prepared.release_id);
+  assert.equal(commands.length, 0, "preparation cannot refresh Workers before claiming the deployment lease");
+  assert.equal(
+    countAdministrationOutcomes(database).get().count,
+    5,
+    "prior failure history is retained alongside a fresh canonical preparation",
+  );
 });
 
 test("a signed dev run cannot substitute another independently passing main commit", async (t) => {
@@ -301,6 +410,7 @@ test("a signed dev run cannot substitute another independently passing main comm
 for (const [scenario, expectedError] of [
   ["approved", null],
   ["rotated scratch", null],
+  ["competing bootstrap retry", null],
   ["older version", /release_active_version_mismatch/u],
   ["split traffic", /release_active_version_mismatch/u],
   ["foreign route", /release_route_mismatch/u],
@@ -375,6 +485,9 @@ for (const [scenario, expectedError] of [
     const byName = Object.fromEntries(Object.values(configs).map((config) => [config.name, config]));
     const githubFetch = globalThis.fetch;
     const requests = [];
+    const retrying = scenario === "competing bootstrap retry";
+    let applicationActive = !retrying;
+    let competingObservation;
     globalThis.fetch = async (input, init = {}) => {
       const url = new URL(input);
       requests.push(url.pathname);
@@ -409,12 +522,14 @@ for (const [scenario, expectedError] of [
       } else if (url.pathname.endsWith("/zones"))
         result = [{ id: "synthetic-zone", name: "keepr.digital", account: { id: env.CLOUDFLARE_ACCOUNT_ID } }];
       else if (url.pathname.endsWith("/workers/routes"))
-        result = Object.values(configs).flatMap((config) =>
-          config.routes.map((route) => ({
-            pattern: route.pattern,
-            script: scenario === "foreign route" ? "foreign" : config.name,
-          })),
-        );
+        result = !applicationActive
+          ? []
+          : Object.values(configs).flatMap((config) =>
+              config.routes.map((route) => ({
+                pattern: route.pattern,
+                script: scenario === "foreign route" ? "foreign" : config.name,
+              })),
+            );
       else if (url.pathname.endsWith("/domains/managed"))
         result = { enabled: false, bucketId: "synthetic-bucket", domain: "private.r2.dev" };
       else if (url.pathname.endsWith("/domains/custom")) result = { domains: [] };
@@ -458,14 +573,40 @@ for (const [scenario, expectedError] of [
             ],
           };
         else if (url.pathname.includes("/versions/")) result = { resources: { bindings: devBindings(config) } };
-        else if (url.pathname.endsWith("/settings")) result = { bindings: devBindings(config) };
-        else assert.fail(`Unexpected simulated provider request ${url.pathname}`);
+        else if (url.pathname.endsWith("/settings"))
+          result = {
+            bindings: devBindings(config).filter((binding) => applicationActive || binding.type === "secret_text"),
+          };
+        else if (retrying && url.pathname.endsWith("/subdomain")) result = { enabled: false, previews_enabled: false };
+        else if (retrying && url.pathname.endsWith(`/scripts/${worker}`)) {
+          const form = new FormData();
+          form.set(
+            "deny.mjs",
+            "export default { fetch() { return new Response('Dev installation pending', {status:503}); } };",
+          );
+          return new Response(form);
+        } else assert.fail(`Unexpected simulated provider request ${url.pathname}`);
       }
       return Response.json({ success: true, result });
     };
     const commands = [];
     const executeCommand = async (command, args) => {
       if (command === "git") return { stdout: head };
+      if (retrying && args[0] === "d1") {
+        const before = commands.length;
+        let refusal;
+        try {
+          await deployDev(input, executeCommand);
+        } catch (error) {
+          refusal = error.message;
+        }
+        competingObservation = {
+          refusal,
+          additionalCommands: commands.length - before,
+          lease: activeReleaseIdentity(database).get().active_production_release_id,
+        };
+      }
+      if (args[0] === "versions" && args[1] === "deploy") applicationActive = true;
       commands.push({ command, args });
       assert.ok(command.endsWith("/wrangler") || command === "bash");
       return { stdout: "" };
@@ -484,6 +625,44 @@ for (const [scenario, expectedError] of [
       CLOUDFLARE_API_TOKEN: "synthetic-provider",
       API_TRAFFIC_TOKEN: "synthetic-traffic",
     };
+    if (retrying) {
+      const directory = await mkdtemp(join(tmpdir(), "keepr-executor-retry-"));
+      t.after(() => rm(directory, { recursive: true, force: true }));
+      input.DEV_FIRST_INSTALL_RETRY_OF = "inspected-failed-bootstrap";
+      for (const [app, variable] of [
+        ["api", "DEV_API_SECRETS_FILE"],
+        ["ingestion", "DEV_INGESTION_SECRETS_FILE"],
+      ]) {
+        input[variable] = join(directory, `${app}.json`);
+        await writeFile(
+          input[variable],
+          JSON.stringify(
+            Object.fromEntries(
+              devBindings(configs[app])
+                .filter((binding) => binding.type === "secret_text")
+                .map((binding) => [binding.name, `synthetic-${binding.name}-credential`]),
+            ),
+          ),
+        );
+      }
+      t.mock.method(childProcess, "execFileSync", (command, args) => {
+        assert.ok(command.endsWith("/wrangler"));
+        assert.equal(args[0], "deploy");
+        assert.equal(
+          activeReleaseIdentity(database).get().active_production_release_id,
+          prepared.release_id,
+          "shell refresh requires the active release lease",
+        );
+        assert.equal(countMigrationStartedEvidence(database).get().count, 1);
+        commands.push({ command, args });
+        return "";
+      });
+      syncBuiltinESMExports();
+      t.after(() => {
+        t.mock.restoreAll();
+        syncBuiltinESMExports();
+      });
+    }
     if (expectedError) {
       await assert.rejects(deployDev(input, executeCommand), expectedError);
       assert.equal(activeReleaseIdentity(database).get().active_production_release_id, prepared.release_id);
@@ -499,6 +678,16 @@ for (const [scenario, expectedError] of [
       assert.equal(activeReleaseIdentity(database).get().active_production_release_id, null);
       assert.equal(countSuccessfulReleaseEvidence(database).get().count, 1);
       assert.equal(requests.filter((path) => path.endsWith("/deployments")).length, 2);
+      if (retrying) {
+        assert.equal(commands.filter(({ args }) => args[0] === "deploy").length, 2);
+        assert.match(competingObservation.refusal, /dev_gate_failed:ready/u);
+        assert.equal(
+          competingObservation.additionalCommands,
+          0,
+          "a competing retry neither refreshes shells nor runs another claimant's failure handler",
+        );
+        assert.equal(competingObservation.lease, prepared.release_id);
+      }
     }
   });
 

@@ -7,6 +7,7 @@ import { devConfigurations } from "./dev-environment.mjs";
 import { verifyDevCommit } from "../src/http/dev-workflow-identity.mjs";
 import { environmentNames } from "../src/http/environment-target.mjs";
 import { verifyDevWorkflows } from "./dev-workflows.mjs";
+import { validateDevSecretFiles, writeDevWorkerShell } from "./dev-worker-shell.mjs";
 
 /** Provision only new dev resources; never adopt, delete or reset an existing target. */
 export async function provisionDev(environment, evidence, apply = false) {
@@ -59,24 +60,7 @@ export async function provisionDev(environment, evidence, apply = false) {
   const plan = { ...checked, names, observed_at: new Date().toISOString(), created: [] };
   await verifyDevWorkflows(environment, { mustBeAbsent: true });
   if (!apply) return plan;
-  const secretFiles = [environment.DEV_API_SECRETS_FILE, environment.DEV_INGESTION_SECRETS_FILE];
-  const expectedSecrets = [
-    ["API_BEARER_KEY", "API_BEARER_KEY_REPLACEMENT"],
-    ["ADMINISTRATION_KEY", "ADMINISTRATION_KEY_REPLACEMENT", "D1_EXPORT_TOKEN", "D1_VERIFICATION_TOKEN"],
-  ];
-  const secrets = await Promise.all(
-    secretFiles.map(async (path, index) => {
-      if (!path) throw new Error("dev_secret_files_required");
-      const value = JSON.parse(await readFile(path, "utf8"));
-      if (
-        Object.keys(value).sort().join("|") !== expectedSecrets[index].sort().join("|") ||
-        Object.values(value).some((secret) => typeof secret !== "string" || secret.length < 16)
-      )
-        throw new Error("invalid_dev_secret_inventory");
-      return value;
-    }),
-  );
-  if (new Set(secrets.flatMap(Object.values)).size !== 6) throw new Error("dev_secrets_must_be_distinct");
+  await validateDevSecretFiles(environment);
   const head = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
   if (head !== environment.EXPECTED_HEAD_SHA) throw new Error("dev_checkout_mismatch");
   await verifyDevCommit(environment.GH_TOKEN, { head_sha: head, ci_run_id: environment.CI_RUN_ID });
@@ -104,26 +88,8 @@ export async function provisionDev(environment, evidence, apply = false) {
   // Provision deny-only Worker shells: no routes or data/service/Workflow
   // bindings, and no usable application. Versions upload requires a script to
   // exist; only the guarded first-install executor activates the application.
-  for (const [index, name] of names.workers.entries()) {
-    const form = new FormData();
-    form.set(
-      "metadata",
-      JSON.stringify({
-        main_module: "deny.mjs",
-        compatibility_date: "2026-07-29",
-        bindings: Object.entries(secrets[index]).map(([name, text]) => ({ name, text, type: "secret_text" })),
-      }),
-    );
-    form.set(
-      "deny.mjs",
-      new File(
-        ["export default { fetch() { return new Response('Dev installation pending', {status:503}); } };"],
-        "deny.mjs",
-        { type: "application/javascript+module" },
-      ),
-    );
-    await api(`/workers/scripts/${name}`, "PUT", form);
-    await api(`/workers/scripts/${name}/subdomain`, "POST", { enabled: false, previews_enabled: false });
+  for (const name of names.workers) {
+    await writeDevWorkerShell(environment, name);
     plan.created.push({ kind: "worker-shell", name });
     await retain();
   }
