@@ -202,7 +202,7 @@ test("the real Pokémon pilot preserves treatments and official correction throu
   );
   const originalCards = (await get("/v1/cards?game=pokemon")).data;
   assert.deepEqual(originalCards.map((card) => card.name).sort(), ["Charizard", "Garchomp", "Snorlax"]);
-  const originalGarchomp = originalCards.find((card) => card.id === garchompId);
+  const originalGarchomp = (await get(`/v1/cards/${garchompId}`)).data;
   assert.equal(originalGarchomp.effective_rules_text, garchompAdmission.printing.printed_rules_text);
   assert.match(originalGarchomp.effective_rules_text, /effects of attacks done to this Pokémon/u);
   for (const proposal of unresolved.filter((proposal) => proposal.source_lineage === "tcgdex-pokemon-en")) {
@@ -251,6 +251,7 @@ test("the real Pokémon pilot preserves treatments and official correction throu
   assert.equal(discovery[0].game_profile.id, "pokemon@1");
   assert.ok(discovery[0].filters.cards.includes("attribute.hp"));
   const cards = (await get("/v1/cards?game=pokemon")).data;
+  const cardDetails = await Promise.all(cards.map(async (card) => (await get(`/v1/cards/${card.id}`)).data));
   assert.deepEqual(cards.map((card) => card.id).sort(), originalCards.map((card) => card.id).sort());
   const snorlax = cards.find((card) => card.name === "Snorlax");
   assert.equal(snorlax.category, "gameplay");
@@ -260,7 +261,7 @@ test("the real Pokémon pilot preserves treatments and official correction throu
     (await get("/v1/cards?game=pokemon&attribute.hp=150")).data.map((card) => card.id),
     [snorlax.id],
   );
-  const corrected = cards.find((card) => card.id === garchompId);
+  const corrected = cardDetails.find((card) => card.id === garchompId);
   assert.match(corrected.effective_rules_text, /effects of attacks from your opponent’s Pokémon done/u);
   assert.ok(corrected.effective_rules_text.endsWith("Dragonblade: Discard the top 2 cards of your deck."));
   const printings = (await get("/v1/printings?game=pokemon")).data;
@@ -311,7 +312,7 @@ test("the real Pokémon pilot preserves treatments and official correction throu
     exported[kind] = await reader.records(api.url, key, publication.resulting_revision_id, kind);
   assert.deepEqual(
     exported.cards.map((card) => [card.id, card.effective_rules_text]).sort(),
-    cards.map((card) => [card.id, card.effective_rules_text]).sort(),
+    cardDetails.map((card) => [card.id, card.effective_rules_text]).sort(),
   );
   for (const card of cards) {
     const record = exported.cards.find((entry) => entry.id === card.id);
@@ -402,6 +403,8 @@ test("the real Pokémon pilot preserves treatments and official correction throu
   const withoutLinks = (records) =>
     JSON.parse(JSON.stringify(records, (name, value) => (name === "links" ? undefined : value)));
   assert.deepEqual(withoutLinks((await get("/v1/cards?game=pokemon")).data), withoutLinks(cards));
+  for (const card of cardDetails)
+    assert.deepEqual(withoutLinks((await get(`/v1/cards/${card.id}`)).data), withoutLinks(card));
   const restoredPrintings = (await get("/v1/printings?game=pokemon")).data;
   assert.deepEqual(withoutLinks(restoredPrintings), withoutLinks(printings));
   assert.deepEqual(withoutLinks((await get("/v1/products?game=pokemon")).data), withoutLinks(products));
