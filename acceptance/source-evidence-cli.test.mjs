@@ -203,7 +203,12 @@ test("compatibility publication: the CLI audits real retained evidence through a
   const resumeRefused = await runCli(["source", "resume", "--run-id", abandoned.id, "--json"], cliEnvironment);
   assert.equal(resumeRefused.code, 7);
   assert.equal(JSON.parse(resumeRefused.stdout).code, "ingestion_run_not_collecting");
-  validateSourceDocument("/v1/ingestion-runs/{run}/collection/resume", "post", 409, JSON.parse(resumeRefused.stdout));
+  const refusedHttp = await fetch(`${ingestion.url}/v1/ingestion-runs/${abandoned.id}/collection/resume`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${administrationKey}` },
+  });
+  assert.equal(refusedHttp.status, 409);
+  validateSourceDocument("/v1/ingestion-runs/{run}/collection/resume", "post", 409, await refusedHttp.json());
   const terminatedHuman = await runCli(["source", "show", "--run-id", abandoned.id], cliEnvironment);
   assert.equal(terminatedHuman.code, 0, terminatedHuman.stderr);
   assert.match(terminatedHuman.stdout, /Terminated: ingestion_run_terminated/);
