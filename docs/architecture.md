@@ -145,7 +145,10 @@ The isolated dev implementation uses signed GitHub workflow identity to prepare
 the exact passing main commit against its own catalogue, then reuses the guarded
 release executor and canonical lease. It verifies uploaded versions against the
 fully activated pair before binding and smoke success. Resource namespaces,
-CLI profiles and Disposable Restore deletion are environment-scoped; provider
-deployment authority still depends on the owner's account-isolation choice.
+CLI profiles and Disposable Restore deletion are environment-scoped. The owner
+selected the existing production account for dev and staging and accepted its
+account-wide deployment permissions. Each environment must retain separate data,
+resource namespaces, credentials and routes; application checks enforce target
+selection within that shared authority. [Account decision](https://github.com/KeeprDigital/card-keepr/issues/236).
 The [dev procedure](runbooks/isolated-dev.md) requires a guarded first installation
 and real automatic-deployment evidence before the rollout is established.

@@ -89,12 +89,12 @@ defines D1 Edit and Workers Scripts Edit at account scope. A separate token on t
 existing shared account therefore has provider authority over production resources
 too; its name does not enforce a dev-only boundary. Application namespace/binding
 checks constrain this executor's requests, but cannot contain a compromised token.
-Before configuring live credentials, record the owner's choice of shared-account
-authority or a separate non-production account. The selected account must also
-own the configured `keepr.digital` route zone: the current compiler preserves
-that zone and the provider verifier rejects foreign-account zones. A separate
-account therefore needs its zone/DNS arrangement resolved before installation;
-changing the account ID alone does not establish a usable isolated route.
+The owner selected the current account for dev and staging and accepted this
+shared provider authority; [architecture](../architecture.md#software-release-direction)
+records the decision. Use that account's `keepr.digital` zone for the dev route.
+The provider verifier still requires the configured zone to belong to the target
+account. Confirm the account's runtime plan and refresh capacity evidence before
+installation; the dev-only reservation below does not allocate staging capacity.
 
 The config compiler owns the exact target inventory:
 
