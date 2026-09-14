@@ -192,7 +192,7 @@ export async function advanceGamePublication(
     ).run();
     return inspectPublication(db, id);
   }
-  // Retry unrelated-game contention by refreshing at most five immutable roots.
+  // Retry unrelated-game contention by refreshing the bounded registered-game roots.
   for (let attempt = 0; attempt < 3; attempt++) {
     const head = (await publicationCompositionHead(db).first<{ current_revision_id: string }>())!.current_revision_id;
     if (!(await publicationCheckpointStatement(db, head).first<{ ready: number }>())!.ready) {

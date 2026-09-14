@@ -16,6 +16,7 @@ import {
   exportedGameProfileSchema,
   type ProductRelationship,
   replayByDigest,
+  registeredSupportedGames,
   retainedPayload,
   type SupportedGame,
   sha256Text,
@@ -38,7 +39,7 @@ import {
   type CuratedRevisionRow as RevisionRow,
 } from "./curated-repository";
 
-const games = new Set(["one-piece", "fusion-world", "digimon", "gundam", "riftbound", "magic"]);
+const games = new Set<string>(registeredSupportedGames());
 const forbiddenRoots = new Set([
   "id",
   "game",

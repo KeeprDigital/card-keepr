@@ -3722,7 +3722,7 @@
               "additionalProperties": false
             },
             "minItems": 1,
-            "maxItems": 5
+            "maxItems": 6
           },
           "root_digest": {
             "type": "string",
@@ -45666,7 +45666,7 @@
                       "minLength": 1
                     },
                     "minItems": 1,
-                    "maxItems": 5
+                    "maxItems": 6
                   }
                 },
                 "required": [

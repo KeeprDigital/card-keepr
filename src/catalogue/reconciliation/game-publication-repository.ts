@@ -3,7 +3,7 @@ import {
   equalGameSemanticsSql,
   latestAcceptanceCheckpointSql,
 } from "./game-publication-no-change-repository";
-import { type CatalogueStore, repositoryStatements } from "../shared";
+import { type CatalogueStore, repositoryStatements, registeredSupportedGames } from "../shared";
 
 export function retainPublicPackageManifest(
   db: CatalogueStore,
@@ -27,9 +27,11 @@ export function retainPublicPackageManifest(
 
 export function publicationOperationStatement(db: CatalogueStore, id: string, byKey = false) {
   return repositoryStatements(db)
-    .prepare(`SELECT p.*, c.preparation_id,c.ingestion_run_id,c.supported_game
+    .prepare(
+      `SELECT p.*, c.preparation_id,c.ingestion_run_id,c.supported_game
     FROM game_publication_operations p JOIN game_candidates c ON c.id=p.candidate_id
-    WHERE p.${byKey ? "idempotency_key" : "id"}=?`)
+    WHERE p.${byKey ? "idempotency_key" : "id"}=?`,
+    )
     .bind(id);
 }
 export function retainPublicationApproval(
@@ -49,9 +51,11 @@ export function retainPublicationApproval(
   },
 ) {
   return repositoryStatements(db)
-    .prepare(`INSERT INTO game_publication_operations
+    .prepare(
+      `INSERT INTO game_publication_operations
  (id,candidate_id,manifest_digest,expected_game_revision_id,candidate_generation,deadline,approved_at,
- inspection_receipt,idempotency_key,request_json,approval_json,state) VALUES (?,?,?,?,?,?,?,?,?,?,?,'approved')`)
+ inspection_receipt,idempotency_key,request_json,approval_json,state) VALUES (?,?,?,?,?,?,?,?,?,?,?,'approved')`,
+    )
     .bind(
       input.id,
       input.candidate,
@@ -72,9 +76,11 @@ export function publicationCompositionHead(db: CatalogueStore) {
 }
 export function compositionGamesStatement(db: CatalogueStore, revision: string) {
   return repositoryStatements(db)
-    .prepare(`SELECT supported_game,candidate_id,game_revision_id,root_digest
- FROM catalogue_composition_games WHERE catalogue_revision_id=? ORDER BY supported_game LIMIT 5`)
-    .bind(revision);
+    .prepare(
+      `SELECT supported_game,candidate_id,game_revision_id,root_digest
+ FROM catalogue_composition_games WHERE catalogue_revision_id=? ORDER BY supported_game LIMIT ?`,
+    )
+    .bind(revision, registeredSupportedGames().length);
 }
 export function publicationCheckpointStatement(db: CatalogueStore, revision: string) {
   return repositoryStatements(db)
@@ -89,8 +95,10 @@ export function updatePublicationState(
   code: string | null = null,
 ) {
   return repositoryStatements(db)
-    .prepare(`UPDATE game_publication_operations SET state=?,failure_code=?
- WHERE id=? AND generation=? AND state IN ('approved','waiting_artifacts','waiting_backup')`)
+    .prepare(
+      `UPDATE game_publication_operations SET state=?,failure_code=?
+ WHERE id=? AND generation=? AND state IN ('approved','waiting_artifacts','waiting_backup')`,
+    )
     .bind(state, code, id, generation);
 }
 export function pausePublicationSuccessor(
@@ -102,10 +110,12 @@ export function pausePublicationSuccessor(
 ) {
   const next = `public-export-attempt:${id}:${generation}:${shard + 1}:`;
   return repositoryStatements(db)
-    .prepare(`UPDATE game_publication_operations SET state='retry_paused',failure_code='publication_successor_dispatch_exhausted'
+    .prepare(
+      `UPDATE game_publication_operations SET state='retry_paused',failure_code='publication_successor_dispatch_exhausted'
  WHERE id=? AND generation=? AND state IN ('approved','waiting_artifacts','waiting_backup')
  AND coalesce((SELECT sequence FROM publication_export_preparations WHERE publication_operation_id=?),0)=?
- AND NOT EXISTS(SELECT 1 FROM game_publication_actions WHERE idempotency_key>=? AND idempotency_key<?)`)
+ AND NOT EXISTS(SELECT 1 FROM game_publication_actions WHERE idempotency_key>=? AND idempotency_key<?)`,
+    )
     .bind(id, generation, id, sequence, next, `${next}~`);
 }
 export function publicationSwitchGuard(
@@ -121,7 +131,8 @@ export function publicationSwitchGuard(
   },
 ) {
   return repositoryStatements(db)
-    .prepare(`SELECT CASE
+    .prepare(
+      `SELECT CASE
  WHEN NOT EXISTS (SELECT 1 FROM game_publication_operations WHERE id=?1 AND generation=?2
  AND state IN ('approved','waiting_artifacts','waiting_backup')) THEN json_extract('{}','publication_writer_conflict')
  WHEN EXISTS (SELECT 1 FROM game_publication_operations WHERE id=?1 AND julianday(deadline)<=julianday('now')+?6/86400000.0) THEN json_extract('{}','publication_deadline_expired')
@@ -173,7 +184,8 @@ ${
  SELECT * FROM (SELECT * FROM expected EXCEPT SELECT * FROM actual)
  UNION ALL SELECT * FROM (SELECT * FROM actual EXCEPT SELECT * FROM expected)
  ) THEN json_extract('{}','publication_composition_conflict')`
-} ELSE 1 END`)
+} ELSE 1 END`,
+    )
     .bind(input.id, input.generation, input.predecessor, input.composition, input.at, input.clockOffsetMs ?? 0);
 }
 
@@ -195,8 +207,10 @@ export function publicationSwitchStatements(
   return [
     publicationSwitchGuard(db, input),
     sql
-      .prepare(`INSERT INTO catalogue_revisions(id,ingestion_run_id,published_at,content_digest,expected_previous_revision_id,approved_candidate_digest,publication_operation_id)
- SELECT ?,c.ingestion_run_id,?,?,?,p.manifest_digest,p.id FROM game_publication_operations p JOIN game_candidates c ON c.id=p.candidate_id WHERE p.id=?`)
+      .prepare(
+        `INSERT INTO catalogue_revisions(id,ingestion_run_id,published_at,content_digest,expected_previous_revision_id,approved_candidate_digest,publication_operation_id)
+ SELECT ?,c.ingestion_run_id,?,?,?,p.manifest_digest,p.id FROM game_publication_operations p JOIN game_candidates c ON c.id=p.candidate_id WHERE p.id=?`,
+      )
       .bind(input.revision, input.at, input.composition, input.predecessor, input.id),
     sql
       .prepare(
@@ -208,10 +222,12 @@ export function publicationSwitchStatements(
         input.composition,
       ),
     sql
-      .prepare(`INSERT INTO catalogue_composition_games SELECT ?,json_extract(value,'$.supported_game'),json_extract(value,'$.candidate_id'),
+      .prepare(
+        `INSERT INTO catalogue_composition_games SELECT ?,json_extract(value,'$.supported_game'),json_extract(value,'$.candidate_id'),
  CASE WHEN json_extract(value,'$.candidate_id')=(SELECT candidate_id FROM game_publication_operations WHERE id=?) THEN ? ELSE
  (SELECT game_revision_id FROM catalogue_composition_games WHERE catalogue_revision_id=? AND supported_game=json_extract(value,'$.supported_game')) END,
- json_extract(value,'$.root_digest') FROM verified_publication_compositions,json_each(content,'$.games') WHERE sha256=?`)
+ json_extract(value,'$.root_digest') FROM verified_publication_compositions,json_each(content,'$.games') WHERE sha256=?`,
+      )
       .bind(input.revision, input.id, input.revision, input.predecessor, input.composition),
     sql
       .prepare(
@@ -225,8 +241,10 @@ export function publicationSwitchStatements(
       .prepare(`INSERT INTO catalogue_query_revisions(catalogue_revision_id,state) VALUES (?,'available')`)
       .bind(input.revision),
     sql
-      .prepare(`WITH RECURSIVE retained(id,depth) AS (SELECT ?,0 UNION ALL SELECT r.expected_previous_revision_id,depth+1 FROM catalogue_revisions r JOIN retained ON retained.id=r.id WHERE depth<2)
- UPDATE catalogue_query_revisions SET state='archived' WHERE catalogue_revision_id NOT IN (SELECT id FROM retained)`)
+      .prepare(
+        `WITH RECURSIVE retained(id,depth) AS (SELECT ?,0 UNION ALL SELECT r.expected_previous_revision_id,depth+1 FROM catalogue_revisions r JOIN retained ON retained.id=r.id WHERE depth<2)
+ UPDATE catalogue_query_revisions SET state='archived' WHERE catalogue_revision_id NOT IN (SELECT id FROM retained)`,
+      )
       .bind(input.revision),
     ...completePublicationStatements(db, input),
   ];
@@ -248,9 +266,11 @@ function completePublicationStatements(db: CatalogueStore, input: PublicationCom
       )
       .bind(input.revision, input.id),
     sql
-      .prepare(`INSERT INTO catalogue_backup_attempts(idempotency_key,request_json,owner_token,catalogue_revision_id,state,object_key,started_at,publication_ingestion_run_id,publication_operation_id,publication_reserved)
+      .prepare(
+        `INSERT INTO catalogue_backup_attempts(idempotency_key,request_json,owner_token,catalogue_revision_id,state,object_key,started_at,publication_ingestion_run_id,publication_operation_id,publication_reserved)
  SELECT ?,json_object('publication_operation_id',p.id,'catalogue_revision_id',?,'composition_digest',?),?,?, 'pending',?,?,c.ingestion_run_id,p.id,1
- FROM game_publication_operations p JOIN game_candidates c ON c.id=p.candidate_id WHERE p.id=?`)
+ FROM game_publication_operations p JOIN game_candidates c ON c.id=p.candidate_id WHERE p.id=?`,
+      )
       .bind(
         input.backup,
         input.revision,
@@ -297,10 +317,12 @@ export function publicationResumeStatements(
   const sql = repositoryStatements(db);
   return [
     sql
-      .prepare(`SELECT CASE WHEN EXISTS(SELECT 1 FROM game_publication_operations p,operation_state o
+      .prepare(
+        `SELECT CASE WHEN EXISTS(SELECT 1 FROM game_publication_operations p,operation_state o
  WHERE p.id=? AND p.generation=? AND p.state NOT IN ('published','failed') AND p.deadline>?
  AND o.singleton=1 AND o.recovery_health='healthy' AND o.active_recovery_id IS NULL AND o.recovery_restore_guard='clear')
- THEN 1 ELSE json_extract('{}','publication_resume_conflict') END`)
+ THEN 1 ELSE json_extract('{}','publication_resume_conflict') END`,
+      )
       .bind(id, generation, at),
     sql
       .prepare(

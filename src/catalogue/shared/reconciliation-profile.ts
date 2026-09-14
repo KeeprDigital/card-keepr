@@ -384,6 +384,11 @@ export function registeredGameProfiles() {
   return Object.entries(profileContracts).map(([id, contract]) => ({ id, game: contract.game }));
 }
 
+/** Inventory bounds count games once, independently of their profile versions. */
+export function registeredSupportedGames(): readonly SupportedGame[] {
+  return [...new Set(Object.values(profileContracts).map(({ game }) => game))];
+}
+
 /** Existing source vocabularies declare tokens through their Game Profile. */
 export function gameProfileCardClassification(
   profile: string,

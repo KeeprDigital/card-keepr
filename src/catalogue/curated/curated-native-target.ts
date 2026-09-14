@@ -1,4 +1,4 @@
-import { AdministrationProblem, type CatalogueStore, sha256Text } from "../shared";
+import { AdministrationProblem, type CatalogueStore, sha256Text, registeredSupportedGames } from "../shared";
 import * as repository from "./curated-native-target-repository";
 
 type EntityKind =
@@ -99,14 +99,12 @@ export async function nativeCuratedTarget(
       await repository.curatedNativeCheckpointStatement(db, preparation, "official_errata").first<Row>(),
     );
     const productGames = official.productGames;
+    const supportedGames: readonly unknown[] = registeredSupportedGames();
     if (
       official.errataComplete !== true ||
       !Array.isArray(productGames) ||
-      productGames.length > 5 ||
       new Set(productGames).size !== productGames.length ||
-      productGames.some(
-        (value) => !["one-piece", "digimon", "fusion-world", "gundam", "riftbound", "magic"].includes(value),
-      )
+      productGames.some((value) => !supportedGames.includes(value))
     )
       throw unavailable();
     // Each game's reduction inherits the preceding draft, including its contexts and relationships.

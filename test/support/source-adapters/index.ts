@@ -165,6 +165,14 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
         parserContract: "synthetic-fixture-card-document@2",
       },
       {
+        adapterVersion: "fixture-magic-json@1",
+        printingAdmission: "source_qualification" as const,
+        sourceLineage: "scryfall-magic-en",
+        supportedGame: "magic",
+        gameProfileVersion: "magic@1",
+        parserContract: "synthetic-fixture-card-document@2",
+      },
+      {
         adapterVersion: "fixture-digimon-json@2",
         printingAdmission: "source_qualification" as const,
         sourceLineage: "digimon-en",

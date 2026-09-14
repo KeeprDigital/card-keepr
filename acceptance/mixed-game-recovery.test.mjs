@@ -22,7 +22,7 @@ import { withNativeRequestPacing } from "./helpers/native-request-pacing.mjs";
 import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs";
 
 // Synthetic source facts, actual publication/backup Workflows and SQL imports.
-// Two games prove sibling preservation; three further publications cross the
+// All six registered games prove sibling preservation; three further publications cross the
 // current-plus-two retention boundary. No full catalogue or capacity preflight.
 test("mixed-game composition and current plus two survive an actual SQL import", async (t) => {
   const exportReader = nativeExportReader(250);
@@ -86,8 +86,13 @@ test("mixed-game composition and current plus two survive an actual SQL import",
   const sources = [
     ["one-piece", "one-piece-en", "fixture-one-piece-json@3", "base"],
     ["digimon", "digimon-en", "fixture-digimon-json@2", "profile-digimon"],
+    ["fusion-world", "fusion-world-en", "fixture-fusion-world-json@2", "profile-fusion-world"],
+    ["gundam", "gundam-en-asia", "fixture-gundam-en-asia-json@2", "profile-gundam"],
+    ["riftbound", "riftbound-en", "fixture-riftbound-json@1", "profile-riftbound"],
+    ["magic", "scryfall-magic-en", "fixture-magic-json@1", "profile-magic"],
   ];
   const revisions = [];
+  const gameRevisions = new Map();
   let previousComponents = [];
   const components = async (revision) => {
     const result = [];
@@ -154,6 +159,7 @@ test("mixed-game composition and current plus two survive an actual SQL import",
     );
     assert.ok(!revisions.includes(published.resulting_revision_id));
     revisions.push(published.resulting_revision_id);
+    gameRevisions.set(game, published.resulting_revision_id);
     const nextComponents = await components(published.resulting_revision_id);
     for (const sibling of previousComponents)
       assert.deepEqual(
@@ -197,7 +203,7 @@ test("mixed-game composition and current plus two survive an actual SQL import",
       body: JSON.stringify({
         ingestion_run_id: refreshed.id,
         supported_game: "digimon",
-        expected_game_revision_id: revisions.at(-1),
+        expected_game_revision_id: gameRevisions.get("digimon"),
         idempotency_key: `mixed-refresh-candidate-${repeat}`,
       }),
     });
@@ -219,6 +225,7 @@ test("mixed-game composition and current plus two survive an actual SQL import",
     );
     assert.ok(!revisions.includes(published.resulting_revision_id));
     revisions.push(published.resulting_revision_id);
+    gameRevisions.set("digimon", published.resulting_revision_id);
     const nextComponents = await components(published.resulting_revision_id);
     for (const sibling of previousComponents.filter((c) => !c.name.startsWith("digimon.")))
       assert.deepEqual(
