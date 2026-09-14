@@ -21,6 +21,16 @@ completeness is confined to those named source scopes, not the entire game.
 Use only subsets declared by the installed registry. Set each source's `required`
 or `optional` participation before starting; retry preserves the plan.
 
+Independently complete named scopes can be collected and published successively.
+Keep each scope's exact root contract and complete Card variant inventory; a
+page slice is valid only when its adapter establishes that inventory. Prepare the
+next whole-game candidate against the last published game revision and wait for
+its verified backup before advancing. Inspect unchanged entities and their
+retained evidence as well as the newly checked scope; publication does not make
+unselected evidence fresh. Arbitrary page ranges and new Source Lineages are not
+substitutes for a registered scope. The synthetic bounded arrangement and its
+accounting pilot are selected separately under [testing](../testing.md).
+
 Source registration and network access do not designate fact authority. Inspect
 the current generation before an explicit scoped change:
 

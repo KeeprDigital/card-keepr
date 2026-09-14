@@ -9,8 +9,28 @@ import { summarizeReconciliationMemory } from "../scripts/reconciliation-memory.
 import {
   nativeOperationalTimeline,
   nativeRetainedOccupancy,
+  nativeObjectCensus,
   operationalCapacityMetrics,
 } from "./helpers/native-capacity-metrics.mjs";
+
+test("R2 accounting counts each coexisting object once, including equal keys in separate buckets", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "keepr-object-census-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  for (const name of ["evidence", "serving"]) {
+    const database = new DatabaseSync(join(directory, `${name}.sqlite`));
+    database.exec(
+      "CREATE TABLE _mf_objects (key TEXT PRIMARY KEY, size INTEGER); INSERT INTO _mf_objects VALUES ('source-snapshots/a', 100), ('printing-images/b', 200)",
+    );
+    database.close();
+  }
+  const result = await nativeObjectCensus(directory);
+  assert.equal(result.objects, 4);
+  assert.equal(result.logical_bytes, 600);
+  assert.deepEqual(result.by_key_prefix, {
+    "printing-images": { objects: 2, logical_bytes: 400 },
+    "source-snapshots": { objects: 2, logical_bytes: 200 },
+  });
+});
 
 test("memory diagnostics retain a missed historical target and incomplete observations without a budget verdict", () => {
   const report = {

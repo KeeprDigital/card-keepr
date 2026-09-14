@@ -1,5 +1,35 @@
 import { readdir, stat, statfs } from "node:fs/promises";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { hasObjectInventory, objectBytesByPrefix } from "./query-helpers/capacity-objects.mjs";
+
+/** Read stopped local R2 emulation metadata, counting each bucket/key exactly once. */
+export async function nativeObjectCensus(r2Directory) {
+  const result = { objects: 0, logical_bytes: 0, by_key_prefix: {}, buckets: [] };
+  for (const name of (await readdir(r2Directory, { recursive: true })).sort()) {
+    if (!name.endsWith(".sqlite")) continue;
+    const database = new DatabaseSync(join(r2Directory, name), { readOnly: true });
+    try {
+      if (!hasObjectInventory(database).get()) continue;
+      const prefixes = objectBytesByPrefix(database).all();
+      result.buckets.push({ database: name, prefixes });
+      for (const row of prefixes) {
+        const group = (result.by_key_prefix[row.prefix] ??= { objects: 0, logical_bytes: 0 });
+        group.objects += row.objects;
+        group.logical_bytes += row.logical_bytes;
+        result.objects += row.objects;
+        result.logical_bytes += row.logical_bytes;
+      }
+    } finally {
+      database.close();
+    }
+  }
+  return {
+    ...result,
+    limitation:
+      "Disjoint logical R2 objects at a stopped local checkpoint, including history and staging. Excludes metadata, unreferenced emulator blobs and filesystem overhead; do not add to filesystem occupancy or D1 table/index breakdowns.",
+  };
+}
 
 export function operationalCapacityMetrics(output) {
   const groups = {};

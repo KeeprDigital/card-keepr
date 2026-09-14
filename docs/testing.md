@@ -124,6 +124,24 @@ Only the full Riftbound journey requires 6 GiB free space. Its retained source
 inventory and incomplete image coverage are described with the
 [fixtures](../acceptance/fixtures/real-sources/2026-09-08-riftbound/README.md).
 
+The explicit `bounded-capacity-pilot` benchmark composes two named synthetic
+scopes (17 Printings, 34 separately streamed 100 KiB images), refreshes the first,
+and verifies stable consumer/export identities and bytes after actual SQL restore.
+Its test-provider collection scheduling is controlled; native candidate,
+publication and backup Workflows execute normally. Use an absolute output prefix:
+
+```sh
+KEEPR_ACCOUNTING_OUTPUT_PREFIX=/tmp/keepr-accounting pnpm run test:benchmark bounded-capacity-pilot
+```
+
+The `-pilot.json` report separates disjoint logical R2 object prefixes from local
+filesystem occupancy, D1 table/index allocations and restore files. Those views
+overlap and must not be added together. Host headroom and driver resource usage
+are point-in-time observations; unavailable isolate CPU/peak, billed writes and
+write amplification stay unmeasured. Full-tier scope censuses are plans, not
+executed 5/50 GiB capacity. Run with exclusive host resources. This benchmark does
+not qualify the expanded launch sources or complete #275.
+
 Benchmarks include `native-sqlite-export` crossing 64 MiB and
 `native-isolate-metrics` for heap calibration. The reconciliation memory diagnostic
 is excluded even from `test:benchmark --all` and all configured CI:

@@ -28,6 +28,44 @@ test("capacity pages retain the accepted structured bytes and use separate image
 });
 
 import { capacitySourceAdapter } from "../support/source-adapters/capacity";
+import { capacityCollectionScopes } from "../support/fake-publisher/capacity-workloads";
+
+test("independently complete capacity scopes cover both request graphs without raising admission limits", () => {
+  for (const [tier, scopeCount, requests] of [
+    ["tier-1", 5, 20625],
+    ["tier-2", 42, 206250],
+  ] as const) {
+    const scopes = capacityCollectionScopes(syntheticCapacityTier(tier));
+    expect(scopes).toHaveLength(scopeCount);
+    expect(scopes.reduce((sum, scope) => sum + scope.requests, 0)).toBe(requests);
+    expect(scopes.every((scope) => scope.requests <= 5000)).toBe(true);
+    expect(scopes[0]!.firstPage).toBe(0);
+    expect(scopes.slice(1).every((scope, index) => scope.firstPage === scopes[index]!.lastPage + 1)).toBe(true);
+    expect(scopes.at(-1)!.lastPage).toBe(tier === "tier-1" ? 624 : 6249);
+  }
+});
+
+test("a selected capacity scope closes discovery while preserving the source's global identities", async () => {
+  const scopes = capacityCollectionScopes(syntheticCapacityTier("accounting-pilot"));
+  expect(scopes.map((scope) => scope.requests)).toEqual([33, 3]);
+  for (const [index, scope] of scopes.entries()) {
+    const contract = capacitySourceAdapter.coverageContracts[scope.subset]!;
+    const url = contract.requestUrlForSurface("catalogue");
+    const response = capacitySourceResponse(new URL(url))!;
+    const source = await response.text();
+    const extracted = await capacitySourceAdapter.recordExtraction.extract(
+      async function* () {
+        yield source;
+      },
+      { url, mediaType: "application/json" },
+    );
+    expect(extracted.requests.every((request) => request.role === "image")).toBe(true);
+    expect(extracted.count).toBe(index === 0 ? 16 : 1);
+    expect(contract.cardIdentities![0]!.value).toBe(index === 0 ? "SYN-000001" : "SYN-000017");
+    const unscoped = capacitySourceResponse(new URL(url.split("?")[0]!))!;
+    expect(source).toBe(await unscoped.text());
+  }
+});
 
 test("capacity collection discovers every separate image and the next bounded page", async () => {
   const url = "https://official-source.invalid/reconciliation/capacity-128-images-page-0";
