@@ -1,4 +1,11 @@
-import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
+import {
+  AdministrationProblem,
+  type CatalogueStore,
+  type CatalogueCard,
+  canonicalJson,
+  sha256Text,
+  derivedCardModel,
+} from "../shared";
 import {
   correctionStatement,
   correctionPrintingMappingStatement,
@@ -170,6 +177,19 @@ export async function validateIdentityCorrection(database: CatalogueStore, value
     new Set(Object.values(entities).map((e) => e.card_id)).size !== 1
   )
     invalid("Merge the Cards explicitly before merging Printings attached to different Cards.");
+  if (
+    input.entity_kind === "card" &&
+    input.action === "merge" &&
+    new Set(
+      Object.values(entities).map((entity) =>
+        canonicalJson([
+          derivedCardModel(entity as CatalogueCard).category,
+          (entity.game_data as { profile: string }).profile,
+        ]),
+      ),
+    ).size !== 1
+  )
+    invalid("Merged Cards must share their category and Game Profile; shared artwork does not establish equivalence.");
   const reviewed = { proposal: input, entities, children, decision_cutoff: state.decision_cutoff };
   if (new TextEncoder().encode(canonicalJson(reviewed)).byteLength > 256 * 1024)
     invalid("The reviewed evidence exceeds the 256 KiB correction record bound.");

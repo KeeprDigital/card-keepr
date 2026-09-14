@@ -120,86 +120,103 @@ test("retired aggregate approval creates no claim, reservation, outcome or expor
   });
 });
 
-test("the public run boundary reads and retries an immutable retained candidate", async () => {
-  const runId = "run_historical_fixed_point_candidate";
-  const historicalCandidate = {
-    contract: "card-keepr-catalogue-candidate@1",
-    selected_games: ["one-piece"],
-    cards: [
-      {
-        id: "card_01k_first_catalogue_0001",
-        game: "one-piece",
-        official_identity: {
-          kind: "card_number",
-          value: "OP01-001",
-        },
-        name: "Monkey.D.Luffy",
-        effective_rules_text: "[DON!! x1] This Leader gains +1000 power during your turn.",
-        game_data: {
-          profile: "one-piece@1",
-          attributes: {
-            card_type: "leader",
-            colours: ["red"],
-            cost: null,
-            life: 5,
-            battle_attributes: ["strike"],
-            power: 5000,
-            counter: null,
-            traits: ["Straw Hat Crew"],
-            block_icons: ["1"],
-            effect_text: "[DON!! x1] This Leader gains +1000 power during your turn.",
-            trigger_text: null,
+test.each(["intact", "digest_mismatch", "header_mismatch", "malformed_header"])(
+  "the public run boundary preserves immutable old candidates and refuses obsolete retry work: %s",
+  async (condition) => {
+    const runId = "run_historical_fixed_point_candidate";
+    const historicalCandidate = {
+      contract: "card-keepr-catalogue-candidate@1",
+      selected_games: ["one-piece"],
+      cards: [
+        {
+          id: "card_01k_first_catalogue_0001",
+          game: "one-piece",
+          official_identity: {
+            kind: "card_number",
+            value: "OP01-001",
+          },
+          name: "Monkey.D.Luffy",
+          effective_rules_text: "[DON!! x1] This Leader gains +1000 power during your turn.",
+          game_data: {
+            profile: "one-piece@1",
+            attributes: {
+              card_type: "leader",
+              colours: ["red"],
+              cost: null,
+              life: 5,
+              battle_attributes: ["strike"],
+              power: 5000,
+              counter: null,
+              traits: ["Straw Hat Crew"],
+              block_icons: ["1"],
+              effect_text: "[DON!! x1] This Leader gains +1000 power during your turn.",
+              trigger_text: null,
+            },
           },
         },
-      },
-    ],
-    printings: [
-      {
-        id: "printing_01k_first_catalogue_0001",
-        card_id: "card_01k_first_catalogue_0001",
-        rarity: { normalized: "leader", raw: "L" },
-        printed_rules_text: "[DON!! x1] This Leader gains +1000 power during your turn.",
-        game_data: {
-          profile: "one-piece@1",
-          attributes: { illustration_types: [] },
+      ],
+      printings: [
+        {
+          id: "printing_01k_first_catalogue_0001",
+          card_id: "card_01k_first_catalogue_0001",
+          rarity: { normalized: "leader", raw: "L" },
+          printed_rules_text: "[DON!! x1] This Leader gains +1000 power during your turn.",
+          game_data: {
+            profile: "one-piece@1",
+            attributes: { illustration_types: [] },
+          },
         },
-      },
-    ],
-  } as const;
-  const immutableCandidateJson = canonicalJson(historicalCandidate);
-  const historicalDigest = await sha256Text(immutableCandidateJson);
-  await ingestionQueries
-    .insertIngestionRunsForPublicRunBoundaryReadsRetriesImmutableFixedPointLegacy(testEnv.CATALOGUE_DB)
-    .bind(runId, historicalDigest, immutableCandidateJson)
-    .run();
+      ],
+    } as const;
+    const intactCandidateJson = canonicalJson(historicalCandidate);
+    const immutableCandidateJson =
+      condition === "digest_mismatch"
+        ? intactCandidateJson.replace("Monkey.D.Luffy", "Damaged name")
+        : condition === "header_mismatch"
+          ? canonicalJson({ ...historicalCandidate, selected_games: ["riftbound"] })
+          : condition === "malformed_header"
+            ? canonicalJson({ ...historicalCandidate, selected_games: null })
+            : intactCandidateJson;
+    const historicalDigest = await sha256Text(
+      condition === "digest_mismatch" ? intactCandidateJson : immutableCandidateJson,
+    );
+    await ingestionQueries
+      .insertIngestionRunsForPublicRunBoundaryReadsRetriesImmutableFixedPointLegacy(testEnv.CATALOGUE_DB)
+      .bind(runId, historicalDigest, immutableCandidateJson)
+      .run();
 
-  const shown = await showRun(runId);
-  expect(shown.response.status).toBe(200);
-  expect(shown.document).toMatchObject({
-    id: runId,
-    state: "failed",
-    candidate_digest: historicalDigest,
-  });
+    const shown = await showRun(runId);
+    expect(shown.response.status).toBe(condition === "intact" ? 200 : 500);
+    if (condition === "intact")
+      expect(shown.document).toMatchObject({
+        id: runId,
+        state: "failed",
+        candidate_digest: historicalDigest,
+      });
 
-  const retried = await administrationRequest(`/v1/ingestion-runs/${runId}/retry`, {
-    idempotency_key: "retry-historical-fixed-point",
-  });
-  expect(retried.response.status).toBe(201);
-  expect(retried.document).toMatchObject({
-    state: "awaiting_approval",
-    linked_run_id: runId,
-  });
+    const retryKey = "retry-historical-fixed-point";
+    for (let attempt = 0; attempt < (condition === "intact" ? 2 : 1); attempt++) {
+      const retried = await administrationRequest(`/v1/ingestion-runs/${runId}/retry`, {
+        idempotency_key: retryKey,
+      });
+      expect(retried.response.status).toBe(condition === "intact" ? 409 : 500);
+      if (condition === "intact") expect(retried.document).toMatchObject({ code: "reconciliation_definition_changed" });
+    }
+    expect(await ingestionQueries.countIngestionRunsCount(testEnv.CATALOGUE_DB).bind(retryKey).first()).toEqual({
+      count: 0,
+    });
 
-  const persisted = await ingestionQueries
-    .readIngestionRunsIdCandidateJson(testEnv.CATALOGUE_DB)
-    .bind(runId, requiredDocumentString(retried.document, "id"))
-    .all<{ id: string; candidate_json: string }>();
-  const original = persisted.results.find((row) => row.id === runId);
-  const replacement = persisted.results.find((row) => row.id !== runId);
-  expect(original?.candidate_json).toBe(immutableCandidateJson);
-  expect(JSON.parse(original!.candidate_json)).toHaveProperty("contract", "card-keepr-catalogue-candidate@1");
-  expect(JSON.parse(replacement!.candidate_json)).toHaveProperty("contract", "card-keepr-catalogue-candidate@1");
-});
+    const persisted = await ingestionQueries
+      .readIngestionRunsIdCandidateJson(testEnv.CATALOGUE_DB)
+      .bind(runId, runId)
+      .all<{ id: string; candidate_json: string }>();
+    const original = persisted.results.find((row) => row.id === runId);
+    expect(persisted.results).toHaveLength(1);
+    expect(original?.candidate_json).toBe(immutableCandidateJson);
+    expect(JSON.parse(original!.candidate_json)).toHaveProperty("contract", "card-keepr-catalogue-candidate@1");
+    if (condition === "intact") expect((await showRun(runId)).document).toEqual(shown.document);
+  },
+);
 
 test("a lengthless administration body is rejected while streaming beyond 16 KiB", async () => {
   let pulls = 0;

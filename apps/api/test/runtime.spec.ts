@@ -792,6 +792,7 @@ test("a known deleting or deleted Catalogue Export is immediately 410 while an u
 test("the public Printing response validates full Distribution Context objects", async () => {
   const document = {
     type: "printing",
+    gameplay_applicability: "applicable",
     id: "printing_api_context",
     card_id: "card_api_context",
     rarity: { normalized: "leader", raw: "L" },
@@ -918,6 +919,9 @@ test("authenticated Card and Printing reads expose Effective and Printed Rules T
   };
   const card = {
     type: "card",
+    category: "gameplay",
+    gameplay_applicability: "applicable",
+    related_cards: [],
     id: "card_errata_read",
     game: "one-piece",
     official_identity: { kind: "card_number", value: "OP29-001" },
@@ -945,6 +949,7 @@ test("authenticated Card and Printing reads expose Effective and Printed Rules T
   };
   const printing = {
     type: "printing",
+    gameplay_applicability: "applicable",
     id: "printing_errata_read",
     card_id: card.id,
     rarity: { normalized: "leader", raw: "L" },
@@ -1470,7 +1475,16 @@ test("Card search uses a revision-scoped D1 FTS5 index", async () => {
   const productionQuery = inspectCardCollectionQuery(
     testEnv.CATALOGUE_DB,
     "catrev_fts_search",
-    { q: "quartz", game: null, cardNumber: null, productId: null, rarity: null, attributes: {}, limit: 50 },
+    {
+      q: "quartz",
+      game: null,
+      category: null,
+      cardNumber: null,
+      productId: null,
+      rarity: null,
+      attributes: {},
+      limit: 50,
+    },
     null,
   );
   const plan = await productionQuery.plan().all<{ detail: string }>();
@@ -1491,6 +1505,7 @@ test("Card search uses a revision-scoped D1 FTS5 index", async () => {
     {
       q: "quartz",
       game: "one-piece",
+      category: null,
       cardNumber: "OP29-702",
       productId: null,
       rarity: null,
@@ -1693,6 +1708,7 @@ test("Card detail includes revision-pinned Printings and explicit unknowns witho
   };
   const printing = {
     type: "printing",
+    gameplay_applicability: "applicable",
     id: "printing_detail_projection",
     card_id: card.id,
     rarity: { normalized: "leader", raw: "L" },
@@ -1890,6 +1906,7 @@ function encodeTestCardCursor(input: {
       filters: {
         q: input.q,
         game: null,
+        category: null,
         cardNumber: null,
         productId: null,
         rarity: null,

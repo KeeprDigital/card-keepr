@@ -259,6 +259,7 @@ export async function initializeReconciliationProgress(
   retainedDefinitions?: string | null,
 ) {
   const definitions = JSON.stringify({
+    card_model: "categories",
     profiles: gameProfileRegistrations(),
     adapters: sourceAdapterRegistrations.map((adapter) =>
       Object.fromEntries(

@@ -54,6 +54,7 @@ export type DocumentRow = {
 type Value = Record<string, unknown>;
 export const emptyCompositionFilters: Readonly<ComposedFilters> = {
   game: null,
+  category: null,
   q: null,
   card_id: null,
   card_number: null,
@@ -209,10 +210,34 @@ async function representation(
   return data;
 }
 const publicRecordFields: Record<string, [string, string[]]> = {
-  cards: ["card", ["id", "game", "official_identity", "name", "effective_rules_text", "game_data", "lifecycle"]],
+  cards: [
+    "card",
+    [
+      "id",
+      "game",
+      "category",
+      "gameplay_applicability",
+      "related_cards",
+      "official_identity",
+      "name",
+      "effective_rules_text",
+      "game_data",
+      "lifecycle",
+    ],
+  ],
   printings: [
     "printing",
-    ["id", "card_id", "rarity", "printed_rules_text", "game_data", "products", "distribution_contexts", "lifecycle"],
+    [
+      "id",
+      "card_id",
+      "gameplay_applicability",
+      "rarity",
+      "printed_rules_text",
+      "game_data",
+      "products",
+      "distribution_contexts",
+      "lifecycle",
+    ],
   ],
   products: ["product", ["id", "game", "official_code", "name", "lifecycle"]],
   releases: ["release", ["id", "product_id", "event_key", "region", "date", "status"]],
@@ -274,6 +299,7 @@ export async function compositionEntityResponse(
       "limit",
       "after",
       "game",
+      ...(kind === "cards" ? ["category"] : []),
       "q",
       "card_id",
       "card_number",
@@ -306,6 +332,8 @@ export async function compositionEntityResponse(
       filters[field] = filters[field].normalize("NFC").trim();
       if (!filters[field]) throw invalidParameter(field, `${field} must contain at least one character.`);
     }
+  if (filters.category !== null && !["gameplay", "token", "art"].includes(filters.category))
+    throw invalidParameter("category", "category must be gameplay, token, or art.");
   if (filters.game !== null && !["one-piece", "fusion-world", "digimon", "gundam", "riftbound"].includes(filters.game))
     throw invalidParameter("game", "game is not a Supported Game.");
   if (
@@ -341,10 +369,6 @@ export async function compositionEntityResponse(
       });
     return undefined;
   }
-  if (!revision.publication_operation_id) {
-    if (legacy && revision.query_state === "available" && revision.search_state === "ready") return legacy(revision);
-    return undefined;
-  }
   if (revision.query_state !== "available")
     throw new ReadProblem(
       cursor ? 409 : 503,
@@ -353,6 +377,10 @@ export async function compositionEntityResponse(
       null,
       { extensions: { links: { collection: publicUrl(base, url.pathname) } } },
     );
+  if (!revision.publication_operation_id) {
+    if (legacy && revision.search_state === "ready") return legacy(revision);
+    return undefined;
+  }
   if (id !== undefined) {
     collectionParameters(url, ["include", "revision"]);
     const include = url.searchParams.get("include");
@@ -457,6 +485,9 @@ export async function compositionEntityResponse(
             "type",
             "id",
             "game",
+            "category",
+            "gameplay_applicability",
+            "related_cards",
             "official_identity",
             "name",
             "game_data",

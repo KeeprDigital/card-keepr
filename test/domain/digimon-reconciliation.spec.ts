@@ -47,6 +47,9 @@ describe("Digimon Card authority", () => {
 function digimonCard(effect: string): CardFacts {
   return {
     game: "digimon",
+    category: "gameplay" as const,
+    related_cards: [],
+    gameplay_applicability: "applicable" as const,
     official_identity: { kind: "card_number", value: "BT99-001" },
     name: "Synthetic Base Digimon",
     effective_rules_text: "Corrected official effect.",

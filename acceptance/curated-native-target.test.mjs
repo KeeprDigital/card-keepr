@@ -297,6 +297,7 @@ test("Curated validation resolves a published native Printing through its exact 
       f.entity("candidate_curated_printings", {
         id: "printing_monk",
         card_id: "card_retired_by_correction",
+        gameplay_applicability: "applicable",
         printed_rules_text: "curated text",
         curated_provenance: [provenance],
         rarity: { normalized: "uncommon", raw: "Uncommon" },
@@ -307,6 +308,7 @@ test("Curated validation resolves a published native Printing through its exact 
       f.entity("candidate_corrections_printings", {
         id: "printing_monk",
         card_id: "card_monk",
+        gameplay_applicability: "applicable",
         printed_rules_text: "corrected curated text",
         curated_provenance: [provenance],
         rarity: { normalized: "uncommon", raw: "Uncommon" },
@@ -337,6 +339,7 @@ test("Curated validation resolves a published native Printing through its exact 
         {
           id: "printing_monk",
           card_id: "card_monk",
+          gameplay_applicability: "applicable",
           printed_rules_text: null,
           rarity: { normalized: "uncommon", raw: "Uncommon" },
           game_data: null,

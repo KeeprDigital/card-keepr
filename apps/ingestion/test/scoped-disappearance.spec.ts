@@ -25,17 +25,28 @@ test.each([6, 0])(
     const card: CatalogueCard = {
       id: "scope-card",
       game: "one-piece",
+      category: "gameplay",
+      related_cards: [],
+      gameplay_applicability: "applicable",
       official_identity: { kind: "card_number", value: "P-001" },
       name: "Luffy",
       effective_rules_text: null,
       game_data: { profile: "one-piece@1", attributes: {} },
     };
     await cards.seed(card);
-    await cards.seed({ ...card, id: "outside-card", official_identity: { kind: "card_number", value: "P-002" } });
+    await cards.seed({
+      ...card,
+      id: "outside-card",
+      category: "gameplay",
+      related_cards: [],
+      gameplay_applicability: "applicable",
+      official_identity: { kind: "card_number", value: "P-002" },
+    });
     for (let index = 0; index < 9; index++) {
       const printing: CataloguePrinting = {
         id: `scope-printing-${index}`,
         card_id: index < 7 ? card.id : "outside-card",
+        gameplay_applicability: "applicable" as const,
         rarity: { normalized: null, raw: null },
         printed_rules_text: null,
         game_data: null,

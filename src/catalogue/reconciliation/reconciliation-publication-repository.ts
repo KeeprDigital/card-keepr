@@ -7,33 +7,39 @@ export type PublicationLineageRow = { source_lineage: string; adapter_version: s
 
 export function publicationContextStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT run.candidate_created_at AS observed_at
+    .prepare(
+      `SELECT run.candidate_created_at AS observed_at
        FROM reconciliation_contexts AS context
        JOIN ingestion_run_read AS run
          ON run.id = context.ingestion_run_id
-       WHERE context.ingestion_run_id = ?`)
+       WHERE context.ingestion_run_id = ?`,
+    )
     .bind(runId);
 }
 
 export function publicationLineagesStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT DISTINCT source_lineage, adapter_version
+    .prepare(
+      `SELECT DISTINCT source_lineage, adapter_version
        FROM reconciliation_evidence_partitions
        WHERE ingestion_run_id = ?
-       ORDER BY source_lineage, adapter_version`)
+       ORDER BY source_lineage, adapter_version`,
+    )
     .bind(runId);
 }
 
 export function publicationEvidenceStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT plan.source_observation_id AS id,
+    .prepare(
+      `SELECT plan.source_observation_id AS id,
               plan.source_lineage AS source,
               snapshot.retrieved_at AS captured_at
        FROM reconciliation_candidates AS plan
        JOIN source_snapshots AS snapshot
          ON snapshot.id = plan.source_snapshot_id
        WHERE plan.ingestion_run_id = ?
-       ORDER BY plan.source_observation_id`)
+       ORDER BY plan.source_observation_id`,
+    )
     .bind(runId);
 }
 
@@ -42,7 +48,8 @@ export function publicationEvidenceByIdsStatement(
   observationIdsJson: string,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT candidate.source_observation_id AS id,
+    .prepare(
+      `SELECT candidate.source_observation_id AS id,
                 candidate.source_lineage AS source,
                 snapshot.retrieved_at AS captured_at
          FROM reconciliation_candidates AS candidate
@@ -51,7 +58,8 @@ export function publicationEvidenceByIdsStatement(
          WHERE candidate.source_observation_id IN (
            SELECT value FROM json_each(?)
          )
-         ORDER BY candidate.source_observation_id`)
+         ORDER BY candidate.source_observation_id`,
+    )
     .bind(observationIdsJson);
 }
 
@@ -62,7 +70,8 @@ export function publishReconciledErrataStatement(
   return atomicRepositoryStatement(database, {
     before: [errataTargetsGuardStatement(database, input.payload)],
     statement: repositoryStatements(database)
-      .prepare(`INSERT INTO reconciled_errata (
+      .prepare(
+        `INSERT INTO reconciled_errata (
              id, game, target_type, target_id, effective_from,
              official_wording, corrected_value_json,
              first_revision_id, last_observed_revision_id
@@ -76,7 +85,8 @@ export function publishReconciledErrataStatement(
                   json_extract(value, '$.corrected_value_json'), ?, ?
            FROM json_each(?) WHERE true
            ON CONFLICT (id) DO UPDATE SET
-             last_observed_revision_id = excluded.last_observed_revision_id`)
+             last_observed_revision_id = excluded.last_observed_revision_id`,
+      )
       .bind(input.revisionId, input.observedRevisionId, input.payload),
   });
 }
@@ -86,7 +96,8 @@ export function publishErratumProvenanceStatement(
   input: Readonly<{ revisionId: string; observedRevisionId: string; payload: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`INSERT INTO erratum_provenance (
+    .prepare(
+      `INSERT INTO erratum_provenance (
              erratum_id, source_lineage, source_observation_id,
              first_revision_id, last_observed_revision_id
            )
@@ -96,7 +107,8 @@ export function publishErratumProvenanceStatement(
            FROM json_each(?) WHERE true
            ON CONFLICT (erratum_id, source_lineage, source_observation_id)
            DO UPDATE SET
-             last_observed_revision_id = excluded.last_observed_revision_id`)
+             last_observed_revision_id = excluded.last_observed_revision_id`,
+    )
     .bind(input.revisionId, input.observedRevisionId, input.payload);
 }
 
@@ -105,17 +117,20 @@ export function publishRevisionErrataStatement(
   input: Readonly<{ revisionId: string; payload: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`INSERT OR IGNORE INTO revision_errata (
+    .prepare(
+      `INSERT OR IGNORE INTO revision_errata (
              catalogue_revision_id, erratum_id
            )
            SELECT ?, json_extract(value, '$.erratum_id')
-           FROM json_each(?)`)
+           FROM json_each(?)`,
+    )
     .bind(input.revisionId, input.payload);
 }
 
 export function erratumTargetLifecycleStatement(database: CatalogueStore, erratumIdsJson: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT provenance.erratum_id,
+    .prepare(
+      `SELECT provenance.erratum_id,
                 provenance.source_lineage,
                 provenance.first_revision_id,
                 provenance.last_observed_revision_id,
@@ -129,7 +144,8 @@ export function erratumTargetLifecycleStatement(database: CatalogueStore, erratu
          WHERE EXISTS (
            SELECT 1 FROM json_each(?) AS requested
            WHERE requested.value = provenance.erratum_id
-         )`)
+         )`,
+    )
     .bind(erratumIdsJson);
 }
 
@@ -150,17 +166,21 @@ export function carriedRevisionStatement(database: CatalogueStore, runId: string
 
 export function carriedCardLifecyclesStatement(database: CatalogueStore, revisionId: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT card_id AS id, document_json
+    .prepare(
+      `SELECT card_id AS id, document_json
          FROM revision_cards
-         WHERE catalogue_revision_id = ?`)
+         WHERE catalogue_revision_id = ?`,
+    )
     .bind(revisionId);
 }
 
 export function carriedPrintingLifecyclesStatement(database: CatalogueStore, revisionId: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT printing_id AS id, document_json
+    .prepare(
+      `SELECT printing_id AS id, document_json
          FROM revision_printings
-         WHERE catalogue_revision_id = ?`)
+         WHERE catalogue_revision_id = ?`,
+    )
     .bind(revisionId);
 }
 
@@ -169,7 +189,8 @@ export function printingRelationshipLifecycleStatement(
   printingIdsJson: string,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT membership.printing_id, source_lineage, source_observation_id,
+    .prepare(
+      `SELECT membership.printing_id, source_lineage, source_observation_id,
               relationship_kind, relationship_value,
               membership.first_revision_id,
               membership.last_observed_revision_id,
@@ -185,7 +206,8 @@ export function printingRelationshipLifecycleStatement(
        ORDER BY membership.printing_id, source_lineage, relationship_kind,
                 relationship_value, first_revision.published_at,
                 membership.first_revision_id, last_revision.published_at,
-                membership.last_observed_revision_id, source_observation_id`)
+                membership.last_observed_revision_id, source_observation_id`,
+    )
     .bind(printingIdsJson);
 }
 
@@ -194,13 +216,15 @@ export function printingLocatorLifecycleStatement(
   printingIdsJson: string,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT printing_id, source_lineage, locator, variant_key,
+    .prepare(
+      `SELECT printing_id, source_lineage, locator, variant_key,
               first_revision_id, last_observed_revision_id,
               current, last_missing_revision_id
        FROM reconciled_printing_locators
        WHERE printing_id IN (SELECT value FROM json_each(?))
        ORDER BY printing_id, source_lineage, locator,
-                COALESCE(variant_key, '')`)
+                COALESCE(variant_key, '')`,
+    )
     .bind(printingIdsJson);
 }
 
@@ -209,7 +233,8 @@ export function publishWithdrawalAssertionsStatement(
   input: Readonly<{ revisionId: string; payload: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`INSERT INTO reconciled_withdrawal_assertions (
+    .prepare(
+      `INSERT INTO reconciled_withdrawal_assertions (
            entity_type, entity_id, source_lineage, source_snapshot_id,
            source_observation_set_id, source_observation_id, assertion,
            state, effective_at, evidence_json,
@@ -227,7 +252,8 @@ export function publishWithdrawalAssertionsStatement(
                 json_extract(value, '$.evidence_json'), ?
          FROM json_each(?) WHERE true
          ON CONFLICT (entity_type, entity_id, source_observation_id)
-         DO NOTHING`)
+         DO NOTHING`,
+    )
     .bind(input.revisionId, input.payload);
 }
 
@@ -236,14 +262,16 @@ export function publishReconciledCardsStatement(
   input: Readonly<{ revisionId: string; payload: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`INSERT INTO reconciled_cards (
-           id, supported_game, official_identity_kind,
+    .prepare(
+      `INSERT INTO reconciled_cards (
+           id, supported_game, category, official_identity_kind,
            official_identity_value, first_revision_id,
            last_observed_revision_id, withdrawn, withdrawal_revision_id,
            withdrawal_evidence_json
          )
          SELECT json_extract(value, '$.id'),
                 json_extract(value, '$.supported_game'),
+                json_extract(value, '$.category'),
                 json_extract(value, '$.official_identity_kind'),
                 json_extract(value, '$.official_identity_value'),
                 json_extract(value, '$.first_revision_id'), ?,
@@ -263,7 +291,8 @@ export function publishReconciledCardsStatement(
            withdrawal_evidence_json = CASE
              WHEN reconciled_cards.withdrawn <> excluded.withdrawn
              THEN excluded.withdrawal_evidence_json
-             ELSE reconciled_cards.withdrawal_evidence_json END`)
+             ELSE reconciled_cards.withdrawal_evidence_json END`,
+    )
     .bind(input.revisionId, input.payload);
 }
 
@@ -272,7 +301,8 @@ export function publishCardObservationsStatement(
   input: Readonly<{ revisionId: string; payload: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`INSERT INTO reconciled_card_observations (
+    .prepare(
+      `INSERT INTO reconciled_card_observations (
            card_id, source_lineage, source_observation_id,
            catalogue_revision_id, canonical_facts_json, current,
            last_missing_revision_id
@@ -281,7 +311,8 @@ export function publishCardObservationsStatement(
                 json_extract(value, '$.source_lineage'),
                 json_extract(value, '$.source_observation_id'), ?,
                 json_extract(value, '$.canonical_facts_json'), 1, NULL
-         FROM json_each(?)`)
+         FROM json_each(?)`,
+    )
     .bind(input.revisionId, input.payload);
 }
 
@@ -290,7 +321,8 @@ export function publishReconciledPrintingsStatement(
   input: Readonly<{ revisionId: string; payload: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`INSERT INTO reconciled_printings (
+    .prepare(
+      `INSERT INTO reconciled_printings (
            id, card_id, source_lineage, artwork_fingerprint,
            printed_fields_digest, rarity_normalized, treatment,
            first_revision_id, last_observed_revision_id, withdrawn,
@@ -320,7 +352,8 @@ export function publishReconciledPrintingsStatement(
            withdrawal_evidence_json = CASE
              WHEN reconciled_printings.withdrawn <> excluded.withdrawn
              THEN excluded.withdrawal_evidence_json
-             ELSE reconciled_printings.withdrawal_evidence_json END`)
+             ELSE reconciled_printings.withdrawal_evidence_json END`,
+    )
     .bind(input.revisionId, input.payload);
 }
 
@@ -329,7 +362,8 @@ export function publishPrintingLocatorsStatement(
   input: Readonly<{ revisionId: string; observedRevisionId: string; payload: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`INSERT INTO reconciled_printing_locators (
+    .prepare(
+      `INSERT INTO reconciled_printing_locators (
            printing_id, source_lineage, locator, variant_key,
            variant_identity,
            first_revision_id, last_observed_revision_id, current,
@@ -343,7 +377,8 @@ export function publishPrintingLocatorsStatement(
          FROM json_each(?) WHERE true
          ON CONFLICT (source_lineage, locator, variant_identity) DO UPDATE SET
            last_observed_revision_id = excluded.last_observed_revision_id,
-           current = 1, last_missing_revision_id = NULL`)
+           current = 1, last_missing_revision_id = NULL`,
+    )
     .bind(input.revisionId, input.observedRevisionId, input.payload);
 }
 
@@ -352,7 +387,8 @@ export function publishPrintingMembershipsStatement(
   input: Readonly<{ revisionId: string; observedRevisionId: string; payload: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`INSERT INTO reconciled_printing_memberships (
+    .prepare(
+      `INSERT INTO reconciled_printing_memberships (
            printing_id, source_lineage, source_observation_id,
            relationship_kind, relationship_value, first_revision_id,
            last_observed_revision_id, current, last_missing_revision_id
@@ -368,7 +404,8 @@ export function publishPrintingMembershipsStatement(
            relationship_kind, relationship_value
          ) DO UPDATE SET
            last_observed_revision_id = excluded.last_observed_revision_id,
-           current = 1, last_missing_revision_id = NULL`)
+           current = 1, last_missing_revision_id = NULL`,
+    )
     .bind(input.revisionId, input.observedRevisionId, input.payload);
 }
 
@@ -385,9 +422,11 @@ export function publicationEntityLifecyclesStatement(
 ): D1PreparedStatement {
   const table = kind === "card" ? "reconciled_cards" : "reconciled_printings";
   return repositoryStatements(database)
-    .prepare(`SELECT * FROM ${table}
+    .prepare(
+      `SELECT * FROM ${table}
        WHERE id IN (SELECT value FROM json_each(?))
-       ORDER BY id`)
+       ORDER BY id`,
+    )
     .bind(idsJson);
 }
 

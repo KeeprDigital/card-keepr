@@ -852,6 +852,7 @@ function cardPersistenceRow(
   return {
     id: plan.card_id,
     supported_game: card.game,
+    category: card.category,
     official_identity_kind: card.official_identity.kind,
     // Unknown numbers are keyed internally by opaque Card ID, never projected as numbers.
     official_identity_value: card.official_identity.value ?? card.id,

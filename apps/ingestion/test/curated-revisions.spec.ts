@@ -41,6 +41,9 @@ let currentRevision = "";
 let card: CatalogueCard = {
   id: "card_op01_001",
   game: "one-piece",
+  category: "gameplay" as const,
+  related_cards: [],
+  gameplay_applicability: "applicable" as const,
   official_identity: { kind: "card_number", value: "OP01-001" },
   name: "Official Name",
   effective_rules_text: "Official text",
@@ -79,6 +82,7 @@ beforeEach(async () => {
       {
         id: `printing_${sequence}`,
         card_id: card.id,
+        gameplay_applicability: "applicable" as const,
         rarity: { normalized: "common", raw: "C" },
         printed_rules_text: null,
         game_data: null,
@@ -880,6 +884,9 @@ test("a run pins an exact ordered set and applies it after official reconciliati
     ...card,
     id: `card_digimon_apply_${sequence}`,
     game: "digimon" as const,
+    category: "gameplay" as const,
+    related_cards: [],
+    gameplay_applicability: "applicable" as const,
     official_identity: { kind: "card_number" as const, value: "BT1-001" },
     name: "Preserved Digimon Curation",
     game_data: {
@@ -1111,6 +1118,9 @@ test("prepared runs strip prior effects, reapply exact pins, and persist the rea
     id: `card_digimon_${sequence}`,
     game: "digimon" as const,
     name: "Preserved Digimon Curation",
+    category: "gameplay" as const,
+    related_cards: [],
+    gameplay_applicability: "applicable" as const,
     official_identity: { kind: "card_number" as const, value: "BT1-001" },
     game_data: {
       profile: "digimon@1" as const,
@@ -1721,6 +1731,7 @@ test("field absence is distinct from null and retirement restores exact absence"
   const printing = {
     id: printingId,
     card_id: card.id,
+    gameplay_applicability: "applicable" as const,
     rarity: { normalized: "common", raw: "C" },
     printed_rules_text: null,
     game_data: { profile: "one-piece@1", attributes: {} },
@@ -2361,6 +2372,7 @@ test("a curated relationship carries owner provenance and never invents Official
         {
           id: `printing_${sequence}`,
           card_id: card.id,
+          gameplay_applicability: "applicable" as const,
           rarity: { normalized: "common", raw: "C" },
           printed_rules_text: null,
           game_data: null,
@@ -2468,6 +2480,7 @@ test("a curated absence derives one relationship state and retains Official Sour
         {
           id: `printing_${sequence}`,
           card_id: card.id,
+          gameplay_applicability: "applicable" as const,
           rarity: { normalized: "common", raw: "C" },
           printed_rules_text: null,
           game_data: null,

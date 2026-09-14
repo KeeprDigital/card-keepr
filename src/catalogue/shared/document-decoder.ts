@@ -1,4 +1,6 @@
 import {
+  catalogueCard,
+  cataloguePrinting,
   record,
   candidate,
   proposalEvidence,
@@ -17,6 +19,8 @@ import {
 } from "./document-validators.mjs";
 
 const validators = {
+  catalogueCard,
+  cataloguePrinting,
   record,
   candidate,
   proposalEvidence,

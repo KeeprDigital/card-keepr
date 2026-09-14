@@ -2,10 +2,18 @@ import type { CanonicalRecordSource } from "./reconciliation-canonical-digest";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
 import { documentStorage } from "./reconciliation-document";
-import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
+import {
+  AdministrationProblem,
+  type CatalogueCard,
+  type CatalogueStore,
+  canonicalJson,
+  derivedCardModel,
+  sha256Text,
+} from "../shared";
 import {
   allocateIdentityStatement,
   allocatedIdentityStatement,
+  cardAllocationLookupStatement,
   identityAllocationStatement,
   identityMappingsStatement,
   insertSourceMappingsStatement,
@@ -18,6 +26,40 @@ import {
   type IdentityReview,
   type IdentityDecision,
 } from "./canonical-identity-repository";
+
+/** Keep attributed legacy allocations; a different Card kind gets a distinct key. */
+export async function cardAllocationIdentity(
+  database: CatalogueStore,
+  card: Pick<CatalogueCard, "game" | "official_identity" | "game_data" | "category">,
+  sourceIdentity: readonly string[] = [],
+) {
+  const legacy = [card.game, card.official_identity, ...sourceIdentity];
+  const qualified = [card.game, card.official_identity, card.game_data.profile, card.category, ...sourceIdentity];
+  const qualifiedKey = canonicalJson(["card", qualified]);
+  const rows = await documentStorage(() =>
+    cardAllocationLookupStatement(database, canonicalJson(["card", legacy]), qualifiedKey).all<{
+      allocation_key: string;
+      card_json: string | null;
+    }>(),
+  );
+  // The qualified key retains category/profile even if a write failed before Card facts.
+  if (rows.results.some((row) => row.allocation_key === qualifiedKey)) return qualified;
+  const retained = rows.results[0];
+  if (retained) {
+    if (!retained.card_json)
+      throw new AdministrationProblem(
+        409,
+        "canonical_card_allocation_unresolved",
+        "The existing Card allocation has no retained classification. Inspect its identity evidence before proceeding.",
+      );
+    const allocated = JSON.parse(retained.card_json) as CatalogueCard;
+    return allocated.game_data.profile === card.game_data.profile &&
+      derivedCardModel(allocated).category === card.category
+      ? legacy
+      : qualified;
+  }
+  return qualified;
+}
 
 export async function allocateCanonicalIdentity(
   database: CatalogueStore,

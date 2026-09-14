@@ -21,6 +21,9 @@ const observedAt = "2026-08-05T05:06:07.000Z";
 const card = {
   id: "card_cli_source_change",
   game: "one-piece",
+  category: "gameplay",
+  gameplay_applicability: "applicable",
+  related_cards: [],
   official_identity: { kind: "card_number", value: "OP99-041" },
   name: "Official Name",
   effective_rules_text: "Official rules text.",

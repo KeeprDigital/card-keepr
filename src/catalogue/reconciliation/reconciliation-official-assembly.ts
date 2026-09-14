@@ -1,3 +1,4 @@
+import { CardRelationshipError } from "./card-relationships";
 import { ReconciliationRecordLog } from "./reconciliation-record-log";
 import {
   type CatalogueCard,
@@ -41,8 +42,10 @@ export async function prepareOfficialCandidate(
     errata: ReconciliationErrataState;
     plans: ReconciliationPlanState;
     games: ReadonlySet<SupportedGame>;
+    hasCardRelationships: boolean;
     observedCards: (ids: readonly string[]) => Promise<ReadonlySet<string>>;
     observedPrinting: (id: string) => Promise<boolean>;
+    relatedCards: (card: CatalogueCard) => Promise<CatalogueCard["related_cards"]>;
   },
   diagnostics: ReconciliationRecordSink<{
     code: "canonical_card_conflict";
@@ -105,10 +108,11 @@ export async function prepareOfficialCandidate(
   if (!checkpoint) await save();
   let records = 0;
   let bytes = 0;
+  const resolveCardsIndividually = sources.errata.position > 0 || sources.hasCardRelationships;
   const consume = async <T extends { id: string }>(values: AsyncIterable<T>, action: (value: T) => Promise<void>) => {
     for await (const value of values) {
       const size = new TextEncoder().encode(canonicalJson(value)).byteLength;
-      const recordLimit = stage === "cards" && sources.errata.position > 0 ? 1 : 16;
+      const recordLimit = stage === "cards" && resolveCardsIndividually ? 1 : 16;
       if (records > 0 && (records >= recordLimit || bytes + size > 512000)) {
         await save();
         records = 0;
@@ -128,7 +132,7 @@ export async function prepareOfficialCandidate(
     bytes = 0;
   };
   if (stage === "cards") {
-    for await (const page of cardGroups(sources.cards.entityValues(after), sources.errata.position > 0 ? 1 : 8)) {
+    for await (const page of cardGroups(sources.cards.entityValues(after), resolveCardsIndividually ? 1 : 8)) {
       const size = new TextEncoder().encode(canonicalJson(page)).byteLength;
       if (records > 0 && bytes + size > 512000) {
         await save();
@@ -141,18 +145,20 @@ export async function prepareOfficialCandidate(
         let resolved = card;
         if (sources.games.has(card.game)) {
           try {
-            resolved = { ...card, effective_rules_text: deriveEffectiveRulesText(card, errata, observedAt) };
+            resolved = {
+              ...card,
+              effective_rules_text: deriveEffectiveRulesText(card, errata, observedAt),
+              related_cards: await sources.relatedCards(card),
+            };
           } catch (error) {
+            if (!(error instanceof ErratumRulesTextError) && !(error instanceof CardRelationshipError)) throw error;
             const plans = await sources.plans.forCard(card.id);
             await diagnostics.push({
               code: "canonical_card_conflict",
               source_observation_id: plans[0]?.sourceObservationId ?? null,
               locator: plans[0]?.locator ?? null,
               matched_printing_ids: plans.flatMap((plan) => (plan.printingId === null ? [] : [plan.printingId])),
-              detail:
-                error instanceof ErratumRulesTextError
-                  ? error.message
-                  : "The Card has an unresolved Effective Rules Text conflict.",
+              detail: error instanceof Error ? error.message : "The Card has unresolved rules text or relationships.",
             });
           }
         }
@@ -167,7 +173,7 @@ export async function prepareOfficialCandidate(
       await draft.setMany("cards", resolvedCards);
       records += page.length;
       bytes += size;
-      if (records >= (sources.errata.position > 0 ? 1 : 16) || bytes >= 512000) {
+      if (records >= (resolveCardsIndividually ? 1 : 16) || bytes >= 512000) {
         await save();
         records = bytes = 0;
       }

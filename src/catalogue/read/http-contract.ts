@@ -46,6 +46,10 @@ const gameData = z.union(
     z.strictObject({ profile: z.literal(id), attributes: profileWire(requiredProfileContract(id).card) }),
   ),
 );
+const artGameData = z.union(
+  profiles.map(({ id }) => z.strictObject({ profile: z.literal(id), attributes: z.strictObject({}) })),
+);
+const cardCategory = z.enum(["gameplay", "token", "art"]);
 const officialIdentity = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("card_number"), value: identifier }),
   z.strictObject({ kind: z.literal("publisher_name"), value: identifier }),
@@ -53,24 +57,38 @@ const officialIdentity = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("unknown"), value: z.null() }),
 ]);
 const link = z.strictObject({ self: z.url() });
+const cardFields = {
+  type: z.literal("card"),
+  id: identifier,
+  game: supportedGame,
+  official_identity: officialIdentity,
+  name: identifier,
+  related_cards: z.array(z.strictObject({ kind: z.literal("shared_artwork"), card_id: identifier })).max(8),
+  lifecycle: z.strictObject({
+    first_revision_id: identifier,
+    last_observed_revision_id: identifier,
+    withdrawn: z.boolean(),
+    withdrawal: z.strictObject({ revision_id: identifier }).nullable().optional(),
+  }),
+  links: link,
+};
 export const cardCollectionSchema = z
   .strictObject({
     data: z.array(
-      z.strictObject({
-        type: z.literal("card"),
-        id: identifier,
-        game: supportedGame,
-        official_identity: officialIdentity,
-        name: identifier,
-        game_data: gameData,
-        lifecycle: z.strictObject({
-          first_revision_id: identifier,
-          last_observed_revision_id: identifier,
-          withdrawn: z.boolean(),
-          withdrawal: z.strictObject({ revision_id: identifier }).nullable().optional(),
+      z.union([
+        z.strictObject({
+          ...cardFields,
+          category: z.enum(["gameplay", "token"]),
+          gameplay_applicability: z.literal("applicable"),
+          game_data: gameData,
         }),
-        links: link,
-      }),
+        z.strictObject({
+          ...cardFields,
+          category: z.literal("art"),
+          gameplay_applicability: z.literal("inapplicable"),
+          game_data: artGameData,
+        }),
+      ]),
     ),
     meta: z.strictObject({ catalogue_revision_id: identifier, published_at: identifier }),
     page: z.strictObject({ limit: z.number().int().min(1).max(100), next_cursor: identifier.nullable() }),
@@ -96,6 +114,9 @@ export const cardQuerySchema = z.strictObject({
     .optional()
     .openapi({ description: "Supported Game; normalized with NFKC and trimmed before profile validation." }),
   card_number: textFilter("card_number").optional(),
+  category: cardCategory
+    .optional()
+    .openapi({ description: "Select one Card category. All categories are visible by default." }),
   card_id: textFilter("card_id").optional(),
   product_id: textFilter("product_id").optional(),
   release_region: z.enum(["EN-OCEANIA", "EN-ASIA", "EN-US", "unknown"]).optional(),

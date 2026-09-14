@@ -11,6 +11,7 @@ import {
   type CuratedRelationshipTarget,
   canonicalJson,
   canonicalProfileAttributes,
+  gameProfileCardClassification,
   decodeDocument,
   exportedGameProfileSchema,
   type ProductRelationship,
@@ -42,6 +43,9 @@ const forbiddenRoots = new Set([
   "id",
   "game",
   "official_identity",
+  "category",
+  "gameplay_applicability",
+  "related_cards",
   "source_snapshots",
   "source_observations",
   "provenance",
@@ -2374,6 +2378,11 @@ function validCuratedFieldAssertion(
 
 function validProfileEntity(entityType: "card" | "printing", entity: Record<string, unknown>): boolean {
   if (
+    entity.gameplay_applicability === "inapplicable" &&
+    (entityType === "card" ? entity.effective_rules_text : entity.printed_rules_text) !== null
+  )
+    return false;
+  if (
     entityType === "card" &&
     (typeof entity.name !== "string" ||
       entity.name.trim().length === 0 ||
@@ -2393,7 +2402,19 @@ function validProfileEntity(entityType: "card" | "printing", entity: Record<stri
   const gameData = record(entity.game_data) ? entity.game_data : null;
   if (gameData === null || typeof gameData.profile !== "string" || !record(gameData.attributes)) return false;
   try {
-    canonicalProfileAttributes("curated_revision_validation", gameData.profile, entityType, gameData.attributes, []);
+    const classification =
+      entityType === "card"
+        ? gameProfileCardClassification(gameData.profile, gameData.attributes, entity.category)
+        : undefined;
+    if (classification && entity.gameplay_applicability !== classification.gameplay_applicability) return false;
+    canonicalProfileAttributes(
+      "curated_revision_validation",
+      gameData.profile,
+      entityType,
+      gameData.attributes,
+      [],
+      classification?.category,
+    );
     return true;
   } catch {
     return false;

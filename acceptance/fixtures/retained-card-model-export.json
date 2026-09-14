@@ -1,0 +1,124 @@
+{
+  "baselineCommit": "d0f6ccaec3ca248c2e117b193d6d0251a0cf23c7",
+  "candidate": {
+    "contract": "card-keepr-catalogue-candidate@1",
+    "selected_games": [
+      "one-piece"
+    ],
+    "cards": [
+      {
+        "id": "card_01k_first_catalogue_0001",
+        "game": "one-piece",
+        "official_identity": {
+          "kind": "card_number",
+          "value": "OP01-001"
+        },
+        "name": "Monkey.D.Luffy",
+        "effective_rules_text": "[DON!! x1] This Leader gains +1000 power during your turn.",
+        "game_data": {
+          "profile": "one-piece@1",
+          "attributes": {
+            "card_type": "leader",
+            "colours": [
+              "red"
+            ],
+            "cost": null,
+            "life": 5,
+            "battle_attributes": [
+              "strike"
+            ],
+            "power": 5000,
+            "counter": null,
+            "traits": [
+              "Straw Hat Crew"
+            ],
+            "block_icons": [
+              "1"
+            ],
+            "effect_text": "[DON!! x1] This Leader gains +1000 power during your turn.",
+            "trigger_text": null
+          }
+        }
+      }
+    ],
+    "printings": [
+      {
+        "id": "printing_01k_first_catalogue_0001",
+        "card_id": "card_01k_first_catalogue_0001",
+        "rarity": {
+          "normalized": "leader",
+          "raw": "L"
+        },
+        "printed_rules_text": "[DON!! x1] This Leader gains +1000 power during your turn.",
+        "game_data": {
+          "profile": "one-piece@1",
+          "attributes": {
+            "illustration_types": []
+          }
+        }
+      }
+    ],
+    "errata": []
+  },
+  "candidateDigest": "62210f7a6a843b04a3dea99067b0a9ce0f699b1950379f1533f2794fb73d8c0a",
+  "revisionId": "catrev_retained_model_golden",
+  "publishedAt": "2026-09-14T00:00:00.000Z",
+  "captureSha256": "e49baa08088bbb4265731f214a2efd534d83271444b30b1690c63cf95719cd89",
+  "objects": [
+    {
+      "key": "catalogue-exports/catrev_retained_model_golden/components/9a4a19a99099c390ddcb7bc56230ec6385e13d3617c6a97545b0e7845b4335a8.ndjson.gz",
+      "byteLength": 144,
+      "sha256": "9a4a19a99099c390ddcb7bc56230ec6385e13d3617c6a97545b0e7845b4335a8"
+    },
+    {
+      "key": "catalogue-exports/catrev_retained_model_golden/components/4af8ef142b60ef3f6e83c68fa01c85c9dd98312d0953e32623c913f97d845939.ndjson.gz",
+      "byteLength": 527,
+      "sha256": "4af8ef142b60ef3f6e83c68fa01c85c9dd98312d0953e32623c913f97d845939"
+    },
+    {
+      "key": "catalogue-exports/catrev_retained_model_golden/components/ad85c486e6cd2384e44205bacce6f258fe5e8f83f9e2d39f00a3d2c0f1bea1d5.ndjson.gz",
+      "byteLength": 492,
+      "sha256": "ad85c486e6cd2384e44205bacce6f258fe5e8f83f9e2d39f00a3d2c0f1bea1d5"
+    },
+    {
+      "key": "catalogue-exports/catrev_retained_model_golden/components/94dbd95114e7c21b6d207490b700b1bd60644edde6f778c19dd363653355a50a.ndjson.gz",
+      "byteLength": 370,
+      "sha256": "94dbd95114e7c21b6d207490b700b1bd60644edde6f778c19dd363653355a50a"
+    },
+    {
+      "key": "catalogue-exports/catrev_retained_model_golden/components/9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64.ndjson.gz",
+      "byteLength": 20,
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
+    },
+    {
+      "key": "catalogue-exports/catrev_retained_model_golden/components/9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64.ndjson.gz",
+      "byteLength": 20,
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
+    },
+    {
+      "key": "catalogue-exports/catrev_retained_model_golden/components/9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64.ndjson.gz",
+      "byteLength": 20,
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
+    },
+    {
+      "key": "catalogue-exports/catrev_retained_model_golden/components/9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64.ndjson.gz",
+      "byteLength": 20,
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
+    },
+    {
+      "key": "catalogue-exports/catrev_retained_model_golden/components/9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64.ndjson.gz",
+      "byteLength": 20,
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
+    },
+    {
+      "key": "catalogue-exports/catrev_retained_model_golden/components/9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64.ndjson.gz",
+      "byteLength": 20,
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
+    },
+    {
+      "key": "catalogue-exports/catrev_retained_model_golden/manifest.json",
+      "byteLength": 4803,
+      "sha256": "555d444ff3ac4478375f824d28097277de5eef79b4e4abf52307e77959209bd8"
+    }
+  ]
+}

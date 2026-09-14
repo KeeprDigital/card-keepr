@@ -4,6 +4,7 @@ import {
   canonicalJson,
   sha256Text,
   exportedGameProfileSchema,
+  derivedCardModel,
   type CatalogueStore,
   type CatalogueCard,
   type CataloguePrinting,
@@ -148,15 +149,23 @@ export async function assessSourceAdmission(
         })
       : null;
   const admitted = latest?.action === "admit" || latest?.action === "link";
+  if (decision) {
+    decision.card = { ...decision.card, ...derivedCardModel(decision.card) };
+    if (decision.printing)
+      decision.printing = { ...decision.printing, gameplay_applicability: decision.card.gameplay_applicability };
+  }
   const rejected = latest?.action === "reject";
   const exception = decision?.exception as { scope?: string[] } | null | undefined;
   const identityExceptionConflict =
-    admitted &&
-    exception?.scope?.includes("identity") === true &&
-    decision!.card.official_identity.kind !== "unknown" &&
-    observation.observedCardAndPrinting.card.official_identity.kind !== "unknown" &&
-    canonicalJson(decision!.card.official_identity) !==
-      canonicalJson(observation.observedCardAndPrinting.card.official_identity);
+    (admitted &&
+      (decision!.card.category !== observation.observedCardAndPrinting.card.category ||
+        decision!.card.game_data.profile !== observation.observedCardAndPrinting.card.game_data.profile)) ||
+    (admitted &&
+      exception?.scope?.includes("identity") === true &&
+      decision!.card.official_identity.kind !== "unknown" &&
+      observation.observedCardAndPrinting.card.official_identity.kind !== "unknown" &&
+      canonicalJson(decision!.card.official_identity) !==
+        canonicalJson(observation.observedCardAndPrinting.card.official_identity));
   const permitted =
     (admitted && (!ownerReviewRequired || (latest?.actor === "owner" && decision?.printing != null))) ||
     (!admitted &&

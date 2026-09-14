@@ -12,6 +12,7 @@ export type CardRow = {
 export type CollectionFilters = {
   q: string | null;
   game: string | null;
+  category: string | null;
   cardNumber: string | null;
   productId: string | null;
   rarity: string | null;
@@ -154,6 +155,10 @@ function addCardFilterPredicates(
   alias: string,
   filters: CollectionFilters,
 ): void {
+  if (filters.category !== null) {
+    conditions.push(`${alias}.category = ?`);
+    bindings.push(filters.category);
+  }
   if (filters.productId !== null) {
     conditions.push(`EXISTS (SELECT 1 FROM revision_printing_product_query AS product INDEXED BY revision_printing_products_by_product
       WHERE product.catalogue_revision_id = ${alias}.catalogue_revision_id AND product.product_id = ? AND product.card_id = ${alias}.card_id)`);
@@ -179,7 +184,8 @@ export function cardCollectionPageStatement(
 ): D1PreparedStatement {
   const query = cardCollectionPageQuery(revisionId, filters, after, filters.limit + 1, true);
   return repositoryStatements(database)
-    .prepare(`
+    .prepare(
+      `
     WITH candidates AS MATERIALIZED (${query.sql}),
     sized AS (
       SELECT *,
@@ -201,7 +207,8 @@ export function cardCollectionPageStatement(
      AND (sized.cumulative_bytes <= ? OR sized.ordinal = 1)
     ORDER BY sized.sort_game, sized.sort_identity_kind,
              sized.sort_identity_value, sized.sort_id
-  `)
+  `,
+    )
     .bind(...query.bindings, revisionId, filters.limit, maximumDocumentBytes);
 }
 export function cardPublishedFilterStatements(

@@ -57,10 +57,11 @@ export async function cardCollectionResponse(
 ): Promise<Response> {
   const url = new URL(request.url);
   const filters = parseFilters(url);
-  const cursor = parseCursor(url.searchParams.get("after"), filters);
+  const cursor = parseCursor(url.searchParams.get("after"));
   if (cursor === "invalid") throw invalidCursor();
   const revision =
     pinnedRevision ?? (await pinRevision(database, cursor?.revision_id ?? null, "/v1/cards", base, { search: true }));
+  if (cursor && canonicalJson(cursor.filters) !== canonicalJson(filters)) throw invalidCursor();
   await validatePublishedFilters(database, revision.id, filters);
   const etag = await canonicalEtag({
     route: "/v1/cards",
@@ -106,6 +107,7 @@ export async function cardCollectionResponse(
           collectionSelf("/v1/cards", {
             q: filters.q,
             game: filters.game,
+            category: filters.category,
             card_number: filters.cardNumber,
             product_id: filters.productId,
             rarity: filters.rarity,
@@ -166,6 +168,7 @@ function parseFilters(url: URL): CollectionFilters {
   collectionParameters(url, [
     "q",
     "game",
+    "category",
     "card_number",
     "product_id",
     "rarity",
@@ -182,6 +185,9 @@ function parseFilters(url: URL): CollectionFilters {
   if (rawGame !== null && game === null) throw invalidParameter("game", "game must contain at least one character.");
   if (game !== null && !["one-piece", "fusion-world", "digimon", "gundam", "riftbound"].includes(game))
     throw invalidParameter("game", "game is not a Supported Game.");
+  const category = collectionFilter(url, "category");
+  if (category !== null && !["gameplay", "token", "art"].includes(category))
+    throw invalidParameter("category", "category must be gameplay, token, or art.");
   const rawCardNumber = collectionFilter(url, "card_number");
   const cardNumber = collectionFilterValue(normalizedFilter(rawCardNumber), "card_number");
   if (rawCardNumber !== null && cardNumber === null)
@@ -200,7 +206,7 @@ function parseFilters(url: URL): CollectionFilters {
     if (value === null) throw invalidParameter(name, `${name} or its value is not defined by ${profile}.`);
     attributes[path] = value;
   }
-  return { q, game, cardNumber, productId, rarity, attributes, limit };
+  return { q, game, category, cardNumber, productId, rarity, attributes, limit };
 }
 
 function rowCursor(row: CardRow): CardCursor["after"] {
@@ -218,7 +224,7 @@ function normalizedFilter(value: string | null): string | null {
   return normalized.length === 0 ? null : normalized;
 }
 
-function parseCursor(encoded: string | null, filters: CollectionFilters): CardCursor | "invalid" | null {
+function parseCursor(encoded: string | null): CardCursor | "invalid" | null {
   if (encoded === null) return null;
   try {
     const value = decodeCursor(encoded) as Partial<CardCursor>;
@@ -229,7 +235,9 @@ function parseCursor(encoded: string | null, filters: CollectionFilters): CardCu
       value.order !== cardCollectionOrder ||
       typeof value.revision_id !== "string" ||
       value.revision_id.length === 0 ||
-      canonicalJson(value.filters) !== canonicalJson(filters) ||
+      value.filters === null ||
+      typeof value.filters !== "object" ||
+      Array.isArray(value.filters) ||
       after === null ||
       typeof after !== "object" ||
       typeof after.game !== "string" ||
@@ -248,7 +256,7 @@ function parseCursor(encoded: string | null, filters: CollectionFilters): CardCu
       route: "/v1/cards",
       order: cardCollectionOrder,
       revision_id: value.revision_id,
-      filters,
+      filters: value.filters,
       after: {
         game: after.game,
         identity_kind: after.identity_kind,

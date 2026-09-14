@@ -21,7 +21,7 @@ export class ReconciliationCardState {
     private namespace: string,
   ) {
     this.cards = new ReconciliationReducerIndex(database, runId, namespace, (card) =>
-      canonicalJson([card.game, card.official_identity]),
+      officialIdentityKey(card.game, card.category, card.official_identity),
     );
     this.facts = new ReconciliationReducerIndex(
       database,
@@ -69,7 +69,7 @@ export class ReconciliationCardState {
       comparison ? { ...comparison, key: id } : undefined,
     );
     if (card.official_identity.kind === "unknown") this.unknownReferences = true;
-    this.absentOfficialIdentities.delete(canonicalJson([card.game, card.official_identity]));
+    this.absentOfficialIdentities.delete(officialIdentityKey(card.game, card.category, card.official_identity));
   }
   entityValues(after = "") {
     return this.cards.entityValues(after);
@@ -77,21 +77,33 @@ export class ReconciliationCardState {
   values() {
     return this.cards.latestValues();
   }
-  sameOfficialIdentity(game: string, identity: CatalogueCard["official_identity"], includeCurrent = false) {
-    const key = canonicalJson([game, identity]);
+  async sameOfficialIdentity(
+    game: string,
+    identity: CatalogueCard["official_identity"],
+    includeCurrent = false,
+    category?: CatalogueCard["category"],
+  ): Promise<CardReference[]> {
+    // Errata without a category can target applicable gameplay or token Cards,
+    // but must still resolve exactly one Card. Art rules are inapplicable.
+    if (category === undefined)
+      return [
+        ...(await this.sameOfficialIdentity(game, identity, includeCurrent, "gameplay")),
+        ...(await this.sameOfficialIdentity(game, identity, includeCurrent, "token")),
+      ];
+    const key = officialIdentityKey(game, category, identity);
     return !includeCurrent && this.absentOfficialIdentities.has(key)
       ? Promise.resolve([])
       : this.references(this.namespace, key, includeCurrent);
   }
   /** Only cache proven absences in this small input window; writes invalidate the affected identity. */
-  async prefetchOfficialIdentities(cards: readonly Pick<CatalogueCard, "game" | "official_identity">[]) {
+  async prefetchOfficialIdentities(cards: readonly Pick<CatalogueCard, "game" | "category" | "official_identity">[]) {
     if (cards.length > 8) throw new Error("Card identity lookup window exceeds eight records.");
     this.absentOfficialIdentities.clear();
     const keys = [
       ...new Set(
         cards
           .filter((card) => card.official_identity.kind !== "unknown")
-          .map((card) => canonicalJson([card.game, card.official_identity])),
+          .map((card) => officialIdentityKey(card.game, card.category, card.official_identity)),
       ),
     ];
     if (!this.cards.position) {
@@ -149,6 +161,7 @@ export class ReconciliationCardState {
       if (
         retained &&
         retained.game === card.game &&
+        retained.category === card.category &&
         retained.name === card.name &&
         retained.effective_rules_text === card.effective_rules_text &&
         canonicalJson(retained.game_data) === canonicalJson(card.game_data)
@@ -205,5 +218,13 @@ export class ReconciliationCardState {
 }
 
 function factsDigest(card: Omit<CatalogueCard, "id">): Promise<string> {
-  return canonicalValueDigest([card.game, card.name, card.effective_rules_text, card.game_data]);
+  return canonicalValueDigest([card.game, card.category, card.name, card.effective_rules_text, card.game_data]);
+}
+
+function officialIdentityKey(
+  game: string,
+  category: CatalogueCard["category"],
+  identity: CatalogueCard["official_identity"],
+) {
+  return canonicalJson([game, `${game}@1`, category, identity]);
 }

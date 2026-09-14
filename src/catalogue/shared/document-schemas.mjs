@@ -148,23 +148,56 @@ const card = object(
         object({ kind: { const: "functional_designation" }, value: { const: "DON!!" } }),
       ],
     },
+    category: { enum: ["gameplay", "token", "art"] },
+    gameplay_applicability: { enum: ["applicable", "inapplicable"] },
+    related_cards: array(
+      object({
+        kind: { const: "shared_artwork" },
+        card_id: string,
+        evidence: array(
+          object({
+            source_observation_id: string,
+            printing_id: string,
+            related_printing_id: string,
+            related_source_observation_id: string,
+            artwork_fingerprint: string,
+          }),
+          { minItems: 1 },
+        ),
+      }),
+      { maxItems: 8 },
+    ),
     name: string,
     effective_rules_text: nullable(string),
     game_data: gameData,
     curated_provenance: array(curatedProvenance),
   },
-  ["id", "game", "official_identity", "name", "effective_rules_text", "game_data"],
+  [
+    "id",
+    "game",
+    "category",
+    "gameplay_applicability",
+    "related_cards",
+    "official_identity",
+    "name",
+    "effective_rules_text",
+    "game_data",
+  ],
 );
 const printing = object(
   {
     id: string,
     card_id: string,
+    gameplay_applicability: { enum: ["applicable", "inapplicable"] },
+    locator_evidence: array(
+      object({ source_lineage: string, locator: string, variant_key: nullable(string), source_observation_id: string }),
+    ),
     rarity: object({ normalized: nullable(string), raw: nullable(string) }),
     printed_rules_text: nullable(string),
     game_data: nullable(gameData),
     curated_provenance: array(curatedProvenance),
   },
-  ["id", "card_id", "rarity", "printed_rules_text", "game_data"],
+  ["id", "card_id", "gameplay_applicability", "rarity", "printed_rules_text", "game_data"],
 );
 const erratum = object(
   {
@@ -223,6 +256,8 @@ const proposalFieldTarget = {
   properties: { ...curatedFieldTarget.properties, entity_id: proposalIdentity },
 };
 export const documentSchemas = {
+  catalogueCard: card,
+  cataloguePrinting: printing,
   curatedField: curatedFieldDocumentSchema,
   record,
   candidate,

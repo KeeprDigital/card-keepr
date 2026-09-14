@@ -132,6 +132,8 @@
     "treatment": "authenticated-readiness",
     "callers": [
       "acceptance/bounded-capacity-pilot.test.mjs",
+      "acceptance/card-categories.test.mjs",
+      "acceptance/card-model-migration.test.mjs",
       "acceptance/catalogue-publication.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/curated-revision-source-changes.test.mjs",
@@ -365,6 +367,7 @@
       "acceptance/composition-smoke-targets.test.mjs",
       "acceptance/helpers/native-fresh-baseline.mjs",
       "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/entity-admission-card-model.spec.ts",
       "apps/ingestion/test/entity-admission.spec.ts",
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
       "apps/ingestion/test/game-reconciliation-operations.spec.ts",
@@ -389,6 +392,7 @@
       "acceptance/composition-smoke-targets.test.mjs",
       "acceptance/helpers/native-fresh-baseline.mjs",
       "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/entity-admission-card-model.spec.ts",
       "apps/ingestion/test/entity-admission.spec.ts",
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
       "apps/ingestion/test/game-reconciliation-operations.spec.ts",
@@ -410,6 +414,7 @@
     "slice": "Identity and admission",
     "named_cli": "entity-proposal inspect",
     "callers": [
+      "apps/ingestion/test/entity-admission-card-model.spec.ts",
       "apps/ingestion/test/entity-admission.spec.ts",
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts"
@@ -424,6 +429,7 @@
     "slice": "Identity and admission",
     "named_cli": "entity-proposal admit/link/reject/reconsider",
     "callers": [
+      "apps/ingestion/test/entity-admission-card-model.spec.ts",
       "apps/ingestion/test/entity-admission.spec.ts",
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
       "apps/ingestion/test/identity-corrections.spec.ts",
@@ -551,6 +557,8 @@
     "named_cli": "gameCandidate",
     "callers": [
       "acceptance/bounded-capacity-pilot.test.mjs",
+      "acceptance/card-categories.test.mjs",
+      "acceptance/card-model-migration.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/fixtures/reconciliation-capacity-probe.ts",
       "acceptance/helpers/native-catalogue-runtime.mjs",
@@ -765,6 +773,7 @@
     "slice": "Publication and preparation",
     "named_cli": "publicationPreparation",
     "callers": [
+      "acceptance/card-model-migration.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/helpers/native-catalogue-runtime.mjs",
       "acceptance/publication-preparation.test.mjs",
@@ -791,6 +800,7 @@
     "slice": "Publication and preparation",
     "named_cli": null,
     "callers": [
+      "acceptance/card-model-migration.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/helpers/native-catalogue-runtime.mjs",
       "acceptance/publication-preparation.test.mjs",
@@ -1929,6 +1939,8 @@
     "treatment": "authenticated-readiness",
     "callers": [
       "acceptance/bounded-capacity-pilot.test.mjs",
+      "acceptance/card-categories.test.mjs",
+      "acceptance/card-model-migration.test.mjs",
       "acceptance/catalogue-publication.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/curated-revision-source-changes.test.mjs",
@@ -2011,6 +2023,8 @@
     "slice": "Catalogue reads",
     "named_cli": "cards search",
     "callers": [
+      "acceptance/card-categories.test.mjs",
+      "acceptance/card-model-migration.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/composition-smoke-targets.test.mjs",
       "acceptance/digimon-catalogue.test.mjs",
@@ -2049,6 +2063,8 @@
     "slice": "Catalogue reads",
     "named_cli": null,
     "callers": [
+      "acceptance/card-categories.test.mjs",
+      "acceptance/card-model-migration.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/digimon-catalogue.test.mjs",
       "acceptance/entity-admission.test.mjs",
@@ -2122,6 +2138,7 @@
     "slice": "Catalogue reads",
     "named_cli": null,
     "callers": [
+      "acceptance/card-model-migration.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/digimon-catalogue.test.mjs",
       "acceptance/errata-runtime.test.mjs",
@@ -2148,6 +2165,7 @@
     "slice": "Catalogue reads",
     "named_cli": null,
     "callers": [
+      "acceptance/card-model-migration.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/fixtures/catalogue-runtime-harness.mjs",
       "apps/ingestion/test/reconciliation-helpers.ts",
@@ -2163,6 +2181,7 @@
     "slice": "Catalogue reads",
     "named_cli": null,
     "callers": [
+      "acceptance/card-model-migration.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/fixtures/catalogue-runtime-harness.mjs",
       "apps/ingestion/test/reconciliation-helpers.ts",
@@ -2214,6 +2233,8 @@
     "slice": "Catalogue reads",
     "named_cli": null,
     "callers": [
+      "acceptance/card-categories.test.mjs",
+      "acceptance/card-model-migration.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/composition-smoke-targets.test.mjs",
       "acceptance/fusion-world-catalogue.test.mjs",

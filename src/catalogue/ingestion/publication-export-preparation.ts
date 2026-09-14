@@ -35,10 +35,20 @@ type Owner = {
   private_root_digest: string;
   search_state: string;
   recovery_health: string;
+  card_model: string | null;
 };
 class InvalidPublicExport extends Error {}
 export async function reservePublicExportAttempt(db: CatalogueStore, id: string, generation: number, shard: number) {
+  assertCardModel(await repository.exportOwner(db, id).first<Owner>());
   return Boolean(await repository.reserveExportAttempt(db, id, generation, shard).first());
+}
+function assertCardModel(owner: Owner | null | undefined) {
+  if (owner && !["published", "failed", "retry_paused"].includes(owner.state) && owner.card_model !== "categories")
+    throw new AdministrationProblem(
+      409,
+      "reconciliation_definition_changed",
+      "Prepare a fresh whole candidate under the current Card definition before publication.",
+    );
 }
 const schemas: Record<string, string> = {
   supported_games: "SupportedGameRecord",
@@ -133,6 +143,7 @@ export async function advancePublicationExports(env: Environment, id: string, ge
     throw new AdministrationProblem(409, "publication_writer_conflict", "Use the current publication generation.");
   if (["published", "failed"].includes(owner.state)) return { state: "complete" };
   if (owner.state === "retry_paused") return { state: "retry_paused" };
+  assertCardModel(owner);
   if (owner.deadline <= new Date().toISOString() || owner.current_game_revision !== owner.expected_game_revision_id)
     return { state: "invalid" };
   if (owner.private_state !== "verified") return { state: "waiting_private", sequence: current?.sequence ?? 0 };

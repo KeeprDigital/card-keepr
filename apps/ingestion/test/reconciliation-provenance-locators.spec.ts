@@ -274,13 +274,27 @@ test("sequential selected-game publications retain the complete current catalogu
       profile: "fusion-world@1",
       schema: expect.objectContaining({
         additionalProperties: false,
-        required: ["card", "printing"],
+        required: ["category", "gameplay_applicability", "card", "printing"],
         properties: expect.objectContaining({
           card: expect.objectContaining({
             additionalProperties: false,
-            required: expect.arrayContaining(["card_type", "specified_cost"]),
+            required: [],
           }),
         }),
+        allOf: [
+          {
+            if: { properties: { category: { const: "art" } } },
+            then: {
+              properties: { gameplay_applicability: { const: "inapplicable" }, card: { maxProperties: 0 } },
+            },
+            else: {
+              properties: {
+                gameplay_applicability: { const: "applicable" },
+                card: { required: expect.arrayContaining(["card_type", "specified_cost"]) },
+              },
+            },
+          },
+        ],
       }),
     }),
   );

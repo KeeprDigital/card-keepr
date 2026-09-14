@@ -24,1014 +24,1382 @@
           "data": {
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "type": {
-                  "type": "string",
-                  "enum": [
-                    "card"
-                  ]
-                },
-                "id": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "game": {
-                  "type": "string",
-                  "enum": [
-                    "one-piece",
-                    "fusion-world",
-                    "digimon",
-                    "gundam",
-                    "riftbound"
-                  ]
-                },
-                "official_identity": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "kind": {
-                          "type": "string",
-                          "enum": [
-                            "card_number"
-                          ]
-                        },
-                        "value": {
-                          "type": "string",
-                          "minLength": 1
-                        }
-                      },
-                      "required": [
-                        "kind",
-                        "value"
-                      ],
-                      "additionalProperties": false
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "card"
+                      ]
                     },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "kind": {
-                          "type": "string",
-                          "enum": [
-                            "publisher_name"
-                          ]
-                        },
-                        "value": {
-                          "type": "string",
-                          "minLength": 1
-                        }
-                      },
-                      "required": [
-                        "kind",
-                        "value"
-                      ],
-                      "additionalProperties": false
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
                     },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "kind": {
-                          "type": "string",
-                          "enum": [
-                            "functional_designation"
-                          ]
-                        },
-                        "value": {
-                          "type": "string",
-                          "enum": [
-                            "DON!!"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "kind",
-                        "value"
-                      ],
-                      "additionalProperties": false
+                    "game": {
+                      "type": "string",
+                      "enum": [
+                        "one-piece",
+                        "fusion-world",
+                        "digimon",
+                        "gundam",
+                        "riftbound"
+                      ]
                     },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "kind": {
-                          "type": "string",
-                          "enum": [
-                            "unknown"
-                          ]
-                        },
-                        "value": {
-                          "type": "null"
-                        }
-                      },
-                      "required": [
-                        "kind",
-                        "value"
-                      ],
-                      "additionalProperties": false
-                    }
-                  ]
-                },
-                "name": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "game_data": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "profile": {
-                          "type": "string",
-                          "enum": [
-                            "one-piece@1"
-                          ]
-                        },
-                        "attributes": {
+                    "official_identity": {
+                      "oneOf": [
+                        {
                           "type": "object",
                           "properties": {
-                            "card_type": {
+                            "kind": {
                               "type": "string",
                               "enum": [
-                                "leader",
-                                "character",
-                                "event",
-                                "stage",
-                                "don"
+                                "card_number"
                               ]
                             },
-                            "colours": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "enum": [
-                                  "red",
-                                  "green",
-                                  "blue",
-                                  "purple",
-                                  "black",
-                                  "yellow",
-                                  "white",
-                                  "colourless"
-                                ]
-                              },
-                              "minItems": 0,
-                              "maxItems": 9007199254740991
-                            },
-                            "cost": {
-                              "type": [
-                                "integer",
-                                "null"
-                              ],
-                              "minimum": 0
-                            },
-                            "life": {
-                              "type": [
-                                "integer",
-                                "null"
-                              ],
-                              "minimum": 0
-                            },
-                            "battle_attributes": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "minLength": 0
-                              },
-                              "minItems": 0,
-                              "maxItems": 9007199254740991
-                            },
-                            "power": {
-                              "type": [
-                                "integer",
-                                "null"
-                              ],
-                              "minimum": 0
-                            },
-                            "counter": {
-                              "type": [
-                                "integer",
-                                "null"
-                              ],
-                              "minimum": 0
-                            },
-                            "traits": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "minLength": 0
-                              },
-                              "minItems": 0,
-                              "maxItems": 9007199254740991
-                            },
-                            "block_icons": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "minLength": 0
-                              },
-                              "minItems": 0,
-                              "maxItems": 9007199254740991
-                            },
-                            "effect_text": {
-                              "type": [
-                                "string",
-                                "null"
-                              ],
-                              "minLength": 0
-                            },
-                            "trigger_text": {
-                              "type": [
-                                "string",
-                                "null"
-                              ],
-                              "minLength": 0
+                            "value": {
+                              "type": "string",
+                              "minLength": 1
                             }
                           },
                           "required": [
-                            "card_type",
-                            "colours",
-                            "cost",
-                            "life",
-                            "battle_attributes",
-                            "power",
-                            "counter",
-                            "traits",
-                            "block_icons",
-                            "effect_text",
-                            "trigger_text"
+                            "kind",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "publisher_name"
+                              ]
+                            },
+                            "value": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "functional_designation"
+                              ]
+                            },
+                            "value": {
+                              "type": "string",
+                              "enum": [
+                                "DON!!"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "unknown"
+                              ]
+                            },
+                            "value": {
+                              "type": "null"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "related_cards": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "shared_artwork"
+                            ]
+                          },
+                          "card_id": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "card_id"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 8
+                    },
+                    "lifecycle": {
+                      "type": "object",
+                      "properties": {
+                        "first_revision_id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "last_observed_revision_id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "withdrawn": {
+                          "type": "boolean"
+                        },
+                        "withdrawal": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "revision_id": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "revision_id"
                           ],
                           "additionalProperties": false
                         }
                       },
                       "required": [
-                        "profile",
-                        "attributes"
+                        "first_revision_id",
+                        "last_observed_revision_id",
+                        "withdrawn"
                       ],
                       "additionalProperties": false
                     },
-                    {
+                    "links": {
                       "type": "object",
                       "properties": {
-                        "profile": {
+                        "self": {
                           "type": "string",
-                          "enum": [
-                            "fusion-world@1"
-                          ]
-                        },
-                        "attributes": {
+                          "format": "uri"
+                        }
+                      },
+                      "required": [
+                        "self"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "category": {
+                      "type": "string",
+                      "enum": [
+                        "gameplay",
+                        "token"
+                      ]
+                    },
+                    "gameplay_applicability": {
+                      "type": "string",
+                      "enum": [
+                        "applicable"
+                      ]
+                    },
+                    "game_data": {
+                      "anyOf": [
+                        {
                           "type": "object",
                           "properties": {
-                            "card_type": {
+                            "profile": {
                               "type": "string",
                               "enum": [
-                                "leader",
-                                "battle",
-                                "extra",
-                                "energy_marker"
+                                "one-piece@1"
                               ]
                             },
-                            "colours": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "enum": [
-                                  "red",
-                                  "green",
-                                  "blue",
-                                  "purple",
-                                  "black",
-                                  "yellow",
-                                  "white",
-                                  "colourless"
-                                ]
-                              },
-                              "minItems": 0,
-                              "maxItems": 9007199254740991
-                            },
-                            "cost": {
-                              "type": [
-                                "integer",
-                                "null"
-                              ],
-                              "minimum": 0
-                            },
-                            "specified_cost": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "colour": {
+                            "attributes": {
+                              "type": "object",
+                              "properties": {
+                                "card_type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "leader",
+                                    "character",
+                                    "event",
+                                    "stage",
+                                    "don"
+                                  ]
+                                },
+                                "colours": {
+                                  "type": "array",
+                                  "items": {
                                     "type": "string",
                                     "enum": [
                                       "red",
-                                      "blue",
                                       "green",
+                                      "blue",
+                                      "purple",
+                                      "black",
                                       "yellow",
-                                      "black"
+                                      "white",
+                                      "colourless"
                                     ]
                                   },
-                                  "count": {
-                                    "type": "integer",
-                                    "minimum": 1
-                                  }
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
                                 },
-                                "required": [
-                                  "colour",
-                                  "count"
-                                ],
-                                "additionalProperties": false
-                              },
-                              "minItems": 0,
-                              "maxItems": 9007199254740991
-                            },
-                            "power": {
-                              "type": [
-                                "integer",
-                                "null"
-                              ],
-                              "minimum": 0
-                            },
-                            "combo_power": {
-                              "type": [
-                                "integer",
-                                "null"
-                              ],
-                              "minimum": 0
-                            },
-                            "traits": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "minLength": 0
-                              },
-                              "minItems": 0,
-                              "maxItems": 9007199254740991
-                            },
-                            "skills": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "kind": {
-                                    "type": "string",
-                                    "enum": [
-                                      "ordinary",
-                                      "front",
-                                      "back"
-                                    ]
-                                  },
-                                  "text": {
+                                "cost": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "life": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "battle_attributes": {
+                                  "type": "array",
+                                  "items": {
                                     "type": "string",
                                     "minLength": 0
-                                  }
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
                                 },
-                                "required": [
-                                  "kind",
-                                  "text"
-                                ],
-                                "additionalProperties": false
-                              },
-                              "minItems": 0,
-                              "maxItems": 9007199254740991
-                            },
-                            "leader_faces": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "role": {
-                                    "type": "string",
-                                    "enum": [
-                                      "front",
-                                      "back"
-                                    ]
-                                  },
-                                  "name": {
-                                    "type": "string",
-                                    "minLength": 1
-                                  },
-                                  "power": {
-                                    "type": [
-                                      "integer",
-                                      "null"
-                                    ],
-                                    "minimum": 0
-                                  },
-                                  "traits": {
-                                    "type": "array",
-                                    "items": {
-                                      "type": "string",
-                                      "minLength": 0
-                                    },
-                                    "minItems": 0,
-                                    "maxItems": 9007199254740991
-                                  },
-                                  "skills": {
+                                "power": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "counter": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "traits": {
+                                  "type": "array",
+                                  "items": {
                                     "type": "string",
                                     "minLength": 0
-                                  }
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
                                 },
-                                "required": [
-                                  "role",
-                                  "name",
-                                  "traits",
-                                  "skills"
-                                ],
-                                "additionalProperties": false
+                                "block_icons": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 0
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                },
+                                "effect_text": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 0
+                                },
+                                "trigger_text": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 0
+                                }
                               },
-                              "minItems": 2,
-                              "maxItems": 2
+                              "required": [
+                                "card_type",
+                                "colours",
+                                "cost",
+                                "life",
+                                "battle_attributes",
+                                "power",
+                                "counter",
+                                "traits",
+                                "block_icons",
+                                "effect_text",
+                                "trigger_text"
+                              ],
+                              "additionalProperties": false
                             }
                           },
                           "required": [
-                            "card_type",
-                            "colours",
-                            "cost",
-                            "specified_cost",
-                            "power",
-                            "combo_power",
-                            "traits",
-                            "skills"
+                            "profile",
+                            "attributes"
                           ],
                           "additionalProperties": false
-                        }
-                      },
-                      "required": [
-                        "profile",
-                        "attributes"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "profile": {
-                          "type": "string",
-                          "enum": [
-                            "digimon@1"
-                          ]
                         },
-                        "attributes": {
+                        {
                           "type": "object",
                           "properties": {
-                            "card_type": {
+                            "profile": {
                               "type": "string",
                               "enum": [
-                                "digi_egg",
-                                "digimon",
-                                "tamer",
-                                "option",
-                                "digimon_option"
+                                "fusion-world@1"
                               ]
                             },
-                            "colours": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "enum": [
-                                  "red",
-                                  "green",
-                                  "blue",
-                                  "purple",
-                                  "black",
-                                  "yellow",
-                                  "white",
-                                  "colourless"
-                                ]
-                              },
-                              "minItems": 0,
-                              "maxItems": 9007199254740991
-                            },
-                            "level": {
-                              "type": [
-                                "integer",
-                                "null"
-                              ],
-                              "minimum": 0
-                            },
-                            "play_cost": {
-                              "type": [
-                                "integer",
-                                "null"
-                              ],
-                              "minimum": 0
-                            },
-                            "use_cost": {
-                              "type": [
-                                "integer",
-                                "null"
-                              ],
-                              "minimum": 0
-                            },
-                            "dp": {
-                              "type": [
-                                "integer",
-                                "null"
-                              ],
-                              "minimum": 0
-                            },
-                            "form": {
-                              "type": [
-                                "string",
-                                "null"
-                              ],
-                              "minLength": 0
-                            },
-                            "attribute": {
-                              "type": [
-                                "string",
-                                "null"
-                              ],
-                              "minLength": 0
-                            },
-                            "traits": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "minLength": 0
-                              },
-                              "minItems": 0,
-                              "maxItems": 9007199254740991
-                            },
-                            "digivolution_requirements": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "index": {
-                                    "type": "integer",
-                                    "minimum": 1
-                                  },
-                                  "from_level": {
-                                    "type": [
-                                      "integer",
-                                      "null"
-                                    ],
-                                    "minimum": 0
-                                  },
-                                  "colours": {
-                                    "type": "array",
-                                    "items": {
-                                      "type": "string",
-                                      "enum": [
-                                        "red",
-                                        "green",
-                                        "blue",
-                                        "purple",
-                                        "black",
-                                        "yellow",
-                                        "white",
-                                        "colourless"
-                                      ]
-                                    },
-                                    "minItems": 0,
-                                    "maxItems": 9007199254740991
-                                  },
-                                  "cost": {
-                                    "type": "integer",
-                                    "minimum": 0
-                                  },
-                                  "raw_condition": {
-                                    "type": [
-                                      "string",
-                                      "null"
-                                    ],
-                                    "minLength": 0
-                                  }
+                            "attributes": {
+                              "type": "object",
+                              "properties": {
+                                "card_type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "leader",
+                                    "battle",
+                                    "extra",
+                                    "energy_marker"
+                                  ]
                                 },
-                                "required": [
-                                  "cost"
-                                ],
-                                "additionalProperties": false
-                              },
-                              "minItems": 0,
-                              "maxItems": 9007199254740991
-                            },
-                            "text_sections": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "kind": {
+                                "colours": {
+                                  "type": "array",
+                                  "items": {
                                     "type": "string",
                                     "enum": [
-                                      "effect",
-                                      "inherited_effect",
-                                      "security_effect",
-                                      "rule",
-                                      "special_digivolution_condition",
-                                      "dual_effect",
-                                      "dual_rule",
-                                      "link_condition",
-                                      "link_effect"
+                                      "red",
+                                      "green",
+                                      "blue",
+                                      "purple",
+                                      "black",
+                                      "yellow",
+                                      "white",
+                                      "colourless"
                                     ]
                                   },
-                                  "text": {
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                },
+                                "cost": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "specified_cost": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "colour": {
+                                        "type": "string",
+                                        "enum": [
+                                          "red",
+                                          "blue",
+                                          "green",
+                                          "yellow",
+                                          "black"
+                                        ]
+                                      },
+                                      "count": {
+                                        "type": "integer",
+                                        "minimum": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "colour",
+                                      "count"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                },
+                                "power": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "combo_power": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "traits": {
+                                  "type": "array",
+                                  "items": {
                                     "type": "string",
                                     "minLength": 0
-                                  }
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
                                 },
-                                "required": [
-                                  "kind",
-                                  "text"
-                                ],
-                                "additionalProperties": false
+                                "skills": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "ordinary",
+                                          "front",
+                                          "back"
+                                        ]
+                                      },
+                                      "text": {
+                                        "type": "string",
+                                        "minLength": 0
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "text"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                },
+                                "leader_faces": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "role": {
+                                        "type": "string",
+                                        "enum": [
+                                          "front",
+                                          "back"
+                                        ]
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "power": {
+                                        "type": [
+                                          "integer",
+                                          "null"
+                                        ],
+                                        "minimum": 0
+                                      },
+                                      "traits": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "minLength": 0
+                                        },
+                                        "minItems": 0,
+                                        "maxItems": 9007199254740991
+                                      },
+                                      "skills": {
+                                        "type": "string",
+                                        "minLength": 0
+                                      }
+                                    },
+                                    "required": [
+                                      "role",
+                                      "name",
+                                      "traits",
+                                      "skills"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "minItems": 2,
+                                  "maxItems": 2
+                                }
                               },
-                              "minItems": 0,
-                              "maxItems": 9007199254740991
-                            },
-                            "dual_colours": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "enum": [
-                                  "red",
-                                  "green",
-                                  "blue",
-                                  "purple",
-                                  "black",
-                                  "yellow",
-                                  "white",
-                                  "colourless"
-                                ]
-                              },
-                              "minItems": 0,
-                              "maxItems": 9007199254740991
-                            },
-                            "dual_cost": {
-                              "type": [
-                                "integer",
-                                "null"
+                              "required": [
+                                "card_type",
+                                "colours",
+                                "cost",
+                                "specified_cost",
+                                "power",
+                                "combo_power",
+                                "traits",
+                                "skills"
                               ],
-                              "minimum": 0
-                            },
-                            "link_dp": {
-                              "type": [
-                                "integer",
-                                "null"
-                              ],
-                              "minimum": 0
+                              "additionalProperties": false
                             }
                           },
                           "required": [
-                            "card_type",
-                            "colours",
-                            "level",
-                            "play_cost",
-                            "use_cost",
-                            "dp",
-                            "form",
-                            "attribute",
-                            "traits",
-                            "digivolution_requirements",
-                            "text_sections"
+                            "profile",
+                            "attributes"
                           ],
                           "additionalProperties": false
-                        }
-                      },
-                      "required": [
-                        "profile",
-                        "attributes"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "profile": {
-                          "type": "string",
-                          "enum": [
-                            "gundam@1"
-                          ]
                         },
-                        "attributes": {
+                        {
                           "type": "object",
                           "properties": {
-                            "card_type": {
+                            "profile": {
                               "type": "string",
                               "enum": [
-                                "unit",
-                                "pilot",
-                                "command",
-                                "base",
-                                "resource",
-                                "ex_base",
-                                "ex_resource",
-                                "unit_token"
+                                "digimon@1"
                               ]
                             },
-                            "colours": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "enum": [
-                                  "red",
-                                  "green",
-                                  "blue",
-                                  "purple",
-                                  "black",
-                                  "yellow",
-                                  "white",
-                                  "colourless"
-                                ]
+                            "attributes": {
+                              "type": "object",
+                              "properties": {
+                                "card_type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "digi_egg",
+                                    "digimon",
+                                    "tamer",
+                                    "option",
+                                    "digimon_option"
+                                  ]
+                                },
+                                "colours": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "red",
+                                      "green",
+                                      "blue",
+                                      "purple",
+                                      "black",
+                                      "yellow",
+                                      "white",
+                                      "colourless"
+                                    ]
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                },
+                                "level": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "play_cost": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "use_cost": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "dp": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "form": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 0
+                                },
+                                "attribute": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 0
+                                },
+                                "traits": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 0
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                },
+                                "digivolution_requirements": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "index": {
+                                        "type": "integer",
+                                        "minimum": 1
+                                      },
+                                      "from_level": {
+                                        "type": [
+                                          "integer",
+                                          "null"
+                                        ],
+                                        "minimum": 0
+                                      },
+                                      "colours": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "enum": [
+                                            "red",
+                                            "green",
+                                            "blue",
+                                            "purple",
+                                            "black",
+                                            "yellow",
+                                            "white",
+                                            "colourless"
+                                          ]
+                                        },
+                                        "minItems": 0,
+                                        "maxItems": 9007199254740991
+                                      },
+                                      "cost": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                      },
+                                      "raw_condition": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ],
+                                        "minLength": 0
+                                      }
+                                    },
+                                    "required": [
+                                      "cost"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                },
+                                "text_sections": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "effect",
+                                          "inherited_effect",
+                                          "security_effect",
+                                          "rule",
+                                          "special_digivolution_condition",
+                                          "dual_effect",
+                                          "dual_rule",
+                                          "link_condition",
+                                          "link_effect"
+                                        ]
+                                      },
+                                      "text": {
+                                        "type": "string",
+                                        "minLength": 0
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "text"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                },
+                                "dual_colours": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "red",
+                                      "green",
+                                      "blue",
+                                      "purple",
+                                      "black",
+                                      "yellow",
+                                      "white",
+                                      "colourless"
+                                    ]
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                },
+                                "dual_cost": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "link_dp": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                }
                               },
-                              "minItems": 0,
-                              "maxItems": 9007199254740991
-                            },
-                            "level": {
-                              "type": [
-                                "integer",
-                                "null"
+                              "required": [
+                                "card_type",
+                                "colours",
+                                "level",
+                                "play_cost",
+                                "use_cost",
+                                "dp",
+                                "form",
+                                "attribute",
+                                "traits",
+                                "digivolution_requirements",
+                                "text_sections"
                               ],
-                              "minimum": 0
-                            },
-                            "cost": {
-                              "type": [
-                                "integer",
-                                "null"
-                              ],
-                              "minimum": 0
-                            },
-                            "block_icon": {
-                              "type": [
-                                "string",
-                                "null"
-                              ],
-                              "minLength": 0
-                            },
-                            "effect_text": {
-                              "type": [
-                                "string",
-                                "null"
-                              ],
-                              "minLength": 0
-                            },
-                            "zone": {
-                              "type": [
-                                "string",
-                                "null"
-                              ],
-                              "minLength": 0
-                            },
-                            "traits": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "minLength": 0
-                              },
-                              "minItems": 0,
-                              "maxItems": 9007199254740991
-                            },
-                            "link_condition": {
-                              "type": [
-                                "string",
-                                "null"
-                              ],
-                              "minLength": 0
-                            },
-                            "ap": {
-                              "type": [
-                                "integer",
-                                "null"
-                              ],
-                              "minimum": 0
-                            },
-                            "hp": {
-                              "type": [
-                                "integer",
-                                "null"
-                              ],
-                              "minimum": 0
-                            },
-                            "series_titles": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "minLength": 0
-                              },
-                              "minItems": 0,
-                              "maxItems": 9007199254740991
+                              "additionalProperties": false
                             }
                           },
                           "required": [
-                            "card_type",
-                            "colours",
-                            "level",
-                            "cost",
-                            "block_icon",
-                            "effect_text",
-                            "zone",
-                            "traits",
-                            "link_condition",
-                            "ap",
-                            "hp",
-                            "series_titles"
+                            "profile",
+                            "attributes"
                           ],
                           "additionalProperties": false
-                        }
-                      },
-                      "required": [
-                        "profile",
-                        "attributes"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "profile": {
-                          "type": "string",
-                          "enum": [
-                            "riftbound@1"
-                          ]
                         },
-                        "attributes": {
+                        {
                           "type": "object",
                           "properties": {
-                            "card_types": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "enum": [
-                                  "spell",
-                                  "battlefield",
-                                  "unit",
-                                  "gear",
-                                  "legend",
-                                  "rune"
-                                ]
+                            "profile": {
+                              "type": "string",
+                              "enum": [
+                                "gundam@1"
+                              ]
+                            },
+                            "attributes": {
+                              "type": "object",
+                              "properties": {
+                                "card_type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "unit",
+                                    "pilot",
+                                    "command",
+                                    "base",
+                                    "resource",
+                                    "ex_base",
+                                    "ex_resource",
+                                    "unit_token"
+                                  ]
+                                },
+                                "colours": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "red",
+                                      "green",
+                                      "blue",
+                                      "purple",
+                                      "black",
+                                      "yellow",
+                                      "white",
+                                      "colourless"
+                                    ]
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                },
+                                "level": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "cost": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "block_icon": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 0
+                                },
+                                "effect_text": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 0
+                                },
+                                "zone": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 0
+                                },
+                                "traits": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 0
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                },
+                                "link_condition": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 0
+                                },
+                                "ap": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "hp": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "series_titles": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 0
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                }
                               },
-                              "minItems": 0,
-                              "maxItems": 9007199254740991
-                            },
-                            "supertypes": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "enum": [
-                                  "champion",
-                                  "signature",
-                                  "token"
-                                ]
-                              },
-                              "minItems": 0,
-                              "maxItems": 9007199254740991
-                            },
-                            "domains": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "enum": [
-                                  "fury",
-                                  "calm",
-                                  "mind",
-                                  "body",
-                                  "chaos",
-                                  "order",
-                                  "colorless"
-                                ]
-                              },
-                              "minItems": 0,
-                              "maxItems": 9007199254740991
-                            },
-                            "energy": {
-                              "type": [
-                                "integer",
-                                "null"
+                              "required": [
+                                "card_type",
+                                "colours",
+                                "level",
+                                "cost",
+                                "block_icon",
+                                "effect_text",
+                                "zone",
+                                "traits",
+                                "link_condition",
+                                "ap",
+                                "hp",
+                                "series_titles"
                               ],
-                              "minimum": 0
-                            },
-                            "power": {
-                              "type": [
-                                "integer",
-                                "null"
-                              ],
-                              "minimum": 0
-                            },
-                            "might": {
-                              "type": [
-                                "integer",
-                                "null"
-                              ],
-                              "minimum": 0
-                            },
-                            "might_bonus": {
-                              "type": [
-                                "integer",
-                                "null"
-                              ],
-                              "minimum": 0
-                            },
-                            "tags": {
-                              "type": "array",
-                              "items": {
-                                "type": "string",
-                                "minLength": 0
-                              },
-                              "minItems": 0,
-                              "maxItems": 9007199254740991
-                            },
-                            "ability_text": {
-                              "type": [
-                                "string",
-                                "null"
-                              ],
-                              "minLength": 0
-                            },
-                            "effect_text": {
-                              "type": [
-                                "string",
-                                "null"
-                              ],
-                              "minLength": 0
+                              "additionalProperties": false
                             }
                           },
                           "required": [
-                            "card_types",
-                            "supertypes",
-                            "domains",
-                            "energy",
-                            "power",
-                            "might",
-                            "might_bonus",
-                            "tags",
-                            "ability_text",
-                            "effect_text"
+                            "profile",
+                            "attributes"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "profile": {
+                              "type": "string",
+                              "enum": [
+                                "riftbound@1"
+                              ]
+                            },
+                            "attributes": {
+                              "type": "object",
+                              "properties": {
+                                "card_types": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "spell",
+                                      "battlefield",
+                                      "unit",
+                                      "gear",
+                                      "legend",
+                                      "rune"
+                                    ]
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                },
+                                "supertypes": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "champion",
+                                      "signature",
+                                      "token"
+                                    ]
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                },
+                                "domains": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "fury",
+                                      "calm",
+                                      "mind",
+                                      "body",
+                                      "chaos",
+                                      "order",
+                                      "colorless"
+                                    ]
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                },
+                                "energy": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "power": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "might": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "might_bonus": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "tags": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 0
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                },
+                                "ability_text": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 0
+                                },
+                                "effect_text": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 0
+                                }
+                              },
+                              "required": [
+                                "card_types",
+                                "supertypes",
+                                "domains",
+                                "energy",
+                                "power",
+                                "might",
+                                "might_bonus",
+                                "tags",
+                                "ability_text",
+                                "effect_text"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "profile",
+                            "attributes"
                           ],
                           "additionalProperties": false
                         }
-                      },
-                      "required": [
-                        "profile",
-                        "attributes"
-                      ],
-                      "additionalProperties": false
-                    }
-                  ]
-                },
-                "lifecycle": {
-                  "type": "object",
-                  "properties": {
-                    "first_revision_id": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "last_observed_revision_id": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "withdrawn": {
-                      "type": "boolean"
-                    },
-                    "withdrawal": {
-                      "type": [
-                        "object",
-                        "null"
-                      ],
-                      "properties": {
-                        "revision_id": {
-                          "type": "string",
-                          "minLength": 1
-                        }
-                      },
-                      "required": [
-                        "revision_id"
-                      ],
-                      "additionalProperties": false
+                      ]
                     }
                   },
                   "required": [
-                    "first_revision_id",
-                    "last_observed_revision_id",
-                    "withdrawn"
+                    "type",
+                    "id",
+                    "game",
+                    "official_identity",
+                    "name",
+                    "related_cards",
+                    "lifecycle",
+                    "links",
+                    "category",
+                    "gameplay_applicability",
+                    "game_data"
                   ],
                   "additionalProperties": false
                 },
-                "links": {
+                {
                   "type": "object",
                   "properties": {
-                    "self": {
+                    "type": {
                       "type": "string",
-                      "format": "uri"
+                      "enum": [
+                        "card"
+                      ]
+                    },
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "game": {
+                      "type": "string",
+                      "enum": [
+                        "one-piece",
+                        "fusion-world",
+                        "digimon",
+                        "gundam",
+                        "riftbound"
+                      ]
+                    },
+                    "official_identity": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "card_number"
+                              ]
+                            },
+                            "value": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "publisher_name"
+                              ]
+                            },
+                            "value": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "functional_designation"
+                              ]
+                            },
+                            "value": {
+                              "type": "string",
+                              "enum": [
+                                "DON!!"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "unknown"
+                              ]
+                            },
+                            "value": {
+                              "type": "null"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "related_cards": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "shared_artwork"
+                            ]
+                          },
+                          "card_id": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "card_id"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 8
+                    },
+                    "lifecycle": {
+                      "type": "object",
+                      "properties": {
+                        "first_revision_id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "last_observed_revision_id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "withdrawn": {
+                          "type": "boolean"
+                        },
+                        "withdrawal": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "revision_id": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "revision_id"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "first_revision_id",
+                        "last_observed_revision_id",
+                        "withdrawn"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "links": {
+                      "type": "object",
+                      "properties": {
+                        "self": {
+                          "type": "string",
+                          "format": "uri"
+                        }
+                      },
+                      "required": [
+                        "self"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "category": {
+                      "type": "string",
+                      "enum": [
+                        "art"
+                      ]
+                    },
+                    "gameplay_applicability": {
+                      "type": "string",
+                      "enum": [
+                        "inapplicable"
+                      ]
+                    },
+                    "game_data": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "profile": {
+                              "type": "string",
+                              "enum": [
+                                "one-piece@1"
+                              ]
+                            },
+                            "attributes": {
+                              "type": "object",
+                              "properties": {},
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "profile",
+                            "attributes"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "profile": {
+                              "type": "string",
+                              "enum": [
+                                "fusion-world@1"
+                              ]
+                            },
+                            "attributes": {
+                              "type": "object",
+                              "properties": {},
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "profile",
+                            "attributes"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "profile": {
+                              "type": "string",
+                              "enum": [
+                                "digimon@1"
+                              ]
+                            },
+                            "attributes": {
+                              "type": "object",
+                              "properties": {},
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "profile",
+                            "attributes"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "profile": {
+                              "type": "string",
+                              "enum": [
+                                "gundam@1"
+                              ]
+                            },
+                            "attributes": {
+                              "type": "object",
+                              "properties": {},
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "profile",
+                            "attributes"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "profile": {
+                              "type": "string",
+                              "enum": [
+                                "riftbound@1"
+                              ]
+                            },
+                            "attributes": {
+                              "type": "object",
+                              "properties": {},
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "profile",
+                            "attributes"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
                     }
                   },
                   "required": [
-                    "self"
+                    "type",
+                    "id",
+                    "game",
+                    "official_identity",
+                    "name",
+                    "related_cards",
+                    "lifecycle",
+                    "links",
+                    "category",
+                    "gameplay_applicability",
+                    "game_data"
                   ],
                   "additionalProperties": false
                 }
-              },
-              "required": [
-                "type",
-                "id",
-                "game",
-                "official_identity",
-                "name",
-                "game_data",
-                "lifecycle",
-                "links"
-              ],
-              "additionalProperties": false
+              ]
             }
           },
           "meta": {
@@ -1203,6 +1571,21 @@
             },
             "required": false,
             "name": "card_number",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "gameplay",
+                "token",
+                "art"
+              ],
+              "description": "Select one Card category. All categories are visible by default."
+            },
+            "required": false,
+            "description": "Select one Card category. All categories are visible by default.",
+            "name": "category",
             "in": "query"
           },
           {

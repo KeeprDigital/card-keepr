@@ -38,6 +38,7 @@ async function exportReadState(db: CatalogueStore, revisionId: string) {
           published_at: string;
           content_digest: string;
           publication_operation_id: string | null;
+          model_ready: number;
         }
       | undefined,
     receipt: receipts!.results[0] as
@@ -73,6 +74,12 @@ export async function compositionExportResponse(
   if (receipt && receipt.maintenance_state !== "available")
     throw new ReadProblem(410, "catalogue_export_deleted", "This known Catalogue Export has been deleted.");
   if (!revision.publication_operation_id) return undefined;
+  if (revision.model_ready !== 1)
+    throw new ReadProblem(
+      503,
+      "catalogue_export_unavailable",
+      "Regenerate each game's Card model before exposing this composition under the current export definition.",
+    );
   if (!receipt)
     throw new ReadProblem(503, "catalogue_export_unavailable", "The public package receipt is unavailable.");
   if (bucket) {

@@ -46,6 +46,9 @@ test("named absence scope excludes other Card identities and unselected source l
   const card: CatalogueCard = {
     id: "card",
     game: "one-piece",
+    category: "gameplay" as const,
+    related_cards: [],
+    gameplay_applicability: "applicable" as const,
     official_identity: { kind: "card_number", value: "P-001" },
     name: "Luffy",
     effective_rules_text: null,
@@ -54,6 +57,7 @@ test("named absence scope excludes other Card identities and unselected source l
   const printing: CataloguePrinting = {
     id: "printing",
     card_id: card.id,
+    gameplay_applicability: "applicable",
     rarity: { raw: null, normalized: null },
     printed_rules_text: null,
     game_data: null,
@@ -70,7 +74,17 @@ test("named absence scope excludes other Card identities and unselected source l
   ];
   expect(checkedPrintingLineages(card, printing, scopes)).toEqual(["one-piece-en"]);
   expect(
-    checkedPrintingLineages({ ...card, official_identity: { kind: "card_number", value: "P-002" } }, printing, scopes),
+    checkedPrintingLineages(
+      {
+        ...card,
+        category: "gameplay" as const,
+        related_cards: [],
+        gameplay_applicability: "applicable" as const,
+        official_identity: { kind: "card_number", value: "P-002" },
+      },
+      printing,
+      scopes,
+    ),
   ).toEqual([]);
   expect(
     checkedPrintingLineages(

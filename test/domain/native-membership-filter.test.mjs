@@ -44,6 +44,7 @@ test("native Card and Printing filters use current Product membership within the
       ]) {
         const filters = {
           game: null,
+          category: null,
           q: null,
           card_id: null,
           card_number: null,
