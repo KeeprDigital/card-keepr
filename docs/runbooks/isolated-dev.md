@@ -188,8 +188,12 @@ The owner-only first installation is outside the administration CLI:
    completed failed bootstrap attempts, with no activation intent or release
    completion. Both Workers must still contain the exact deny-only source,
    secret-only bindings, no routes and disabled public endpoints; Workflow names
-   must remain absent. The tool refreshes those shells through Wrangler and
-   creates a new canonical preparation, retaining every prior outcome. An
+   must remain absent. Both local secret files must pass the same complete,
+   distinct-credential validation used for initial provisioning. Preparation is
+   read-only with respect to Workers; the executor rechecks and refreshes the
+   shells through Wrangler only after claiming the canonical deployment lease.
+   A competing invocation cannot refresh shells or clean up another claimant's
+   fence. The new canonical preparation retains every prior outcome. An
    activated or otherwise changed environment requires the normal recovery
    procedure and is refused by this narrowly scoped bootstrap path.
 

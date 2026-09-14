@@ -13,6 +13,7 @@ import { devAudience, requiredCiChecks } from "../src/http/dev-workflow-identity
 import {
   activeReleaseIdentity,
   countAdministrationOutcomes,
+  countMigrationStartedEvidence,
   countReleaseCompletionEvidence,
   countSuccessfulReleaseEvidence,
 } from "./helpers/query-helpers/production-release.mjs";
@@ -367,9 +368,19 @@ test("owner first install uses the canonical preparation transaction on an unuse
   await assert.rejects(prepareFirstDevInstall(retry), /first_install_retry_not_safe/u);
   shellHasRoute = false;
   assert.equal(commands.length, 0, "unsafe targets cause no shell writes");
+  const ingestionSecrets = JSON.parse(await readFile(retry.DEV_INGESTION_SECRETS_FILE, "utf8"));
+  await writeFile(
+    retry.DEV_INGESTION_SECRETS_FILE,
+    JSON.stringify({ ...ingestionSecrets, D1_EXPORT_TOKEN: ingestionSecrets.D1_VERIFICATION_TOKEN }),
+  );
+  await assert.rejects(prepareFirstDevInstall(retry), /dev_secrets_must_be_distinct/u);
+  await writeFile(retry.DEV_INGESTION_SECRETS_FILE, JSON.stringify({ ADMINISTRATION_KEY: "incomplete-inventory" }));
+  await assert.rejects(prepareFirstDevInstall(retry), /invalid_dev_secret_inventory/u);
+  assert.equal(commands.length, 0, "both credential files must be valid before either shell is refreshed");
+  await writeFile(retry.DEV_INGESTION_SECRETS_FILE, JSON.stringify(ingestionSecrets));
   const retried = await prepareFirstDevInstall(retry);
   assert.notEqual(retried.release_id, prepared.release_id);
-  assert.equal(commands.filter((args) => args[0] === "deploy").length, 2);
+  assert.equal(commands.length, 0, "preparation cannot refresh Workers before claiming the deployment lease");
   assert.equal(
     countAdministrationOutcomes(database).get().count,
     5,
@@ -399,6 +410,7 @@ test("a signed dev run cannot substitute another independently passing main comm
 for (const [scenario, expectedError] of [
   ["approved", null],
   ["rotated scratch", null],
+  ["competing bootstrap retry", null],
   ["older version", /release_active_version_mismatch/u],
   ["split traffic", /release_active_version_mismatch/u],
   ["foreign route", /release_route_mismatch/u],
@@ -473,6 +485,9 @@ for (const [scenario, expectedError] of [
     const byName = Object.fromEntries(Object.values(configs).map((config) => [config.name, config]));
     const githubFetch = globalThis.fetch;
     const requests = [];
+    const retrying = scenario === "competing bootstrap retry";
+    let applicationActive = !retrying;
+    let competingObservation;
     globalThis.fetch = async (input, init = {}) => {
       const url = new URL(input);
       requests.push(url.pathname);
@@ -507,12 +522,14 @@ for (const [scenario, expectedError] of [
       } else if (url.pathname.endsWith("/zones"))
         result = [{ id: "synthetic-zone", name: "keepr.digital", account: { id: env.CLOUDFLARE_ACCOUNT_ID } }];
       else if (url.pathname.endsWith("/workers/routes"))
-        result = Object.values(configs).flatMap((config) =>
-          config.routes.map((route) => ({
-            pattern: route.pattern,
-            script: scenario === "foreign route" ? "foreign" : config.name,
-          })),
-        );
+        result = !applicationActive
+          ? []
+          : Object.values(configs).flatMap((config) =>
+              config.routes.map((route) => ({
+                pattern: route.pattern,
+                script: scenario === "foreign route" ? "foreign" : config.name,
+              })),
+            );
       else if (url.pathname.endsWith("/domains/managed"))
         result = { enabled: false, bucketId: "synthetic-bucket", domain: "private.r2.dev" };
       else if (url.pathname.endsWith("/domains/custom")) result = { domains: [] };
@@ -556,14 +573,40 @@ for (const [scenario, expectedError] of [
             ],
           };
         else if (url.pathname.includes("/versions/")) result = { resources: { bindings: devBindings(config) } };
-        else if (url.pathname.endsWith("/settings")) result = { bindings: devBindings(config) };
-        else assert.fail(`Unexpected simulated provider request ${url.pathname}`);
+        else if (url.pathname.endsWith("/settings"))
+          result = {
+            bindings: devBindings(config).filter((binding) => applicationActive || binding.type === "secret_text"),
+          };
+        else if (retrying && url.pathname.endsWith("/subdomain")) result = { enabled: false, previews_enabled: false };
+        else if (retrying && url.pathname.endsWith(`/scripts/${worker}`)) {
+          const form = new FormData();
+          form.set(
+            "deny.mjs",
+            "export default { fetch() { return new Response('Dev installation pending', {status:503}); } };",
+          );
+          return new Response(form);
+        } else assert.fail(`Unexpected simulated provider request ${url.pathname}`);
       }
       return Response.json({ success: true, result });
     };
     const commands = [];
     const executeCommand = async (command, args) => {
       if (command === "git") return { stdout: head };
+      if (retrying && args[0] === "d1") {
+        const before = commands.length;
+        let refusal;
+        try {
+          await deployDev(input, executeCommand);
+        } catch (error) {
+          refusal = error.message;
+        }
+        competingObservation = {
+          refusal,
+          additionalCommands: commands.length - before,
+          lease: activeReleaseIdentity(database).get().active_production_release_id,
+        };
+      }
+      if (args[0] === "versions" && args[1] === "deploy") applicationActive = true;
       commands.push({ command, args });
       assert.ok(command.endsWith("/wrangler") || command === "bash");
       return { stdout: "" };
@@ -582,6 +625,44 @@ for (const [scenario, expectedError] of [
       CLOUDFLARE_API_TOKEN: "synthetic-provider",
       API_TRAFFIC_TOKEN: "synthetic-traffic",
     };
+    if (retrying) {
+      const directory = await mkdtemp(join(tmpdir(), "keepr-executor-retry-"));
+      t.after(() => rm(directory, { recursive: true, force: true }));
+      input.DEV_FIRST_INSTALL_RETRY_OF = "inspected-failed-bootstrap";
+      for (const [app, variable] of [
+        ["api", "DEV_API_SECRETS_FILE"],
+        ["ingestion", "DEV_INGESTION_SECRETS_FILE"],
+      ]) {
+        input[variable] = join(directory, `${app}.json`);
+        await writeFile(
+          input[variable],
+          JSON.stringify(
+            Object.fromEntries(
+              devBindings(configs[app])
+                .filter((binding) => binding.type === "secret_text")
+                .map((binding) => [binding.name, `synthetic-${binding.name}-credential`]),
+            ),
+          ),
+        );
+      }
+      t.mock.method(childProcess, "execFileSync", (command, args) => {
+        assert.ok(command.endsWith("/wrangler"));
+        assert.equal(args[0], "deploy");
+        assert.equal(
+          activeReleaseIdentity(database).get().active_production_release_id,
+          prepared.release_id,
+          "shell refresh requires the active release lease",
+        );
+        assert.equal(countMigrationStartedEvidence(database).get().count, 1);
+        commands.push({ command, args });
+        return "";
+      });
+      syncBuiltinESMExports();
+      t.after(() => {
+        t.mock.restoreAll();
+        syncBuiltinESMExports();
+      });
+    }
     if (expectedError) {
       await assert.rejects(deployDev(input, executeCommand), expectedError);
       assert.equal(activeReleaseIdentity(database).get().active_production_release_id, prepared.release_id);
@@ -597,6 +678,16 @@ for (const [scenario, expectedError] of [
       assert.equal(activeReleaseIdentity(database).get().active_production_release_id, null);
       assert.equal(countSuccessfulReleaseEvidence(database).get().count, 1);
       assert.equal(requests.filter((path) => path.endsWith("/deployments")).length, 2);
+      if (retrying) {
+        assert.equal(commands.filter(({ args }) => args[0] === "deploy").length, 2);
+        assert.match(competingObservation.refusal, /dev_gate_failed:ready/u);
+        assert.equal(
+          competingObservation.additionalCommands,
+          0,
+          "a competing retry neither refreshes shells nor runs another claimant's failure handler",
+        );
+        assert.equal(competingObservation.lease, prepared.release_id);
+      }
     }
   });
 

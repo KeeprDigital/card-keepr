@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { verifyDevCommit } from "../src/http/dev-workflow-identity.mjs";
 import { verifyDevWorkflows } from "./dev-workflows.mjs";
+import { restoreDevWorkerShells } from "./dev-worker-shell.mjs";
 import { validateDispatchAndWriteSql, writeEvidenceSql } from "./production-release.mjs";
 import { executeSqlFile } from "./production-release-d1.mjs";
 import {
@@ -41,10 +42,16 @@ export async function deployDev(input, executeCommand = promisify(execFile)) {
     }
   };
   const wrangler = (args) => run(resolve("node_modules/.bin/wrangler"), args);
+  let leaseClaimed = false;
   try {
     requireResult(await sql("live-preflight"), "ready");
     requireResult(await sql("claim"), "claimed");
+    leaseClaimed = true;
     requireResult(await sql("migration-started"), "migration_started");
+    if (environment.DEV_FIRST_INSTALL_RETRY_OF !== undefined) {
+      if (environment.BOOTSTRAP !== "true") throw new Error("first_install_retry_not_safe");
+      await restoreDevWorkerShells(environment);
+    }
     await wrangler([
       "d1",
       "migrations",
@@ -143,6 +150,7 @@ export async function deployDev(input, executeCommand = promisify(execFile)) {
     requireResult(await sql("smoke"), "fence_released");
     return { environment: "dev", head_sha: head, release_id: environment.RELEASE_ID, evidence_directory: directory };
   } catch (error) {
+    if (!leaseClaimed) throw error;
     try {
       await run("bash", ["scripts/production-release-failure.sh", directory]);
     } catch {

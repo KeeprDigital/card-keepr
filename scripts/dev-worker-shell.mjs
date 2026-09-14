@@ -12,18 +12,31 @@ const secretNames = [
   ["ADMINISTRATION_KEY", "ADMINISTRATION_KEY_REPLACEMENT", "D1_EXPORT_TOKEN", "D1_VERIFICATION_TOKEN"],
 ];
 
+/** Initial provisioning and retry share the complete, independently issued inventory. */
+export async function validateDevSecretFiles(environment) {
+  const files = [environment.DEV_API_SECRETS_FILE, environment.DEV_INGESTION_SECRETS_FILE];
+  const secrets = await Promise.all(
+    files.map(async (path, index) => {
+      if (!path) throw new Error("dev_secret_files_required");
+      const value = JSON.parse(await readFile(path, "utf8"));
+      if (
+        Object.keys(value).sort().join("|") !== [...secretNames[index]].sort().join("|") ||
+        Object.values(value).some((secret) => typeof secret !== "string" || secret.length < 16)
+      )
+        throw new Error("invalid_dev_secret_inventory");
+      return value;
+    }),
+  );
+  if (new Set(secrets.flatMap(Object.values)).size !== 6) throw new Error("dev_secrets_must_be_distinct");
+  return files;
+}
+
 /** Use Wrangler provenance so the later strict versions upload accepts this shell. */
-export async function writeDevWorkerShell(environment, name, secretFile) {
+export async function writeDevWorkerShell(environment, name) {
   const account = environment.DEV_CLOUDFLARE_ACCOUNT_ID;
-  if (!/^[0-9a-f]{32}$/u.test(account ?? "") || !environmentNames("dev").workers.includes(name) || !secretFile)
-    throw new Error("invalid_dev_shell_target");
-  const secrets = JSON.parse(await readFile(secretFile, "utf8"));
-  const expected = secretNames[environmentNames("dev").workers.indexOf(name)];
-  if (
-    Object.keys(secrets).sort().join("|") !== [...expected].sort().join("|") ||
-    Object.values(secrets).some((value) => typeof value !== "string" || value.length < 16)
-  )
-    throw new Error("invalid_dev_secret_inventory");
+  const index = environmentNames("dev").workers.indexOf(name);
+  if (!/^[0-9a-f]{32}$/u.test(account ?? "") || index === -1) throw new Error("invalid_dev_shell_target");
+  const secretFile = (await validateDevSecretFiles(environment))[index];
   const directory = await mkdtemp(join(tmpdir(), "keepr-dev-shell-"));
   try {
     const config = join(directory, "wrangler.json");
@@ -55,7 +68,8 @@ export async function writeDevWorkerShell(environment, name, secretFile) {
 }
 
 /** A failed initial installation may refresh only the exact, still unbound deny shells. */
-export async function restoreDevWorkerShells(environment) {
+export async function verifyDevWorkerShells(environment) {
+  await validateDevSecretFiles(environment);
   const names = environmentNames("dev");
   const account = environment.DEV_CLOUDFLARE_ACCOUNT_ID;
   const refuse = () => {
@@ -101,11 +115,12 @@ export async function restoreDevWorkerShells(environment) {
     const subdomain = await document(`${root}/subdomain`);
     if (subdomain?.enabled !== false || subdomain.previews_enabled !== false) refuse();
   }
+}
+
+/** Called only by the executor while it holds the canonical deployment lease. */
+export async function restoreDevWorkerShells(environment) {
+  await verifyDevWorkerShells(environment);
+  const names = environmentNames("dev");
   // Observe both shells before changing either; never overwrite application code.
-  for (const [index, name] of names.workers.entries())
-    await writeDevWorkerShell(
-      environment,
-      name,
-      [environment.DEV_API_SECRETS_FILE, environment.DEV_INGESTION_SECRETS_FILE][index],
-    );
+  for (const name of names.workers) await writeDevWorkerShell(environment, name);
 }

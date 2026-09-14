@@ -6,7 +6,7 @@ import { createServer } from "vite";
 import { devConfigurations } from "./dev-environment.mjs";
 import { verifyDevCommit } from "../src/http/dev-workflow-identity.mjs";
 import { environmentNames } from "../src/http/environment-target.mjs";
-import { restoreDevWorkerShells } from "./dev-worker-shell.mjs";
+import { verifyDevWorkerShells } from "./dev-worker-shell.mjs";
 
 /** D1's documented batch query API preserves the canonical repository transaction. */
 export function remoteDevDatabase(environment) {
@@ -179,7 +179,7 @@ export async function prepareFirstDevInstall(environment) {
       const previous = groups.get(retryOf);
       if (!previous || [...groups.keys()].at(-1) !== retryOf) refuse();
       suffix = `-retry-${(await sha256Text(previous.request)).slice(0, 12)}`;
-      await restoreDevWorkerShells(environment);
+      await verifyDevWorkerShells(environment);
     }
     const prepared = await prepareProductionRelease(
       catalogueStore(db),
