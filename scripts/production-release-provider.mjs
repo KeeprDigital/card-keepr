@@ -359,7 +359,7 @@ function expectedBindings(config, secrets, worker) {
       name: binding.binding,
       type: "service",
       service: binding.service,
-      environment: binding.environment ?? null,
+      environment: binding.environment ?? "production",
       entrypoint: binding.entrypoint ?? null,
     })),
     ...(config.workflows ?? []).map((binding) => ({
@@ -410,7 +410,7 @@ function normalizedBindings(bindings, worker) {
           name: binding.name,
           type: binding.type,
           service: binding.service,
-          environment: binding.environment ?? null,
+          environment: binding.environment ?? "production",
           entrypoint: binding.entrypoint ?? null,
         });
       case "workflow":

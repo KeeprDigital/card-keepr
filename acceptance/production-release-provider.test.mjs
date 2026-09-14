@@ -184,6 +184,15 @@ test("the uploaded version is verified against the release configuration before 
   }
 });
 
+test("the provider accepts Cloudflare's explicit default service environment while preserving target identity", async () => {
+  const fetchImpl = await providerFetch((url, document) => {
+    const entries = document.result?.resources?.bindings ?? document.result?.bindings ?? [];
+    for (const binding of entries) if (binding.type === "service") binding.environment = "production";
+  });
+  await verifyUploadedVersion(versionEnvironment("card-keepr-ingestion"), fetchImpl);
+  await observeCatalogueBindings(environment(), fetchImpl);
+});
+
 const versionFailures = [
   [
     "a var value",
@@ -204,6 +213,16 @@ const versionFailures = [
     "service binding",
     /uploaded_version_binding_mismatch/u,
     versionBinding("service", (binding) => (binding.entrypoint = "WrongEntrypoint")),
+  ],
+  [
+    "a different service environment",
+    /uploaded_version_binding_mismatch/u,
+    versionBinding("service", (binding) => (binding.environment = "staging")),
+  ],
+  [
+    "a different service Worker",
+    /uploaded_version_binding_mismatch/u,
+    versionBinding("service", (binding) => (binding.service = "foreign-worker")),
   ],
   [
     "Workflow binding",

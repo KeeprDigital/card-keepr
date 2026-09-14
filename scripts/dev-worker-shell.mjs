@@ -97,12 +97,34 @@ export async function verifyDevWorkerShells(environment) {
   await verifyDevWorkflows(environment, { mustBeAbsent: true });
   for (const [index, name] of names.workers.entries()) {
     const root = `/accounts/${account}/workers/scripts/${name}`;
-    const source = await (await get(root)).formData();
-    if ([...source.keys()].join("|") !== "deny.mjs") refuse();
-    const part = source.get("deny.mjs");
-    if ((typeof part === "string" ? part : await part.text()).trim() !== devShellSource) refuse();
-    const settings = await document(`${root}/settings`);
-    const bindings = settings?.bindings;
+    const deployments = await document(`${root}/deployments`);
+    const active = deployments?.deployments?.[0]?.versions;
+    if (
+      !Array.isArray(active) ||
+      active.length !== 1 ||
+      active[0].percentage !== 100 ||
+      !/^[0-9a-f-]{36}$/u.test(active[0].version_id ?? "")
+    )
+      refuse();
+    const version = await document(
+      `/accounts/${account}/workers/workers/${name}/versions/${active[0].version_id}?include=modules`,
+    );
+    if (
+      version?.id !== active[0].version_id ||
+      version.main_module !== "deny.mjs" ||
+      !Array.isArray(version.modules) ||
+      version.modules.length !== 1
+    )
+      refuse();
+    const module = version.modules[0];
+    if (
+      module.name !== "deny.mjs" ||
+      module.content_type !== "application/javascript+module" ||
+      typeof module.content_base64 !== "string" ||
+      Buffer.from(module.content_base64, "base64").toString("utf8").trim() !== devShellSource
+    )
+      refuse();
+    const bindings = version.bindings;
     if (
       !Array.isArray(bindings) ||
       bindings.some((binding) => binding.type !== "secret_text") ||

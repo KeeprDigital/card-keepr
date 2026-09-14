@@ -115,6 +115,11 @@ DNS. Verify active HTTPS certificate coverage before the first installation.
 The dev and staging hosts (`card-dev.keepr.digital` and
 `card-staging.keepr.digital`) fit the zone's existing `*.keepr.digital` Universal
 SSL certificate; deeper subdomains would require additional certificate coverage.
+Cloudflare may report the service binding's default environment as `production`.
+That is the default slot of the explicitly named `card-keepr-ingestion-dev` Worker;
+it does not select the production Worker. The verifier treats an omitted default
+and that explicit default as equivalent while still requiring the exact Worker,
+entrypoint and any non-default service environment.
 R2 public access stays disabled. Workers.dev and preview URLs stay disabled.
 
 The config compiler requires real distinct UUIDs and rejects production D1 IDs.
@@ -186,9 +191,12 @@ The owner-only first installation is outside the administration CLI:
    first-install command with fresh successful exact-main CI. The retry requires
    an empty, idle catalogue whose entire administration history consists of
    completed failed bootstrap attempts, with no activation intent or release
-   completion. Both Workers must still contain the exact deny-only source,
-   secret-only bindings, no routes and disabled public endpoints; Workflow names
-   must remain absent. Both local secret files must pass the same complete,
+   completion. Both Workers must still serve exactly one 100% active version with the
+   exact deny-only source and secret-only bindings, no routes and disabled public endpoints; Workflow names
+   must remain absent. Resolve the current deployment's version ID and inspect its
+   code and bindings through the [version API](https://developers.cloudflare.com/api/resources/workers/subresources/beta/subresources/workers/subresources/versions/methods/get/);
+   general script/settings endpoints can describe a newer, unactivated upload.
+   Both local secret files must pass the same complete,
    distinct-credential validation used for initial provisioning. Preparation is
    read-only with respect to Workers; the executor rechecks and refreshes the
    shells through Wrangler only after claiming the canonical deployment lease.
