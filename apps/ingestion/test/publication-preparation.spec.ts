@@ -3,6 +3,7 @@ import { expect, test } from "vitest";
 import { assertHttpResponse } from "../../../test/support/http-contract";
 import contract from "../../../contracts/admin-openapi.json";
 import { collect, get, post, installReconciliationSuite, requiredString, testEnv } from "./reconciliation-helpers";
+import { prepareNativeCandidate } from "./native-publication-helpers";
 
 installReconciliationSuite();
 
@@ -380,6 +381,59 @@ test("a bounded composition references independently verified games without re-u
   );
   expect((await get(path)).document).toEqual(first);
   expect((await get(otherPath)).document).toEqual(second);
+});
+
+test("all six registered games compose through the strict HTTP contract", async () => {
+  const sources = [
+    ["one-piece", "one-piece-en", "fixture-one-piece-json@3", "base"],
+    ["digimon", "digimon-en", "fixture-digimon-json@2", "profile-digimon"],
+    ["fusion-world", "fusion-world-en", "fixture-fusion-world-json@2", "profile-fusion-world"],
+    ["gundam", "gundam-en-asia", "fixture-gundam-en-asia-json@2", "profile-gundam"],
+    ["riftbound", "riftbound-en", "fixture-riftbound-json@1", "profile-riftbound"],
+    ["magic", "scryfall-magic-en", "fixture-magic-json@1", "profile-magic"],
+  ] as const;
+  const games = [];
+  for (const [game, lineage, adapter, scenario] of sources) {
+    const source = await collect(`/reconciliation/${scenario}`, `compose-six-source-${game}`, {
+      game,
+      lineage,
+      adapter,
+    });
+    const candidate = await prepareNativeCandidate(
+      source.id,
+      game,
+      "catrev_spine_000",
+      `compose-six-candidate-${game}`,
+    );
+    const path = `/v1/game-candidates/${candidate.id}/publication-preparation`;
+    const intent = {
+      manifest_digest: candidate.manifest_digest,
+      generation: 0,
+      sequence: 0,
+      idempotency_key: `compose-six-${game}`,
+    };
+    let status = (await post(path, intent)).document;
+    for (let unit = 0; status.state === "preparing" && unit < 200; unit++)
+      status = (
+        await post(path, { ...intent, sequence: status.sequence, idempotency_key: `compose-six-${game}-${unit}` })
+      ).document;
+    expect(status, JSON.stringify(status)).toMatchObject({ state: "verified" });
+    games.push({ supported_game: game, candidate_id: candidate.id, root_digest: status.root_digest });
+  }
+  const ids = games.map((game) => game.candidate_id);
+  const response = await post("/v1/publication-compositions", { candidate_ids: ids });
+  expect(response.response.status, JSON.stringify(response.document)).toBe(200);
+  expect(response.document.games).toEqual(games.sort((a, b) => a.supported_game.localeCompare(b.supported_game)));
+  await assertHttpResponse(contract, "/v1/publication-compositions", "post", response.response, response.document);
+  expect((await post("/v1/publication-compositions", { candidate_ids: [...ids].reverse() })).document).toEqual(
+    response.document,
+  );
+  expect(
+    (await post("/v1/publication-compositions", { candidate_ids: [...ids, "candidate_extra"] })).response.status,
+  ).toBe(422);
+  expect(
+    (await post("/v1/publication-compositions", { candidate_ids: [...ids.slice(0, -1), ids[0]] })).response.status,
+  ).toBe(422);
 });
 
 test("verified query and search batches expose the same prepared facts to the owner", async () => {

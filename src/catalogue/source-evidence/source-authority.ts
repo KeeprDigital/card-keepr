@@ -22,9 +22,8 @@ export type AuthoritySelectionRequest = {
 // Adding another publisher source does not change this policy.
 const areas = ["card_facts", "printing_details", "corrected_card_content"] as const;
 // Each entry applies only to its registered lineage's exact game/locale/region.
-// Future Scryfall scopes select all three areas; TCGdex selects facts/details
-// and the selected official Pokémon correction scopes select corrected content.
-// Those entries belong with their later source registrations, not inferred scopes.
+// Scryfall selects all three areas for its English/unknown-region pilot.
+// Future Pokémon entries belong with their exact registered source scopes.
 const initialAuthorityAreas: Readonly<Record<string, readonly (typeof areas)[number][]>> = {
   "one-piece-en": areas,
   "fusion-world-en": areas,
@@ -32,6 +31,7 @@ const initialAuthorityAreas: Readonly<Record<string, readonly (typeof areas)[num
   "gundam-en-asia": areas,
   "gundam-en-us": areas,
   "riftbound-en": areas,
+  "scryfall-magic-en": areas,
 };
 export async function sourceAuthorities(database: CatalogueStore, runId?: string) {
   const decisions = (await authorityDecisionsStatement(database, runId).all<AuthorityDecision>()).results;
@@ -53,7 +53,7 @@ export async function sourceAuthorities(database: CatalogueStore, runId?: string
             area,
             source_lineage: lineage.id,
             generation: 0,
-            rationale: "Initial publisher source designation",
+            rationale: "Initial owner-selected Source Authority designation",
             decided_at: null,
           };
     }),

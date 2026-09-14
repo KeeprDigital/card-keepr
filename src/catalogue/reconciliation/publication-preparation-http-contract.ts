@@ -1,5 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { boundedJson, digest, identifier, problemResponses, secured } from "../../http/openapi";
+import { registeredSupportedGames } from "../shared";
 
 const count = z.number().int().nonnegative();
 const preparationState = z.enum(["preparing", "verified", "retry_paused", "failed"]);
@@ -264,7 +265,7 @@ export const publicationCompositionSchema = z
         }),
       )
       .min(1)
-      .max(5),
+      .max(registeredSupportedGames().length),
     root_digest: digest,
     object_key: identifier,
     byte_length: count.max(16384),
@@ -285,7 +286,7 @@ export const publicationCompositionRoute = createRoute({
             candidate_ids: z
               .array(identifier)
               .min(1)
-              .max(5)
+              .max(registeredSupportedGames().length)
               .refine((ids) => new Set(ids).size === ids.length),
           }),
         },

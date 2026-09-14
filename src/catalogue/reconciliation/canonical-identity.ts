@@ -87,6 +87,7 @@ export async function boundedSourceMapping(mapping: SourceMapping): Promise<Sour
     ...mapping,
     evidenceJson: canonicalJson({
       compatibility: evidence.compatibility,
+      ...(evidence.card_design_key === undefined ? {} : { card_design_key: evidence.card_design_key }),
       retained_evidence: {
         source_observation_id: mapping.sourceObservationId,
         source_observation_set_id: mapping.sourceObservationSetId,

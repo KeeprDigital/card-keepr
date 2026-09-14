@@ -3722,7 +3722,7 @@
               "additionalProperties": false
             },
             "minItems": 1,
-            "maxItems": 5
+            "maxItems": 6
           },
           "root_digest": {
             "type": "string",
@@ -4065,6 +4065,7 @@
           "supported_game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -4163,6 +4164,7 @@
           "supported_game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -4351,6 +4353,7 @@
                 "supported_game": {
                   "type": "string",
                   "enum": [
+                    "magic",
                     "riftbound",
                     "one-piece",
                     "fusion-world",
@@ -6266,6 +6269,7 @@
                     "game": {
                       "type": "string",
                       "enum": [
+                        "magic",
                         "riftbound",
                         "one-piece",
                         "fusion-world",
@@ -6691,6 +6695,7 @@
                         "game": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -6766,6 +6771,7 @@
                         "game": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -6979,6 +6985,7 @@
                         "game": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -7064,6 +7071,7 @@
                         "game": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -7284,6 +7292,7 @@
                         "game": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -7366,6 +7375,7 @@
                         "game": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -7586,6 +7596,7 @@
                         "game": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -7674,6 +7685,7 @@
                         "game": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -8114,6 +8126,7 @@
                         "game": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -8186,6 +8199,7 @@
                         "game": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -8399,6 +8413,7 @@
                         "game": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -8481,6 +8496,7 @@
                         "game": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -8701,6 +8717,7 @@
                         "game": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -8780,6 +8797,7 @@
                         "game": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -9000,6 +9018,7 @@
                         "game": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -9085,6 +9104,7 @@
                         "game": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -9586,6 +9606,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -10726,6 +10747,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -11021,6 +11043,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -11360,6 +11383,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -11440,6 +11464,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -11481,6 +11506,7 @@
       "CandidateFact_selected_games": {
         "type": "string",
         "enum": [
+          "magic",
           "riftbound",
           "one-piece",
           "fusion-world",
@@ -11491,6 +11517,7 @@
       "CandidateFact_card_observed_games": {
         "type": "string",
         "enum": [
+          "magic",
           "riftbound",
           "one-piece",
           "fusion-world",
@@ -11501,6 +11528,7 @@
       "CandidateFact_product_observed_games": {
         "type": "string",
         "enum": [
+          "magic",
           "riftbound",
           "one-piece",
           "fusion-world",
@@ -11518,6 +11546,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -11843,6 +11872,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -12008,6 +12038,136 @@
           },
           "game_data": {
             "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "magic@1"
+                    ]
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "properties": {
+                      "layout": {
+                        "type": "string",
+                        "enum": [
+                          "normal",
+                          "transform",
+                          "token"
+                        ]
+                      },
+                      "type_line": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "colour_identity": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "W",
+                            "U",
+                            "B",
+                            "R",
+                            "G"
+                          ]
+                        }
+                      },
+                      "faces": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "role": {
+                              "type": "string",
+                              "enum": [
+                                "front",
+                                "back"
+                              ]
+                            },
+                            "name": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "mana_cost": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "type_line": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "colours": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "W",
+                                  "U",
+                                  "B",
+                                  "R",
+                                  "G"
+                                ]
+                              }
+                            },
+                            "oracle_text": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "power": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "toughness": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "role",
+                            "name",
+                            "mana_cost",
+                            "type_line",
+                            "colours",
+                            "oracle_text",
+                            "power",
+                            "toughness"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "layout",
+                      "type_line",
+                      "colour_identity",
+                      "faces"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "profile",
+                  "attributes"
+                ],
+                "additionalProperties": false
+              },
               {
                 "type": "object",
                 "properties": {
@@ -13025,6 +13185,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -13189,6 +13350,27 @@
           },
           "game_data": {
             "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "magic@1"
+                    ]
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "profile",
+                  "attributes"
+                ],
+                "additionalProperties": false
+              },
               {
                 "type": "object",
                 "properties": {
@@ -13582,6 +13764,120 @@
                   "profile": {
                     "type": "string",
                     "enum": [
+                      "magic@1"
+                    ]
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "properties": {
+                      "set_code": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "collector_number": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "finish": {
+                        "type": "string",
+                        "enum": [
+                          "nonfoil",
+                          "foil"
+                        ]
+                      },
+                      "layout": {
+                        "type": "string",
+                        "enum": [
+                          "normal",
+                          "transform",
+                          "art_series",
+                          "token"
+                        ]
+                      },
+                      "faces": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "role": {
+                              "type": "string",
+                              "enum": [
+                                "front",
+                                "back"
+                              ]
+                            },
+                            "name": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "printed_rules_text": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "role",
+                            "name",
+                            "printed_rules_text"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "artists": {
+                        "type": "array",
+                        "items": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "reverse_face": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "finish_image": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "set_code",
+                      "collector_number",
+                      "finish",
+                      "layout",
+                      "faces",
+                      "artists",
+                      "reverse_face",
+                      "finish_image"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "profile",
+                  "attributes"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "enum": [
                       "riftbound@1"
                     ]
                   },
@@ -13754,6 +14050,27 @@
                     "required": [
                       "alternate_art"
                     ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "profile",
+                  "attributes"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "magic@1"
+                    ]
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "properties": {},
                     "additionalProperties": false
                   }
                 },
@@ -13991,6 +14308,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14063,6 +14381,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14135,6 +14454,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14207,6 +14527,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14279,6 +14600,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14351,6 +14673,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14423,6 +14746,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14495,6 +14819,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14567,6 +14892,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14639,6 +14965,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14711,6 +15038,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14783,6 +15111,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14855,6 +15184,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14927,6 +15257,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15006,6 +15337,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15085,6 +15417,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15164,6 +15497,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15243,6 +15577,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15322,6 +15657,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15401,6 +15737,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15480,6 +15817,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15559,6 +15897,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15638,6 +15977,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15717,6 +16057,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15796,6 +16137,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15875,6 +16217,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -16176,6 +16519,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -16265,6 +16609,136 @@
           },
           "game_data": {
             "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "magic@1"
+                    ]
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "properties": {
+                      "layout": {
+                        "type": "string",
+                        "enum": [
+                          "normal",
+                          "transform",
+                          "token"
+                        ]
+                      },
+                      "type_line": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "colour_identity": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "W",
+                            "U",
+                            "B",
+                            "R",
+                            "G"
+                          ]
+                        }
+                      },
+                      "faces": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "role": {
+                              "type": "string",
+                              "enum": [
+                                "front",
+                                "back"
+                              ]
+                            },
+                            "name": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "mana_cost": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "type_line": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "colours": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "W",
+                                  "U",
+                                  "B",
+                                  "R",
+                                  "G"
+                                ]
+                              }
+                            },
+                            "oracle_text": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "power": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "toughness": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "role",
+                            "name",
+                            "mana_cost",
+                            "type_line",
+                            "colours",
+                            "oracle_text",
+                            "power",
+                            "toughness"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "layout",
+                      "type_line",
+                      "colour_identity",
+                      "faces"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "profile",
+                  "attributes"
+                ],
+                "additionalProperties": false
+              },
               {
                 "type": "object",
                 "properties": {
@@ -17316,6 +17790,120 @@
                   "profile": {
                     "type": "string",
                     "enum": [
+                      "magic@1"
+                    ]
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "properties": {
+                      "set_code": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "collector_number": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "finish": {
+                        "type": "string",
+                        "enum": [
+                          "nonfoil",
+                          "foil"
+                        ]
+                      },
+                      "layout": {
+                        "type": "string",
+                        "enum": [
+                          "normal",
+                          "transform",
+                          "art_series",
+                          "token"
+                        ]
+                      },
+                      "faces": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "role": {
+                              "type": "string",
+                              "enum": [
+                                "front",
+                                "back"
+                              ]
+                            },
+                            "name": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "printed_rules_text": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "role",
+                            "name",
+                            "printed_rules_text"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "artists": {
+                        "type": "array",
+                        "items": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "reverse_face": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "finish_image": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "set_code",
+                      "collector_number",
+                      "finish",
+                      "layout",
+                      "faces",
+                      "artists",
+                      "reverse_face",
+                      "finish_image"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "profile",
+                  "attributes"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "enum": [
                       "riftbound@1"
                     ]
                   },
@@ -17488,6 +18076,27 @@
                     "required": [
                       "alternate_art"
                     ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "profile",
+                  "attributes"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "magic@1"
+                    ]
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "properties": {},
                     "additionalProperties": false
                   }
                 },
@@ -17960,6 +18569,7 @@
                                     "game": {
                                       "type": "string",
                                       "enum": [
+                                        "magic",
                                         "riftbound",
                                         "one-piece",
                                         "fusion-world",
@@ -18125,6 +18735,136 @@
                                     },
                                     "game_data": {
                                       "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
+                                                "magic@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {
+                                                "layout": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "normal",
+                                                    "transform",
+                                                    "token"
+                                                  ]
+                                                },
+                                                "type_line": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "colour_identity": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "W",
+                                                      "U",
+                                                      "B",
+                                                      "R",
+                                                      "G"
+                                                    ]
+                                                  }
+                                                },
+                                                "faces": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "role": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "front",
+                                                          "back"
+                                                        ]
+                                                      },
+                                                      "name": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "mana_cost": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "type_line": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "colours": {
+                                                        "type": "array",
+                                                        "items": {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "W",
+                                                            "U",
+                                                            "B",
+                                                            "R",
+                                                            "G"
+                                                          ]
+                                                        }
+                                                      },
+                                                      "oracle_text": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "power": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "toughness": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "role",
+                                                      "name",
+                                                      "mana_cost",
+                                                      "type_line",
+                                                      "colours",
+                                                      "oracle_text",
+                                                      "power",
+                                                      "toughness"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "layout",
+                                                "type_line",
+                                                "colour_identity",
+                                                "faces"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
                                         {
                                           "type": "object",
                                           "properties": {
@@ -19137,6 +19877,7 @@
                                     "game": {
                                       "type": "string",
                                       "enum": [
+                                        "magic",
                                         "riftbound",
                                         "one-piece",
                                         "fusion-world",
@@ -19301,6 +20042,27 @@
                                     },
                                     "game_data": {
                                       "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
+                                                "magic@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {},
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
                                         {
                                           "type": "object",
                                           "properties": {
@@ -19692,6 +20454,120 @@
                                             "profile": {
                                               "type": "string",
                                               "enum": [
+                                                "magic@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {
+                                                "set_code": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "collector_number": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "finish": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "nonfoil",
+                                                    "foil"
+                                                  ]
+                                                },
+                                                "layout": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "normal",
+                                                    "transform",
+                                                    "art_series",
+                                                    "token"
+                                                  ]
+                                                },
+                                                "faces": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "role": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "front",
+                                                          "back"
+                                                        ]
+                                                      },
+                                                      "name": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "printed_rules_text": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "role",
+                                                      "name",
+                                                      "printed_rules_text"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                },
+                                                "artists": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": [
+                                                      "string",
+                                                      "null"
+                                                    ]
+                                                  }
+                                                },
+                                                "reverse_face": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "finish_image": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "set_code",
+                                                "collector_number",
+                                                "finish",
+                                                "layout",
+                                                "faces",
+                                                "artists",
+                                                "reverse_face",
+                                                "finish_image"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
                                                 "riftbound@1"
                                               ]
                                             },
@@ -19879,6 +20755,27 @@
                                             "profile": {
                                               "type": "string",
                                               "enum": [
+                                                "magic@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {},
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
                                                 "riftbound@1"
                                               ]
                                             },
@@ -20031,6 +20928,9 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "card_design_key": {
+                              "type": "string"
                             },
                             "compatibility": {
                               "type": [
@@ -20337,6 +21237,7 @@
                                     "game": {
                                       "type": "string",
                                       "enum": [
+                                        "magic",
                                         "riftbound",
                                         "one-piece",
                                         "fusion-world",
@@ -20426,6 +21327,136 @@
                                     },
                                     "game_data": {
                                       "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
+                                                "magic@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {
+                                                "layout": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "normal",
+                                                    "transform",
+                                                    "token"
+                                                  ]
+                                                },
+                                                "type_line": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "colour_identity": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "W",
+                                                      "U",
+                                                      "B",
+                                                      "R",
+                                                      "G"
+                                                    ]
+                                                  }
+                                                },
+                                                "faces": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "role": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "front",
+                                                          "back"
+                                                        ]
+                                                      },
+                                                      "name": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "mana_cost": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "type_line": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "colours": {
+                                                        "type": "array",
+                                                        "items": {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "W",
+                                                            "U",
+                                                            "B",
+                                                            "R",
+                                                            "G"
+                                                          ]
+                                                        }
+                                                      },
+                                                      "oracle_text": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "power": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "toughness": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "role",
+                                                      "name",
+                                                      "mana_cost",
+                                                      "type_line",
+                                                      "colours",
+                                                      "oracle_text",
+                                                      "power",
+                                                      "toughness"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "layout",
+                                                "type_line",
+                                                "colour_identity",
+                                                "faces"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
                                         {
                                           "type": "object",
                                           "properties": {
@@ -21475,6 +22506,120 @@
                                             "profile": {
                                               "type": "string",
                                               "enum": [
+                                                "magic@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {
+                                                "set_code": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "collector_number": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "finish": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "nonfoil",
+                                                    "foil"
+                                                  ]
+                                                },
+                                                "layout": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "normal",
+                                                    "transform",
+                                                    "art_series",
+                                                    "token"
+                                                  ]
+                                                },
+                                                "faces": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "role": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "front",
+                                                          "back"
+                                                        ]
+                                                      },
+                                                      "name": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "printed_rules_text": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "role",
+                                                      "name",
+                                                      "printed_rules_text"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                },
+                                                "artists": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": [
+                                                      "string",
+                                                      "null"
+                                                    ]
+                                                  }
+                                                },
+                                                "reverse_face": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "finish_image": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "set_code",
+                                                "collector_number",
+                                                "finish",
+                                                "layout",
+                                                "faces",
+                                                "artists",
+                                                "reverse_face",
+                                                "finish_image"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
                                                 "riftbound@1"
                                               ]
                                             },
@@ -21662,6 +22807,27 @@
                                             "profile": {
                                               "type": "string",
                                               "enum": [
+                                                "magic@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {},
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
                                                 "riftbound@1"
                                               ]
                                             },
@@ -21814,6 +22980,9 @@
                                 }
                               ]
                             },
+                            "card_design_key": {
+                              "type": "string"
+                            },
                             "compatibility": {
                               "type": [
                                 "object",
@@ -21893,6 +23062,9 @@
                         {
                           "type": "object",
                           "properties": {
+                            "card_design_key": {
+                              "type": "string"
+                            },
                             "compatibility": {
                               "type": [
                                 "object",
@@ -22086,6 +23258,9 @@
                             "card": {
                               "$ref": "#/components/schemas/CandidateCard"
                             },
+                            "card_design_key": {
+                              "type": "string"
+                            },
                             "printing": {
                               "anyOf": [
                                 {
@@ -22164,6 +23339,9 @@
                           "properties": {
                             "card": {
                               "$ref": "#/components/schemas/RetainedPreCategoryCard"
+                            },
+                            "card_design_key": {
+                              "type": "string"
                             },
                             "printing": {
                               "anyOf": [
@@ -22938,6 +24116,7 @@
                                                   "game": {
                                                     "type": "string",
                                                     "enum": [
+                                                      "magic",
                                                       "riftbound",
                                                       "one-piece",
                                                       "fusion-world",
@@ -23103,6 +24282,136 @@
                                                   },
                                                   "game_data": {
                                                     "anyOf": [
+                                                      {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "profile": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                              "magic@1"
+                                                            ]
+                                                          },
+                                                          "attributes": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                              "layout": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "normal",
+                                                                  "transform",
+                                                                  "token"
+                                                                ]
+                                                              },
+                                                              "type_line": {
+                                                                "type": [
+                                                                  "string",
+                                                                  "null"
+                                                                ]
+                                                              },
+                                                              "colour_identity": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "W",
+                                                                    "U",
+                                                                    "B",
+                                                                    "R",
+                                                                    "G"
+                                                                  ]
+                                                                }
+                                                              },
+                                                              "faces": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                  "type": "object",
+                                                                  "properties": {
+                                                                    "role": {
+                                                                      "type": "string",
+                                                                      "enum": [
+                                                                        "front",
+                                                                        "back"
+                                                                      ]
+                                                                    },
+                                                                    "name": {
+                                                                      "type": [
+                                                                        "string",
+                                                                        "null"
+                                                                      ]
+                                                                    },
+                                                                    "mana_cost": {
+                                                                      "type": [
+                                                                        "string",
+                                                                        "null"
+                                                                      ]
+                                                                    },
+                                                                    "type_line": {
+                                                                      "type": [
+                                                                        "string",
+                                                                        "null"
+                                                                      ]
+                                                                    },
+                                                                    "colours": {
+                                                                      "type": "array",
+                                                                      "items": {
+                                                                        "type": "string",
+                                                                        "enum": [
+                                                                          "W",
+                                                                          "U",
+                                                                          "B",
+                                                                          "R",
+                                                                          "G"
+                                                                        ]
+                                                                      }
+                                                                    },
+                                                                    "oracle_text": {
+                                                                      "type": [
+                                                                        "string",
+                                                                        "null"
+                                                                      ]
+                                                                    },
+                                                                    "power": {
+                                                                      "type": [
+                                                                        "string",
+                                                                        "null"
+                                                                      ]
+                                                                    },
+                                                                    "toughness": {
+                                                                      "type": [
+                                                                        "string",
+                                                                        "null"
+                                                                      ]
+                                                                    }
+                                                                  },
+                                                                  "required": [
+                                                                    "role",
+                                                                    "name",
+                                                                    "mana_cost",
+                                                                    "type_line",
+                                                                    "colours",
+                                                                    "oracle_text",
+                                                                    "power",
+                                                                    "toughness"
+                                                                  ],
+                                                                  "additionalProperties": false
+                                                                }
+                                                              }
+                                                            },
+                                                            "required": [
+                                                              "layout",
+                                                              "type_line",
+                                                              "colour_identity",
+                                                              "faces"
+                                                            ],
+                                                            "additionalProperties": false
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "profile",
+                                                          "attributes"
+                                                        ],
+                                                        "additionalProperties": false
+                                                      },
                                                       {
                                                         "type": "object",
                                                         "properties": {
@@ -24115,6 +25424,7 @@
                                                   "game": {
                                                     "type": "string",
                                                     "enum": [
+                                                      "magic",
                                                       "riftbound",
                                                       "one-piece",
                                                       "fusion-world",
@@ -24279,6 +25589,27 @@
                                                   },
                                                   "game_data": {
                                                     "anyOf": [
+                                                      {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "profile": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                              "magic@1"
+                                                            ]
+                                                          },
+                                                          "attributes": {
+                                                            "type": "object",
+                                                            "properties": {},
+                                                            "additionalProperties": false
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "profile",
+                                                          "attributes"
+                                                        ],
+                                                        "additionalProperties": false
+                                                      },
                                                       {
                                                         "type": "object",
                                                         "properties": {
@@ -24670,6 +26001,120 @@
                                                           "profile": {
                                                             "type": "string",
                                                             "enum": [
+                                                              "magic@1"
+                                                            ]
+                                                          },
+                                                          "attributes": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                              "set_code": {
+                                                                "type": [
+                                                                  "string",
+                                                                  "null"
+                                                                ]
+                                                              },
+                                                              "collector_number": {
+                                                                "type": [
+                                                                  "string",
+                                                                  "null"
+                                                                ]
+                                                              },
+                                                              "finish": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "nonfoil",
+                                                                  "foil"
+                                                                ]
+                                                              },
+                                                              "layout": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "normal",
+                                                                  "transform",
+                                                                  "art_series",
+                                                                  "token"
+                                                                ]
+                                                              },
+                                                              "faces": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                  "type": "object",
+                                                                  "properties": {
+                                                                    "role": {
+                                                                      "type": "string",
+                                                                      "enum": [
+                                                                        "front",
+                                                                        "back"
+                                                                      ]
+                                                                    },
+                                                                    "name": {
+                                                                      "type": [
+                                                                        "string",
+                                                                        "null"
+                                                                      ]
+                                                                    },
+                                                                    "printed_rules_text": {
+                                                                      "type": [
+                                                                        "string",
+                                                                        "null"
+                                                                      ]
+                                                                    }
+                                                                  },
+                                                                  "required": [
+                                                                    "role",
+                                                                    "name",
+                                                                    "printed_rules_text"
+                                                                  ],
+                                                                  "additionalProperties": false
+                                                                }
+                                                              },
+                                                              "artists": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                  "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                  ]
+                                                                }
+                                                              },
+                                                              "reverse_face": {
+                                                                "type": [
+                                                                  "string",
+                                                                  "null"
+                                                                ]
+                                                              },
+                                                              "finish_image": {
+                                                                "type": [
+                                                                  "string",
+                                                                  "null"
+                                                                ]
+                                                              }
+                                                            },
+                                                            "required": [
+                                                              "set_code",
+                                                              "collector_number",
+                                                              "finish",
+                                                              "layout",
+                                                              "faces",
+                                                              "artists",
+                                                              "reverse_face",
+                                                              "finish_image"
+                                                            ],
+                                                            "additionalProperties": false
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "profile",
+                                                          "attributes"
+                                                        ],
+                                                        "additionalProperties": false
+                                                      },
+                                                      {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "profile": {
+                                                            "type": "string",
+                                                            "enum": [
                                                               "riftbound@1"
                                                             ]
                                                           },
@@ -24857,6 +26302,27 @@
                                                           "profile": {
                                                             "type": "string",
                                                             "enum": [
+                                                              "magic@1"
+                                                            ]
+                                                          },
+                                                          "attributes": {
+                                                            "type": "object",
+                                                            "properties": {},
+                                                            "additionalProperties": false
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "profile",
+                                                          "attributes"
+                                                        ],
+                                                        "additionalProperties": false
+                                                      },
+                                                      {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "profile": {
+                                                            "type": "string",
+                                                            "enum": [
                                                               "riftbound@1"
                                                             ]
                                                           },
@@ -25009,6 +26475,9 @@
                                                 "type": "null"
                                               }
                                             ]
+                                          },
+                                          "card_design_key": {
+                                            "type": "string"
                                           },
                                           "compatibility": {
                                             "type": [
@@ -25315,6 +26784,7 @@
                                                   "game": {
                                                     "type": "string",
                                                     "enum": [
+                                                      "magic",
                                                       "riftbound",
                                                       "one-piece",
                                                       "fusion-world",
@@ -25404,6 +26874,136 @@
                                                   },
                                                   "game_data": {
                                                     "anyOf": [
+                                                      {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "profile": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                              "magic@1"
+                                                            ]
+                                                          },
+                                                          "attributes": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                              "layout": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "normal",
+                                                                  "transform",
+                                                                  "token"
+                                                                ]
+                                                              },
+                                                              "type_line": {
+                                                                "type": [
+                                                                  "string",
+                                                                  "null"
+                                                                ]
+                                                              },
+                                                              "colour_identity": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                  "type": "string",
+                                                                  "enum": [
+                                                                    "W",
+                                                                    "U",
+                                                                    "B",
+                                                                    "R",
+                                                                    "G"
+                                                                  ]
+                                                                }
+                                                              },
+                                                              "faces": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                  "type": "object",
+                                                                  "properties": {
+                                                                    "role": {
+                                                                      "type": "string",
+                                                                      "enum": [
+                                                                        "front",
+                                                                        "back"
+                                                                      ]
+                                                                    },
+                                                                    "name": {
+                                                                      "type": [
+                                                                        "string",
+                                                                        "null"
+                                                                      ]
+                                                                    },
+                                                                    "mana_cost": {
+                                                                      "type": [
+                                                                        "string",
+                                                                        "null"
+                                                                      ]
+                                                                    },
+                                                                    "type_line": {
+                                                                      "type": [
+                                                                        "string",
+                                                                        "null"
+                                                                      ]
+                                                                    },
+                                                                    "colours": {
+                                                                      "type": "array",
+                                                                      "items": {
+                                                                        "type": "string",
+                                                                        "enum": [
+                                                                          "W",
+                                                                          "U",
+                                                                          "B",
+                                                                          "R",
+                                                                          "G"
+                                                                        ]
+                                                                      }
+                                                                    },
+                                                                    "oracle_text": {
+                                                                      "type": [
+                                                                        "string",
+                                                                        "null"
+                                                                      ]
+                                                                    },
+                                                                    "power": {
+                                                                      "type": [
+                                                                        "string",
+                                                                        "null"
+                                                                      ]
+                                                                    },
+                                                                    "toughness": {
+                                                                      "type": [
+                                                                        "string",
+                                                                        "null"
+                                                                      ]
+                                                                    }
+                                                                  },
+                                                                  "required": [
+                                                                    "role",
+                                                                    "name",
+                                                                    "mana_cost",
+                                                                    "type_line",
+                                                                    "colours",
+                                                                    "oracle_text",
+                                                                    "power",
+                                                                    "toughness"
+                                                                  ],
+                                                                  "additionalProperties": false
+                                                                }
+                                                              }
+                                                            },
+                                                            "required": [
+                                                              "layout",
+                                                              "type_line",
+                                                              "colour_identity",
+                                                              "faces"
+                                                            ],
+                                                            "additionalProperties": false
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "profile",
+                                                          "attributes"
+                                                        ],
+                                                        "additionalProperties": false
+                                                      },
                                                       {
                                                         "type": "object",
                                                         "properties": {
@@ -26453,6 +28053,120 @@
                                                           "profile": {
                                                             "type": "string",
                                                             "enum": [
+                                                              "magic@1"
+                                                            ]
+                                                          },
+                                                          "attributes": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                              "set_code": {
+                                                                "type": [
+                                                                  "string",
+                                                                  "null"
+                                                                ]
+                                                              },
+                                                              "collector_number": {
+                                                                "type": [
+                                                                  "string",
+                                                                  "null"
+                                                                ]
+                                                              },
+                                                              "finish": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "nonfoil",
+                                                                  "foil"
+                                                                ]
+                                                              },
+                                                              "layout": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                  "normal",
+                                                                  "transform",
+                                                                  "art_series",
+                                                                  "token"
+                                                                ]
+                                                              },
+                                                              "faces": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                  "type": "object",
+                                                                  "properties": {
+                                                                    "role": {
+                                                                      "type": "string",
+                                                                      "enum": [
+                                                                        "front",
+                                                                        "back"
+                                                                      ]
+                                                                    },
+                                                                    "name": {
+                                                                      "type": [
+                                                                        "string",
+                                                                        "null"
+                                                                      ]
+                                                                    },
+                                                                    "printed_rules_text": {
+                                                                      "type": [
+                                                                        "string",
+                                                                        "null"
+                                                                      ]
+                                                                    }
+                                                                  },
+                                                                  "required": [
+                                                                    "role",
+                                                                    "name",
+                                                                    "printed_rules_text"
+                                                                  ],
+                                                                  "additionalProperties": false
+                                                                }
+                                                              },
+                                                              "artists": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                  "type": [
+                                                                    "string",
+                                                                    "null"
+                                                                  ]
+                                                                }
+                                                              },
+                                                              "reverse_face": {
+                                                                "type": [
+                                                                  "string",
+                                                                  "null"
+                                                                ]
+                                                              },
+                                                              "finish_image": {
+                                                                "type": [
+                                                                  "string",
+                                                                  "null"
+                                                                ]
+                                                              }
+                                                            },
+                                                            "required": [
+                                                              "set_code",
+                                                              "collector_number",
+                                                              "finish",
+                                                              "layout",
+                                                              "faces",
+                                                              "artists",
+                                                              "reverse_face",
+                                                              "finish_image"
+                                                            ],
+                                                            "additionalProperties": false
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "profile",
+                                                          "attributes"
+                                                        ],
+                                                        "additionalProperties": false
+                                                      },
+                                                      {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "profile": {
+                                                            "type": "string",
+                                                            "enum": [
                                                               "riftbound@1"
                                                             ]
                                                           },
@@ -26640,6 +28354,27 @@
                                                           "profile": {
                                                             "type": "string",
                                                             "enum": [
+                                                              "magic@1"
+                                                            ]
+                                                          },
+                                                          "attributes": {
+                                                            "type": "object",
+                                                            "properties": {},
+                                                            "additionalProperties": false
+                                                          }
+                                                        },
+                                                        "required": [
+                                                          "profile",
+                                                          "attributes"
+                                                        ],
+                                                        "additionalProperties": false
+                                                      },
+                                                      {
+                                                        "type": "object",
+                                                        "properties": {
+                                                          "profile": {
+                                                            "type": "string",
+                                                            "enum": [
                                                               "riftbound@1"
                                                             ]
                                                           },
@@ -26792,6 +28527,9 @@
                                               }
                                             ]
                                           },
+                                          "card_design_key": {
+                                            "type": "string"
+                                          },
                                           "compatibility": {
                                             "type": [
                                               "object",
@@ -26871,6 +28609,9 @@
                                       {
                                         "type": "object",
                                         "properties": {
+                                          "card_design_key": {
+                                            "type": "string"
+                                          },
                                           "compatibility": {
                                             "type": [
                                               "object",
@@ -27576,6 +29317,7 @@
                         "supportedGame": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -27773,6 +29515,7 @@
                         "supportedGame": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -28021,6 +29764,7 @@
                                     "game": {
                                       "type": "string",
                                       "enum": [
+                                        "magic",
                                         "riftbound",
                                         "one-piece",
                                         "fusion-world",
@@ -28186,6 +29930,136 @@
                                     },
                                     "game_data": {
                                       "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
+                                                "magic@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {
+                                                "layout": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "normal",
+                                                    "transform",
+                                                    "token"
+                                                  ]
+                                                },
+                                                "type_line": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "colour_identity": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "W",
+                                                      "U",
+                                                      "B",
+                                                      "R",
+                                                      "G"
+                                                    ]
+                                                  }
+                                                },
+                                                "faces": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "role": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "front",
+                                                          "back"
+                                                        ]
+                                                      },
+                                                      "name": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "mana_cost": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "type_line": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "colours": {
+                                                        "type": "array",
+                                                        "items": {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "W",
+                                                            "U",
+                                                            "B",
+                                                            "R",
+                                                            "G"
+                                                          ]
+                                                        }
+                                                      },
+                                                      "oracle_text": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "power": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "toughness": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "role",
+                                                      "name",
+                                                      "mana_cost",
+                                                      "type_line",
+                                                      "colours",
+                                                      "oracle_text",
+                                                      "power",
+                                                      "toughness"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "layout",
+                                                "type_line",
+                                                "colour_identity",
+                                                "faces"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
                                         {
                                           "type": "object",
                                           "properties": {
@@ -29198,6 +31072,7 @@
                                     "game": {
                                       "type": "string",
                                       "enum": [
+                                        "magic",
                                         "riftbound",
                                         "one-piece",
                                         "fusion-world",
@@ -29362,6 +31237,27 @@
                                     },
                                     "game_data": {
                                       "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
+                                                "magic@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {},
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
                                         {
                                           "type": "object",
                                           "properties": {
@@ -29754,6 +31650,120 @@
                                         "profile": {
                                           "type": "string",
                                           "enum": [
+                                            "magic@1"
+                                          ]
+                                        },
+                                        "attributes": {
+                                          "type": "object",
+                                          "properties": {
+                                            "set_code": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            },
+                                            "collector_number": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            },
+                                            "finish": {
+                                              "type": "string",
+                                              "enum": [
+                                                "nonfoil",
+                                                "foil"
+                                              ]
+                                            },
+                                            "layout": {
+                                              "type": "string",
+                                              "enum": [
+                                                "normal",
+                                                "transform",
+                                                "art_series",
+                                                "token"
+                                              ]
+                                            },
+                                            "faces": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "role": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "front",
+                                                      "back"
+                                                    ]
+                                                  },
+                                                  "name": {
+                                                    "type": [
+                                                      "string",
+                                                      "null"
+                                                    ]
+                                                  },
+                                                  "printed_rules_text": {
+                                                    "type": [
+                                                      "string",
+                                                      "null"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "role",
+                                                  "name",
+                                                  "printed_rules_text"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            },
+                                            "artists": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": [
+                                                  "string",
+                                                  "null"
+                                                ]
+                                              }
+                                            },
+                                            "reverse_face": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            },
+                                            "finish_image": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "set_code",
+                                            "collector_number",
+                                            "finish",
+                                            "layout",
+                                            "faces",
+                                            "artists",
+                                            "reverse_face",
+                                            "finish_image"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "profile",
+                                        "attributes"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "profile": {
+                                          "type": "string",
+                                          "enum": [
                                             "riftbound@1"
                                           ]
                                         },
@@ -29926,6 +31936,27 @@
                                           "required": [
                                             "alternate_art"
                                           ],
+                                          "additionalProperties": false
+                                        }
+                                      },
+                                      "required": [
+                                        "profile",
+                                        "attributes"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "profile": {
+                                          "type": "string",
+                                          "enum": [
+                                            "magic@1"
+                                          ]
+                                        },
+                                        "attributes": {
+                                          "type": "object",
+                                          "properties": {},
                                           "additionalProperties": false
                                         }
                                       },
@@ -30448,6 +32479,7 @@
                         "supportedGame": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -30470,6 +32502,7 @@
                         "game": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -31073,6 +33106,7 @@
                     "supportedGame": {
                       "type": "string",
                       "enum": [
+                        "magic",
                         "riftbound",
                         "one-piece",
                         "fusion-world",
@@ -31225,6 +33259,7 @@
                     "supportedGame": {
                       "type": "string",
                       "enum": [
+                        "magic",
                         "riftbound",
                         "one-piece",
                         "fusion-world",
@@ -31412,6 +33447,7 @@
                         "supportedGame": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -31609,6 +33645,7 @@
                         "supportedGame": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -31857,6 +33894,7 @@
                                     "game": {
                                       "type": "string",
                                       "enum": [
+                                        "magic",
                                         "riftbound",
                                         "one-piece",
                                         "fusion-world",
@@ -31946,6 +33984,136 @@
                                     },
                                     "game_data": {
                                       "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
+                                                "magic@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {
+                                                "layout": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "normal",
+                                                    "transform",
+                                                    "token"
+                                                  ]
+                                                },
+                                                "type_line": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "colour_identity": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "W",
+                                                      "U",
+                                                      "B",
+                                                      "R",
+                                                      "G"
+                                                    ]
+                                                  }
+                                                },
+                                                "faces": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "role": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "front",
+                                                          "back"
+                                                        ]
+                                                      },
+                                                      "name": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "mana_cost": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "type_line": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "colours": {
+                                                        "type": "array",
+                                                        "items": {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "W",
+                                                            "U",
+                                                            "B",
+                                                            "R",
+                                                            "G"
+                                                          ]
+                                                        }
+                                                      },
+                                                      "oracle_text": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "power": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "toughness": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "role",
+                                                      "name",
+                                                      "mana_cost",
+                                                      "type_line",
+                                                      "colours",
+                                                      "oracle_text",
+                                                      "power",
+                                                      "toughness"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "layout",
+                                                "type_line",
+                                                "colour_identity",
+                                                "faces"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
                                         {
                                           "type": "object",
                                           "properties": {
@@ -32995,6 +35163,120 @@
                                             "profile": {
                                               "type": "string",
                                               "enum": [
+                                                "magic@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {
+                                                "set_code": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "collector_number": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "finish": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "nonfoil",
+                                                    "foil"
+                                                  ]
+                                                },
+                                                "layout": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "normal",
+                                                    "transform",
+                                                    "art_series",
+                                                    "token"
+                                                  ]
+                                                },
+                                                "faces": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "role": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "front",
+                                                          "back"
+                                                        ]
+                                                      },
+                                                      "name": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "printed_rules_text": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "role",
+                                                      "name",
+                                                      "printed_rules_text"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                },
+                                                "artists": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": [
+                                                      "string",
+                                                      "null"
+                                                    ]
+                                                  }
+                                                },
+                                                "reverse_face": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "finish_image": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "set_code",
+                                                "collector_number",
+                                                "finish",
+                                                "layout",
+                                                "faces",
+                                                "artists",
+                                                "reverse_face",
+                                                "finish_image"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
                                                 "riftbound@1"
                                               ]
                                             },
@@ -33167,6 +35449,27 @@
                                               "required": [
                                                 "alternate_art"
                                               ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
+                                                "magic@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {},
                                               "additionalProperties": false
                                             }
                                           },
@@ -33646,6 +35949,7 @@
                         "supportedGame": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -33668,6 +35972,7 @@
                         "game": {
                           "type": "string",
                           "enum": [
+                            "magic",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -34271,6 +36576,7 @@
                     "supportedGame": {
                       "type": "string",
                       "enum": [
+                        "magic",
                         "riftbound",
                         "one-piece",
                         "fusion-world",
@@ -34423,6 +36729,7 @@
                     "supportedGame": {
                       "type": "string",
                       "enum": [
+                        "magic",
                         "riftbound",
                         "one-piece",
                         "fusion-world",
@@ -43359,7 +45666,7 @@
                       "minLength": 1
                     },
                     "minItems": 1,
-                    "maxItems": 5
+                    "maxItems": 6
                   }
                 },
                 "required": [
@@ -44738,6 +47045,7 @@
                   "supported_game": {
                     "type": "string",
                     "enum": [
+                      "magic",
                       "riftbound",
                       "one-piece",
                       "fusion-world",

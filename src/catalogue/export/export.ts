@@ -657,6 +657,13 @@ async function productExportId(game: SupportedGame, officialCode: string): Promi
 
 function supportedGameExport(game: SupportedGame) {
   const definitions = {
+    magic: {
+      id: "game_magic",
+      key: "magic",
+      name: "Magic: The Gathering",
+      supported_locales: ["EN"],
+      game_profile: "magic@1",
+    },
     riftbound: {
       id: "game_riftbound",
       key: "riftbound",

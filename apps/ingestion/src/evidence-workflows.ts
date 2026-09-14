@@ -5,6 +5,7 @@ import {
   type CatalogueStore,
   canonicalJson,
   catalogueStore,
+  registeredSupportedGames,
   isWorkflowInstanceNotFound,
   observeWorkflowProgress,
   sha256,
@@ -312,7 +313,8 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
       adapter.officialSourceContract ||
       adapter.reconciliationCapability === "errata"
     ) {
-      if (games.length > 5) throw new Error("Collection selected too many Supported Games.");
+      if (games.length > registeredSupportedGames().length)
+        throw new Error("Collection selected too many Supported Games.");
       const preparations: Awaited<ReturnType<typeof prepareCollectedGame>>[] = [];
       for (const game of [...games].sort()) {
         const prepared = await step.do(

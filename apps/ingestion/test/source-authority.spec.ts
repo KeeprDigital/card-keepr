@@ -28,7 +28,19 @@ test("Riot starts with the approved exact English authority scopes and retains e
       }),
     ),
   );
-  expect(before.authorities).toHaveLength(18);
+  expect(before.authorities.filter((a) => a.game === "magic")).toEqual(
+    ["card_facts", "printing_details", "corrected_card_content"].map((area) =>
+      expect.objectContaining({
+        game: "magic",
+        locale: "en",
+        release_region: "unknown",
+        area,
+        source_lineage: "scryfall-magic-en",
+        generation: 0,
+      }),
+    ),
+  );
+  expect(before.authorities).toHaveLength(21);
   const selection = {
     game: "riftbound",
     locale: "en",

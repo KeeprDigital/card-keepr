@@ -35,6 +35,7 @@ export type ExtractedSourceRequest = {
 };
 
 export type SourcePrintingIdentityEvidence = Readonly<{
+  cardDesignKey?: string;
   observedCardAndPrinting: {
     card: { game: string; name: string; official_identity: { kind: string; value: string | null } } | null;
     printing: { game_data: { profile: string; attributes: Record<string, unknown> } | null } | null;
@@ -52,6 +53,8 @@ export type SourceAdapterRegistration = Readonly<{
   parserContract: string;
   maximumSnapshotBytes: number;
   requestCapacity: number;
+  /** Retained access-policy floor after HTTP 429; longer Retry-After remains binding. */
+  minimumRateLimitBackoffMilliseconds?: number;
   coverageLossThreshold?: Readonly<{ absolute: number; fraction: number }>;
   origin: "production";
   requestSurface: Readonly<{ kind: "credential-free-https" }> | Readonly<{ kind: "exact-url"; url: string }>;
@@ -60,6 +63,8 @@ export type SourceAdapterRegistration = Readonly<{
   printingAdmission?: "owner_review" | "source_qualification";
   /** Proven source-specific identity rule; retained physical evidence is checked separately. */
   qualifiesPrintingIdentity?: (evidence: SourcePrintingIdentityEvidence) => boolean;
+  /** Source-scoped design evidence may associate Cards only under this exact parser qualification. */
+  qualifiesCardDesignIdentity?: (evidence: SourcePrintingIdentityEvidence) => boolean;
   reconciliationAreas?: readonly ("catalogue" | "errata")[];
   inheritDiscoveryRequestHeaders?: boolean;
   listingReconciliation?: ListingReconciliationTraits;

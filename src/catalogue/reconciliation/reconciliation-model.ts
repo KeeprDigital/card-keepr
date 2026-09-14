@@ -6,10 +6,7 @@ import {
   type PrintingCompatibility,
 } from "./reconciliation-observation";
 
-export {
-  compatibilityFields,
-  parseReconciliationObservation,
-} from "./reconciliation-observation";
+export { compatibilityFields, parseReconciliationObservation } from "./reconciliation-observation";
 export type {
   Memberships,
   ParsedCardPrintingObservation,
@@ -70,6 +67,7 @@ export function hasCrossSourceArtworkEvidence(observation: ParsedCardPrintingObs
     observation.artworkFingerprint === null ? null : parsedOfficialArtworkIdentity(observation.artworkFingerprint);
   if (!card || !artwork?.artwork_id || artwork.official_card_identity !== card.official_identity.value) return false;
   switch (card.game) {
+    case "magic":
     case "riftbound":
       return false; // No cross-source artwork equivalence rule is established.
     case "one-piece":

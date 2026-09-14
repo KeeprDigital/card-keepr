@@ -1,4 +1,4 @@
-import { type CatalogueStore, repositoryStatements } from "../shared";
+import { type CatalogueStore, repositoryStatements, registeredSupportedGames } from "../shared";
 
 // Pages bound database snapshot metadata independently of consumer export envelopes.
 export const maximumSnapshotPageRows = 128;
@@ -177,9 +177,9 @@ export function compositionArtifactRootsStatement(db: CatalogueStore, revisionId
  LEFT JOIN verified_publication_compositions v ON v.sha256=r.content_digest
  LEFT JOIN publication_export_preparations p ON p.candidate_id=m.candidate_id
  LEFT JOIN game_publication_operations o ON o.id=p.publication_operation_id
- WHERE m.catalogue_revision_id=? ORDER BY m.supported_game LIMIT 5`,
+ WHERE m.catalogue_revision_id=? ORDER BY m.supported_game LIMIT ?`,
     )
-    .bind(revisionId);
+    .bind(revisionId, registeredSupportedGames().length);
 }
 
 export type AcceptedEvidenceArtifactRoot = {
@@ -198,12 +198,15 @@ function acceptedEvidenceArtifactRootsQuery() {
     LEFT JOIN publication_preparations prepared ON prepared.candidate_id=candidate.id
       AND prepared.state='verified' AND prepared.manifest_digest=candidate.manifest_digest
       AND prepared.generation=candidate.generation
-    WHERE candidate.state='published' ORDER BY head.supported_game LIMIT 5`,
-    params: [],
+    WHERE candidate.state='published' ORDER BY head.supported_game LIMIT ?`,
+    params: [registeredSupportedGames().length],
   };
 }
 
 /** At most one current accepted private root per supported game, including same-revision evidence. */
 export function acceptedEvidenceArtifactRootsStatement(db: CatalogueStore) {
-  return repositoryStatements(db).prepare(acceptedEvidenceArtifactRootsQuery().sql);
+  const query = acceptedEvidenceArtifactRootsQuery();
+  return repositoryStatements(db)
+    .prepare(query.sql)
+    .bind(...query.params);
 }
