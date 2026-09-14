@@ -1,8 +1,24 @@
 import { gameCandidateRoutes } from "./game-candidate-routes";
 import { httpRoute } from "../../http/openapi";
+import {
+  advancePublicationPreparationRoute,
+  publicationPreparationSchema,
+  publicationPreparationAcceptanceSchema,
+  publicationPreparationStatusRoute,
+  publicationPreparationDispatchRoutes,
+  publicationArtifactsRoute,
+  publicationArtifactsSchema,
+  preparedQueryRoute,
+  preparedQuerySchema,
+  publicationCompositionRoute,
+  publicationCompositionSchema,
+} from "./publication-preparation-http-contract";
 import { publicUrl } from "../../http/public-base";
 import {
   startPublicationRoute,
+  approvePublicationRoute,
+  resumePublicationRoute,
+  advancePublicationRoute,
   publicationAcceptanceSchema,
   publicationStatusRoute,
   publicationStatusSchema,
@@ -99,24 +115,37 @@ export const reconciliationRoutes = [
     assertOnlyFields(body, ["expected_generation"]);
     return Response.json(await retryEvidenceCleanup(env, params.cleanup!, body.expected_generation), { status: 202 });
   }),
-  route<Context>("POST", "/v1/publications/:publication/resume", async ({ env, request, observedAt }, params) => {
-    const body = await readAdministrationBody(request);
-    assertOnlyFields(body, ["generation", "idempotency_key"]);
-    return Response.json(
-      await resumeGamePublication(
-        env,
-        params.publication!,
-        { generation: Number(body.generation), idempotency_key: requiredString(body, "idempotency_key") },
-        observedAt,
-      ),
-      { status: 202 },
+  httpRoute<Context>()(resumePublicationRoute, async (c) => {
+    const result = await resumeGamePublication(
+      c.env.env,
+      c.req.valid("param").publication,
+      c.req.valid("json"),
+      c.env.observedAt,
+    );
+    const status = publicUrl(c.env.base, `/v1/publications/${encodeURIComponent(result.id)}`);
+    return c.json(
+      publicationAcceptanceSchema.parse({
+        ...result,
+        contract: "card-keepr-publication-acceptance@1",
+        links: { status },
+      }),
+      202,
+      { Location: status, "Retry-After": "2", "Cache-Control": "no-store" },
     );
   }),
-  route<Context>("POST", "/v1/publications/:publication/advance", async ({ env, request, observedAt }, params) => {
-    const body = await readAdministrationBody(request);
-    assertOnlyFields(body, ["generation"]);
-    return Response.json(await advanceGamePublication(env, params.publication!, Number(body.generation), observedAt));
-  }),
+  httpRoute<Context>()(advancePublicationRoute, async (c) =>
+    c.json(
+      publicationStatusSchema.parse(
+        await advanceGamePublication(
+          c.env.env,
+          c.req.valid("param").publication,
+          c.req.valid("json").generation,
+          c.env.observedAt,
+        ),
+      ),
+      200,
+    ),
+  ),
   httpRoute<Context>()(publicationStatusRoute, async (c) =>
     c.json(
       publicationStatusSchema.parse(await inspectPublication(c.env.env.CATALOGUE_DB, c.req.valid("param").publication)),
@@ -133,86 +162,91 @@ export const reconciliationRoutes = [
     });
     return c.json(receipt, 202, { Location: status, "Retry-After": "2", "Cache-Control": "no-store" });
   }),
-  route<Context>("POST", "/v1/publications", async ({ env, request, observedAt }) => {
-    const body = await readAdministrationBody(request);
-    assertOnlyFields(body, [
-      "candidate_id",
-      "manifest_digest",
-      "expected_game_revision_id",
-      "generation",
-      "idempotency_key",
-    ]);
-    return Response.json(
-      await approveGamePublication(
-        env.CATALOGUE_DB,
-        {
-          candidate_id: requiredString(body, "candidate_id"),
-          manifest_digest: requiredString(body, "manifest_digest"),
-          expected_game_revision_id: requiredString(body, "expected_game_revision_id"),
-          generation: Number(body.generation),
-          idempotency_key: requiredString(body, "idempotency_key"),
-        },
-        observedAt,
+  httpRoute<Context>()(approvePublicationRoute, async (c) => {
+    const approval = approvePublicationRoute.responses[202].content["application/json"].schema.parse(
+      await approveGamePublication(c.env.env.CATALOGUE_DB, c.req.valid("json"), c.env.observedAt),
+    );
+    const status = publicUrl(c.env.base, `/v1/publications/${encodeURIComponent(approval.id)}`);
+    return c.json(approval, 202, { Location: status, "Cache-Control": "no-store" });
+  }),
+  httpRoute<Context>()(preparedQueryRoute, async (c) => {
+    const query = c.req.valid("query");
+    const parameters = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) if (value !== undefined) parameters.set(key, value);
+    return c.json(
+      preparedQuerySchema.parse(
+        await inspectPreparedQuery(c.env.env.CATALOGUE_DB, c.req.valid("param").candidate, parameters),
       ),
-      { status: 202 },
+      200,
     );
   }),
-  route<Context>(
-    "GET",
-    "/v1/game-candidates/:candidate/publication-preparation/query",
-    async ({ env, request }, params) =>
-      Response.json(await inspectPreparedQuery(env.CATALOGUE_DB, params.candidate!, new URL(request.url).searchParams)),
+  httpRoute<Context>()(publicationCompositionRoute, async (c) =>
+    c.json(
+      publicationCompositionSchema.parse(
+        await composePublicationArtifacts(c.env.env, c.req.valid("json").candidate_ids),
+      ),
+      200,
+    ),
   ),
-  route<Context>("POST", "/v1/publication-compositions", async ({ env, request }) => {
-    const body = await readAdministrationBody(request);
-    assertOnlyFields(body, ["candidate_ids"]);
-    return Response.json(await composePublicationArtifacts(env, body.candidate_ids));
-  }),
-  route<Context>("GET", "/v1/game-candidates/:candidate/publication-preparation", async ({ env }, params) =>
-    Response.json(await inspectPublicationPreparation(env.CATALOGUE_DB, params.candidate!)),
+  httpRoute<Context>()(publicationPreparationStatusRoute, async (c) =>
+    c.json(
+      publicationPreparationSchema.parse(
+        await inspectPublicationPreparation(c.env.env.CATALOGUE_DB, c.req.valid("param").candidate),
+      ),
+      200,
+    ),
   ),
-  route<Context>(
-    "GET",
-    "/v1/game-candidates/:candidate/publication-preparation/artifacts",
-    async ({ env, request }, params) =>
-      Response.json(
+  httpRoute<Context>()(publicationArtifactsRoute, async (c) =>
+    c.json(
+      publicationArtifactsSchema.parse(
         await inspectPublicationArtifacts(
-          env.CATALOGUE_DB,
-          params.candidate!,
-          new URL(request.url).searchParams.get("after"),
+          c.env.env.CATALOGUE_DB,
+          c.req.valid("param").candidate,
+          c.req.valid("query").after ?? null,
         ),
       ),
-  ),
-  ...(["", "/start", "/resume"] as const).map((suffix) =>
-    route<Context>(
-      "POST",
-      `/v1/game-candidates/:candidate/publication-preparation${suffix}`,
-      async ({ env, request, observedAt }, params) => {
-        const body = await readAdministrationBody(request);
-        assertOnlyFields(body, ["manifest_digest", "generation", "sequence", "idempotency_key", "resume"]);
-        return Response.json(
-          await (suffix ? startPublicationPreparation : advancePublicationPreparation)(
-            env,
-            params.candidate!,
-            {
-              manifest_digest: requiredString(body, "manifest_digest"),
-              generation: Number(body.generation),
-              sequence: Number(body.sequence),
-              idempotency_key: requiredString(body, "idempotency_key"),
-              ...(suffix === "/resume"
-                ? { resume: true }
-                : body.resume === undefined
-                  ? {}
-                  : { resume: body.resume === true }),
-            },
-            observedAt,
-          ),
-          { status: suffix ? 202 : 200 },
-        );
-      },
+      200,
     ),
   ),
   ...gameCandidateRoutes,
+  httpRoute<Context>()(advancePublicationPreparationRoute, async (c) =>
+    c.json(
+      publicationPreparationSchema.parse(
+        await advancePublicationPreparation(
+          c.env.env,
+          c.req.valid("param").candidate,
+          c.req.valid("json"),
+          c.env.observedAt,
+        ),
+      ),
+      200,
+    ),
+  ),
+  ...publicationPreparationDispatchRoutes.map((definition) =>
+    httpRoute<Context>()(definition, async (c) => {
+      const candidate = c.req.valid("param").candidate;
+      const input = c.req.valid("json");
+      const result = await startPublicationPreparation(
+        c.env.env,
+        candidate,
+        definition.operationId === "resumePublicationPreparation" ? { ...input, resume: true } : input,
+        c.env.observedAt,
+      );
+      const status = publicUrl(
+        c.env.base,
+        `/v1/game-candidates/${encodeURIComponent(candidate)}/publication-preparation`,
+      );
+      return c.json(
+        publicationPreparationAcceptanceSchema.parse({
+          ...result,
+          contract: "card-keepr-publication-preparation-acceptance@1",
+          links: { status },
+        }),
+        202,
+        { Location: status, "Retry-After": "2", "Cache-Control": "no-store" },
+      );
+    }),
+  ),
   route<Context>("GET", "/v1/ingestion-runs/:run/reconciliation/text/:digest/:ordinal", async ({ env }, params) =>
     Response.json(await inspectReconciliationText(env.CATALOGUE_DB, params.run!, params.digest!, params.ordinal!)),
   ),

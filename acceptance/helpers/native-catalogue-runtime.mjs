@@ -1,4 +1,5 @@
 import { readWorkerConfig } from "../../cli/lib/config.mjs";
+import * as responseValidators from "../../test/support/http-response-validators.mjs";
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { isWranglerSmokeFile } from "./smoke-tier.mjs";
@@ -29,6 +30,13 @@ async function cli(args, environment, expectedCode = 0) {
   const response = await runCli([...args, "--json"], environment);
   assert.equal(response.code, expectedCode, `${response.stdout}\n${response.stderr}`);
   return JSON.parse(response.stdout);
+}
+
+function validatePublicationDocument(path, method, status, document) {
+  const name = responseValidators.responseValidators[`admin ${method} ${path} ${status} application/json`];
+  const validate = responseValidators[name];
+  assert.equal(typeof validate, "function", `Generated publication response: ${path}`);
+  assert.equal(validate(document), true, `Publication response matches generated contract: ${path}`);
 }
 
 export async function nativeCheckpointTransport(t, statePath, directory, configFile) {
@@ -153,7 +161,7 @@ export async function publishNativeCollection(runId, idempotencyKey, environment
   const publications = [];
   for (const candidate of inspection.candidates) {
     const key = `${idempotencyKey}-${candidate.supported_game}`;
-    await cli(
+    const accepted = await cli(
       [
         "publication-preparation",
         "start",
@@ -169,7 +177,12 @@ export async function publishNativeCollection(runId, idempotencyKey, environment
         `${key}-artifacts`,
       ],
       environment,
+      10,
     );
+    validatePublicationDocument("/v1/game-candidates/{candidate}/publication-preparation/start", "post", 202, accepted);
+    assert.equal(accepted.candidate_id, candidate.id);
+    assert.equal(accepted.manifest_digest, candidate.manifest_digest);
+    assert.equal(accepted.deadline, candidate.deadline);
     const prepared = await waitForAdministrationDocument(
       `/v1/game-candidates/${candidate.id}/publication-preparation`,
       (document) =>
@@ -180,6 +193,7 @@ export async function publishNativeCollection(runId, idempotencyKey, environment
       { deadlineMs },
     );
     assert.equal(prepared.deadline, candidate.deadline);
+    validatePublicationDocument("/v1/game-candidates/{candidate}/publication-preparation", "get", 200, prepared);
     const approved = await cli(
       [
         "publication",
@@ -200,6 +214,7 @@ export async function publishNativeCollection(runId, idempotencyKey, environment
     );
     assert.equal(approved.contract, "card-keepr-publication-acceptance@1");
     assert.equal(approved.state, "approved");
+    validatePublicationDocument("/v1/publications/start", "post", 202, approved);
     publication = await waitForAdministrationDocument(
       `/v1/publications/${approved.id}`,
       (document) =>
@@ -209,6 +224,7 @@ export async function publishNativeCollection(runId, idempotencyKey, environment
       worker,
       { deadlineMs },
     );
+    validatePublicationDocument("/v1/publications/{publication}", "get", 200, publication);
     assert.equal(publication.deadline, candidate.deadline);
     checkpoint = await waitForAdministrationDocument(
       `/v1/backups/${publication.backup_attempt_id}`,

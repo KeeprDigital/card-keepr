@@ -1,3 +1,5 @@
+import { httpRoute } from "../../http/openapi";
+import { advancePublicationExportsRoute, publicationExportPreparationSchema } from "./publication-http-contract";
 import { environmentNames } from "../../http/environment-target.mjs";
 import { validatedEnvironmentTarget } from "../../http/production-target.mjs";
 import {
@@ -89,22 +91,20 @@ export const ingestionRoutes = [
       headers: { "cache-control": "no-store" },
     });
   }),
-  route<Context>(
-    "POST",
-    "/v1/publications/:publication/export-preparation/advance",
-    async ({ env, request }, params) => {
-      const body = await readAdministrationBody(request);
-      assertOnlyFields(body, ["generation", "idempotency_key"]);
-      return Response.json(
+  httpRoute<Context>()(advancePublicationExportsRoute, async (c) => {
+    const input = c.req.valid("json");
+    return c.json(
+      publicationExportPreparationSchema.parse(
         await advancePublicationExports(
-          env,
-          params.publication!,
-          Number(body.generation),
-          requiredString(body, "idempotency_key"),
+          c.env.env,
+          c.req.valid("param").publication,
+          input.generation,
+          input.idempotency_key,
         ),
-      );
-    },
-  ),
+      ),
+      200,
+    );
+  }),
   route<Context>("POST", "/v1/production-releases", async ({ request, env, observedAt }) => {
     if ((env.KEEPR_ENVIRONMENT ?? "production") !== "production")
       throw new AdministrationProblem(

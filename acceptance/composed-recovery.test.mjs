@@ -213,7 +213,7 @@ async function proveNativeComposition(t, proof) {
     "--idempotency-key",
     "native-artifact-start",
   ];
-  await cli(args);
+  await cli(args, 10);
   let status;
   const preparationDeadline = Date.now() + 30000;
   while (Date.now() < preparationDeadline) {
@@ -238,7 +238,7 @@ async function proveNativeComposition(t, proof) {
     const page = await get(`/v1/game-candidates/${candidate.id}/partitions/${images.ordinal}`);
     assert.equal((await consumer(`/v1/printing-images/${page.records[0].id}/content`)).status, 404);
   }
-  await cli(args);
+  await cli(args, 10);
   assert.equal(
     (await get(`/v1/game-candidates/${candidate.id}/publication-preparation`)).root_digest,
     status.root_digest,
@@ -444,20 +444,23 @@ async function proveNativeComposition(t, proof) {
     assert.fail(JSON.stringify({ candidate, source: await get(`/v1/ingestion-runs/${runId}`) }));
   };
   const prepare = async (candidate, key) => {
-    await cli([
-      "publication-preparation",
-      "start",
-      "--candidate-id",
-      candidate.id,
-      "--manifest-digest",
-      candidate.manifest_digest,
-      "--generation",
-      String(candidate.generation),
-      "--sequence",
-      "0",
-      "--idempotency-key",
-      key,
-    ]);
+    await cli(
+      [
+        "publication-preparation",
+        "start",
+        "--candidate-id",
+        candidate.id,
+        "--manifest-digest",
+        candidate.manifest_digest,
+        "--generation",
+        String(candidate.generation),
+        "--sequence",
+        "0",
+        "--idempotency-key",
+        key,
+      ],
+      10,
+    );
     const deadline = Date.now() + 30000;
     let result;
     do {

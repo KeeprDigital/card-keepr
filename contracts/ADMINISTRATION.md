@@ -86,9 +86,9 @@ pending or paused, `8` on failure and `0` when published. Published still requir
 separate Backup Attempt verification. Candidate preparation/control receipts exit
 `10`; candidate status exits `10` while preparing or paused, `8` on failure, and
 `0` for sealed, published or abandoned state. Read-only candidate inspection exits
-`0` when its document is returned successfully. Artifact-preparation commands still
-exit `0` for a successfully returned document, including a pending acknowledgement
-or failed status. Callers must read `state` and `failure_code` and poll status;
+`0` when its document is returned successfully. Artifact-preparation acceptance
+exits `10`; its status exits `10` while pending/paused, `8` when failed and `0`
+when verified. Callers must read `state` and `failure_code` and poll status;
 neither exit `0` nor HTTP `202` proves publication or backup completion.
 
 ## Commands
@@ -202,11 +202,23 @@ image instead selects `side=before` or `side=after`. The route verifies retained
 bytes and refuses missing or corrupt content.
 
 Artifact preparation starts at sequence `0`. Start and resume return HTTP `202`
-with `{preparation, workflow}`; status returns the current artifact state,
-sequence, generation and root digest. Use the status sequence on resume. Exact
-unit intent replays retain their result; different reuse fails. The `/resume`
+with `card-keepr-publication-preparation-acceptance@1`, the original action's
+candidate, manifest, sequence, generation, deadline and checkpoint, plus an
+absolute `links.status`, `Location`, `Retry-After: 2` and `Cache-Control: no-store`.
+Status returns the current artifact state, sequence, generation and root digest.
+Use the status sequence on resume. Exact start/resume and unit intent replays
+retain their original result even after completion; different reuse fails. The `/resume`
 route sets `resume: true`. The unsuffixed POST route advances one bounded unit
 and returns `200`; it accepts the same fields and optional boolean `resume`.
+All generation and sequence fields are canonical JSON integers. Invalid typed
+commands return `422`; malformed JSON returns `400`, wrong media `415` and bodies
+over 16 KiB `413`. Invalid query parameters return `400`.
+
+The artifact list returns at most 32 ordinal references with exact digests,
+lengths and numeric `reused` flags. Prepared queries accept `kind`, `after` and
+Card-only `q`, returning at most 32 private projection records and 512 KiB of
+record JSON. POST `/v1/publication-compositions` takes one to five distinct
+`candidate_ids`, at most one per game; its verified references remain private.
 
 Approval returns HTTP `202` only after retaining an immutable acknowledgement
 with contract `card-keepr-publication-acceptance@1`, `approval_scope: whole_candidate`,
@@ -232,7 +244,8 @@ private evidence head and requiring a new exact verified backup.
 
 Resume uses the current **operation** generation and a new key; it preserves
 candidate bindings and deadline, increments the writer generation, and returns
-HTTP `202`. Exact replay returns its retained acknowledgement and re-dispatches
+HTTP `202` with `card-keepr-publication-acceptance@1`, `Location`, `Retry-After`
+and an absolute status link. Exact replay returns its retained acknowledgement and re-dispatches
 remaining work. Always read status after an acknowledgement. A `published`
 status identifies the backup attempt; observe `/v1/backups/:attempt` until
 `verified` or `failed` when checkpoint completion is required.

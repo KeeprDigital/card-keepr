@@ -109,6 +109,10 @@ publication artifacts are independent gates. The status pins the candidate,
 originating preparation, real collection, predecessor, manifest and deadline.
 
 An exact request replay returns its original response, so inspect status separately.
+Start and resume return a 202 acknowledgement and CLI exit `10`, with the exact
+candidate ID and an absolute status link. A dispatch outage is reported by status;
+the acknowledgement cannot establish that artifacts are verified. Preparation
+status exits `10` while preparing or paused, `8` when failed and `0` when verified.
 After retry exhaustion, resume using the current sequence and generation:
 
 ```sh
@@ -141,6 +145,13 @@ deadline still applies, and applicability dates do not recalculate approved fact
 
 The CLI returns pending exit code 10 for approval and for pending or paused
 publication status. Automation must continue to inspect status after that result.
+For approval without Workflow dispatch, POST the same integer generation and
+exact intent to `/v1/publications`; it retains the approval and returns its
+original receipt. The script-only `/v1/publications/:publication/advance` advances
+bounded work, while `/export-preparation/advance` takes the operation generation
+and an idempotency key for one export unit. Waiting export replies observe current
+guards; committed units replay their retained checkpoint. These operations retain
+the same artifact, predecessor, deadline and verified-backup requirements.
 The [administration contract](../../contracts/ADMINISTRATION.md) defines terminal
 exit codes; publication completion still requires separate backup inspection.
 

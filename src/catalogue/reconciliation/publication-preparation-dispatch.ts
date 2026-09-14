@@ -38,7 +38,7 @@ export async function startPublicationPreparation(
 ) {
   const receipt = await advancePublicationPreparation(env, id, input, at);
   const status = await inspectPublicationPreparation(env.CATALOGUE_DB, id);
-  if (status.state !== "preparing") return { preparation: status, workflow: null };
+  if (status.state !== "preparing") return receipt;
   await assertCurrentCardModel(env.CATALOGUE_DB, id);
   const params: ReconciliationWorkflowParams = {
     ingestion_run_id: status.ingestion_run_id,
@@ -55,8 +55,8 @@ export async function startPublicationPreparation(
   };
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const workflow = await dispatchPublicationPreparation(env.RECONCILIATION_WORKFLOW, params);
-      return { preparation: status, workflow: { id: workflow.id, status: workflow.status.status } };
+      await dispatchPublicationPreparation(env.RECONCILIATION_WORKFLOW, params);
+      return receipt;
     } catch (error) {
       if (attempt < 2) continue;
       await logProtectedFailure("ingestion", `publication-dispatch-${id}`, error);
@@ -70,5 +70,5 @@ export async function startPublicationPreparation(
       );
     }
   }
-  return { preparation: await inspectPublicationPreparation(env.CATALOGUE_DB, id), workflow: null };
+  return receipt;
 }

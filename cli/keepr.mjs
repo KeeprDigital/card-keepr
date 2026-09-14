@@ -41,6 +41,7 @@ const commandRoutes = {
     integers: ["expected_generation"],
   },
   publicationOperationResume: {
+    integers: ["generation"],
     path: "/v1/publications/{operation-id}/resume",
     fields: { generation: "generation", idempotency_key: "idempotency-key" },
   },
@@ -99,6 +100,7 @@ const commandRoutes = {
     optional: ["after"],
   },
   publicationResume: {
+    integers: ["generation", "sequence"],
     path: "/v1/game-candidates/{candidate-id}/publication-preparation/resume",
     fields: {
       manifest_digest: "manifest-digest",
@@ -108,6 +110,7 @@ const commandRoutes = {
     },
   },
   publicationPrepare: {
+    integers: ["generation", "sequence"],
     path: "/v1/game-candidates/{candidate-id}/publication-preparation/start",
     fields: {
       manifest_digest: "manifest-digest",

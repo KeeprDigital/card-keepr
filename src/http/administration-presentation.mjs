@@ -20,7 +20,16 @@ function gameCandidateExitCode(document) {
   return ["preparing", "paused"].includes(document.state) ? 10 : 0;
 }
 function publicationExitCode(document) {
-  if (document.contract === "card-keepr-publication-acceptance@1") return 10;
+  if (
+    ["card-keepr-publication-acceptance@1", "card-keepr-publication-preparation-acceptance@1"].includes(
+      document.contract,
+    )
+  )
+    return 10;
+  if (document.contract === "card-keepr-publication-preparation@1") {
+    if (document.state === "failed") return 8;
+    return document.state === "verified" ? 0 : 10;
+  }
   if (document.contract !== "card-keepr-game-publication@1") return null;
   if (document.state === "failed") return 8;
   return document.state === "published" ? 0 : 10;
@@ -31,6 +40,10 @@ function formatAdministrationResult(document) {
   if (document.contract === "card-keepr-game-candidate@1")
     return `Candidate ${document.id}: ${document.state}${document.failure_code ? ` (${document.failure_code})` : ""}; whole-candidate approval remains separate.`;
 
+  if (document.contract === "card-keepr-publication-preparation-acceptance@1")
+    return `Artifact preparation for ${document.candidate_id} accepted; inspect ${document.links.status} for current status.`;
+  if (document.contract === "card-keepr-publication-preparation@1")
+    return `Artifact preparation for ${document.candidate_id}: ${document.state}${document.failure_code ? ` (${document.failure_code})` : ""}`;
   if (document.contract === "card-keepr-evidence-acceptance@1")
     return `Collection ${document.id} accepted; resume explicitly, then inspect ${document.links.status} for current status.`;
   if (document.contract === "card-keepr-collection-dispatch@1")
