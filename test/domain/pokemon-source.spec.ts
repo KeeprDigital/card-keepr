@@ -55,6 +55,10 @@ test("the exact physical scope rejects Pocket, error bodies, repository envelope
   expect(() =>
     tcgdexPokemonSourceAdapterRegistration.parseBytes(new TextEncoder().encode(JSON.stringify(otherImage)), context),
   ).toThrow(AdapterParseFailure);
+  source.attacks[0].damage = { unsupported: 130 };
+  expect(() =>
+    tcgdexPokemonSourceAdapterRegistration.parseBytes(new TextEncoder().encode(JSON.stringify(source)), context),
+  ).toThrow(AdapterParseFailure);
 });
 
 test("the Pokémon Game Profile represents playable full-art Snorlax without inventing printed content or regional facts", () => {
@@ -117,6 +121,8 @@ test("the real duplicate marketplace IDs do not merge first-edition and unstampe
 test("unknown TCGdex fields remain attributable warnings rather than silently changing the Pokémon profile", () => {
   const source = JSON.parse(readFileSync(new URL("tcgdex-snorlax-svp-051.body", fixture), "utf8"));
   source.new_source_field = { experimental: 0.5 }; // Controlled forward-vocabulary change.
+  source.variants_detailed[0].surface_texture = "etched";
+  source.attacks[0].new_condition = { turn_count: 2 };
   const [observation] = tcgdexPokemonSourceAdapterRegistration.parseBytes(
     new TextEncoder().encode(JSON.stringify(source)),
     { url: "https://api.tcgdex.net/v2/en/cards/svp-051", mediaType: "application/json" },
@@ -130,4 +136,11 @@ test("unknown TCGdex fields remain attributable warnings rather than silently ch
       raw_value: '{"experimental":0.5}',
     }),
   );
+  for (const [path, raw_value] of [
+    ["tcgdex_card.variants_detailed[0].surface_texture", '"etched"'],
+    ["tcgdex_card.attacks[0].new_condition", '{"turn_count":2}'],
+  ])
+    expect(parsed.sourceWarnings).toContainEqual(
+      expect.objectContaining({ code: "unknown_source_field", path, raw_value }),
+    );
 });

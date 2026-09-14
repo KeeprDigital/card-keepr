@@ -101,6 +101,22 @@ blocks for identity review while retaining prior canonical IDs. Source keys stay
 in private mappings/admission evidence and never become public `official_identity`.
 Scryfall Oracle UUIDs use this seam in the [Magic pilot](https://github.com/KeeprDigital/card-keepr/issues/326).
 
+The bounded Pokémon profile interprets TCGdex's Card ID only within its Source
+Lineage. Species names, Pokédex numbers, marketplace IDs and source variant IDs
+do not establish canonical Card equivalence. Issued finishes, editions, sizes
+and stamps distinguish the retained detailed treatments; a shared catalogue
+image depicts only the treatment established by its inspected bytes. Missing
+precise scans remain gaps even when an owner admits the evidenced treatment.
+The selected official Garchomp correction uses `BRILLIANT-STARS-109/172`, our
+normalization of the publisher's set and printed number. It is not an upstream
+global identifier or a cross-reprint equivalence rule. Retain the exact set,
+number and publication locator as supporting evidence. The dated correction
+replaces only the evidenced Sonic Slip paragraph, preserves Dragonblade and the
+original Printed Rules Text, and does not establish later corrected physical
+stock. Missing, ambiguous or stale targets block reconciliation; replay of
+already-corrected text requires the same attributable correction history.
+[Pokémon pilot](https://github.com/KeeprDigital/card-keepr/issues/328).
+
 An art Card and a gameplay Card remain separate Cards even when they depict the
 same illustration. Expose their relationship when evidence establishes it,
 without merging identities. Publisher-issued foil or stamped versions of an art

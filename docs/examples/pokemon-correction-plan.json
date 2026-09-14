@@ -1,0 +1,16 @@
+{
+  "plans": [
+    {
+      "supported_game": "pokemon",
+      "source_lineage": "pokemon-official-en",
+      "adapter_version": "pokemon-official-en@1",
+      "subset": "garchomp-correction",
+      "requests": [
+        {
+          "id": "pokemon-official-en:garchomp-correction",
+          "url": "https://www.pokemon.com/us/news/errata-for-garchomp-in-pokemon-tcg-sword-shield-brilliant-stars"
+        }
+      ]
+    }
+  ]
+}

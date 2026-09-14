@@ -62,7 +62,12 @@ function observations(bytes: Uint8Array, sourceUrl: string) {
       return {
         name: text(attack.name),
         cost: list(attack.cost).map(text),
-        damage: attack.damage === undefined ? null : String(attack.damage),
+        damage:
+          attack.damage === undefined
+            ? null
+            : typeof attack.damage === "number"
+              ? String(integer(attack.damage))
+              : text(attack.damage),
         text: optionalText(attack.effect),
       };
     }),
@@ -268,7 +273,22 @@ function unknownFields(card: Record<string, unknown>) {
     "updated",
     "pricing",
   ]);
-  return Object.entries(card)
-    .filter(([field]) => !known.has(field))
-    .map(([field, value]) => ({ path: `tcgdex_card.${field}`, value: JSON.stringify(value) }));
+  const fields = (value: Record<string, unknown>, allowed: ReadonlySet<string>, path: string) =>
+    Object.entries(value)
+      .filter(([field]) => !allowed.has(field))
+      .map(([field, raw]) => ({ path: `${path}.${field}`, value: JSON.stringify(raw) }));
+  const warnings = fields(card, known, "tcgdex_card");
+  const mappedArrays = {
+    variants_detailed: ["type", "subtype", "size", "stamp", "thirdParty", "variantId", "pricing"],
+    abilities: ["type", "name", "effect"],
+    attacks: ["cost", "name", "effect", "damage"],
+    weaknesses: ["type", "value"],
+    resistances: ["type", "value"],
+  };
+  for (const [key, allowed] of Object.entries(mappedArrays))
+    optionalList(card[key]).forEach((entry, index) => {
+      warnings.push(...fields(record(entry), new Set(allowed), `tcgdex_card.${key}[${index}]`));
+    });
+  warnings.push(...fields(record(card.set), new Set(["id", "name", "cardCount", "logo", "symbol"]), "tcgdex_card.set"));
+  return warnings;
 }
