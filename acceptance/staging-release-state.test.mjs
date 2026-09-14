@@ -148,6 +148,13 @@ test("a lost authorization response replays the same claim and deadline without 
   const later = new Date(Date.parse(now) + 60_000).toISOString();
   assert.deepEqual(await (await handleStagingAuthorization(await request(), env, later)).json(), claimed);
   assert.equal(claimed.expires_at, recorded.intent.expires_at);
+  state.checkConclusion = "failure";
+  assert.deepEqual(
+    await (await handleStagingAuthorization(await request(), env, later)).json(),
+    claimed,
+    "the same authenticated attempt can still retain its failure after CI changes",
+  );
+  state.checkConclusion = "success";
   state.runAttempt = 2;
   await assert.rejects(
     handleStagingAuthorization(await request({ run_attempt: "2" }), env, now),
