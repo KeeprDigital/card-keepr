@@ -94,6 +94,9 @@ export function validateStagingOutcome(value, intent, intentDigest) {
     (migration.state === "not_run" ? migration.migration_digest !== null : !isReleaseDigest(migration.migration_digest))
   )
     invalid();
+  const migrationCheck = value.checks.find((check) => check.name === "migration-rehearsal");
+  if (migration.state !== migrationCheck.state || migration.migration_digest !== migrationCheck.evidence_sha256)
+    invalid();
   if (value.state === "succeeded") {
     if (
       value.failure_code !== null ||

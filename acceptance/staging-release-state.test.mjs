@@ -75,7 +75,7 @@ test("staging retains its own exact plan and refuses successful validation witho
       state: "succeeded",
       starting_level: intent.intent.production_start.migration_level,
       ending_level: intent.intent.production_start.migration_level,
-      migration_digest: "d".repeat(64),
+      migration_digest: "e".repeat(64),
     },
     checks: intent.intent.required_checks.map((name) => ({
       name,

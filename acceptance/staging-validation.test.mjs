@@ -29,7 +29,7 @@ test("server-owned transition scope rejects omitted mandatory checks and incompl
     expected_head_sha: "a".repeat(40),
     state: "succeeded",
     deployment: { state: "succeeded", release_id: "staging-237", dispatch_digest: "d".repeat(64) },
-    migration: { state: "succeeded", starting_level: 31, ending_level: 32, migration_digest: "e".repeat(64) },
+    migration: { state: "succeeded", starting_level: 31, ending_level: 32, migration_digest: "f".repeat(64) },
     checks: ["exact-commit-ci", "migration-rehearsal", "retained-source-rehearsal", "live-smoke"].map((name) => ({
       name,
       state: "succeeded",
@@ -43,6 +43,8 @@ test("server-owned transition scope rejects omitted mandatory checks and incompl
     { checks: result.checks.slice(1) },
     { checks: result.checks.map((check) => ({ ...check, state: "pending" })) },
     { migration: { ...result.migration, starting_level: 32 } },
+    { migration: { ...result.migration, migration_digest: "e".repeat(64) } },
+    { state: "failed", failure_code: "rehearsal_failed", migration: { ...result.migration, state: "failed" } },
     { deployment: { ...result.deployment, state: "requested" } },
   ])
     assert.throws(() => validateStagingOutcome({ ...result, ...changed }, intent, "c".repeat(64)));
