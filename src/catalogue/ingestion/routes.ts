@@ -8,7 +8,11 @@ import {
 } from "../../http/administration";
 import { absoluteDocumentLinks } from "../../http/public-base";
 import { type RouteContext, route } from "../../http/routes";
-import { publicationBackupReservation, startOrObserveCatalogueBackupWorkflow } from "../backup-recovery";
+import {
+  publicationBackupReservation,
+  startOrObserveCatalogueBackupWorkflow,
+  currentDisposableRestoreDatabaseId,
+} from "../backup-recovery";
 import { AdministrationProblem, type CatalogueStore } from "../shared";
 import { evidenceInspectionOptions, showEvidenceRun } from "../source-evidence";
 import { resolveAdministrationTarget } from "./administration-target";
@@ -23,6 +27,8 @@ import {
   showRun,
 } from "./ingestion";
 import { resolveProductionRelease } from "./production-release-preparation";
+import { resolveStagingRelease, inspectStagingRelease } from "./staging-release";
+import { showStagingDeployment } from "./staging-deployment";
 import { advancePublicationExports } from "./publication-export-preparation";
 import { runHasEvidencePlanStatement } from "./run-lifecycle-repository";
 
@@ -33,6 +39,7 @@ type Environment = Parameters<typeof evidenceInspectionOptions>[0] & {
   CATALOGUE_EXPORTS: R2Bucket;
   CLOUDFLARE_ACCOUNT_ID: string;
   DISPOSABLE_D1_DATABASE_ID: string;
+  D1_VERIFICATION_TOKEN: string;
   KEEPR_ENVIRONMENT?: string;
   PRINTING_IMAGES: R2Bucket;
   BACKUPS: R2Bucket;
@@ -44,6 +51,44 @@ export type PublicationBackupWaiter = (
 type Context = RouteContext<Environment> & { observedAt: string; publicationBackupWaiter?: PublicationBackupWaiter };
 
 export const ingestionRoutes = [
+  route<Context>("POST", "/v1/staging-releases", async ({ request, env, observedAt }) => {
+    if ((env.KEEPR_ENVIRONMENT ?? "production") !== "production")
+      throw new AdministrationProblem(404, "not_found", "Route not found.");
+    const body = await readAdministrationBody(request);
+    const result = await resolveStagingRelease(
+      env.CATALOGUE_DB,
+      env.CATALOGUE_EXPORTS,
+      body,
+      async () =>
+        productionTarget({
+          ...env,
+          DISPOSABLE_D1_DATABASE_ID: await currentDisposableRestoreDatabaseId(
+            env.CLOUDFLARE_ACCOUNT_ID,
+            env.D1_VERIFICATION_TOKEN,
+            environmentNames().disposable,
+          ),
+        }),
+      observedAt,
+      env.D1_VERIFICATION_TOKEN,
+    );
+    return Response.json(result, {
+      status: body.prepare === true ? 200 : 201,
+      headers: { "cache-control": "no-store" },
+    });
+  }),
+  route<Context>("GET", "/v1/staging-releases/:release", async ({ env }, params) => {
+    if ((env.KEEPR_ENVIRONMENT ?? "production") !== "production")
+      throw new AdministrationProblem(404, "not_found", "Route not found.");
+    return Response.json(await inspectStagingRelease(env.CATALOGUE_DB, params.release!), {
+      headers: { "cache-control": "no-store" },
+    });
+  }),
+  route<Context>("GET", "/v1/staging-deployments/:release", async ({ env }, params) => {
+    if (env.KEEPR_ENVIRONMENT !== "staging") throw new AdministrationProblem(404, "not_found", "Route not found.");
+    return Response.json(await showStagingDeployment(env.CATALOGUE_DB, params.release!), {
+      headers: { "cache-control": "no-store" },
+    });
+  }),
   route<Context>(
     "POST",
     "/v1/publications/:publication/export-preparation/advance",

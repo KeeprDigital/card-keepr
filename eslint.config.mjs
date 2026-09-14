@@ -115,8 +115,8 @@ export default defineConfig([
   },
   {
     files: [
-      "src/catalogue/shared/{release-input-shapes,spine-revision}.mjs",
-      "src/http/{administration-presentation,dev-workflow-identity,diagnostic-display,environment-target,production-target}.mjs",
+      "src/catalogue/shared/{release-input-shapes,spine-revision,staging-validation}.mjs",
+      "src/http/{administration-presentation,dev-workflow-identity,diagnostic-display,environment-target,production-target,staging-transition}.mjs",
       "src/runtime-capabilities.mjs",
     ],
     languageOptions: { parserOptions: { project: ["./eslint/tsconfig.implementations.json"] } },

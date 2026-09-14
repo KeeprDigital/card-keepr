@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { administrationRoutes, handleDevDeployment } from "../../../src/catalogue/ingestion";
+import { administrationRoutes, handleDevDeployment, handleStagingAuthorization, handleStagingDeployment, handleStagingOutcome } from "../../../src/catalogue/ingestion";
 import { enforceRecoveryRestoreGuard } from "../../../src/catalogue/backup-recovery";
 import { enforceFreshBaselineMutationGuard, type PublicationBackupWaiter } from "../../../src/catalogue/ingestion";
 import {
@@ -45,6 +45,14 @@ administrationHttp.use("*", async (c, next) => {
 
   if (new URL(request.url).pathname === "/v1/dev-deployments")
     return await handleDevDeployment(request, catalogueEnvironment(env));
+  const platformPath = new URL(request.url).pathname;
+  if (platformPath === "/v1/staging-release-authorizations")
+    return await handleStagingAuthorization(request, catalogueEnvironment(env));
+  if (platformPath === "/v1/staging-deployments" && request.method === "POST")
+    return await handleStagingDeployment(request, catalogueEnvironment(env));
+  const outcome = /^\/v1\/staging-deployments\/([^/]+)\/outcome$/u.exec(platformPath);
+  if (outcome && request.method === "POST")
+    return await handleStagingOutcome(request, catalogueEnvironment(env), decodeURIComponent(outcome[1]!));
 
   const authenticationFailure = await authenticateBearer(
     request,

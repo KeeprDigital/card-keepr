@@ -3,10 +3,12 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { environmentNames } from "../src/http/environment-target.mjs";
-import { verifyDevWorkflows } from "./dev-workflows.mjs";
+import { verifyEnvironmentWorkflows } from "./dev-workflows.mjs";
 
 export const devShellSource =
   "export default { fetch() { return new Response('Dev installation pending', {status:503}); } };";
+const shellSource = (target) =>
+  target === "dev" ? devShellSource : devShellSource.replace("Dev installation", "Staging installation");
 const secretNames = [
   ["API_BEARER_KEY", "API_BEARER_KEY_REPLACEMENT"],
   ["ADMINISTRATION_KEY", "ADMINISTRATION_KEY_REPLACEMENT", "D1_EXPORT_TOKEN", "D1_VERIFICATION_TOKEN"],
@@ -14,33 +16,46 @@ const secretNames = [
 
 /** Initial provisioning and retry share the complete, independently issued inventory. */
 export async function validateDevSecretFiles(environment) {
-  const files = [environment.DEV_API_SECRETS_FILE, environment.DEV_INGESTION_SECRETS_FILE];
+  return validateEnvironmentSecretFiles({ ...environment, RELEASE_ENVIRONMENT: "dev" });
+}
+
+export async function validateEnvironmentSecretFiles(environment) {
+  const target = environment.RELEASE_ENVIRONMENT;
+  if (!["dev", "staging"].includes(target)) throw new Error("isolated_environment_required");
+  const prefix = target.toUpperCase();
+  const files = [environment[`${prefix}_API_SECRETS_FILE`], environment[`${prefix}_INGESTION_SECRETS_FILE`]];
   const secrets = await Promise.all(
     files.map(async (path, index) => {
-      if (!path) throw new Error("dev_secret_files_required");
+      if (!path) throw new Error(`${target}_secret_files_required`);
       const value = JSON.parse(await readFile(path, "utf8"));
       if (
         Object.keys(value).sort().join("|") !== [...secretNames[index]].sort().join("|") ||
         Object.values(value).some((secret) => typeof secret !== "string" || secret.length < 16)
       )
-        throw new Error("invalid_dev_secret_inventory");
+        throw new Error(`invalid_${target}_secret_inventory`);
       return value;
     }),
   );
-  if (new Set(secrets.flatMap(Object.values)).size !== 6) throw new Error("dev_secrets_must_be_distinct");
+  if (new Set(secrets.flatMap(Object.values)).size !== 6) throw new Error(`${target}_secrets_must_be_distinct`);
   return files;
 }
 
 /** Use Wrangler provenance so the later strict versions upload accepts this shell. */
 export async function writeDevWorkerShell(environment, name) {
-  const account = environment.DEV_CLOUDFLARE_ACCOUNT_ID;
-  const index = environmentNames("dev").workers.indexOf(name);
-  if (!/^[0-9a-f]{32}$/u.test(account ?? "") || index === -1) throw new Error("invalid_dev_shell_target");
-  const secretFile = (await validateDevSecretFiles(environment))[index];
-  const directory = await mkdtemp(join(tmpdir(), "keepr-dev-shell-"));
+  return writeEnvironmentWorkerShell({ ...environment, RELEASE_ENVIRONMENT: "dev" }, name);
+}
+
+export async function writeEnvironmentWorkerShell(environment, name) {
+  const target = environment.RELEASE_ENVIRONMENT;
+  if (!["dev", "staging"].includes(target)) throw new Error("isolated_environment_required");
+  const account = environment[`${target.toUpperCase()}_CLOUDFLARE_ACCOUNT_ID`];
+  const index = environmentNames(target).workers.indexOf(name);
+  if (!/^[0-9a-f]{32}$/u.test(account ?? "") || index === -1) throw new Error(`invalid_${target}_shell_target`);
+  const secretFile = (await validateEnvironmentSecretFiles(environment))[index];
+  const directory = await mkdtemp(join(tmpdir(), `keepr-${target}-shell-`));
   try {
     const config = join(directory, "wrangler.json");
-    await writeFile(join(directory, "deny.mjs"), devShellSource, { mode: 0o600 });
+    await writeFile(join(directory, "deny.mjs"), shellSource(target), { mode: 0o600 });
     await writeFile(
       config,
       JSON.stringify({
@@ -69,9 +84,15 @@ export async function writeDevWorkerShell(environment, name) {
 
 /** A failed initial installation may refresh only the exact, still unbound deny shells. */
 export async function verifyDevWorkerShells(environment) {
-  await validateDevSecretFiles(environment);
-  const names = environmentNames("dev");
-  const account = environment.DEV_CLOUDFLARE_ACCOUNT_ID;
+  return verifyEnvironmentWorkerShells({ ...environment, RELEASE_ENVIRONMENT: "dev" });
+}
+
+export async function verifyEnvironmentWorkerShells(environment) {
+  const target = environment.RELEASE_ENVIRONMENT;
+  if (!["dev", "staging"].includes(target)) throw new Error("isolated_environment_required");
+  await validateEnvironmentSecretFiles(environment);
+  const names = environmentNames(target);
+  const account = environment[`${target.toUpperCase()}_CLOUDFLARE_ACCOUNT_ID`];
   const refuse = () => {
     throw new Error("first_install_retry_not_safe");
   };
@@ -94,7 +115,7 @@ export async function verifyDevWorkerShells(environment) {
   if (!Array.isArray(zones) || zones.length !== 1 || zones[0].account?.id !== account || !zones[0].id) refuse();
   const routes = await document(`/zones/${zones[0].id}/workers/routes`);
   if (!Array.isArray(routes) || routes.some((route) => names.workers.includes(route.script))) refuse();
-  await verifyDevWorkflows(environment, { mustBeAbsent: true });
+  await verifyEnvironmentWorkflows(environment, { mustBeAbsent: true });
   for (const [index, name] of names.workers.entries()) {
     const root = `/accounts/${account}/workers/scripts/${name}`;
     const deployments = await document(`${root}/deployments`);
@@ -121,7 +142,7 @@ export async function verifyDevWorkerShells(environment) {
       module.name !== "deny.mjs" ||
       module.content_type !== "application/javascript+module" ||
       typeof module.content_base64 !== "string" ||
-      Buffer.from(module.content_base64, "base64").toString("utf8").trim() !== devShellSource
+      Buffer.from(module.content_base64, "base64").toString("utf8").trim() !== shellSource(target)
     )
       refuse();
     const bindings = version.bindings;
@@ -141,8 +162,14 @@ export async function verifyDevWorkerShells(environment) {
 
 /** Called only by the executor while it holds the canonical deployment lease. */
 export async function restoreDevWorkerShells(environment) {
-  await verifyDevWorkerShells(environment);
-  const names = environmentNames("dev");
+  return restoreEnvironmentWorkerShells({ ...environment, RELEASE_ENVIRONMENT: "dev" });
+}
+
+export async function restoreEnvironmentWorkerShells(environment) {
+  const target = environment.RELEASE_ENVIRONMENT;
+  if (!["dev", "staging"].includes(target)) throw new Error("isolated_environment_required");
+  await verifyEnvironmentWorkerShells(environment);
+  const names = environmentNames(target);
   // Observe both shells before changing either; never overwrite application code.
-  for (const name of names.workers) await writeDevWorkerShell(environment, name);
+  for (const name of names.workers) await writeEnvironmentWorkerShell(environment, name);
 }

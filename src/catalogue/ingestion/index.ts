@@ -24,3 +24,5 @@ export type { ApproveRunRequest, RejectRunRequest, RetryPublicationCleanupReques
 export { handleDevDeployment } from "./dev-deployment";
 
 export { administrationRoutes, administrationRouteFamilies } from "./http-routes";
+export { handleStagingAuthorization } from "./staging-authorization";
+export { handleStagingDeployment, handleStagingOutcome } from "./staging-deployment";

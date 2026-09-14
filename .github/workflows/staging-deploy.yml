@@ -1,0 +1,60 @@
+name: staging-deploy
+run-name: staging-${{ inputs.release_id }}-${{ inputs.expected_head_sha }}
+on:
+  workflow_dispatch:
+    inputs:
+      release_id:
+        required: true
+        type: string
+      intent_digest:
+        required: true
+        type: string
+      expected_head_sha:
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: staging-deployment
+  cancel-in-progress: false
+jobs:
+  staging:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: staging
+    permissions:
+      contents: read
+      checks: read
+      actions: read
+      id-token: write
+    env:
+      RELEASE_ENVIRONMENT: staging
+      RELEASE_ID: ${{ inputs.release_id }}
+      INTENT_DIGEST: ${{ inputs.intent_digest }}
+      EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.STAGING_CLOUDFLARE_ACCOUNT_ID }}
+      STAGING_CLOUDFLARE_ACCOUNT_ID: ${{ vars.STAGING_CLOUDFLARE_ACCOUNT_ID }}
+      STAGING_CATALOGUE_DATABASE_ID: ${{ vars.STAGING_CATALOGUE_DATABASE_ID }}
+      STAGING_DISPOSABLE_DATABASE_ID: ${{ vars.STAGING_DISPOSABLE_DATABASE_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.STAGING_DEPLOYMENT_TOKEN }}
+      API_TRAFFIC_TOKEN: ${{ secrets.STAGING_API_TRAFFIC_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out the owner's immutable selected commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.expected_head_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-toolchain
+      - name: Prepare, rehearse and validate the guarded staging release
+        run: node scripts/staging-release.mjs
+      - name: Retain the exact staging attempt evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: staging-${{ inputs.release_id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/staging-release/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 90

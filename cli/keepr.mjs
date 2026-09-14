@@ -18,6 +18,7 @@ import { runIdentityCorrectionCommand } from "./identity-corrections.mjs";
 import { request as httpRequest } from "./lib/http-client.mjs";
 import { requestDocument } from "./lib/json-client.mjs";
 import { runProductionReleaseCommand } from "./production-release.mjs";
+import { runStagingReleaseCommand, runStagingReleaseStatusCommand } from "./staging-release.mjs";
 
 const commandRoutes = {
   stagingCleanupStart: {
@@ -404,6 +405,8 @@ const commands = {
   "identity reviews": (args, env, json) => routeCommand("identityReviews", args, env, json),
   "identity resolve": (args, env, json) => routeCommand("identityResolve", args, env, json),
   "release production": runProductionReleaseCommand,
+  "release staging": runStagingReleaseCommand,
+  "release staging-status": runStagingReleaseStatusCommand,
   "run show": (args, env, json) => routeCommand("showRun", args, env, json),
   "candidate inspect": (args, env, json) => routeCommand("inspectCandidate", args, env, json),
   "run approve": (_args, _env, json) =>
@@ -480,7 +483,12 @@ export async function main(arguments_, environment) {
   } catch (error) {
     return writeFailure(json, { code: "configuration_error", detail: error.message }, 2);
   }
-  if (environment.KEEPR_TARGET && arguments_[0] === "release" && environment.KEEPR_TARGET !== "production")
+  if (
+    environment.KEEPR_TARGET &&
+    arguments_[0] === "release" &&
+    arguments_[1] !== "staging-status" &&
+    environment.KEEPR_TARGET !== "production"
+  )
     return writeFailure(
       json,
       { code: "production_target_required", detail: "Production Release cannot use a nonproduction target." },
@@ -1082,7 +1090,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr identity-correction validate | identity-correction create | identity-correction inspect | identity-correction list | entity-proposal list | entity-proposal inspect | entity-proposal create | entity-proposal admit | entity-proposal link | entity-proposal reject | entity-proposal reconsider | identity inspect | identity reviews | identity resolve | health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | game-candidate prepare | game-candidate abandon | game-candidate list | game-candidate show | game-candidate inspect | game-candidate evidence | game-candidate partitions | game-candidate partition | reconciliation status | reconciliation text | reconciliation inputs | reconciliation input | reconciliation partitions | reconciliation partition | reconciliation pause | reconciliation resume | reconciliation abandon | publication-preparation start | publication-preparation status | publication-preparation artifacts | publication-preparation resume | publication approve | publication status | publication resume | run reject | run retry | run cleanup | staging-cleanup start | evidence-cleanup start | evidence-cleanup status | evidence-cleanup objects | evidence-cleanup retry | source registry | source authorities | source designate | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
+        "Usage: keepr release staging | release staging-status | release production | identity-correction validate | identity-correction create | identity-correction inspect | identity-correction list | entity-proposal list | entity-proposal inspect | entity-proposal create | entity-proposal admit | entity-proposal link | entity-proposal reject | entity-proposal reconsider | identity inspect | identity reviews | identity resolve | health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | game-candidate prepare | game-candidate abandon | game-candidate list | game-candidate show | game-candidate inspect | game-candidate evidence | game-candidate partitions | game-candidate partition | reconciliation status | reconciliation text | reconciliation inputs | reconciliation input | reconciliation partitions | reconciliation partition | reconciliation pause | reconciliation resume | reconciliation abandon | publication-preparation start | publication-preparation status | publication-preparation artifacts | publication-preparation resume | publication approve | publication status | publication resume | run reject | run retry | run cleanup | staging-cleanup start | evidence-cleanup start | evidence-cleanup status | evidence-cleanup objects | evidence-cleanup retry | source registry | source authorities | source designate | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
     },
     2,
   );

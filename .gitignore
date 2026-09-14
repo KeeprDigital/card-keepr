@@ -11,7 +11,8 @@ coverage/
 
 .artifacts/
 
-# Generated isolated dev configs contain observed resource identities.
+# Generated isolated environment configs contain observed resource identities.
 apps/*/wrangler.dev.json
+apps/*/wrangler.staging.json
 
 test-results/
