@@ -29,6 +29,7 @@ export function seedCompositionSmoke(db, defect) {
       {
         id: "card_a",
         game: "one-piece",
+        category: "gameplay",
         official_identity: { kind: "card_number", value: "OP01-001" },
         name: "First Card",
       },
@@ -38,6 +39,7 @@ export function seedCompositionSmoke(db, defect) {
       {
         id: "card_b",
         game: "one-piece",
+        category: "gameplay",
         official_identity: { kind: "unknown", value: null },
         name: "Searchable Curated Card",
       },

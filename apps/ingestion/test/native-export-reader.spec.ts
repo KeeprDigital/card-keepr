@@ -66,7 +66,9 @@ test("native export fixtures follow all public pages and reject broken manifest 
   const bytes = new Uint8Array(await object.arrayBuffer());
   try {
     await testEnv.CATALOGUE_EXPORTS.delete(component.object_key);
-    await expect(exportComponentRecords(revision, "cards")).rejects.toThrow("verified public component is unavailable");
+    await expect(exportComponentRecords(revision, "cards")).rejects.toThrow(
+      "immutable public component failed verification",
+    );
     const corrupted = bytes.slice();
     corrupted[0] = corrupted[0]! ^ 1;
     await testEnv.CATALOGUE_EXPORTS.put(component.object_key, corrupted);
