@@ -13,9 +13,9 @@ status or native approval. The named `CommandRequest` definitions describe the
 remaining unmigrated commands. Migrated HTTP inputs and responses come from the
 [generated administration specification](admin-openapi.json), as described by the
 [HTTP boundary](HTTP.md). Generation and sequence are non-negative safe integers;
-each protocol below specifies its wire representation. Candidate control and
-publication approval send JSON integer generations. Unmigrated publication resume
-and artifact preparation still accept the CLI's decimal-string generation and sequence.
+each protocol below specifies its wire representation. Candidate control,
+publication approval and publication resume send JSON integer generations.
+Artifact preparation sends JSON integer generation and sequence.
 
 The repository CLI is the only initial owner interface. It talks to the
 ingestion Worker for catalogue operations, to GitHub for a production release
