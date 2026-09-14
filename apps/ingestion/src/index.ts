@@ -1,5 +1,11 @@
 import { Hono } from "hono";
-import { administrationRoutes, handleDevDeployment, handleStagingAuthorization, handleStagingDeployment, handleStagingOutcome } from "../../../src/catalogue/ingestion";
+import {
+  administrationRoutes,
+  handleDevDeployment,
+  handleStagingAuthorization,
+  handleStagingDeployment,
+  handleStagingOutcome,
+} from "../../../src/catalogue/ingestion";
 import { enforceRecoveryRestoreGuard } from "../../../src/catalogue/backup-recovery";
 import { enforceFreshBaselineMutationGuard, type PublicationBackupWaiter } from "../../../src/catalogue/ingestion";
 import {

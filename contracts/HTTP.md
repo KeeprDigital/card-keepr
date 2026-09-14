@@ -38,7 +38,10 @@ Worker middleware groups retain separate credentials, limits, CORS for consumers
 readiness and administration recovery/fresh-baseline guards. Mount rejection and
 unauthenticated liveness stay ahead of these groups. Operational logging still
 uses mount-free, redacted route segments. Dev deployment retains its separate
-signed workflow identity and dev-only guard.
+signed workflow identity and dev-only guard. Staging release authorization runs
+on production before selected code executes; deployment preparation and outcomes
+run only on staging. These platform endpoints authenticate the signed manual
+workflow separately from owner-key administration.
 
 ## Asynchronous publication pilot
 
@@ -61,8 +64,8 @@ There is no server-negotiated CLI representation.
 ## Migrating a family
 
 1. Find the operation and potential callers in [the generated inventory](http-route-inventory.json).
-   [Family assignments](http-migration-families.json) partition all original 100
-   administration operations, including the 20 without named CLI descriptors.
+   [Family assignments](http-migration-families.json) partition the
+   administration operations, including those without named CLI descriptors.
    Named descriptors identify the CLI implementation; literal/template caller
    references are an inventory aid, not evidence that a test runs that route.
 2. Replace its legacy `route` with a wire registration and validated handler in
@@ -82,7 +85,8 @@ response validators used by Worker tests. `check:generated` rejects stale output
 unresolved or unbundled references, duplicate operation IDs/registrations and
 migrated operations missing from the generated paths. Servers come from each
 Worker's configured public base, including its mount. The inventory explicitly
-classifies health, CORS preflight and dev deployment outside ordinary route arrays;
+classifies health, CORS preflight, dev deployment and signed staging release
+endpoints outside ordinary route arrays;
 there are currently no deployed documentation endpoints.
 
 Follow the repository's [validation policy](../docs/testing.md). Generated response

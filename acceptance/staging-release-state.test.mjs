@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { stagingWorkflowFixture } from "./helpers/staging-workflow.mjs";
 import { execFileSync } from "node:child_process";
+import { readdir } from "node:fs/promises";
 
 test("staging retains its own exact plan and refuses successful validation without actual deployment evidence", async (t) => {
   const production = await fixture(t);
@@ -113,11 +114,24 @@ test("staging retains its own exact plan and refuses successful validation witho
 test("migration rehearsal traverses the recorded production predecessor independently of current staging", async () => {
   const { rehearseStagingMigrations } = await import("../scripts/staging-migrations.mjs");
   const expectedHeadSha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-  const result = await rehearseStagingMigrations({ expectedHeadSha, productionStartingLevel: 31 });
-  assert.equal(result.starting_level, 31);
+  const migrationLevels = (await readdir("migrations"))
+    .filter((name) => /^\d+_.*\.sql$/u.test(name))
+    .map((name) => Number.parseInt(name, 10))
+    .sort((a, b) => a - b);
+  const latest = migrationLevels.at(-1);
+  const predecessor = migrationLevels.at(-2);
+  assert.equal(latest, predecessor + 1);
+  const result = await rehearseStagingMigrations({ expectedHeadSha, productionStartingLevel: predecessor });
+  assert.equal(result.starting_level, predecessor);
+  assert.equal(result.ending_level, latest);
   assert.equal(result.state, "succeeded");
   assert.equal(result.data_scope, "isolated_synthetic_baseline");
-  assert.equal(result.migrations.find((migration) => migration.level === 32).phase, "forward-migration");
+  assert.deepEqual(
+    result.migrations
+      .filter((migration) => migration.phase === "forward-migration")
+      .map((migration) => migration.level),
+    [latest],
+  );
   await assert.rejects(
     rehearseStagingMigrations({ expectedHeadSha, productionStartingLevel: 9999 }),
     /production_starting_schema_not_rehearsable/u,

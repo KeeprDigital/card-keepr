@@ -1055,6 +1055,21 @@
   "x-unmigrated-operations": [
     {
       "method": "POST",
+      "path": "/v1/staging-releases",
+      "family": "ingestion"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/staging-releases/{release}",
+      "family": "ingestion"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/staging-deployments/{release}",
+      "family": "ingestion"
+    },
+    {
+      "method": "POST",
       "path": "/v1/publications/{publication}/export-preparation/advance",
       "family": "ingestion"
     },
