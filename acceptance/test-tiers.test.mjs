@@ -57,6 +57,7 @@ test("focused acceptance selects one routine file without admitting expensive or
   assert.deepEqual(list("smoke", "source-evidence-cli.test.mjs"), ["source-evidence-cli.test.mjs"]);
   for (const args of [
     ["default", "native-sqlite-export"],
+    ["default", "bounded-capacity-pilot"],
     ["default", "riftbound-catalogue"],
     ["default", "../package.json"],
     ["default", "typo"],
@@ -87,7 +88,12 @@ test("smoke retains the two everyday paths within routine coverage and unknown t
 test("expensive investigations require an explicit valid scenario and exclude the manual memory diagnostic", () => {
   assert.deepEqual(list("benchmark", "native-sqlite-export"), ["native-sqlite-export.test.mjs"]);
   assert.deepEqual(list("extended", "riftbound-catalogue.test.mjs"), ["riftbound-catalogue.test.mjs"]);
-  assert.deepEqual(list("benchmark", "--all"), ["native-isolate-metrics.test.mjs", "native-sqlite-export.test.mjs"]);
+  assert.deepEqual(list("benchmark", "--all"), [
+    "bounded-capacity-pilot.test.mjs",
+    "native-isolate-metrics.test.mjs",
+    "native-sqlite-export.test.mjs",
+  ]);
+  assert.deepEqual(list("benchmark", "bounded-capacity-pilot"), ["bounded-capacity-pilot.test.mjs"]);
   for (const args of [
     ["extended"],
     ["benchmark"],

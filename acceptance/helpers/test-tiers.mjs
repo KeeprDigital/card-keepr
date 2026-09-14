@@ -7,6 +7,7 @@ export const extendedAcceptanceFiles = Object.freeze([
   "riftbound-catalogue.test.mjs",
 ]);
 export const benchmarkAcceptanceFiles = Object.freeze([
+  "bounded-capacity-pilot.test.mjs",
   "native-isolate-metrics.test.mjs",
   "native-sqlite-export.test.mjs",
 ]);

@@ -14,6 +14,7 @@ export const syntheticCapacityTiers = [
 export const syntheticCapacityWorkloads: readonly CapacityWorkload[] = [
   { id: "2-images", printings: 2, images: 2, imageBytes: 2 * 100 * 1024, structuredBytes: 16 * 1024 },
   { id: "128-images", printings: 128, images: 128, imageBytes: 128 * 100 * 1024, structuredBytes: 1024 ** 2 },
+  { id: "accounting-pilot", printings: 17, images: 34, imageBytes: 34 * 100 * 1024, structuredBytes: 128 * 1024 },
   ...syntheticCapacityTiers,
 ];
 export const capacityPrintingsPerPage = 16;
@@ -46,6 +47,27 @@ export function capacityPageCount(workload: CapacityWorkload, printingsPerPage =
   )
     throw new Error("Capacity workload requires 1 to 3 image roles per Printing");
   return Math.ceil(workload.printings / printingsPerPage);
+}
+
+/** Disjoint page ranges; a page's complete Card/Printing inventory stays together. */
+export function capacityCollectionScopes(workload: CapacityWorkload) {
+  const pages = capacityPageCount(workload);
+  const requestsPerPage = 1 + capacityPrintingsPerPage * (workload.images / workload.printings);
+  // Two deliberately small independently complete scopes cross the same seam as the full tiers.
+  const pagesPerScope = workload.id === "accounting-pilot" ? 1 : Math.floor(5000 / requestsPerPage);
+  return Array.from({ length: Math.ceil(pages / pagesPerScope) }, (_, index) => {
+    const firstPage = index * pagesPerScope;
+    const lastPage = Math.min(pages - 1, firstPage + pagesPerScope - 1);
+    const printings =
+      Math.min(workload.printings, (lastPage + 1) * capacityPrintingsPerPage) - firstPage * capacityPrintingsPerPage;
+    return {
+      subset: `${workload.id}-pages-${firstPage}-${lastPage}`,
+      firstPage,
+      lastPage,
+      printings,
+      requests: lastPage - firstPage + 1 + printings * (workload.images / workload.printings),
+    };
+  });
 }
 
 export function capacityPageUrl(tier: string, page: number) {
@@ -214,8 +236,12 @@ export function capacityImageResponse(workload: CapacityWorkload, index: number)
 }
 
 export function capacitySourceResponse(url: URL): Response | null {
-  const page = /^\/reconciliation\/capacity-(tier-[12]|2-images|128-images)-page-([0-9]+)$/u.exec(url.pathname);
-  const image = /^\/images\/capacity-(tier-[12]|2-images|128-images)-([0-9]+)\.png$/u.exec(url.pathname);
+  const page = /^\/reconciliation\/capacity-(tier-[12]|2-images|128-images|accounting-pilot)-page-([0-9]+)$/u.exec(
+    url.pathname,
+  );
+  const image = /^\/images\/capacity-(tier-[12]|2-images|128-images|accounting-pilot)-([0-9]+)\.png$/u.exec(
+    url.pathname,
+  );
   if (page === null && image === null) return null;
   try {
     if (page) return Response.json(capacityPageDocument(syntheticCapacityTier(page[1]!), Number(page[2])));

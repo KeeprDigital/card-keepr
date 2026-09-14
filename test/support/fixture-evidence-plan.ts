@@ -1,4 +1,4 @@
-import { requiredSourceAdapter } from "../../src/catalogue/adapters";
+import { requiredSourceAdapter, sourceAdapterForCoverage } from "../../src/catalogue/adapters";
 import { catalogueStore } from "../../src/catalogue/shared";
 import {
   appendDiscoveredEvidenceRequests,
@@ -22,7 +22,7 @@ export async function injectFixtureEvidencePlan(
   await validateEvidencePlans(request);
   const inputs = "plans" in request ? request.plans : [request];
   const plans = inputs.map((plan) => {
-    const adapter = requiredSourceAdapter(plan.adapter_version);
+    const adapter = sourceAdapterForCoverage(requiredSourceAdapter(plan.adapter_version), plan.subset);
     const root = adapter.requiredSurfaces?.[0] ?? "discovery";
     return {
       ...plan,
