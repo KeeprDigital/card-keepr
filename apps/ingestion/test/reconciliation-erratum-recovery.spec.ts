@@ -149,7 +149,7 @@ test("a lost committed Erratum seed response preserves its predecessor through r
   expect(paused.manifest_digest).toBeNull();
   const resume = () => preparation.resume(1, "erratum-loss-resume");
   const resumed = await resume();
-  expect(resumed.status).toBe(200);
+  expect(resumed.status).toBe(202);
   expect(await (await resume()).json()).toEqual(await resumed.json());
   unavailable = false;
   const resumedEvent = { payload: { ...event.payload, generation: 1 } } as typeof event;

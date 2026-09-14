@@ -391,7 +391,7 @@ test("candidate inspection reports stable reconciliation matches rather than eve
     idempotency_key: "abandon-inspected-candidate",
   });
   expect(abandoned.response.status).toBe(202);
-  expect(abandoned.document.state).toBe("abandoned");
+  expect((await get(`/v1/game-candidates/${abandoned.document.id}`)).document.state).toBe("abandoned");
 });
 
 test("generic retry rejects an evidence-backed terminal run so reconciliation provenance cannot be reset", async () => {

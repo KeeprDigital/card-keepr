@@ -298,6 +298,7 @@ test("a bounded composition references independently verified games without re-u
       idempotency_key: "compose-other",
     })
   ).document;
+  other = (await get(`/v1/game-candidates/${other.id}`)).document;
   const until = Date.now() + 15000;
   while (other.state === "preparing" && Date.now() < until) {
     await new Promise((resolve) => setTimeout(resolve, 25));
@@ -647,6 +648,7 @@ test("a fresh candidate reuses unchanged fact components while retaining a disti
       idempotency_key: "fresh-unchanged-candidate",
     })
   ).document;
+  next = (await get(`/v1/game-candidates/${next.id}`)).document;
   const deadline = Date.now() + 15000;
   while (next.state === "preparing" && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 25));

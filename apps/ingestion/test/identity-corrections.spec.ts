@@ -619,7 +619,7 @@ test.each(["lookup", "application"])(
       state: "paused",
       generation: 1,
     });
-    expect((await preparation.resume(1, "resume-lookup")).status).toBe(200);
+    expect((await preparation.resume(1, "resume-lookup")).status).toBe(202);
     unavailable = false;
     await runReconciliationWorkflow(
       { ...testEnv, CATALOGUE_DB: database },
@@ -826,7 +826,7 @@ describe.each(["associations", "application", "lookup"])(
       const paused = (await get(`/v1/game-candidates/${preparation.candidateId}`)).document;
       expect(failures, JSON.stringify({ state: paused.state, failure_code: paused.failure_code })).toBe(4);
       expect(paused).toMatchObject({ state: "paused", generation: 1 });
-      expect((await preparation.resume(1, "resume-identity-associations")).status).toBe(200);
+      expect((await preparation.resume(1, "resume-identity-associations")).status).toBe(202);
       resumed = true;
       await runReconciliationWorkflow(
         environment,

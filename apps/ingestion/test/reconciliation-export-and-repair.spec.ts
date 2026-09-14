@@ -288,7 +288,7 @@ test("heterogeneous empty plans inspect and publish every lineage independently 
           idempotency_key: `abandon-mixed-${game}-${suffix}`,
         });
         expect(abandoned.response.status, JSON.stringify(abandoned.document)).toBe(202);
-        expect(abandoned.document.state).toBe("abandoned");
+        expect((await get(`/v1/game-candidates/${abandoned.document.id}`)).document.state).toBe("abandoned");
       }
     }
     result.cards.sort();

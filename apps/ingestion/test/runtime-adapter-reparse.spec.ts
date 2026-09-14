@@ -176,6 +176,6 @@ test("authenticated reparse requires the exact Digimon snapshot capture version"
       generation: candidate!.generation,
       idempotency_key: "digimon-exact-capture-version-cleanup",
     });
-    expect(rejected.status).toBe(200);
+    expect(rejected.status).toBe(202);
   }
 }, 120_000);

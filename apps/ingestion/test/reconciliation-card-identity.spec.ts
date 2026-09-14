@@ -692,7 +692,7 @@ test("historical Gundam locators survive disappearance without retaining stale C
     idempotency_key: "reject-absent-asia-card-authority",
   });
   expect(usConflictAbandoned.response.status).toBe(202);
-  expect(usConflictAbandoned.document.state).toBe("abandoned");
+  expect((await get(`/v1/game-candidates/${usConflictAbandoned.document.id}`)).document.state).toBe("abandoned");
   const usPrintingConflictRun = await collect(
     "/reconciliation/gundam-printing-lifecycle-primary-disappearance-us-printing-conflict",
     "historical-authority-us-printing-conflict",
@@ -718,7 +718,9 @@ test("historical Gundam locators survive disappearance without retaining stale C
     idempotency_key: "reject-current-us-printing-evolution",
   });
   expect(usPrintingConflictAbandoned.response.status).toBe(202);
-  expect(usPrintingConflictAbandoned.document.state).toBe("abandoned");
+  expect((await get(`/v1/game-candidates/${usPrintingConflictAbandoned.document.id}`)).document.state).toBe(
+    "abandoned",
+  );
 });
 
 test("historical Gundam locators permit formatting-equivalent Asia evidence after US disappearance", async () => {
@@ -837,7 +839,9 @@ test("historical Gundam locators permit changed Asia facts after conflicting US 
     idempotency_key: "reject-current-asia-printing-evolution",
   });
   expect(reverseConflictAsiaAbandoned.response.status).toBe(202);
-  expect(reverseConflictAsiaAbandoned.document.state).toBe("abandoned");
+  expect((await get(`/v1/game-candidates/${reverseConflictAsiaAbandoned.document.id}`)).document.state).toBe(
+    "abandoned",
+  );
 });
 
 test("Gundam EN-ASIA Printing facts become canonical when formatting-equivalent EN-US evidence arrived first", async () => {

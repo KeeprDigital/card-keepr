@@ -43,6 +43,7 @@ async function approvedCandidate(key: string) {
       idempotency_key: `${key}-candidate`,
     })
   ).document;
+  candidate = (await get(`/v1/game-candidates/${candidate.id}`)).document;
   const deadline = Date.now() + 15000;
   while (candidate.state === "preparing" && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 25));

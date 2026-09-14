@@ -69,7 +69,7 @@ async function abandonNativeCandidate(candidate: Record<string, unknown>) {
         idempotency_key: `abandon-${candidate.id}`,
       })
     ).response.status,
-  ).toBe(200);
+  ).toBe(202);
 }
 
 test("a complete zero-match blocks publication unless retained evidence proves a demonstrably novel appearance", async () => {

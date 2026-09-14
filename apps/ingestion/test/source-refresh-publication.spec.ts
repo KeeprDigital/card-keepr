@@ -84,7 +84,7 @@ describe("refreshing accepted supplemental evidence", () => {
           idempotency_key: "inspect-supplemental-intake",
         })
       ).status,
-    ).toBe(200);
+    ).toBe(202);
     const proposals = await get("/v1/entity-proposals?game=one-piece");
     const proposal = (proposals.document.proposals as { id: string }[])[0]!;
     expect(
@@ -153,7 +153,7 @@ describe("refreshing accepted supplemental evidence", () => {
               idempotency_key: "after-outage-proof-inspected",
             })
           ).status,
-        ).toBe(200);
+        ).toBe(202);
         const competing = await refresh([sourcePlan("limitless-one-piece-en", "base")], "failed");
         expect(competing.candidate?.state ?? competing.collection.state).toBe("failed");
       }
