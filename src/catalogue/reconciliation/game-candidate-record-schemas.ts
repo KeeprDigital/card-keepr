@@ -149,7 +149,9 @@ const artCard = z.strictObject({
   gameplay_applicability: z.literal("inapplicable"),
   game_data: artData,
 });
-export const cardRecord = z.union([gameplayCard, artCard]).openapi("CandidateCard");
+export const cardRecord = z
+  .union([gameplayCard.openapi("CandidateGameplayCard"), artCard.openapi("CandidateArtCard")])
+  .openapi("CandidateCard");
 export const observedCard = z.union([gameplayCard.omit({ id: true }), artCard.omit({ id: true })]);
 export const historicalCard = gameplayCard
   .omit({ category: true, gameplay_applicability: true, related_cards: true })
@@ -376,12 +378,21 @@ const cardModels = ["categories", "pre_categories"] as const;
 const factSchemas = (model: (typeof cardModels)[number]) =>
   model === "categories" ? candidateFactSchemas : historicalFactSchemas;
 const cardModelSchema = z.enum(cardModels);
-const predecessorModelSchema = cardModelSchema.nullable();
+// Aggregate predecessors have no preparation definition pin. Their retained
+// before-values may use either complete shape; current after-values stay strict.
+const predecessorModels = [...cardModels, "unversioned"] as const;
+const predecessorModelSchema = z.enum(predecessorModels).nullable();
+const predecessorFactSchema = (kind: "cards" | "printings", model: (typeof predecessorModels)[number] | null) =>
+  model === null
+    ? z.null()
+    : model === "unversioned"
+      ? z.union([candidateFactSchemas[kind], historicalFactSchemas[kind], z.null()])
+      : z.union([factSchemas(model)[kind], z.null()]);
 const partition = (
   kind: string,
   record: z.ZodType,
   model: z.ZodType<(typeof cardModels)[number]> = cardModelSchema,
-  predecessorModel: z.ZodType<(typeof cardModels)[number] | null> = predecessorModelSchema,
+  predecessorModel: z.ZodType<(typeof predecessorModels)[number] | null> = predecessorModelSchema,
 ) =>
   z.strictObject({
     candidate_id: identifier,
@@ -425,16 +436,12 @@ export const candidatePartitionSchema = z
     partition("inspection_summary", inspectionSummary),
     ...cardModels.flatMap((model) => [
       ...(["cards", "printings"] as const).map((kind) => partition(kind, factSchemas(model)[kind], z.literal(model))),
-      ...[null, ...cardModels].map((predecessor) =>
+      ...[null, ...predecessorModels].map((predecessor) =>
         partition(
           "inspection",
           z.union([
             ...(["cards", "printings"] as const).map((kind) =>
-              change(
-                kind,
-                factSchemas(model)[kind],
-                predecessor === null ? z.null() : z.union([factSchemas(predecessor)[kind], z.null()]),
-              ),
+              change(kind, factSchemas(model)[kind], predecessorFactSchema(kind, predecessor)),
             ),
             ...(predecessor === null ? changesFromSpine : changesWithPredecessor),
           ]),

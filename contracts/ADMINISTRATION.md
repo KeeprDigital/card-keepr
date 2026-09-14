@@ -171,7 +171,9 @@ candidate and verified publication artifacts are separate prerequisites. Intake
 admission and candidate sealing never substitute for whole-candidate approval.
 
 Partition responses identify `card_model` and `predecessor_card_model` from the
-recorded preparation definitions. `categories` requires the current Card category,
+recorded preparation definitions. Aggregate predecessors without a preparation
+definition use `unversioned`; their before-values can have either complete retained
+record shape. `categories` requires the current Card category,
 gameplay applicability and related-Card fields; `pre_categories` describes retained
 facts from before that definition. A null predecessor model means the Spine
 Revision. Historical before-values and old candidate facts retain their original

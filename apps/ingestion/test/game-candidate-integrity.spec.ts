@@ -386,6 +386,23 @@ test("canonical legacy candidate JSON preserves before-images regardless of memb
   }
   expect(candidate, JSON.stringify(candidate)).toMatchObject({ state: "sealed" });
   const inspected = await nativeCandidateRecords(id);
+  const partitions = await get(`/v1/game-candidates/${id}/partitions`);
+  expect(partitions.document.next_cursor).toBeNull();
+  const inspectionPartition = (partitions.document.partitions as { kind: string; ordinal: number }[]).find(
+    (partition) => partition.kind === "inspection",
+  )!;
+  const detail = await get(`/v1/game-candidates/${id}/partitions/${inspectionPartition.ordinal}`);
+  expect(detail.document).toMatchObject({ card_model: "categories", predecessor_card_model: "unversioned" });
+  await assertHttpResponse(
+    contract,
+    "/v1/game-candidates/{candidate}/partitions/{ordinal}",
+    "get",
+    detail.response,
+    detail.document,
+  );
+  expect(inspected.inspection).toContainEqual(
+    expect.objectContaining({ entity_class: "cards", before: records.cards![0] }),
+  );
   expect(inspected.inspection).toContainEqual(
     expect.objectContaining({
       entity_class: "printing_images",

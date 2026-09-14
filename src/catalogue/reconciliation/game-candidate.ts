@@ -435,7 +435,7 @@ export async function inspectGameCandidatePartition(
       ? null
       : predecessor
         ? await candidateCardModel(database, predecessor.id)
-        : "pre_categories";
+        : "unversioned";
   return {
     candidate_id: candidate.id,
     manifest_digest: candidate.manifest_digest,
