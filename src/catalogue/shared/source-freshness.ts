@@ -1,4 +1,5 @@
 import type { CatalogueSourceCheck, SupportedGame } from "./catalogue-candidate-types";
+import { registeredSupportedGames } from "./reconciliation-profile";
 import { compareUtf8 } from "./serialization";
 
 export type SourceFreshnessStorageRow = {
@@ -72,8 +73,9 @@ export function isCatalogueSourceCheck(value: unknown): value is CatalogueSource
 }
 
 function supportedGame(value: string): SupportedGame {
-  if (!["one-piece", "fusion-world", "digimon", "gundam", "riftbound", "magic", "pokemon"].includes(value)) {
+  const game = registeredSupportedGames().find((game) => game === value);
+  if (game === undefined) {
     throw new Error("Stored Source freshness has an unsupported game.");
   }
-  return value as SupportedGame;
+  return game;
 }

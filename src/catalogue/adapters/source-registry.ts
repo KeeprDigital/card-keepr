@@ -30,6 +30,14 @@ export type SourceLineageRegistration = Readonly<{
   release_region: "OCEANIA" | "ASIA" | "US" | "unknown";
 }>;
 export const sourceLineages: readonly SourceLineageRegistration[] = [
+  { id: "tcgdex-pokemon-en", source_id: "tcgdex-pokemon", game: "pokemon", locale: "en", release_region: "unknown" },
+  {
+    id: "pokemon-official-en",
+    source_id: "pokemon-official",
+    game: "pokemon",
+    locale: "en",
+    release_region: "unknown",
+  },
   { id: "scryfall-magic-en", source_id: "scryfall", game: "magic", locale: "en", release_region: "unknown" },
   { id: "riftbound-en", source_id: "riot-riftbound", game: "riftbound", locale: "en", release_region: "US" },
   { id: "one-piece-en", source_id: "bandai-one-piece", game: "one-piece", locale: "en", release_region: "OCEANIA" },

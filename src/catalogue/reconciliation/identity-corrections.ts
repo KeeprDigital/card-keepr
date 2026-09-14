@@ -1,4 +1,5 @@
 import {
+  registeredSupportedGames,
   AdministrationProblem,
   type CatalogueStore,
   type CatalogueCard,
@@ -46,7 +47,7 @@ function proposal(value: Record<string, unknown>): IdentityCorrectionProposal {
   ];
   if (Object.keys(value).some((k) => !fields.includes(k))) invalid("Unknown correction proposal field.");
   if (
-    !["one-piece", "fusion-world", "digimon", "gundam", "riftbound", "magic", "pokemon"].includes(String(value.game)) ||
+    !registeredSupportedGames().some((game) => game === value.game) ||
     !["card", "printing"].includes(String(value.entity_kind)) ||
     !["merge", "split", "assign"].includes(String(value.action))
   )

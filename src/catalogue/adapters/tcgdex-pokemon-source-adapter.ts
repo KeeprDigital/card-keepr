@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { AdapterParseFailure, adapterUrl, decodeAdapterUtf8, withAdapterParseFailure } from "./adapter-parse-failure";
-import type { SourceAdapterRegistration } from "./source-adapter-registration-types";
+import type { SourceAdapterRegistration, SourcePrintingIdentityEvidence } from "./source-adapter-registration-types";
 
 const origin = "https://api.tcgdex.net";
 const lineage = "tcgdex-pokemon-en";
@@ -136,6 +136,16 @@ function observations(bytes: Uint8Array, sourceUrl: string) {
         artwork_fingerprint: fingerprint,
         printed_fields_digest: createHash("sha256").update(JSON.stringify(printingAttributes)).digest("hex"),
         treatment: key,
+        demonstrably_novel: preciseImage !== null,
+        ...(preciseImage === null
+          ? {}
+          : {
+              novelty_basis: {
+                kind: "source_printing_image",
+                source_url: preciseImage,
+                artwork_fingerprint: fingerprint,
+              },
+            }),
       },
       appearance_evidence: {
         images:
@@ -186,7 +196,26 @@ export const tcgdexPokemonSourceAdapterRegistration = {
   origin: "production",
   requestSurface: { kind: "credential-free-https" },
   reconciliationCapability: "catalogue",
-  printingAdmission: "owner_review",
+  printingAdmission: "source_qualification",
+  qualifiesCardDesignIdentity: qualifiesDesign,
+  qualifiesPrintingIdentity(evidence) {
+    const printing = evidence.observedCardAndPrinting.printing;
+    const attributes = printing?.game_data?.attributes;
+    return (
+      qualifiesDesign(evidence) &&
+      printing?.game_data?.profile === "pokemon@1" &&
+      attributes?.set_code === evidence.cardDesignKey?.split("-")[0] &&
+      attributes?.collector_number === evidence.cardDesignKey?.split("-")[1] &&
+      evidence.variantKey ===
+        JSON.stringify({
+          finish: attributes?.finish,
+          edition: attributes?.edition,
+          size: attributes?.size,
+          stamps: attributes?.stamps,
+        }) &&
+      evidence.artworkFingerprint === `${lineage}:${evidence.cardDesignKey}:${evidence.variantKey}`
+    );
+  },
   reconciliationAreas: ["catalogue"],
   requiredSurfaces: cardIds,
   requestUrlForSurface: surfaceUrl,
@@ -211,6 +240,17 @@ export const tcgdexPokemonSourceAdapterRegistration = {
       : [{ role: "image" as const, url: `${text(card.image)}/high.png`, headers: { ...headers, accept: "image/png" } }];
   },
 } satisfies SourceAdapterRegistration;
+
+function qualifiesDesign(evidence: SourcePrintingIdentityEvidence) {
+  return (
+    evidence.observedCardAndPrinting.card?.game === "pokemon" &&
+    evidence.observedCardAndPrinting.card.official_identity.kind === "unknown" &&
+    typeof evidence.cardDesignKey === "string" &&
+    cardIds.includes(evidence.cardDesignKey) &&
+    typeof evidence.variantKey === "string" &&
+    evidence.locator === `${evidence.cardDesignKey}:${evidence.variantKey}`
+  );
+}
 
 function record(value: unknown): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value))

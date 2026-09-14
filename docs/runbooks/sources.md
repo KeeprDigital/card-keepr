@@ -64,8 +64,9 @@ identity uncertainty and contradictory evidence still block the refresh.
 
 Riot starts with all three areas for its registered English/US scope. An existing
 explicit owner designation remains selected. Scryfall starts with all three in
-its English/unknown-region Magic scope; Pokémon's TCGdex/official correction choices
-await their exact registrations. The [Scryfall pilot plan](../examples/scryfall-magic-pilot-plan.json)
+its English/unknown-region Magic scope. Pokémon's English/unknown-region scope
+starts with TCGdex for card facts and Printing details and selected official
+publications for corrected card content. The [Scryfall pilot plan](../examples/scryfall-magic-pilot-plan.json)
 selects four issued English paper records and their declared finishes/faces.
 Its [retained evidence and limitations](../../acceptance/fixtures/real-sources/2026-09-14-scryfall/README.md)
 define acquisition bounds, qualification and the remaining full-import scope.

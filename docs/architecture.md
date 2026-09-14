@@ -67,8 +67,9 @@ Pokémon publications for corrected card content; and Riot for all three areas o
 Riftbound content. Register these choices for their exact applicable English and
 release-region scopes. Riot's registered English/US scope now starts with these
 three designations; retained explicit owner decisions take precedence. Scryfall now
-starts with those areas in its English/unknown-region pilot scope. Pokémon
-designations remain accepted direction for its later registrations.
+starts with those areas in its English/unknown-region pilot scope. Pokémon's
+English/unknown-region pilot starts with TCGdex for card facts and Printing
+details, and the selected official publications for corrected card content.
 The initial policy selects areas per exact registered lineage, independently of
 publisher ownership. Competing observations remain inspectable;
 repeated claims across Sources do not establish independent corroboration or

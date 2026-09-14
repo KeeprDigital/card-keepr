@@ -383,7 +383,7 @@ test("a bounded composition references independently verified games without re-u
   expect((await get(otherPath)).document).toEqual(second);
 });
 
-test("all six registered games compose through the strict HTTP contract", async () => {
+test("all seven registered games compose through the strict HTTP contract", async () => {
   const sources = [
     ["one-piece", "one-piece-en", "fixture-one-piece-json@3", "base"],
     ["digimon", "digimon-en", "fixture-digimon-json@2", "profile-digimon"],
@@ -391,6 +391,7 @@ test("all six registered games compose through the strict HTTP contract", async 
     ["gundam", "gundam-en-asia", "fixture-gundam-en-asia-json@2", "profile-gundam"],
     ["riftbound", "riftbound-en", "fixture-riftbound-json@1", "profile-riftbound"],
     ["magic", "scryfall-magic-en", "fixture-magic-json@1", "profile-magic"],
+    ["pokemon", "tcgdex-pokemon-en", "fixture-pokemon-json@1", "profile-pokemon"],
   ] as const;
   const games = [];
   for (const [game, lineage, adapter, scenario] of sources) {

@@ -11,7 +11,7 @@ import { collect, installReconciliationSuite, requiredString, testEnv } from "./
 
 installReconciliationSuite({ directPreparation: true });
 
-const allGames = ["one-piece", "digimon", "fusion-world", "gundam", "riftbound", "magic"];
+const allGames = ["one-piece", "digimon", "fusion-world", "gundam", "riftbound", "magic", "pokemon"];
 let fixture: { preparation: string; revision: string; product: Record<string, unknown> };
 beforeEach(async () => {
   const run = await collect("/reconciliation/inspection-product", "native-target-source");
@@ -28,7 +28,7 @@ beforeEach(async () => {
 });
 
 test.each([
-  { label: "all six registered games", games: allGames, valid: true },
+  { label: "all seven registered games", games: allGames, valid: true },
   { label: "duplicate game", games: [...allGames.slice(0, -1), "one-piece"], valid: false },
   { label: "unknown game", games: [...allGames.slice(0, -1), "unknown-game"], valid: false },
 ])("a native Curated Product target verifies $label", async ({ games, valid }) => {

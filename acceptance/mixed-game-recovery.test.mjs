@@ -22,7 +22,7 @@ import { withNativeRequestPacing } from "./helpers/native-request-pacing.mjs";
 import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs";
 
 // Synthetic source facts, actual publication/backup Workflows and SQL imports.
-// All six registered games prove sibling preservation; three further publications cross the
+// All seven registered games prove sibling preservation; three further publications cross the
 // current-plus-two retention boundary. No full catalogue or capacity preflight.
 test("mixed-game composition and current plus two survive an actual SQL import", async (t) => {
   const exportReader = nativeExportReader(250);
@@ -90,6 +90,7 @@ test("mixed-game composition and current plus two survive an actual SQL import",
     ["gundam", "gundam-en-asia", "fixture-gundam-en-asia-json@2", "profile-gundam"],
     ["riftbound", "riftbound-en", "fixture-riftbound-json@1", "profile-riftbound"],
     ["magic", "scryfall-magic-en", "fixture-magic-json@1", "profile-magic"],
+    ["pokemon", "tcgdex-pokemon-en", "fixture-pokemon-json@1", "profile-pokemon"],
   ];
   const revisions = [];
   const gameRevisions = new Map();

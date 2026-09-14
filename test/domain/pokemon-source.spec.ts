@@ -4,8 +4,34 @@ import { expect, test } from "vitest";
 import { tcgdexPokemonSourceAdapterRegistration } from "../../src/catalogue/adapters/tcgdex-pokemon-source-adapter";
 import { parseReconciliationObservation } from "../../src/catalogue/reconciliation/reconciliation-observation";
 import { AdapterParseFailure } from "../../src/catalogue/adapters/adapter-parse-failure";
+import type { SourceAdapterRegistration } from "../../src/catalogue/adapters/source-adapter-registration-types";
 
 const fixture = new URL("../../acceptance/fixtures/real-sources/2026-09-14-pokemon/raw/", import.meta.url);
+
+test("TCGdex qualification binds the selected source Card and treatment while keeping image proof separate", async () => {
+  const adapter: SourceAdapterRegistration = tcgdexPokemonSourceAdapterRegistration;
+  expect(adapter.printingAdmission).toBe("source_qualification");
+  for (const [id, file] of [
+    ["svp-051", "tcgdex-snorlax-svp-051.body"],
+    ["base1-4", "tcgdex-charizard-base1-4.body"],
+  ]) {
+    const observations = await adapter.parseBytes!(readFileSync(new URL(file!, fixture)), {
+      url: `https://api.tcgdex.net/v2/en/cards/${id}`,
+      mediaType: "application/json",
+    });
+    for (const raw of observations) {
+      const parsed = parseReconciliationObservation("qualification", raw);
+      if (parsed.kind !== "card_printing") throw new Error("Expected retained Card evidence");
+      expect(parsed.cardDesignKey).toBe(id);
+      expect(adapter.qualifiesCardDesignIdentity!(parsed)).toBe(true);
+      expect(adapter.qualifiesPrintingIdentity!(parsed)).toBe(true);
+      expect(adapter.qualifiesCardDesignIdentity!({ ...parsed, cardDesignKey: "517175" })).toBe(false);
+      expect(adapter.qualifiesPrintingIdentity!({ ...parsed, variantKey: "another-treatment" })).toBe(false);
+      expect(adapter.qualifiesPrintingIdentity!({ ...parsed, locator: "another-card" })).toBe(false);
+      expect(parsed.noveltyProofComplete).toBe(false); // No independently captured image bytes at this pure seam.
+    }
+  }
+});
 
 test("retained TCGdex Snorlax treatments stay distinct and its shared catalogue image does not depict the stamp", () => {
   const observations = tcgdexPokemonSourceAdapterRegistration.parseBytes(

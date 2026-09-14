@@ -1,5 +1,7 @@
 import { riftboundSourceAdapterRegistration } from "./riftbound-source-adapter";
 import { scryfallSourceAdapterRegistration } from "./scryfall-source-adapter";
+import { tcgdexPokemonSourceAdapterRegistration } from "./tcgdex-pokemon-source-adapter";
+import { pokemonOfficialSourceAdapterRegistration } from "./pokemon-official-source-adapter";
 import { onePieceCoverageContracts } from "./one-piece-adapter";
 import { limitlessOnePieceSourceAdapterRegistration } from "./limitless-one-piece-source-adapter";
 import { sourceLineages } from "./source-registry";
@@ -119,6 +121,8 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
     limitlessOnePieceSourceAdapterRegistration,
     riftboundSourceAdapterRegistration,
     scryfallSourceAdapterRegistration,
+    tcgdexPokemonSourceAdapterRegistration,
+    pokemonOfficialSourceAdapterRegistration,
     {
       adapterVersion: "one-piece-official-errata-html@1",
       sourceLineage: "one-piece-en",
