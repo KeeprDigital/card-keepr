@@ -18614,29 +18614,11 @@
                           "properties": {
                             "content": {
                               "type": "object",
-                              "additionalProperties": {
-                                "anyOf": [
-                                  {
-                                    "$ref": "#/components/schemas/CandidateNonNullSourceValue"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              }
+                              "additionalProperties": true
                             },
                             "evidence": {
                               "type": "object",
-                              "additionalProperties": {
-                                "anyOf": [
-                                  {
-                                    "$ref": "#/components/schemas/CandidateNonNullSourceValue"
-                                  },
-                                  {
-                                    "type": "null"
-                                  }
-                                ]
-                              }
+                              "additionalProperties": true
                             }
                           },
                           "required": [
@@ -33323,58 +33305,22 @@
           },
           "content": {
             "type": "object",
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/CandidateNonNullSourceValue"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
+            "additionalProperties": true
           },
           "evidence": {
             "type": "object",
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/CandidateNonNullSourceValue"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
+            "additionalProperties": true
           },
           "initial_intake": {
             "type": "object",
             "properties": {
               "content": {
                 "type": "object",
-                "additionalProperties": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/CandidateNonNullSourceValue"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
+                "additionalProperties": true
               },
               "evidence": {
                 "type": "object",
-                "additionalProperties": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/CandidateNonNullSourceValue"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
+                "additionalProperties": true
               }
             },
             "required": [
@@ -33639,29 +33585,11 @@
             "properties": {
               "content": {
                 "type": "object",
-                "additionalProperties": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/CandidateNonNullSourceValue"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
+                "additionalProperties": true
               },
               "evidence": {
                 "type": "object",
-                "additionalProperties": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/CandidateNonNullSourceValue"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
+                "additionalProperties": true
               }
             },
             "required": [
@@ -52967,29 +52895,11 @@
                 "properties": {
                   "content": {
                     "type": "object",
-                    "additionalProperties": {
-                      "anyOf": [
-                        {
-                          "$ref": "#/components/schemas/CandidateNonNullSourceValue"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    }
+                    "additionalProperties": true
                   },
                   "evidence": {
                     "type": "object",
-                    "additionalProperties": {
-                      "anyOf": [
-                        {
-                          "$ref": "#/components/schemas/CandidateNonNullSourceValue"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    }
+                    "additionalProperties": true
                   },
                   "game": {
                     "type": "string",
@@ -54064,109 +53974,157 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "action": {
-                    "type": "string",
-                    "enum": [
-                      "admit",
-                      "link",
-                      "reject",
-                      "reconsider"
-                    ]
-                  },
-                  "expected_generation": {
-                    "type": "string",
-                    "pattern": "^(0|[1-9]\\d*)$"
-                  },
-                  "rationale": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "idempotency_key": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "exception": {
+                "oneOf": [
+                  {
                     "type": "object",
                     "properties": {
-                      "scope": {
-                        "type": "array",
-                        "items": {
-                          "type": "string",
-                          "enum": [
-                            "source_evidence",
-                            "identity"
-                          ]
-                        }
+                      "expected_generation": {
+                        "type": "string",
+                        "pattern": "^(0|[1-9]\\d*)$"
                       },
-                      "attestation": {
+                      "rationale": {
                         "type": "string",
                         "minLength": 1
+                      },
+                      "idempotency_key": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "card_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "printing_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "content": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "evidence": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "admit",
+                          "link"
+                        ]
+                      },
+                      "exception": {
+                        "type": "object",
+                        "properties": {
+                          "scope": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "source_evidence",
+                                "identity"
+                              ]
+                            }
+                          },
+                          "attestation": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "scope",
+                          "attestation"
+                        ],
+                        "additionalProperties": false
                       }
                     },
                     "required": [
-                      "scope",
-                      "attestation"
+                      "expected_generation",
+                      "rationale",
+                      "idempotency_key",
+                      "action"
                     ],
                     "additionalProperties": false
                   },
-                  "card_id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "printing_id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "content": {
-                    "anyOf": [
-                      {
-                        "type": "object",
-                        "additionalProperties": {
-                          "anyOf": [
-                            {
-                              "$ref": "#/components/schemas/CandidateNonNullSourceValue"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        }
+                  {
+                    "type": "object",
+                    "properties": {
+                      "expected_generation": {
+                        "type": "string",
+                        "pattern": "^(0|[1-9]\\d*)$"
                       },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "evidence": {
-                    "anyOf": [
-                      {
-                        "type": "object",
-                        "additionalProperties": {
-                          "anyOf": [
-                            {
-                              "$ref": "#/components/schemas/CandidateNonNullSourceValue"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        }
+                      "rationale": {
+                        "type": "string",
+                        "minLength": 1
                       },
-                      {
-                        "type": "null"
+                      "idempotency_key": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "card_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "printing_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "content": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "evidence": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "reject",
+                          "reconsider"
+                        ]
+                      },
+                      "exception": {
+                        "description": "Unused by this action and retained unchanged for exact replay."
                       }
-                    ]
+                    },
+                    "required": [
+                      "expected_generation",
+                      "rationale",
+                      "idempotency_key",
+                      "action"
+                    ],
+                    "additionalProperties": false
                   }
-                },
-                "required": [
-                  "action",
-                  "expected_generation",
-                  "rationale",
-                  "idempotency_key"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }

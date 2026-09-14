@@ -20,6 +20,12 @@ const nonNullSourceValue: z.ZodType<Exclude<JsonValue, null>> = z
   )
   .openapi("CandidateNonNullSourceValue");
 export const sourceValue = z.union([nonNullSourceValue, z.null()]);
+const sourceObject = z.record(z.string(), sourceValue);
+// Validate free-form JSON without rebuilding it: literal keys such as __proto__
+// are retained evidence and must survive both command parsing and inspection.
+export const retainedSourceObject = z
+  .custom<z.infer<typeof sourceObject>>((value) => sourceObject.safeParse(value).success)
+  .openapi({ type: "object", additionalProperties: true });
 export const textPart = z.strictObject({
   path: z.array(z.union([z.string(), count])),
   sha256: digest,

@@ -13,6 +13,7 @@ import {
   curatedEvidence,
   curatedTarget,
   sourceValue,
+  retainedSourceObject,
 } from "./game-candidate-record-schemas";
 const count = z.number().int().nonnegative();
 const text = z.string().nullable();
@@ -66,7 +67,7 @@ export const admission = z
     admissionDecision(historicalCard, historicalPrinting)
       .omit({ policy_digest: true, publisher_confirmed_fields: true })
       .openapi("RetainedUnversionedAdmissionDecision"),
-    z.strictObject({ content: z.record(z.string(), sourceValue), evidence: z.record(z.string(), sourceValue) }),
+    z.strictObject({ content: retainedSourceObject, evidence: retainedSourceObject }),
     z.strictObject({}),
   ])
   .openapi("RetainedAdmissionDecision");

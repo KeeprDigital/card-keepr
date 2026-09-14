@@ -300,6 +300,14 @@ intake and never overwrites the initial intake or earlier decisions. Omitted or
 explicitly null reconsideration content/evidence retains the previous intake;
 explicit nulls remain part of the exact replay intent.
 
+Rejection and reconsideration retain any supplied `exception` JSON as unused
+intent. Admission and linking require a scoped exception object and the domain's
+attestation checks. Free-form intake and unused exception values preserve all
+literal JSON keys through validation and inspection. Retention still uses the
+existing canonical JSON rules: ordered object keys, NFC text normalization and
+finite integer numbers. Typed Card, Printing and admission evidence keep their
+declared structure.
+
 Proposal creation/decision replay returns current inspection while preserving the
 original immutable intake/decision; subsequent decisions can change its status and
 history. Correction creation and identity resolution return their original

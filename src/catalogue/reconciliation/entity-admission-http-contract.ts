@@ -2,7 +2,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { boundedJson, identifier, problemResponses, secured } from "../../http/openapi";
 import { gameProfileRegistrations } from "../adapters";
 import { admission } from "./game-candidate-evidence-schemas";
-import { sourceValue } from "./game-candidate-record-schemas";
+import { retainedSourceObject as intakeObject } from "./game-candidate-record-schemas";
 
 const game = z.enum(gameProfileRegistrations().map(({ game }) => game));
 const count = z.number().int().nonnegative();
@@ -11,7 +11,6 @@ export const historyCursor = z
   .regex(/^(0|[1-9]\d*)$/)
   .refine((value) => Number.isSafeInteger(Number(value)));
 // Intake intentionally retains incomplete owner facts and source-defined evidence for review.
-const intakeObject = z.record(z.string(), sourceValue);
 const intake = z.strictObject({ content: intakeObject, evidence: intakeObject });
 const proposalParams = z.strictObject({ proposal: identifier });
 const proposalSummary = z.strictObject({
@@ -81,6 +80,15 @@ export const inspectEntityProposalRoute = createRoute({
   request: { params: proposalParams, query: z.strictObject({ after_generation: historyCursor.optional() }) },
   responses: { 200: proposalResponse, ...problemResponses },
 });
+const proposalDecision = z.strictObject({
+  expected_generation: historyCursor,
+  rationale: identifier,
+  idempotency_key: identifier,
+  card_id: identifier.optional(),
+  printing_id: identifier.optional(),
+  content: z.union([intakeObject, z.null()]).optional(),
+  evidence: z.union([intakeObject, z.null()]).optional(),
+});
 export const decideEntityProposalRoute = createRoute({
   method: "post",
   path: "/v1/entity-proposals/{proposal}/decisions",
@@ -93,19 +101,23 @@ export const decideEntityProposalRoute = createRoute({
       required: true,
       content: {
         "application/json": {
-          schema: z.strictObject({
-            action: z.enum(["admit", "link", "reject", "reconsider"]),
-            expected_generation: historyCursor,
-            rationale: identifier,
-            idempotency_key: identifier,
-            exception: z
-              .strictObject({ scope: z.array(z.enum(["source_evidence", "identity"])), attestation: identifier })
-              .optional(),
-            card_id: identifier.optional(),
-            printing_id: identifier.optional(),
-            content: z.union([intakeObject, z.null()]).optional(),
-            evidence: z.union([intakeObject, z.null()]).optional(),
-          }),
+          schema: z.discriminatedUnion("action", [
+            proposalDecision.extend({
+              action: z.enum(["admit", "link"]),
+              exception: z
+                .strictObject({ scope: z.array(z.enum(["source_evidence", "identity"])), attestation: identifier })
+                .optional(),
+            }),
+            proposalDecision.extend({
+              action: z.enum(["reject", "reconsider"]),
+              // The bounded JSON body already supplies JSON. Preserve unused historical
+              // intent unchanged, including keys a record parser would otherwise strip.
+              exception: z
+                .unknown()
+                .optional()
+                .openapi({ description: "Unused by this action and retained unchanged for exact replay." }),
+            }),
+          ]),
         },
       },
     },

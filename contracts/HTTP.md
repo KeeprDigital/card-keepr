@@ -44,6 +44,12 @@ sharing a named component. Applying `.nullable()` to the named schema can change
 the generated component globally or leave a nullable reference non-null. Check
 both required and intentionally nullable positions against actual responses.
 
+For explicitly free-form retained JSON, validate without rebuilding the value.
+Record parsers can strip literal keys such as `__proto__`, changing acknowledged
+intent or inspection history. Verify actual commands, retained responses and
+replay conflicts for key removal. This applies to free-form intake and unused
+review fields; typed Card, Printing and admission fields retain their schemas.
+
 The Card and Printing wire schemas project the Game Profile's declared primitives and
 filter paths into Zod. Profile semantic checks, retained-document validators and
 domain transitions remain independent of Zod. Card queries retain their existing
