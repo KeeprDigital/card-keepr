@@ -28,7 +28,12 @@ function output(path, value) {
 const inventory = [];
 const migrationFamilies = JSON.parse(readFileSync("contracts/http-migration-families.json", "utf8"));
 const callers = operationalCallers();
-const ajv = new Ajv2020({ strict: false, allErrors: true, code: { source: true, esm: true, formats: _`formats` } });
+const ajv = new Ajv2020({
+  strict: false,
+  allErrors: true,
+  inlineRefs: false,
+  code: { source: true, esm: true, formats: _`formats` },
+});
 addFormats(ajv);
 const validators = {};
 const validatorKeys = {};
@@ -88,6 +93,10 @@ for (const [worker, families] of Object.entries(workerFamilies)) {
     },
     servers,
   });
+  // One root per Worker lets all response validators share compiled components.
+  // Separate roots for every response duplicate large retained-record schemas.
+  const schemaRoot = `urn:card-keepr:http:${worker}`;
+  ajv.addSchema(doc, schemaRoot);
   const ids = new Set();
   for (const [path, operations] of Object.entries(doc.paths))
     for (const [method, operation] of Object.entries(operations)) {
@@ -97,12 +106,14 @@ for (const [worker, families] of Object.entries(workerFamilies)) {
       for (const [status, response] of Object.entries(operation.responses))
         for (const [media, representation] of Object.entries(response.content ?? {})) {
           if (!media.includes("json")) continue;
-          const schema = { ...representation.schema, components: doc.components };
-          const signature = JSON.stringify(schema);
+          const signature = JSON.stringify({ root: schemaRoot, schema: representation.schema });
           let name = schemaValidators.get(signature);
           if (!name) {
             name = `response${Object.keys(validators).length}`;
-            ajv.addSchema(schema, name);
+            const pointer = ["paths", path, method, "responses", status, "content", media, "schema"]
+              .map((part) => part.replaceAll("~", "~0").replaceAll("/", "~1"))
+              .join("/");
+            ajv.addSchema({ $ref: `${schemaRoot}#/${pointer}` }, name);
             validators[name] = name;
             schemaValidators.set(signature, name);
           }
