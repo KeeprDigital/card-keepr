@@ -240,6 +240,10 @@ test("owner first install uses the canonical preparation transaction on an unuse
   let shellSource = denySource;
   let shellHasDataBinding = false;
   let shellHasRoute = false;
+  let latestUploadIsApplication = false;
+  let splitActiveTraffic = false;
+  let mismatchedActiveVersion = false;
+  let extraActiveModule = false;
   globalThis.fetch = async (url, options) => {
     if (new URL(url).hostname !== "api.cloudflare.com") return githubFetch(url, options);
     const path = new URL(url).pathname;
@@ -251,7 +255,45 @@ test("owner first install uses the canonical preparation transaction on an unuse
     if (path.endsWith("/workers/routes"))
       return Response.json({ success: true, result: shellHasRoute ? [{ script: "card-keepr-api-dev" }] : [] });
     if (path.includes("/workflows/")) return new Response(null, { status: 404 });
+    if (path.includes("/workers/workers/"))
+      return Response.json({
+        success: true,
+        result: {
+          id: mismatchedActiveVersion ? "00000000-0000-0000-0000-0000000000bb" : "00000000-0000-0000-0000-0000000000aa",
+          main_module: "deny.mjs",
+          modules: [
+            {
+              name: "deny.mjs",
+              content_type: "application/javascript+module",
+              content_base64: Buffer.from(shellSource).toString("base64"),
+            },
+            ...(extraActiveModule ? [{ name: "application.mjs", content_base64: "" }] : []),
+          ],
+          bindings: shellHasDataBinding
+            ? [{ name: "CATALOGUE_DB", type: "d1" }]
+            : (path.includes("-api-dev/")
+                ? ["API_BEARER_KEY", "API_BEARER_KEY_REPLACEMENT"]
+                : ["ADMINISTRATION_KEY", "ADMINISTRATION_KEY_REPLACEMENT", "D1_EXPORT_TOKEN", "D1_VERIFICATION_TOKEN"]
+              ).map((name) => ({ name, type: "secret_text" })),
+        },
+      });
     if (path.includes("/workers/scripts/")) {
+      if (path.endsWith("/deployments"))
+        return Response.json({
+          success: true,
+          result: {
+            deployments: [
+              {
+                versions: [
+                  { version_id: "00000000-0000-0000-0000-0000000000aa", percentage: splitActiveTraffic ? 50 : 100 },
+                  ...(splitActiveTraffic
+                    ? [{ version_id: "00000000-0000-0000-0000-0000000000bb", percentage: 50 }]
+                    : []),
+                ],
+              },
+            ],
+          },
+        });
       if (path.endsWith("/subdomain"))
         return Response.json({ success: true, result: { enabled: false, previews_enabled: false } });
       if (path.endsWith("/settings"))
@@ -267,7 +309,10 @@ test("owner first install uses the canonical preparation transaction on an unuse
           },
         });
       const form = new FormData();
-      form.set("deny.mjs", shellSource);
+      form.set(
+        latestUploadIsApplication ? "index.js" : "deny.mjs",
+        latestUploadIsApplication ? "unactivated application" : shellSource,
+      );
       return new Response(form);
     }
     if (options.method !== "POST") {
@@ -378,6 +423,16 @@ test("owner first install uses the canonical preparation transaction on an unuse
   await assert.rejects(prepareFirstDevInstall(retry), /invalid_dev_secret_inventory/u);
   assert.equal(commands.length, 0, "both credential files must be valid before either shell is refreshed");
   await writeFile(retry.DEV_INGESTION_SECRETS_FILE, JSON.stringify(ingestionSecrets));
+  latestUploadIsApplication = true;
+  splitActiveTraffic = true;
+  await assert.rejects(prepareFirstDevInstall(retry), /first_install_retry_not_safe/u);
+  splitActiveTraffic = false;
+  mismatchedActiveVersion = true;
+  await assert.rejects(prepareFirstDevInstall(retry), /first_install_retry_not_safe/u);
+  mismatchedActiveVersion = false;
+  extraActiveModule = true;
+  await assert.rejects(prepareFirstDevInstall(retry), /first_install_retry_not_safe/u);
+  extraActiveModule = false;
   const retried = await prepareFirstDevInstall(retry);
   assert.notEqual(retried.release_id, prepared.release_id);
   assert.equal(commands.length, 0, "preparation cannot refresh Workers before claiming the deployment lease");
@@ -508,6 +563,26 @@ for (const [scenario, expectedError] of [
       }
       assert.equal(url.hostname, "api.cloudflare.com");
       if (url.pathname.includes("/workflows/")) return new Response(null, { status: 404 });
+      if (retrying && url.pathname.includes("/workers/workers/")) {
+        const worker = /\/workers\/workers\/([^/]+)/u.exec(url.pathname)?.[1];
+        return Response.json({
+          success: true,
+          result: {
+            id: "00000000-0000-0000-0000-0000000000aa",
+            main_module: "deny.mjs",
+            modules: [
+              {
+                name: "deny.mjs",
+                content_type: "application/javascript+module",
+                content_base64: Buffer.from(
+                  "export default { fetch() { return new Response('Dev installation pending', {status:503}); } };",
+                ).toString("base64"),
+              },
+            ],
+            bindings: devBindings(byName[worker]).filter((binding) => binding.type === "secret_text"),
+          },
+        });
+      }
       let result;
       if (url.pathname.endsWith("/query")) {
         const { sql } = JSON.parse(init.body);
@@ -552,12 +627,14 @@ for (const [scenario, expectedError] of [
               {
                 id: `deployment-${worker}`,
                 versions:
-                  scenario === "split traffic"
-                    ? [
-                        { version_id: `version-${worker}`, percentage: 50 },
-                        { version_id: "older", percentage: 50 },
-                      ]
-                    : [{ version_id: scenario === "older version" ? "older" : `version-${worker}`, percentage: 100 }],
+                  retrying && !applicationActive
+                    ? [{ version_id: "00000000-0000-0000-0000-0000000000aa", percentage: 100 }]
+                    : scenario === "split traffic"
+                      ? [
+                          { version_id: `version-${worker}`, percentage: 50 },
+                          { version_id: "older", percentage: 50 },
+                        ]
+                      : [{ version_id: scenario === "older version" ? "older" : `version-${worker}`, percentage: 100 }],
               },
             ],
           };
@@ -677,7 +754,7 @@ for (const [scenario, expectedError] of [
       assert.equal(result.head_sha, head);
       assert.equal(activeReleaseIdentity(database).get().active_production_release_id, null);
       assert.equal(countSuccessfulReleaseEvidence(database).get().count, 1);
-      assert.equal(requests.filter((path) => path.endsWith("/deployments")).length, 2);
+      assert.equal(requests.filter((path) => path.endsWith("/deployments")).length, retrying ? 4 : 2);
       if (retrying) {
         assert.equal(commands.filter(({ args }) => args[0] === "deploy").length, 2);
         assert.match(competingObservation.refusal, /dev_gate_failed:ready/u);
@@ -700,6 +777,7 @@ function devBindings(config) {
       name: item.binding,
       type: "service",
       service: item.service,
+      environment: "production",
       entrypoint: item.entrypoint,
     })),
     ...(config.workflows ?? []).map((item) => ({
