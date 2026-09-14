@@ -11,7 +11,14 @@ import {
   type InspectionCursor,
 } from "./game-candidate-inspection";
 import { retainPartitionedRecord } from "./reconciliation-text";
-import { AdministrationProblem, canonicalJson, type CatalogueDraft, type CatalogueStore, sha256Text } from "../shared";
+import {
+  AdministrationProblem,
+  canonicalJson,
+  type CatalogueDraft,
+  type CatalogueStore,
+  sha256Text,
+  registeredSupportedGames,
+} from "../shared";
 import type { CanonicalRecordSource } from "./reconciliation-canonical-digest";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
 import { ReconciliationContinuation } from "./reconciliation-continuation";
@@ -151,7 +158,8 @@ export async function prepareGameCandidateManifests(
     const headers = (
       await documentStorage(() => gameCandidatesForPreparationStatement(database, runId).all<GameCandidate>())
     ).results;
-    if (headers.length > 5) throw new Error("reconciliation_capacity_exceeded: unsupported number of selected games.");
+    if (headers.length > registeredSupportedGames().length)
+      throw new Error("reconciliation_capacity_exceeded: unsupported number of selected games.");
     const scopedLineages = canonicalJson(cursor.lineages);
     while (cursor.game < headers.length) {
       const header = headers[cursor.game]!;

@@ -1,4 +1,4 @@
-import { trackedStagingBucket } from "../shared";
+import { trackedStagingBucket, registeredSupportedGames } from "../shared";
 import { assertCurrentCardModel } from "./card-model-definition";
 import { publicExportPreparationStatement } from "./game-publication-repository";
 import { publicationRecord, type PublicationEnvelope } from "./publication-record";
@@ -657,14 +657,14 @@ export async function composePublicationArtifacts(env: Environment, ids: unknown
   if (
     !Array.isArray(ids) ||
     ids.length < 1 ||
-    ids.length > 5 ||
+    ids.length > registeredSupportedGames().length ||
     ids.some((id) => typeof id !== "string") ||
     new Set(ids).size !== ids.length
   )
     throw new AdministrationProblem(
       422,
       "invalid_publication_composition",
-      "Select one verified candidate per game, at most five.",
+      `Select one verified candidate per game, at most ${registeredSupportedGames().length}.`,
     );
   const games: { supported_game: string; candidate_id: string; root_digest: string; public_root_digest?: string }[] =
     [];

@@ -10,7 +10,7 @@ import type { CuratedProvenanceBearing } from "./curated-provenance";
 
 export const catalogueCandidateContract = "card-keepr-catalogue-candidate@1" as const;
 
-export type SupportedGame = "one-piece" | "fusion-world" | "digimon" | "gundam" | "riftbound";
+export type SupportedGame = "one-piece" | "fusion-world" | "digimon" | "gundam" | "riftbound" | "magic";
 
 export type CardCategory = "gameplay" | "token" | "art";
 export type CardRelationship = {
@@ -74,7 +74,7 @@ export type CatalogueCard = CuratedProvenanceBearing & {
   name: string;
   effective_rules_text: string | null;
   game_data: {
-    profile: "one-piece@1" | "fusion-world@1" | "digimon@1" | "gundam@1" | "riftbound@1";
+    profile: "one-piece@1" | "fusion-world@1" | "digimon@1" | "gundam@1" | "riftbound@1" | "magic@1";
     attributes: Record<string, unknown>;
   };
 };
@@ -96,7 +96,7 @@ export type CataloguePrinting = CuratedProvenanceBearing & {
   };
   printed_rules_text: string | null;
   game_data: {
-    profile: "one-piece@1" | "fusion-world@1" | "digimon@1" | "gundam@1" | "riftbound@1";
+    profile: "one-piece@1" | "fusion-world@1" | "digimon@1" | "gundam@1" | "riftbound@1" | "magic@1";
     attributes: Record<string, unknown>;
   } | null;
 };

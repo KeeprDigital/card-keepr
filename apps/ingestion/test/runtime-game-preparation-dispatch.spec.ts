@@ -13,7 +13,7 @@ import { administrationRequest, installRuntimeSuite, waitForWorkflowStatus } fro
 
 installRuntimeSuite();
 
-test.each([2, 5])(
+test.each([2, 6])(
   "a %i-game collection parent dispatches independent preparations and replays retained identities",
   async (gameCount) => {
     const sources = [
@@ -22,6 +22,7 @@ test.each([2, 5])(
       ["digimon", "digimon-en", "fixture-digimon-json@2", "profile-digimon"],
       ["gundam", "gundam-en-asia", "fixture-gundam-en-asia-json@2", "profile-gundam"],
       ["riftbound", "riftbound-en", "fixture-riftbound-json@1", "profile-riftbound"],
+      ["magic", "scryfall-magic-en", "fixture-magic-json@1", "profile-magic"],
     ].slice(0, gameCount);
     const collection = await injectFixtureEvidencePlan(env.CATALOGUE_DB, {
       idempotency_key: `native-parent-${gameCount}-games`,

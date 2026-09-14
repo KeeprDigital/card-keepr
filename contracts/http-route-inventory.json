@@ -158,6 +158,7 @@
       "acceptance/riftbound-bounded-intake.test.mjs",
       "acceptance/riftbound-catalogue.test.mjs",
       "acceptance/runtime-health.test.mjs",
+      "acceptance/scryfall-catalogue.test.mjs",
       "acceptance/shared-game-profiles.test.mjs",
       "acceptance/source-evidence-cli.test.mjs",
       "acceptance/staging-execution.test.mjs",
@@ -387,6 +388,7 @@
       "apps/ingestion/test/reconciliation-progress.spec.ts",
       "apps/ingestion/test/reviewed-printing-matches.spec.ts",
       "apps/ingestion/test/riftbound-admission.spec.ts",
+      "apps/ingestion/test/source-design-identity.spec.ts",
       "apps/ingestion/test/source-refresh-publication.spec.ts",
       "cli/entity-proposals.mjs"
     ]
@@ -415,6 +417,7 @@
       "apps/ingestion/test/reconciliation-progress.spec.ts",
       "apps/ingestion/test/reviewed-printing-matches.spec.ts",
       "apps/ingestion/test/riftbound-admission.spec.ts",
+      "apps/ingestion/test/source-design-identity.spec.ts",
       "apps/ingestion/test/source-refresh-publication.spec.ts",
       "cli/entity-proposals.mjs"
     ]
@@ -435,6 +438,7 @@
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
       "apps/ingestion/test/identity-http-contract.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "apps/ingestion/test/source-design-identity.spec.ts",
       "cli/staging-release.mjs"
     ]
   },
@@ -456,6 +460,7 @@
       "apps/ingestion/test/native-no-change-publication.spec.ts",
       "apps/ingestion/test/reviewed-printing-matches.spec.ts",
       "apps/ingestion/test/riftbound-admission.spec.ts",
+      "apps/ingestion/test/source-design-identity.spec.ts",
       "apps/ingestion/test/source-refresh-publication.spec.ts"
     ]
   },
@@ -624,6 +629,7 @@
       "apps/ingestion/test/reviewed-printing-matches.spec.ts",
       "apps/ingestion/test/runtime-game-preparation-dispatch.spec.ts",
       "apps/ingestion/test/runtime-workflow-collection.spec.ts",
+      "apps/ingestion/test/source-design-identity.spec.ts",
       "cli/keepr.mjs",
       "cli/staging-release.mjs"
     ]
@@ -712,7 +718,9 @@
     "named_cli": "gameCandidateEvidence",
     "callers": [
       "acceptance/card-model-migration.test.mjs",
+      "acceptance/scryfall-catalogue.test.mjs",
       "apps/ingestion/test/game-candidate-http.spec.ts",
+      "apps/ingestion/test/source-design-identity.spec.ts",
       "cli/keepr.mjs"
     ]
   },
@@ -1272,6 +1280,7 @@
       "acceptance/publication-preparation.test.mjs",
       "acceptance/riftbound-bounded-intake.test.mjs",
       "acceptance/riftbound-catalogue.test.mjs",
+      "acceptance/scryfall-catalogue.test.mjs",
       "acceptance/supplementary-printing-intake.test.mjs",
       "apps/ingestion/test/game-candidate-http.spec.ts",
       "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
@@ -1741,6 +1750,7 @@
     "slice": "Identity and admission",
     "named_cli": "identityInspect",
     "callers": [
+      "acceptance/scryfall-catalogue.test.mjs",
       "apps/ingestion/test/entity-admission.spec.ts",
       "apps/ingestion/test/game-candidate-integrity.spec.ts",
       "apps/ingestion/test/game-reconciliation-operations.spec.ts",
@@ -1881,6 +1891,7 @@
       "apps/ingestion/test/reconciliation-card-identity.spec.ts",
       "apps/ingestion/test/reviewed-printing-matches.spec.ts",
       "apps/ingestion/test/source-authority.spec.ts",
+      "apps/ingestion/test/source-design-identity.spec.ts",
       "apps/ingestion/test/source-http-contract.spec.ts",
       "apps/ingestion/test/source-refresh.spec.ts",
       "cli/keepr.mjs"
@@ -1905,6 +1916,7 @@
       "apps/ingestion/test/reconciliation-card-identity.spec.ts",
       "apps/ingestion/test/reviewed-printing-matches.spec.ts",
       "apps/ingestion/test/source-authority.spec.ts",
+      "apps/ingestion/test/source-design-identity.spec.ts",
       "apps/ingestion/test/source-http-contract.spec.ts",
       "apps/ingestion/test/source-refresh.spec.ts",
       "cli/keepr.mjs"
@@ -1993,6 +2005,7 @@
     "named_cli": null,
     "callers": [
       "acceptance/composed-recovery.test.mjs",
+      "acceptance/scryfall-catalogue.test.mjs",
       "apps/ingestion/test/reconciliation-progress.spec.ts",
       "apps/ingestion/test/runtime-workflow-collection.spec.ts",
       "apps/ingestion/test/source-http-contract.spec.ts"
@@ -2187,6 +2200,7 @@
       "acceptance/riftbound-bounded-intake.test.mjs",
       "acceptance/riftbound-catalogue.test.mjs",
       "acceptance/runtime-health.test.mjs",
+      "acceptance/scryfall-catalogue.test.mjs",
       "acceptance/shared-game-profiles.test.mjs",
       "acceptance/source-evidence-cli.test.mjs",
       "acceptance/staging-execution.test.mjs",
@@ -2267,6 +2281,7 @@
       "acceptance/product-catalogue.test.mjs",
       "acceptance/production-release-smoke.test.mjs",
       "acceptance/publication-preparation.test.mjs",
+      "acceptance/scryfall-catalogue.test.mjs",
       "acceptance/shared-game-profiles.test.mjs",
       "apps/api/test/card-attribute-backfill.spec.ts",
       "apps/api/test/card-content.spec.ts",
@@ -2307,6 +2322,7 @@
       "acceptance/publication-preparation.test.mjs",
       "acceptance/riftbound-bounded-intake.test.mjs",
       "acceptance/riftbound-catalogue.test.mjs",
+      "acceptance/scryfall-catalogue.test.mjs",
       "acceptance/shared-game-profiles.test.mjs",
       "apps/api/test/api-fixtures.ts",
       "apps/api/test/hono-contract.spec.ts",
@@ -2441,6 +2457,7 @@
       "acceptance/card-categories.test.mjs",
       "acceptance/composition-smoke-targets.test.mjs",
       "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/scryfall-catalogue.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
       "apps/api/test/hono-contract.spec.ts",
       "apps/api/test/public-mount.spec.ts"
@@ -2501,6 +2518,7 @@
       "acceptance/helpers/native-fresh-baseline.mjs",
       "acceptance/production-release-smoke.test.mjs",
       "acceptance/publication-preparation.test.mjs",
+      "acceptance/scryfall-catalogue.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
       "apps/api/test/printing-query-backfill.spec.ts",
       "apps/api/test/printing-query.spec.ts",
@@ -2530,6 +2548,7 @@
       "acceptance/one-piece-two-source.test.mjs",
       "acceptance/product-catalogue.test.mjs",
       "acceptance/riftbound-catalogue.test.mjs",
+      "acceptance/scryfall-catalogue.test.mjs",
       "apps/api/test/product-release.spec.ts",
       "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",

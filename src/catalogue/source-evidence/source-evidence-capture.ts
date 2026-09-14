@@ -423,7 +423,13 @@ export async function capturePreparedAttempt(
 
   if (!response.ok) {
     const redirect = response.status >= 300 && response.status < 400;
-    const retryAfterMs = parseRetryAfter(response.headers.get("retry-after"), Date.parse(completedAt));
+    const reportedRetryAfterMs = parseRetryAfter(response.headers.get("retry-after"), Date.parse(completedAt));
+    const rateLimitFloor =
+      response.status === 429
+        ? requiredSourceAdapter(evidencePlan.adapter_version).minimumRateLimitBackoffMilliseconds
+        : undefined;
+    const retryAfterMs =
+      rateLimitFloor === undefined ? reportedRetryAfterMs : Math.max(rateLimitFloor, reportedRetryAfterMs ?? 0);
     if (response.body !== null) await response.body.cancel();
     return recordRejectedAttempt(database, run, request, operation, {
       outcome: redirect ? "redirect" : "http_failure",

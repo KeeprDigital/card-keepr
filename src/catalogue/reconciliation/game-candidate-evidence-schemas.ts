@@ -46,6 +46,7 @@ const admissionDecision = (
 ) =>
   z.strictObject({
     card,
+    card_design_key: z.string().optional(),
     printing: z.union([printing, z.null()]),
     linked: z.boolean(),
     warnings: z.array(candidateWarning),
@@ -82,16 +83,19 @@ export const mappingEvidence = z
     z.strictObject({
       card: z.union([observedCard, z.null()]),
       printing: z.union([observedPrinting, z.null()]),
+      card_design_key: z.string().optional(),
       compatibility: compatibility.nullable(),
       publisher_confirmation: z.strictObject({ fields: z.array(z.string()) }).nullable(),
     }),
     z.strictObject({
       card: z.union([historicalObservedCard, z.null()]),
       printing: z.union([historicalObservedPrinting, z.null()]),
+      card_design_key: z.string().optional(),
       compatibility: compatibility.nullable(),
       publisher_confirmation: z.strictObject({ fields: z.array(z.string()) }).nullable(),
     }),
     z.strictObject({
+      card_design_key: z.string().optional(),
       compatibility: compatibility.nullable(),
       retained_evidence: z.strictObject({
         source_observation_id: identifier,

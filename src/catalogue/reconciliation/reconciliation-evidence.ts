@@ -565,7 +565,13 @@ async function attachRetainedPrintingImages(
     } else {
       const verified = await verifiedRetainedPrintingImage(evidenceObjects, retained);
       images.set(item.source_url, { ...verified, content_object_key: retained.content_object_key });
-      retainedImages.push({ ...item, ...verified });
+      // Preserve an adapter's expected digest until the observation parser compares
+      // it with verified bytes. Overlaying it would manufacture matching evidence.
+      retainedImages.push({
+        ...item,
+        ...verified,
+        ...(item.content_sha256 === undefined ? {} : { content_sha256: item.content_sha256 }),
+      });
     }
   }
   const complete =
@@ -711,7 +717,8 @@ function supportedGame(value: string): SupportedGame {
     value !== "fusion-world" &&
     value !== "digimon" &&
     value !== "gundam" &&
-    value !== "riftbound"
+    value !== "riftbound" &&
+    value !== "magic"
   ) {
     throw new Error("Retained Source Observation Set game is unsupported.");
   }

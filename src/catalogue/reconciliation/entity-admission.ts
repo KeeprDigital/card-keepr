@@ -45,7 +45,7 @@ export async function createEntityProposal(
   at: string,
 ) {
   if (
-    !["one-piece", "fusion-world", "digimon", "gundam", "riftbound"].includes(input.game) ||
+    !["one-piece", "fusion-world", "digimon", "gundam", "riftbound", "magic"].includes(input.game) ||
     (input.source_lineage !== "owner" &&
       !sourceLineages.some((s) => s.id === input.source_lineage && s.game === input.game))
   )
@@ -378,6 +378,7 @@ async function validateAdmission(
   }
   cardId ??= `card_${crypto.randomUUID().replaceAll("-", "")}`;
   const decision = {
+    ...(typeof evidence.card_design_key === "string" ? { card_design_key: evidence.card_design_key } : {}),
     card: { ...card, id: cardId },
     printing: printing
       ? { ...printing, id: printingId ?? `printing_${crypto.randomUUID().replaceAll("-", "")}`, card_id: cardId }

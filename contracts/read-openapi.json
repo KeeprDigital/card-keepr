@@ -39,6 +39,7 @@
                 "key": {
                   "type": "string",
                   "enum": [
+                    "magic",
                     "riftbound",
                     "one-piece",
                     "fusion-world",
@@ -55,6 +56,7 @@
                   "items": {
                     "type": "string",
                     "enum": [
+                      "EN",
                       "EN-OCEANIA",
                       "EN-ASIA",
                       "EN-US"
@@ -67,6 +69,7 @@
                     "id": {
                       "type": "string",
                       "enum": [
+                        "magic@1",
                         "riftbound@1",
                         "one-piece@1",
                         "fusion-world@1",
@@ -454,6 +457,7 @@
                     "game": {
                       "type": "string",
                       "enum": [
+                        "magic",
                         "riftbound",
                         "one-piece",
                         "fusion-world",
@@ -640,6 +644,140 @@
                     },
                     "game_data": {
                       "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "profile": {
+                              "type": "string",
+                              "enum": [
+                                "magic@1"
+                              ]
+                            },
+                            "attributes": {
+                              "type": "object",
+                              "properties": {
+                                "layout": {
+                                  "type": "string",
+                                  "enum": [
+                                    "normal",
+                                    "transform",
+                                    "token"
+                                  ]
+                                },
+                                "type_line": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "colour_identity": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "W",
+                                      "U",
+                                      "B",
+                                      "R",
+                                      "G"
+                                    ]
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                },
+                                "faces": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "role": {
+                                        "type": "string",
+                                        "enum": [
+                                          "front",
+                                          "back"
+                                        ]
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "mana_cost": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ],
+                                        "minLength": 0
+                                      },
+                                      "type_line": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "colours": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "enum": [
+                                            "W",
+                                            "U",
+                                            "B",
+                                            "R",
+                                            "G"
+                                          ]
+                                        },
+                                        "minItems": 0,
+                                        "maxItems": 9007199254740991
+                                      },
+                                      "oracle_text": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ],
+                                        "minLength": 0
+                                      },
+                                      "power": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ],
+                                        "minLength": 0
+                                      },
+                                      "toughness": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ],
+                                        "minLength": 0
+                                      }
+                                    },
+                                    "required": [
+                                      "role",
+                                      "name",
+                                      "mana_cost",
+                                      "type_line",
+                                      "colours",
+                                      "oracle_text",
+                                      "power",
+                                      "toughness"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "minItems": 1,
+                                  "maxItems": 2
+                                }
+                              },
+                              "required": [
+                                "layout",
+                                "type_line",
+                                "colour_identity",
+                                "faces"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "profile",
+                            "attributes"
+                          ],
+                          "additionalProperties": false
+                        },
                         {
                           "type": "object",
                           "properties": {
@@ -1504,6 +1642,7 @@
                     "game": {
                       "type": "string",
                       "enum": [
+                        "magic",
                         "riftbound",
                         "one-piece",
                         "fusion-world",
@@ -1689,6 +1828,27 @@
                     },
                     "game_data": {
                       "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "profile": {
+                              "type": "string",
+                              "enum": [
+                                "magic@1"
+                              ]
+                            },
+                            "attributes": {
+                              "type": "object",
+                              "properties": {},
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "profile",
+                            "attributes"
+                          ],
+                          "additionalProperties": false
+                        },
                         {
                           "type": "object",
                           "properties": {
@@ -1898,6 +2058,7 @@
                   "game": {
                     "type": "string",
                     "enum": [
+                      "magic",
                       "riftbound",
                       "one-piece",
                       "fusion-world",
@@ -2084,6 +2245,140 @@
                   },
                   "game_data": {
                     "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "profile": {
+                            "type": "string",
+                            "enum": [
+                              "magic@1"
+                            ]
+                          },
+                          "attributes": {
+                            "type": "object",
+                            "properties": {
+                              "layout": {
+                                "type": "string",
+                                "enum": [
+                                  "normal",
+                                  "transform",
+                                  "token"
+                                ]
+                              },
+                              "type_line": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "colour_identity": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "W",
+                                    "U",
+                                    "B",
+                                    "R",
+                                    "G"
+                                  ]
+                                },
+                                "minItems": 0,
+                                "maxItems": 9007199254740991
+                              },
+                              "faces": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "role": {
+                                      "type": "string",
+                                      "enum": [
+                                        "front",
+                                        "back"
+                                      ]
+                                    },
+                                    "name": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "mana_cost": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ],
+                                      "minLength": 0
+                                    },
+                                    "type_line": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "colours": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "enum": [
+                                          "W",
+                                          "U",
+                                          "B",
+                                          "R",
+                                          "G"
+                                        ]
+                                      },
+                                      "minItems": 0,
+                                      "maxItems": 9007199254740991
+                                    },
+                                    "oracle_text": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ],
+                                      "minLength": 0
+                                    },
+                                    "power": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ],
+                                      "minLength": 0
+                                    },
+                                    "toughness": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ],
+                                      "minLength": 0
+                                    }
+                                  },
+                                  "required": [
+                                    "role",
+                                    "name",
+                                    "mana_cost",
+                                    "type_line",
+                                    "colours",
+                                    "oracle_text",
+                                    "power",
+                                    "toughness"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "minItems": 1,
+                                "maxItems": 2
+                              }
+                            },
+                            "required": [
+                              "layout",
+                              "type_line",
+                              "colour_identity",
+                              "faces"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "profile",
+                          "attributes"
+                        ],
+                        "additionalProperties": false
+                      },
                       {
                         "type": "object",
                         "properties": {
@@ -2963,6 +3258,7 @@
                   "game": {
                     "type": "string",
                     "enum": [
+                      "magic",
                       "riftbound",
                       "one-piece",
                       "fusion-world",
@@ -3154,6 +3450,27 @@
                           "profile": {
                             "type": "string",
                             "enum": [
+                              "magic@1"
+                            ]
+                          },
+                          "attributes": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "profile",
+                          "attributes"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "profile": {
+                            "type": "string",
+                            "enum": [
                               "riftbound@1"
                             ]
                           },
@@ -3299,6 +3616,7 @@
                   "game": {
                     "type": "string",
                     "enum": [
+                      "magic",
                       "riftbound",
                       "one-piece",
                       "fusion-world",
@@ -3481,6 +3799,119 @@
           },
           "game_data": {
             "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "magic@1"
+                    ]
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "properties": {
+                      "set_code": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "collector_number": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "finish": {
+                        "type": "string",
+                        "enum": [
+                          "nonfoil",
+                          "foil"
+                        ]
+                      },
+                      "layout": {
+                        "type": "string",
+                        "enum": [
+                          "normal",
+                          "transform",
+                          "art_series",
+                          "token"
+                        ]
+                      },
+                      "faces": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "role": {
+                              "type": "string",
+                              "enum": [
+                                "front",
+                                "back"
+                              ]
+                            },
+                            "name": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "printed_rules_text": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "minLength": 0
+                            }
+                          },
+                          "required": [
+                            "role",
+                            "name",
+                            "printed_rules_text"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "minItems": 1,
+                        "maxItems": 2
+                      },
+                      "artists": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 0
+                        },
+                        "minItems": 0,
+                        "maxItems": 9007199254740991
+                      },
+                      "reverse_face": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 0
+                      },
+                      "finish_image": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 0
+                      }
+                    },
+                    "required": [
+                      "set_code",
+                      "collector_number",
+                      "finish",
+                      "layout",
+                      "faces",
+                      "artists",
+                      "reverse_face",
+                      "finish_image"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "profile",
+                  "attributes"
+                ],
+                "additionalProperties": false
+              },
               {
                 "type": "object",
                 "properties": {
@@ -3972,6 +4403,7 @@
                   "game": {
                     "type": "string",
                     "enum": [
+                      "magic",
                       "riftbound",
                       "one-piece",
                       "fusion-world",
@@ -4173,6 +4605,7 @@
           "game": {
             "type": "string",
             "enum": [
+              "magic",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -4550,6 +4983,7 @@
                 "items": {
                   "type": "string",
                   "enum": [
+                    "magic",
                     "riftbound",
                     "one-piece",
                     "fusion-world",
@@ -4566,7 +5000,7 @@
                   "properties": {
                     "name": {
                       "type": "string",
-                      "pattern": "^(riftbound|one-piece|fusion-world|digimon|gundam)\\.(0|[1-9][0-9]*)$"
+                      "pattern": "^(magic|riftbound|one-piece|fusion-world|digimon|gundam)\\.(0|[1-9][0-9]*)$"
                     },
                     "kind": {
                       "type": "string",
@@ -5969,6 +6403,18 @@
             },
             "required": false,
             "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.colour_identity",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
             "name": "attribute.colours",
             "in": "query"
           },
@@ -6149,6 +6595,102 @@
             },
             "required": false,
             "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.faces.colours",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.faces.mana_cost",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.faces.name",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.faces.oracle_text",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.faces.power",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.faces.role",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.faces.toughness",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.faces.type_line",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
             "name": "attribute.form",
             "in": "query"
           },
@@ -6162,6 +6704,18 @@
             "required": false,
             "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
             "name": "attribute.hp",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.layout",
             "in": "query"
           },
           {
@@ -6450,6 +7004,18 @@
             "required": false,
             "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
             "name": "attribute.trigger_text",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.type_line",
             "in": "query"
           },
           {

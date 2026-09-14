@@ -45,6 +45,8 @@ export type ReconciliationWarning = ProfileWarning;
 export type ParsedCardPrintingObservation = Readonly<{
   kind: "card_printing";
   sourceObservationId: string;
+  /** Private source design evidence; only a qualified adapter may use it for allocation. */
+  cardDesignKey?: string;
   observedCardAndPrinting: {
     card: Omit<CatalogueCard, "id"> | null;
     printing: Omit<CataloguePrinting, "id" | "card_id"> | null;
@@ -99,6 +101,7 @@ export type Withdrawal = Readonly<{
 }>;
 
 const rootFields = new Set([
+  "card_identity_evidence",
   "card_relationships",
   "card",
   "printing",
@@ -363,6 +366,9 @@ export function parseReconciliationObservation(
   return {
     kind: "card_printing",
     sourceObservationId,
+    ...(record.card_identity_evidence === undefined
+      ? {}
+      : { cardDesignKey: parseCardDesignKey(record.card_identity_evidence) }),
     observedCardAndPrinting: { card, printing },
     locator: requiredString(identityEvidence.locator, "identity_evidence.locator"),
     variantKey,
@@ -384,6 +390,14 @@ export function parseReconciliationObservation(
     errata: parseRulesTextErrata(record.errata),
     cardRelationships: parseCardRelationships(record.card_relationships),
   };
+}
+
+function parseCardDesignKey(value: unknown): string {
+  const evidence = requiredRecord(value, "card_identity_evidence");
+  const key = requiredString(evidence.source_design_key, "card_identity_evidence.source_design_key");
+  if (Object.keys(evidence).length !== 1 || key.length > 512 || key !== key.trim())
+    throw new Error("Source design evidence requires one bounded exact key.");
+  return key;
 }
 
 function inspectSourceSidecar(
@@ -575,6 +589,7 @@ function exactDate(value: unknown, name: string): string {
 function parseOfficialIdentity(value: unknown, game: SupportedGame): CatalogueCard["official_identity"] {
   const identity = requiredRecord(value, "card.official_identity");
   if (identity.kind === "unknown" && identity.value === null) return { kind: "unknown", value: null };
+  if (game === "magic") throw new Error("Magic source design identifiers are evidence, not publisher identity.");
   if (identity.kind === "functional_designation" && identity.value === "DON!!" && game === "one-piece") {
     return { kind: "functional_designation", value: "DON!!" };
   }
@@ -595,7 +610,7 @@ function parseOfficialIdentity(value: unknown, game: SupportedGame): CatalogueCa
     throw new Error("Retained Card official card number is invalid.");
   }
   const canonical = identity.value.toUpperCase();
-  const acceptedNumberPatterns: Record<Exclude<SupportedGame, "riftbound">, RegExp> = {
+  const acceptedNumberPatterns: Record<Exclude<SupportedGame, "riftbound" | "magic">, RegExp> = {
     "one-piece": /^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/,
     "fusion-world": /^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/,
     digimon: /^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/,
@@ -674,6 +689,7 @@ function appearanceEvidence(
     const verified = verifiedImages?.get(item.source_url);
     if (verified !== undefined) {
       if (
+        (item.content_sha256 !== undefined && item.content_sha256 !== verified.content_sha256) ||
         !verified.media_type.startsWith("image/") ||
         !Number.isInteger(verified.width) ||
         verified.width < 1 ||
@@ -744,7 +760,7 @@ function decodeBase64(value: string): Uint8Array {
 function validNoveltyBasis(value: unknown, artworkFingerprint: string): boolean {
   return (
     isRecord(value) &&
-    value.kind === "official_printing_image" &&
+    (value.kind === "official_printing_image" || value.kind === "source_printing_image") &&
     typeof value.source_url === "string" &&
     value.source_url.startsWith("https://") &&
     value.artwork_fingerprint === artworkFingerprint

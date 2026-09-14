@@ -1,4 +1,4 @@
-import { type CatalogueStore, repositoryStatements } from "../shared";
+import { type CatalogueStore, repositoryStatements, registeredSupportedGames } from "../shared";
 import { gamePredecessorCandidateSql } from "./game-candidate-predecessor-repository";
 
 export function candidateCardModelStatement(database: CatalogueStore, candidateId: string) {
@@ -37,8 +37,8 @@ export function createGameCandidateIdentitiesStatement(database: CatalogueStore,
 
 export function gameCandidatesForPreparationStatement(database: CatalogueStore, runId: string) {
   return repositoryStatements(database)
-    .prepare(`SELECT * FROM game_candidates WHERE preparation_id = ? ORDER BY supported_game LIMIT 5`)
-    .bind(runId);
+    .prepare(`SELECT * FROM game_candidates WHERE preparation_id = ? ORDER BY supported_game LIMIT ?`)
+    .bind(runId, registeredSupportedGames().length + 1);
 }
 
 export function gameCandidatesForCollectionStatement(database: CatalogueStore, runId: string, after: string) {

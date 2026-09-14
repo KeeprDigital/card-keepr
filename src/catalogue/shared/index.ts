@@ -116,6 +116,7 @@ export {
   derivedCardModel,
   exportedGameProfileSchema,
   registeredGameProfiles,
+  registeredSupportedGames,
   retainedGameProfileSchema,
   gameProfileFilterValue,
   gameProfileForGame,

@@ -125,7 +125,7 @@
       "oneOf": [{ "$ref": "#/$defs/TimestampMs" }, { "type": "null" }]
     },
     "SupportedGame": {
-      "enum": ["one-piece", "fusion-world", "digimon", "gundam", "riftbound"]
+      "enum": ["one-piece", "fusion-world", "digimon", "gundam", "riftbound", "magic"]
     },
     "ReconciliationCommandRequest": {
       "type": "object",

@@ -5,7 +5,7 @@ export type AuthorityDecision = {
   idempotency_key: string;
   game: SupportedGame;
   locale: "en";
-  release_region: "OCEANIA" | "ASIA" | "US";
+  release_region: "OCEANIA" | "ASIA" | "US" | "unknown";
   area: AuthorityArea;
   source_lineage: string;
   generation: number;
@@ -15,13 +15,15 @@ export type AuthorityDecision = {
 };
 export function authorityDecisionsStatement(database: CatalogueStore, runId?: string) {
   return repositoryStatements(database)
-    .prepare(`SELECT decision.* FROM source_authority_decisions AS decision
+    .prepare(
+      `SELECT decision.* FROM source_authority_decisions AS decision
     WHERE (?1 IS NULL OR decision.rowid <= (SELECT authority_decision_cutoff FROM reconciliation_operations WHERE id = ?1))
     AND generation = (SELECT MAX(generation) FROM source_authority_decisions AS latest
       WHERE latest.game = decision.game AND latest.locale = decision.locale
         AND latest.release_region = decision.release_region AND latest.area = decision.area
         AND (?1 IS NULL OR latest.rowid <= (SELECT authority_decision_cutoff FROM reconciliation_operations WHERE id = ?1)))
-    ORDER BY game, locale, release_region, area`)
+    ORDER BY game, locale, release_region, area`,
+    )
     .bind(runId ?? null);
 }
 export function authorityReplayStatement(database: CatalogueStore, key: string) {
@@ -33,9 +35,11 @@ export function insertAuthorityDecisionStatement(database: CatalogueStore, decis
   const statements = repositoryStatements(database);
   return atomicRepositoryStatement(database, {
     statement: statements
-      .prepare(`INSERT INTO source_authority_decisions
+      .prepare(
+        `INSERT INTO source_authority_decisions
       (idempotency_key, game, locale, release_region, area, source_lineage, generation, rationale, request_json, decided_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
       .bind(
         decision.idempotency_key,
         decision.game,
@@ -50,7 +54,8 @@ export function insertAuthorityDecisionStatement(database: CatalogueStore, decis
       ),
     before: [
       statements
-        .prepare(`SELECT CASE
+        .prepare(
+          `SELECT CASE
       WHEN EXISTS (SELECT 1 FROM operation_state WHERE singleton = 1 AND
         (active_ingestion_run_id IS NOT NULL OR recovery_health = 'blocked' OR
           (active_production_release_id IS NOT NULL AND active_production_release_expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))))
@@ -61,7 +66,8 @@ export function insertAuthorityDecisionStatement(database: CatalogueStore, decis
       WHEN ? <> 1 + COALESCE((SELECT MAX(generation) FROM source_authority_decisions
         WHERE game = ? AND locale = ? AND release_region = ? AND area = ?), 0)
         THEN json_extract('{}', 'source_authority_generation_mismatch')
-      ELSE 1 END`)
+      ELSE 1 END`,
+        )
         .bind(
           decision.source_lineage,
           decision.generation,

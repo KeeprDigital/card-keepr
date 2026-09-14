@@ -66,8 +66,9 @@ TCGdex for Pokémon's card facts and Printing details, with selected official
 Pokémon publications for corrected card content; and Riot for all three areas of
 Riftbound content. Register these choices for their exact applicable English and
 release-region scopes. Riot's registered English/US scope now starts with these
-three designations; retained explicit owner decisions take precedence. Magic and
-Pokémon designations remain accepted direction for their later registrations.
+three designations; retained explicit owner decisions take precedence. Scryfall now
+starts with those areas in its English/unknown-region pilot scope. Pokémon
+designations remain accepted direction for its later registrations.
 The initial policy selects areas per exact registered lineage, independently of
 publisher ownership. Competing observations remain inspectable;
 repeated claims across Sources do not establish independent corroboration or
@@ -90,6 +91,15 @@ change alone cannot create a new Printing. Corrections retain redirects or
 ambiguous replacement sets; a split never chooses which replacement represents a
 consumer-owned copy.
 [Identity decision](https://github.com/KeeprDigital/card-keepr/issues/210#issuecomment-5556048893).
+
+An independently operated Source may supply private Card design evidence without
+claiming a Publisher identity. The exact retained adapter must qualify that key;
+only a source-qualified admission policy may use it. Allocation scopes the key by
+game, profile, category and Source Lineage. Equal mutable facts do not merge
+different qualified keys, and a changed admitted locator-to-design association
+blocks for identity review while retaining prior canonical IDs. Source keys stay
+in private mappings/admission evidence and never become public `official_identity`.
+Scryfall Oracle UUIDs use this seam in the [Magic pilot](https://github.com/KeeprDigital/card-keepr/issues/326).
 
 An art Card and a gameplay Card remain separate Cards even when they depict the
 same illustration. Expose their relationship when evidence establishes it,

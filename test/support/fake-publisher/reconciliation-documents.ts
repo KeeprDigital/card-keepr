@@ -1763,6 +1763,48 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
     observation.card.official_identity = { kind: "publisher_name", value: observation.card.name };
     return { cards: [observation] };
   }
+  if (scenario === "profile-magic") {
+    const name = "Synthetic Magic Creature";
+    const observation = printingObservation({
+      game: "magic",
+      profile: "magic@1",
+      cardNumber: "SYN-001",
+      name,
+      cardAttributes: {
+        layout: "normal",
+        type_line: "Creature",
+        colour_identity: [],
+        faces: [
+          {
+            role: "front",
+            name,
+            mana_cost: "{1}",
+            type_line: "Creature",
+            colours: [],
+            oracle_text: null,
+            power: "1",
+            toughness: "1",
+          },
+        ],
+      },
+      printingAttributes: {
+        set_code: "SYN",
+        collector_number: "1",
+        finish: "nonfoil",
+        layout: "normal",
+        faces: [{ role: "front", name, printed_rules_text: null }],
+        artists: [],
+        reverse_face: null,
+        finish_image: null,
+      },
+      locator: "/synthetic/magic/SYN-001",
+      lineageMarker: "magic",
+      memberships: { products: [], distribution_contexts: [], source_buckets: ["synthetic"] },
+    });
+    return {
+      cards: [{ ...observation, card: { ...observation.card, official_identity: { kind: "unknown", value: null } } }],
+    };
+  }
   if (scenario === "profile-gundam") {
     return {
       cards: [

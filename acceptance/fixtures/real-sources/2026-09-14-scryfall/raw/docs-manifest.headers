@@ -1,0 +1,24 @@
+Date: Mon, 14 Sep 2026 12:23:22 GMT
+Content-Type: text/html; charset=utf-8
+Transfer-Encoding: chunked
+Connection: close
+Cache-Control: public, no-store
+content-security-policy: default-src 'none'; base-uri 'none'; frame-src checkout.stripe.com *.google.com; frame-ancestors 'none'; style-src *.scryfall.com scryfall.com; script-src *.scryfall.com scryfall.com *.analytics.google.com *.google-analytics.com *.googletagmanager.com *.google.com *.gstatic.com *.cloudflareinsights.com checkout.stripe.com 'unsafe-eval'; img-src *.scryfall.io *.scryfall.com scryfall.com *.analytics.google.com *.google-analytics.com *.googletagmanager.com *.stripe.com data:; font-src *.scryfall.com scryfall.com; media-src *.scryfall.com scryfall.com; manifest-src *.scryfall.com scryfall.com; connect-src api.scryfall.com scryfall.com *.analytics.google.com *.google-analytics.com *.googletagmanager.com cloudflareinsights.com checkout.stripe.com; block-all-mixed-content;
+etag: W/"8f3048a00a8d5415178f949d3a6bc84d"
+nel: {"report_to":"heroku-nel","response_headers":["Via"],"max_age":3600,"success_fraction":0.01,"failure_fraction":0.1}
+referrer-policy: strict-origin-when-cross-origin
+report-to: {"group":"heroku-nel","endpoints":[{"url":"https://nel.heroku.com/reports?s=zsCpztisqOziu%2FvYrp84YLMIeXZmN0tvJR3YabQgQ7w%3D\u0026sid=929419e7-33ea-4e2f-85f0-7d8b7cd5cbd6\u0026ts=1788278243"}],"max_age":3600}
+reporting-endpoints: heroku-nel="https://nel.heroku.com/reports?s=zsCpztisqOziu%2FvYrp84YLMIeXZmN0tvJR3YabQgQ7w%3D&sid=929419e7-33ea-4e2f-85f0-7d8b7cd5cbd6&ts=1788278243"
+Server: cloudflare
+strict-transport-security: max-age=31536000; includeSubDomains; preload
+vary: Accept,Accept-Encoding
+via: 2.0 heroku-router
+x-action-cache: MISS
+x-content-type-options: nosniff
+x-download-options: noopen
+x-frame-options: DENY
+x-permitted-cross-domain-policies: none
+x-ua-compatible: IE=edge
+x-xss-protection: 1; mode=block
+cf-cache-status: REVALIDATED
+CF-RAY: a3af5ccd5e7b2b35-MEL

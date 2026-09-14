@@ -79,6 +79,57 @@ const digimonText = object(["kind", "text"], {
 });
 
 const profileContracts: Readonly<Record<string, ProfileContract>> = {
+  "magic@1": {
+    game: "magic",
+    card: object(["layout", "type_line", "colour_identity", "faces"], {
+      layout: enumeration(["normal", "transform", "token"]),
+      type_line: string(false, 1),
+      colour_identity: array(enumeration(["W", "U", "B", "R", "G"]), true),
+      faces: array(
+        object(["role", "name", "mana_cost", "type_line", "colours", "oracle_text", "power", "toughness"], {
+          role: enumeration(["front", "back"]),
+          name: string(false, 1),
+          mana_cost: nullableText,
+          type_line: string(false, 1),
+          colours: array(enumeration(["W", "U", "B", "R", "G"]), true),
+          oracle_text: nullableText,
+          power: nullableText,
+          toughness: nullableText,
+        }),
+        false,
+        1,
+        2,
+      ),
+    }),
+    printing: object(
+      ["set_code", "collector_number", "finish", "layout", "faces", "artists", "reverse_face", "finish_image"],
+      {
+        set_code: string(false, 1),
+        collector_number: string(false, 1),
+        finish: enumeration(["nonfoil", "foil"]),
+        layout: enumeration(["normal", "transform", "art_series", "token"]),
+        faces: array(
+          object(["role", "name", "printed_rules_text"], {
+            role: enumeration(["front", "back"]),
+            name: string(false, 1),
+            printed_rules_text: nullableText,
+          }),
+          false,
+          1,
+          2,
+        ),
+        artists: strings,
+        reverse_face: nullableText,
+        finish_image: nullableText,
+      },
+    ),
+    validateCard(value) {
+      const faces = value.faces as { role: string }[];
+      const roles = faces.map((face) => face.role);
+      if (roles.join(",") !== (value.layout === "transform" ? "front,back" : "front"))
+        throw new Error("Magic requires the ordered faces applicable to its layout.");
+    },
+  },
   "riftbound@1": {
     game: "riftbound",
     card: object(
@@ -333,6 +384,11 @@ export function registeredGameProfiles() {
   return Object.entries(profileContracts).map(([id, contract]) => ({ id, game: contract.game }));
 }
 
+/** Inventory bounds count games once, independently of their profile versions. */
+export function registeredSupportedGames(): readonly SupportedGame[] {
+  return [...new Set(Object.values(profileContracts).map(({ game }) => game))];
+}
+
 /** Existing source vocabularies declare tokens through their Game Profile. */
 export function gameProfileCardClassification(
   profile: string,
@@ -341,6 +397,7 @@ export function gameProfileCardClassification(
 ) {
   requiredProfileContract(profile);
   const token =
+    (profile === "magic@1" && attributes.layout === "token") ||
     (profile === "gundam@1" && attributes.card_type === "unit_token") ||
     (profile === "riftbound@1" && Array.isArray(attributes.supertypes) && attributes.supertypes.includes("token"));
   const resolved = category === undefined ? (token ? "token" : "gameplay") : category;

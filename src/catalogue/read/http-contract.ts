@@ -192,7 +192,7 @@ export const gamesSchema = z
         id: identifier,
         key: supportedGame,
         name: identifier,
-        supported_locales: z.array(z.enum(["EN-OCEANIA", "EN-ASIA", "EN-US"])),
+        supported_locales: z.array(z.enum(["EN", "EN-OCEANIA", "EN-ASIA", "EN-US"])),
         game_profile: z.strictObject({
           id: z.enum(profiles.map(({ id }) => id)),
           card_fields: z.array(profileFieldSchema),

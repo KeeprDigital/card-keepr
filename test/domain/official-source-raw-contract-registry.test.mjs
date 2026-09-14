@@ -413,6 +413,7 @@ function isAdministrationProblem(code) {
 const expectedRequestCapacities = {
   "limitless-one-piece-en@1": 100,
   "riftbound-en@1": 5000,
+  "scryfall-magic-en@1": 10,
   "one-piece-en@6": 10_000,
   "fusion-world-en@9": 15_000,
   "digimon-en@7": 5_000,
@@ -429,7 +430,7 @@ test("every installed adapter version carries its parser and unknown versions ar
   );
   assert.deepEqual(
     rawProduction.map(({ adapterVersion }) => adapterVersion).sort(),
-    [...expectedProductionAdapterVersions, "limitless-one-piece-en@1", "riftbound-en@1"].sort(),
+    [...expectedProductionAdapterVersions, "limitless-one-piece-en@1", "riftbound-en@1", "scryfall-magic-en@1"].sort(),
   );
   assert.equal(
     new Set(rawProduction.map(({ sourceLineage }) => sourceLineage)).size,
