@@ -209,7 +209,7 @@ test("pending reconfirmation in the first game does not prevent the collection p
     expected_game_revision_id: predecessor,
     idempotency_key: "pending-parent-conflict",
   });
-  expect(conflicted.response.status).toBe(201);
+  expect(conflicted.response.status).toBe(202);
   const id = requiredString(conflicted.document, "id");
   let failed = conflicted.document;
   const until = Date.now() + 15000;

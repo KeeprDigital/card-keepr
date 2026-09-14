@@ -13,7 +13,7 @@ async function prepare(run: string, revision: string, key: string) {
     expected_game_revision_id: revision,
     idempotency_key: key,
   });
-  expect(created.response.status, JSON.stringify(created.document)).toBe(201);
+  expect(created.response.status, JSON.stringify(created.document)).toBe(202);
   let candidate = (await get(`/v1/game-candidates/${created.document.id}`)).document;
   const deadline = Date.now() + 15000;
   while (candidate.state === "preparing" && Date.now() < deadline) {

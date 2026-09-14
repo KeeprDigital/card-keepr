@@ -32,16 +32,6 @@ test("native approval requires the exact whole candidate, manifest, game predece
 
 test.each([
   [
-    "GameCandidatePrepareCommandRequest",
-    {
-      ingestion_run_id: "run_source",
-      supported_game: "one-piece",
-      expected_game_revision_id: "catrev_spine_000",
-      idempotency_key: "prepare@1",
-    },
-  ],
-  ["GameCandidateActionCommandRequest", { generation: 0, idempotency_key: "pause@1" }],
-  [
     "PublicationPreparationCommandRequest",
     {
       manifest_digest: "b".repeat(64),
@@ -63,7 +53,6 @@ test.each([
     expect(validate!({ ...request, resume: true })).toBe(true);
     expect(validate!({ ...request, resume: "yes" })).toBe(false);
   }
-  if ("supported_game" in request) expect(validate!({ ...request, supported_game: "unregistered" })).toBe(false);
 });
 
 test.each(["dev", "staging", "production"])("recovery accepts the complete %s environment intent", (environment) => {

@@ -87,7 +87,7 @@ test.each([
     }),
     { ...testEnv, RECONCILIATION_WORKFLOW: binding },
   );
-  expect(created.status).toBe(201);
+  expect(created.status).toBe(202);
   const id = requiredString(await created.json<Record<string, unknown>>(), "id");
   expect(params).toBeDefined();
   let calls = 0;

@@ -6,6 +6,7 @@ import {
 import { inspectionEvidenceClasses, inspectionEvidenceStatement } from "./game-inspection-evidence-repository";
 import {
   prepareCandidateInspection,
+  assertCandidateManifest,
   verifiedCandidatePartition,
   type InspectionCursor,
 } from "./game-candidate-inspection";
@@ -392,8 +393,7 @@ export async function inspectGameCandidatePartitions(
   manifest: string | null = null,
 ) {
   const candidate = await inspectGameCandidate(database, candidateId);
-  if (manifest !== null && manifest !== candidate.manifest_digest)
-    throw new AdministrationProblem(409, "candidate_pin_mismatch", "Use pages from the exact candidate manifest.");
+  assertCandidateManifest(candidate, manifest);
   const parts = after?.split(":");
   if (parts && (parts.length !== 2 || parts[0] !== candidate.manifest_digest))
     throw new AdministrationProblem(409, "candidate_pin_mismatch", "Use the returned manifest-bound cursor.");
@@ -417,8 +417,7 @@ export async function inspectGameCandidatePartition(
   manifest: string | null = null,
 ) {
   const candidate = await inspectGameCandidate(database, candidateId);
-  if (manifest !== null && manifest !== candidate.manifest_digest)
-    throw new AdministrationProblem(409, "candidate_pin_mismatch", "Use pages from the exact candidate manifest.");
+  assertCandidateManifest(candidate, manifest);
   if (!/^\d+$/.test(ordinal) || !Number.isSafeInteger(Number(ordinal)))
     throw new AdministrationProblem(422, "invalid_cursor", "Use a retained partition ordinal.");
   const partition = await verifiedCandidatePartition(database, candidateId, Number(ordinal));

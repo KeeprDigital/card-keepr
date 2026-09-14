@@ -16,7 +16,7 @@ async function prepare(runId: string, revision: string, state = "sealed") {
     expected_game_revision_id: revision,
     idempotency_key: `native-errata-${runId}`,
   });
-  expect(created.response.status, JSON.stringify(created.document)).toBe(201);
+  expect(created.response.status, JSON.stringify(created.document)).toBe(202);
   return await waitForNativeCandidate(String(created.document.id), state);
 }
 

@@ -838,7 +838,7 @@ describe("Errata rules-text lifecycle", () => {
       generation: candidate.generation,
       idempotency_key: "reject-errata-effective-scope",
     });
-    expect(rejected.response.status).toBe(200);
+    expect(rejected.response.status).toBe(202);
   });
 
   test("Erratum wording that requires invented precision hard-blocks publication", async () => {
@@ -1162,7 +1162,7 @@ async function prepareFailedErrataCandidate(runId: string, predecessor: string) 
     expected_game_revision_id: predecessor,
     idempotency_key: `failed-errata-${runId}`,
   });
-  expect(started.response.status, JSON.stringify(started.document)).toBe(201);
+  expect(started.response.status, JSON.stringify(started.document)).toBe(202);
   const candidate = await waitForNativeCandidate(String(started.document.id), "failed", 15_000);
   expect(candidate!.outcome).toMatchObject({ state: "failed", publishable: false });
   return candidate!;

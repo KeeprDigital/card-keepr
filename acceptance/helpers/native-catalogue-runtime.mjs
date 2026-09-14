@@ -305,6 +305,6 @@ export async function collectNativeFixtureSource(directory, environment, lineage
       idempotency_key: `${key}-candidate`,
     }),
   });
-  assert.equal(prepared.status, 201, await prepared.clone().text());
+  assert.equal(prepared.status, 202, await prepared.clone().text());
   return run;
 }

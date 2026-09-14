@@ -39,7 +39,7 @@ test.for(["normal", "lost response"])(
         } as unknown as Env["RECONCILIATION_WORKFLOW"],
       },
     );
-    expect(created.status).toBe(201);
+    expect(created.status).toBe(202);
     const candidateId = requiredString(await created.json<Record<string, unknown>>(), "id");
     expect(params).toBeDefined();
     const seed = await runReconciliationWorkflow(

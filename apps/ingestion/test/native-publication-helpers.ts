@@ -32,7 +32,7 @@ async function prepareCandidate(
     },
     extraHeaders,
   );
-  expect(created.response.status, JSON.stringify(created.document)).toBe(201);
+  expect(created.response.status, JSON.stringify(created.document)).toBe(202);
   const id = requiredString(created.document, "id");
   return waitForNativeCandidate(id, expectedState, timeoutMs);
 }

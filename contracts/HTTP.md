@@ -101,6 +101,26 @@ the explicit streaming boundary: it checks status, media and required headers
 without buffering bytes. Actual-response tests validate retained JSON against the
 registered schema and compare snapshot bytes and digest/length headers.
 
+## Game Candidate preparation and inspection
+
+All 15 Game Candidate operations use generated administration contracts. Prepare,
+pause, resume and abandon return HTTP 202 with an immutable
+`card-keepr-game-preparation-acceptance@1` receipt, absolute status link, Location,
+Retry-After and no-store headers. Exact replay returns the same receipt after
+preparation has progressed. Its generation identifies the accepted command;
+GET status reports the current generation and outcome. Pause/resume retains the
+original seven-day deadline. The CLI uses exit 10 for acceptance, preparing or
+paused state, exit 8 for failed preparation, and exit 0 for terminal inspection.
+
+Facts, changes and evidence require a sealed manifest. Page cursors bind that
+manifest and inspection retains the exact game predecessor. A later predecessor
+change affects readiness, without rewriting retained pages. Progress and retained
+inputs remain inspectable before sealing. Responses describe Card categories,
+applicability, associations and provenance explicitly; source-defined values remain
+JSON. Candidate image inspection streams verified bytes with declared media and
+headers. Intake admission and candidate sealing do not approve publication:
+whole-candidate approval remains a separate owner action.
+
 ## Migrating a family
 
 1. Find the operation and potential callers in [the generated inventory](http-route-inventory.json).

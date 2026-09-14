@@ -72,7 +72,11 @@ test("owner CLI publishes a reviewed split and authenticated consumers retain th
   };
   const cli = async (args) => {
     const result = await runCli([...args, "--json"], environment);
-    assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
+    assert.equal(
+      result.code,
+      args[0] === "game-candidate" && args[1] === "prepare" ? 10 : 0,
+      `${result.stdout}\n${result.stderr}`,
+    );
     return JSON.parse(result.stdout);
   };
   const file = join(directory, "proposal.json");

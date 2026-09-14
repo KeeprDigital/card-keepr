@@ -430,7 +430,7 @@ test("same-authority Product conflicts fail closed before publication", async ()
     expected_game_revision_id: "catrev_spine_000",
     idempotency_key: "product-conflict-prepare",
   });
-  expect(created.response.status).toBe(201);
+  expect(created.response.status).toBe(202);
   const candidate = await waitForNativeCandidate(String(created.document.id), "failed", 15_000);
   expect(candidate).toMatchObject({ state: "failed", failure_code: "printing_reconciliation_blocked" });
   expect(candidate?.outcome).toMatchObject({

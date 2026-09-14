@@ -1,3 +1,4 @@
+import { gameCandidateRoutes } from "./game-candidate-routes";
 import { httpRoute } from "../../http/openapi";
 import { publicUrl } from "../../http/public-base";
 import {
@@ -22,16 +23,6 @@ import {
   composePublicationArtifacts,
   inspectPreparedQuery,
 } from "./publication-preparation";
-import { inspectCandidateEvidence, candidateImageContent } from "./game-candidate-inspection";
-import {
-  inspectGameCandidate,
-  inspectGameCandidateReadiness,
-  inspectGameCandidatePartitions,
-  inspectGameCandidatePartition,
-  listCollectionGameCandidates,
-  inspectGameCandidateProgress,
-} from "./game-candidate";
-import { createGameReconciliation, changeGameReconciliation } from "./game-reconciliation";
 import {
   changeReconciliationProgress,
   inspectReconciliationInputs,
@@ -221,152 +212,9 @@ export const reconciliationRoutes = [
       },
     ),
   ),
-  route<Context>(
-    "GET",
-    "/v1/game-candidates/:candidate/partitions/:ordinal/images/:record",
-    async ({ env, request }, params) => {
-      const candidate = await inspectGameCandidate(env.CATALOGUE_DB, params.candidate!);
-      const manifest = new URL(request.url).searchParams.get("manifest");
-      if (manifest !== null && manifest !== candidate.manifest_digest)
-        throw new AdministrationProblem(409, "candidate_pin_mismatch", "Use the exact candidate manifest.");
-      return candidateImageContent(
-        env.CATALOGUE_DB,
-        env.PRINTING_IMAGES,
-        candidate.id,
-        params.ordinal!,
-        params.record!,
-        new URL(request.url).searchParams.get("side") ?? "after",
-      );
-    },
-  ),
-  route<Context>(
-    "GET",
-    "/v1/game-candidates/:candidate/inspection/evidence/:kind",
-    async ({ env, request }, params) => {
-      const candidate = await inspectGameCandidate(env.CATALOGUE_DB, params.candidate!);
-      const query = new URL(request.url).searchParams;
-      return Response.json(
-        await inspectCandidateEvidence(
-          env.CATALOGUE_DB,
-          candidate,
-          params.kind!,
-          query.get("after"),
-          query.get("manifest"),
-        ),
-      );
-    },
-  ),
-  route<Context>("GET", "/v1/game-candidates/:candidate/inspection", async ({ env, request, observedAt }, params) =>
-    Response.json(
-      await inspectGameCandidateReadiness(
-        env.CATALOGUE_DB,
-        params.candidate!,
-        new URL(request.url).searchParams.get("manifest"),
-        observedAt,
-      ),
-    ),
-  ),
-  route<Context>("GET", "/v1/game-candidates/:candidate/progress", async ({ env }, params) =>
-    Response.json(await inspectGameCandidateProgress(env.CATALOGUE_DB, params.candidate!)),
-  ),
-  route<Context>("GET", "/v1/ingestion-runs/:run/game-candidates", async ({ env, request }, params) =>
-    Response.json(
-      await listCollectionGameCandidates(env.CATALOGUE_DB, params.run!, new URL(request.url).searchParams.get("after")),
-    ),
-  ),
-  route<Context>("GET", "/v1/game-candidates/:candidate/text/:digest/:ordinal", async ({ env }, params) => {
-    const candidate = await inspectGameCandidate(env.CATALOGUE_DB, params.candidate!);
-    const text = await inspectReconciliationText(
-      env.CATALOGUE_DB,
-      candidate.preparation_id,
-      params.digest!,
-      params.ordinal!,
-    );
-    return Response.json({
-      ...text,
-      ingestion_run_id: candidate.ingestion_run_id,
-      preparation_id: candidate.preparation_id,
-    });
-  }),
-  route<Context>("GET", "/v1/game-candidates/:candidate/inputs", async ({ env, request }, params) => {
-    const candidate = await inspectGameCandidate(env.CATALOGUE_DB, params.candidate!);
-    const inputs = await inspectReconciliationInputs(
-      env.CATALOGUE_DB,
-      candidate.preparation_id,
-      new URL(request.url).searchParams.get("after"),
-    );
-    return Response.json({
-      ...inputs,
-      ingestion_run_id: candidate.ingestion_run_id,
-      preparation_id: candidate.preparation_id,
-    });
-  }),
-  route<Context>("GET", "/v1/game-candidates/:candidate/inputs/:ordinal", async ({ env }, params) => {
-    const candidate = await inspectGameCandidate(env.CATALOGUE_DB, params.candidate!);
-    const input = await inspectReconciliationInput(env.CATALOGUE_DB, candidate.preparation_id, params.ordinal!);
-    return Response.json({
-      ...input,
-      ingestion_run_id: candidate.ingestion_run_id,
-      preparation_id: candidate.preparation_id,
-    });
-  }),
-  route<Context>("POST", "/v1/game-candidates", async ({ env, request, observedAt }) => {
-    const body = await readAdministrationBody(request);
-    assertOnlyFields(body, ["ingestion_run_id", "supported_game", "expected_game_revision_id", "idempotency_key"]);
-    const result = await createGameReconciliation(
-      env.CATALOGUE_DB,
-      env.RECONCILIATION_WORKFLOW,
-      {
-        ingestion_run_id: requiredString(body, "ingestion_run_id"),
-        supported_game: requiredString(body, "supported_game"),
-        expected_game_revision_id: requiredString(body, "expected_game_revision_id"),
-        idempotency_key: requiredString(body, "idempotency_key"),
-      },
-      observedAt,
-    );
-    return Response.json(result.document, { status: result.created ? 201 : 200 });
-  }),
-  ...(["pause", "resume", "abandon"] as const).map((action) =>
-    route<Context>("POST", `/v1/game-candidates/:candidate/${action}`, async ({ env, request, observedAt }, params) => {
-      const body = await readAdministrationBody(request);
-      assertOnlyFields(body, ["generation", "idempotency_key"]);
-      return Response.json(
-        await changeGameReconciliation(
-          env.CATALOGUE_DB,
-          env.RECONCILIATION_WORKFLOW,
-          params.candidate!,
-          action,
-          { generation: Number(body.generation), idempotency_key: requiredString(body, "idempotency_key") },
-          observedAt,
-        ),
-      );
-    }),
-  ),
+  ...gameCandidateRoutes,
   route<Context>("GET", "/v1/ingestion-runs/:run/reconciliation/text/:digest/:ordinal", async ({ env }, params) =>
     Response.json(await inspectReconciliationText(env.CATALOGUE_DB, params.run!, params.digest!, params.ordinal!)),
-  ),
-  route<Context>("GET", "/v1/game-candidates/:candidate", async ({ env }, params) =>
-    Response.json(await inspectGameCandidate(env.CATALOGUE_DB, params.candidate!)),
-  ),
-  route<Context>("GET", "/v1/game-candidates/:candidate/partitions", async ({ env, request }, params) =>
-    Response.json(
-      await inspectGameCandidatePartitions(
-        env.CATALOGUE_DB,
-        params.candidate!,
-        new URL(request.url).searchParams.get("after"),
-        new URL(request.url).searchParams.get("manifest"),
-      ),
-    ),
-  ),
-  route<Context>("GET", "/v1/game-candidates/:candidate/partitions/:ordinal", async ({ env, request }, params) =>
-    Response.json(
-      await inspectGameCandidatePartition(
-        env.CATALOGUE_DB,
-        params.candidate!,
-        params.ordinal!,
-        new URL(request.url).searchParams.get("manifest"),
-      ),
-    ),
   ),
   route<Context>("GET", "/v1/ingestion-runs/:run/reconciliation/inputs", async ({ env, request }, params) =>
     Response.json(

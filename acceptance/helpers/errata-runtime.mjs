@@ -137,7 +137,7 @@ export async function resumeAndWait(runId, environment, runtime) {
         idempotency_key: `native-fixture-${runId}`,
       }),
     });
-    assert.equal(response.status, 201, await response.clone().text());
+    assert.equal(response.status, 202, await response.clone().text());
   }
   try {
     return await waitForNativeCollection(runId, "sealed", environment, runtime, { deadlineMs: 20_000 });

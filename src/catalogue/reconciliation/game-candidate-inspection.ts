@@ -235,10 +235,10 @@ export async function prepareCandidateInspection(
     if (cursor.stage !== stage) continue;
     const source = stage === "before" ? cursor.predecessor?.id : candidate.id;
     const count = stage === "before" ? (cursor.predecessor?.partition_count ?? 0) : partitionCount;
-    for (; source && cursor.partition < count; ) {
+    for (; source && cursor.partition < count;) {
       const page = await verifiedCandidatePartition(database, source, cursor.partition);
       if (page.kind !== "inspection" && page.kind !== "inspection_summary") {
-        for (; cursor.record < page.records.length; ) {
+        for (; cursor.record < page.records.length;) {
           const envelope = page.records[cursor.record]!;
           const value = envelope.value as Record<string, unknown>;
           const id =
@@ -319,6 +319,17 @@ function semantic(entry: Entry) {
   };
 }
 
+export function assertCandidateManifest(candidate: { manifest_digest: string | null }, manifest: string | null = null) {
+  if (!candidate.manifest_digest)
+    throw new AdministrationProblem(
+      409,
+      "candidate_not_sealed",
+      "Wait for a sealed candidate manifest before inspecting its facts and evidence.",
+    );
+  if (manifest !== null && manifest !== candidate.manifest_digest)
+    throw new AdministrationProblem(409, "candidate_pin_mismatch", "Use the exact candidate manifest.");
+}
+
 export async function inspectCandidateEvidence(
   database: CatalogueStore,
   candidate: {
@@ -332,10 +343,8 @@ export async function inspectCandidateEvidence(
   after: string | null,
   manifest: string | null,
 ) {
-  if (
-    (manifest !== null && manifest !== candidate.manifest_digest) ||
-    (after !== null && !after.startsWith(`${candidate.manifest_digest}:${kind}:`))
-  )
+  assertCandidateManifest(candidate, manifest);
+  if (after !== null && !after.startsWith(`${candidate.manifest_digest}:${kind}:`))
     throw new AdministrationProblem(409, "candidate_pin_mismatch", "Use evidence from the exact candidate manifest.");
   const key = after === null ? "" : after.slice(66 + kind.length);
   const row = await inspectionEvidenceStatement(

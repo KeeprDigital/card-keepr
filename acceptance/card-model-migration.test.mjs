@@ -106,7 +106,11 @@ test("populated category migration preserves history and permits sequential refr
   const rawCli = (args) => runCli([...args, "--json"], environment);
   const cli = async (args) => {
     const result = await rawCli(args);
-    assert.equal(result.code, 0, result.stdout + result.stderr);
+    assert.equal(
+      result.code,
+      args[0] === "game-candidate" && args[1] === "prepare" ? 10 : 0,
+      result.stdout + result.stderr,
+    );
     return JSON.parse(result.stdout);
   };
   const request = (path, options = {}) =>

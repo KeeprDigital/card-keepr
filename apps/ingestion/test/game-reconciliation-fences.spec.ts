@@ -52,14 +52,14 @@ test.each(["resume", "seal"])("a changed game predecessor fences native %s", asy
     expected_game_revision_id: predecessor,
     idempotency_key: `native-${boundary}-intent`,
   });
-  expect(created.status).toBe(201);
+  expect(created.status).toBe(202);
   const id = requiredString(created.document, "id");
   const changeHead = () => replaceGameHeadForFence(testEnv.CATALOGUE_DB).bind("catrev_spine_000", "one-piece").run();
   if (boundary === "resume") {
     expect(
       (await request(`/v1/game-candidates/${id}/pause`, { generation: 0, idempotency_key: "pause-before-head-change" }))
         .status,
-    ).toBe(200);
+    ).toBe(202);
     await changeHead();
     const resumed = await request(`/v1/game-candidates/${id}/resume`, {
       generation: 1,
@@ -197,8 +197,12 @@ test("an authority change between policy read and creation cannot produce mixed 
   expect(conflicted.status, JSON.stringify(conflicted.document)).toBe(409);
   expect(conflicted.document).toMatchObject({ code: "reconciliation_policy_changed" });
   const retried = await request(testEnv.CATALOGUE_DB);
-  expect(retried.status, JSON.stringify(retried.document)).toBe(201);
-  expect(retried.document).toMatchObject({ state: "preparing", generation: 0 });
+  expect(retried.status, JSON.stringify(retried.document)).toBe(202);
+  expect(retried.document).toMatchObject({ state: "accepted", action: "prepare", generation: 0 });
+  expect((await get(`/v1/game-candidates/${retried.document.id}`)).document).toMatchObject({
+    state: "preparing",
+    generation: 0,
+  });
 });
 
 test("concurrent exact native intents create one operation and replay its original identity", async () => {
@@ -326,7 +330,7 @@ test("a native preparation excludes a supplemental proposal whose owner link arr
     }),
     { ...testEnv, RECONCILIATION_WORKFLOW: workflow },
   );
-  expect(response.status).toBe(201);
+  expect(response.status).toBe(202);
   const id = requiredString(await response.json<Record<string, unknown>>(), "id");
   const linked = await worker.fetch(
     new Request(`https://card-keepr.invalid/v1/entity-proposals/${proposal.id}/decisions`, {
@@ -439,7 +443,7 @@ test.each(["link", "reject"])(
       }),
       { ...testEnv, RECONCILIATION_WORKFLOW: workflow },
     );
-    expect(response.status).toBe(201);
+    expect(response.status).toBe(202);
     const id = requiredString(await response.json<Record<string, unknown>>(), "id");
     const evidence = (await get(`/v1/ingestion-runs/${source.id}/evidence`)).document;
     const setId = (evidence.observation_sets as { id: string }[])[0]!.id;
@@ -505,13 +509,13 @@ test.each(["pause", "abandon-paused", "abandon-sealed"])(
       expected_game_revision_id: "catrev_spine_000",
       idempotency_key: `recovery-${boundary}-candidate`,
     });
-    expect(created.response.status).toBe(201);
+    expect(created.response.status).toBe(202);
     const id = requiredString(created.document, "id");
     if (boundary === "abandon-paused")
       expect(
         (await post(`/v1/game-candidates/${id}/pause`, { generation: 0, idempotency_key: "recovery-initial-pause" }))
           .response.status,
-      ).toBe(200);
+      ).toBe(202);
     if (boundary === "abandon-sealed") {
       const until = Date.now() + 15000;
       while ((await get(`/v1/game-candidates/${id}`)).document.state === "preparing" && Date.now() < until)
@@ -536,6 +540,6 @@ test.each(["pause", "abandon-paused", "abandon-sealed"])(
         testEnv.CATALOGUE_DB,
       ).run();
     }
-    expect((await post(`/v1/game-candidates/${id}/${action}`, body)).response.status).toBe(200);
+    expect((await post(`/v1/game-candidates/${id}/${action}`, body)).response.status).toBe(202);
   },
 );

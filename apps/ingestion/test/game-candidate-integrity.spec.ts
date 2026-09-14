@@ -1,3 +1,5 @@
+import { assertHttpResponse } from "../../../test/support/http-contract";
+import contract from "../../../contracts/admin-openapi.json";
 import { expect, test } from "vitest";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
 import {
@@ -50,7 +52,7 @@ test("reusing a published collection retains native mapping ownership separately
     expected_game_revision_id: published.document.resulting_revision_id,
     idempotency_key: "native-mapping-reuse-source",
   });
-  expect(created.response.status).toBe(201);
+  expect(created.response.status).toBe(202);
   const id = requiredString(created.document, "id");
   let candidate = (await get(`/v1/game-candidates/${id}`)).document;
   const deadline = Date.now() + 15000;
@@ -123,7 +125,7 @@ for (const change of ["product", "release", "image", "evidence"]) {
       expected_game_revision_id: published.document.resulting_revision_id,
       idempotency_key: `inspection-${change}-native`,
     });
-    expect(created.response.status).toBe(201);
+    expect(created.response.status).toBe(202);
     const id = requiredString(created.document, "id");
     const deadline = Date.now() + 15000;
     let candidate = (await get(`/v1/game-candidates/${id}`)).document;
@@ -205,11 +207,25 @@ test("owner image inspection verifies bytes and injected missing images fail clo
     });
   const response = await worker.fetch(request(), testEnv);
   expect(response.status).toBe(200);
-  expect((await response.arrayBuffer()).byteLength).toBe(metadata.content_byte_length);
+  await assertHttpResponse(
+    contract,
+    "/v1/game-candidates/{candidate}/partitions/{ordinal}/images/{record}",
+    "get",
+    response,
+  );
+  const bytes = await response.arrayBuffer();
+  expect(bytes.byteLength).toBe(metadata.content_byte_length);
+  expect(bytes).toEqual(await (await testEnv.PRINTING_IMAGES.get(metadata.object_key))!.arrayBuffer());
   // Explicit injected storage loss, not a finding about retained real-source evidence.
   await testEnv.PRINTING_IMAGES.delete(metadata.object_key);
   const missing = await worker.fetch(request(), testEnv);
   expect(missing.status).toBe(409);
+  await assertHttpResponse(
+    contract,
+    "/v1/game-candidates/{candidate}/partitions/{ordinal}/images/{record}",
+    "get",
+    missing,
+  );
 });
 
 test("injected corrupt inspection summary cannot report readiness", async () => {
@@ -293,7 +309,7 @@ test("injected loss of a replaced before-image prevents a native inspection inte
     expected_game_revision_id: published.document.resulting_revision_id,
     idempotency_key: "inspection-before-image-native",
   });
-  expect(created.response.status).toBe(201);
+  expect(created.response.status).toBe(202);
   const id = requiredString(created.document, "id");
   const deadline = Date.now() + 15000;
   let candidate = (await get(`/v1/game-candidates/${id}`)).document;
@@ -360,7 +376,7 @@ test("canonical legacy candidate JSON preserves before-images regardless of memb
     expected_game_revision_id: published.document.resulting_revision_id,
     idempotency_key: "inspection-legacy-image-native",
   });
-  expect(created.response.status).toBe(201);
+  expect(created.response.status).toBe(202);
   const id = requiredString(created.document, "id");
   let candidate = (await get(`/v1/game-candidates/${id}`)).document;
   const deadline = Date.now() + 15000;

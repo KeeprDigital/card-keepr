@@ -33,7 +33,7 @@ test("a 1001-Product native candidate stays within the D1/R2 callback budget", a
     }),
     { ...testEnv, RECONCILIATION_WORKFLOW: binding },
   );
-  expect(created.status).toBe(201);
+  expect(created.status).toBe(202);
   const id = requiredString(await created.json<Record<string, unknown>>(), "id");
   expect(params).toBeDefined();
   const observer = reconciliationBindingObserver();

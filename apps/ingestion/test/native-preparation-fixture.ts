@@ -29,7 +29,7 @@ export async function retainNativePreparation(runId: string, predecessor: string
     expected_game_revision_id: predecessor,
     idempotency_key: key,
   });
-  expect(created.status).toBe(201);
+  expect(created.status).toBe(202);
   const header = await created.json<Record<string, unknown>>();
   expect(params).toBeDefined();
   expect(params?.preparation_id).toBe(header.id);

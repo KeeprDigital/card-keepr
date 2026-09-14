@@ -94,7 +94,11 @@ test("qualified Riot intake keeps explicit exceptions through publication, refre
   };
   const cli = async (args) => {
     const result = await runCli([...args, "--json"], environment);
-    assert.equal(result.code, 0, result.stdout + result.stderr);
+    assert.equal(
+      result.code,
+      args[0] === "game-candidate" && args[1] === "prepare" ? 10 : 0,
+      result.stdout + result.stderr,
+    );
     return JSON.parse(result.stdout);
   };
   const planPath = join(directory, "plan.json");
