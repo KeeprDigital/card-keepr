@@ -134,7 +134,7 @@ test(
       report.owner_actions.push({ command: args, exit_code: result.code });
       assert.equal(
         result.code,
-        args[0] === "game-candidate" && args[1] === "prepare" ? 10 : 0,
+        args[0] === "game-candidate" && ["prepare", "pause", "resume", "abandon"].includes(args[1]) ? 10 : 0,
         result.stdout + result.stderr + worker.getOutput(),
       );
       return JSON.parse(result.stdout);

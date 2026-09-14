@@ -100,7 +100,7 @@ test("retained Riot catalogue: qualified intake, owner corrections, publication 
     const result = await runCli([...args, "--json"], environment);
     assert.equal(
       result.code,
-      args[0] === "game-candidate" && args[1] === "prepare" ? 10 : 0,
+      args[0] === "game-candidate" && ["prepare", "pause", "resume", "abandon"].includes(args[1]) ? 10 : 0,
       result.stdout + result.stderr,
     );
     return JSON.parse(result.stdout);

@@ -61,7 +61,10 @@ test("categories retain distinct identities, evidenced associations and applicab
   });
   await waitForHealth(`${ingestion.url}/health`, key, ingestion);
   const environment = { KEEPR_INGESTION_URL: ingestion.url, KEEPR_ADMINISTRATION_KEY: key };
-  const cli = async (args, expectedCode = args[0] === "game-candidate" && args[1] === "prepare" ? 10 : 0) => {
+  const cli = async (
+    args,
+    expectedCode = args[0] === "game-candidate" && ["prepare", "pause", "resume", "abandon"].includes(args[1]) ? 10 : 0,
+  ) => {
     const result = await runCli([...args, "--json"], environment);
     assert.equal(result.code, expectedCode, result.stdout + result.stderr);
     return JSON.parse(result.stdout);

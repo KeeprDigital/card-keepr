@@ -74,7 +74,7 @@ test("owner CLI publishes a reviewed split and authenticated consumers retain th
     const result = await runCli([...args, "--json"], environment);
     assert.equal(
       result.code,
-      args[0] === "game-candidate" && args[1] === "prepare" ? 10 : 0,
+      args[0] === "game-candidate" && ["prepare", "pause", "resume", "abandon"].includes(args[1]) ? 10 : 0,
       `${result.stdout}\n${result.stderr}`,
     );
     return JSON.parse(result.stdout);
