@@ -448,7 +448,8 @@ function parseOfficialErratumObservation(
     record.game !== "fusion-world" &&
     record.game !== "digimon" &&
     record.game !== "gundam" &&
-    record.game !== "riftbound"
+    record.game !== "riftbound" &&
+    record.game !== "pokemon"
   ) {
     throw new Error("Official Erratum Supported Game is invalid.");
   }
@@ -463,11 +464,24 @@ function parseOfficialErratumObservation(
     "Official Erratum target",
   );
   const identity = parseOfficialIdentity(target.official_identity, game);
+  if (identity.kind === "unknown") throw new Error("An Official Erratum requires an established exact Card target.");
   const targetLocator =
     target.type === "printing" ? requiredString(target.locator, "Official Erratum target locator") : null;
   const source = requiredRecord(record.source, "Official Erratum source");
   let sourceLocator: string;
-  if (game === "riftbound") {
+  if (game === "pokemon") {
+    assertOnlyFields(source, ["kind", "url", "heading"], "Pokémon Official Erratum source");
+    if (
+      source.kind !== "article_heading" ||
+      source.url !==
+        "https://www.pokemon.com/us/news/errata-for-garchomp-in-pokemon-tcg-sword-shield-brilliant-stars" ||
+      source.heading !== "Garchomp — Sonic Slip — Brilliant Stars 109/172" ||
+      identity.kind !== "card_number" ||
+      identity.value !== "BRILLIANT-STARS-109/172"
+    )
+      throw new Error("Pokémon Official Erratum article and exact set-qualified number disagree.");
+    sourceLocator = `${source.url} [heading: ${source.heading}]`;
+  } else if (game === "riftbound") {
     assertOnlyFields(source, ["kind", "url", "heading"], "Riftbound Official Erratum source");
     const url = new URL(requiredString(source.url, "Official Erratum article URL"));
     const heading = requiredString(source.heading, "Official Erratum article heading");
@@ -611,6 +625,7 @@ function parseOfficialIdentity(value: unknown, game: SupportedGame): CatalogueCa
   }
   const canonical = identity.value.toUpperCase();
   const acceptedNumberPatterns: Record<Exclude<SupportedGame, "riftbound" | "magic">, RegExp> = {
+    pokemon: /^BRILLIANT-STARS-109\/172$/u,
     "one-piece": /^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/,
     "fusion-world": /^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/,
     digimon: /^[A-Z]{1,5}[0-9]{0,3}-[A-Z0-9]{1,6}$/,

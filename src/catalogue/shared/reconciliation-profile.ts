@@ -130,6 +130,60 @@ const profileContracts: Readonly<Record<string, ProfileContract>> = {
         throw new Error("Magic requires the ordered faces applicable to its layout.");
     },
   },
+  "pokemon@1": {
+    game: "pokemon",
+    card: object(
+      [
+        "card_type",
+        "hp",
+        "types",
+        "stage",
+        "evolves_from",
+        "abilities",
+        "attacks",
+        "weaknesses",
+        "resistances",
+        "retreat_cost",
+        "regulation_mark",
+      ],
+      {
+        card_type: enumeration(["pokemon", "trainer", "energy"]),
+        hp: nullableInteger,
+        types: strings,
+        stage: nullableText,
+        evolves_from: nullableText,
+        abilities: array(
+          object(["kind", "name", "text"], { kind: nullableText, name: string(false, 1), text: nullableText }),
+        ),
+        attacks: array(
+          object(["name", "cost", "damage", "text"], {
+            name: string(false, 1),
+            cost: array(string()),
+            damage: nullableText,
+            text: nullableText,
+          }),
+        ),
+        weaknesses: array(object(["type", "value"], { type: string(false, 1), value: string(false, 1) })),
+        resistances: array(object(["type", "value"], { type: string(false, 1), value: string(false, 1) })),
+        retreat_cost: nullableInteger,
+        regulation_mark: nullableText,
+      },
+    ),
+    printing: object(
+      ["set_code", "collector_number", "finish", "edition", "size", "stamps", "artists", "reverse_face"],
+      {
+        set_code: string(false, 1),
+        collector_number: string(false, 1),
+        finish: nullableText,
+        edition: nullableText,
+        size: nullableText,
+        stamps: strings,
+        artists: strings,
+        reverse_face: nullableText,
+      },
+    ),
+    validateCard() {},
+  },
   "riftbound@1": {
     game: "riftbound",
     card: object(

@@ -718,7 +718,8 @@ function supportedGame(value: string): SupportedGame {
     value !== "digimon" &&
     value !== "gundam" &&
     value !== "riftbound" &&
-    value !== "magic"
+    value !== "magic" &&
+    value !== "pokemon"
   ) {
     throw new Error("Retained Source Observation Set game is unsupported.");
   }

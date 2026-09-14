@@ -92,7 +92,7 @@
       "pattern": "Z$"
     },
     "SupportedGame": {
-      "enum": ["one-piece", "fusion-world", "digimon", "gundam", "riftbound", "magic"]
+      "enum": ["one-piece", "fusion-world", "digimon", "gundam", "riftbound", "magic", "pokemon"]
     },
     "Component": {
       "type": "object",
@@ -112,7 +112,7 @@
       "properties": {
         "name": {
           "type": "string",
-          "pattern": "^(one-piece|fusion-world|digimon|gundam|riftbound|magic)\\.(0|[1-9][0-9]*)$"
+          "pattern": "^(one-piece|fusion-world|digimon|gundam|riftbound|magic|pokemon)\\.(0|[1-9][0-9]*)$"
         },
         "media_type": {
           "const": "application/x-ndjson"

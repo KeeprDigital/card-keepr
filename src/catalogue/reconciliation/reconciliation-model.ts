@@ -68,6 +68,7 @@ export function hasCrossSourceArtworkEvidence(observation: ParsedCardPrintingObs
   if (!card || !artwork?.artwork_id || artwork.official_card_identity !== card.official_identity.value) return false;
   switch (card.game) {
     case "magic":
+    case "pokemon":
     case "riftbound":
       return false; // No cross-source artwork equivalence rule is established.
     case "one-piece":

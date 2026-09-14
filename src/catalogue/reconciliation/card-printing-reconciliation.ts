@@ -1,3 +1,4 @@
+import { pokemonCorrectedRulesText } from "./pokemon-errata";
 import { prepareNativeSourceHistory } from "./native-source-history";
 import { requiredSourceAdapter, type SourceAdapterRegistration } from "../adapters";
 import { sourceHistoryCandidateStatement, type SourceHistoryCandidate } from "./native-source-history-repository";
@@ -1800,7 +1801,10 @@ export async function reconcileRetainedCardPrintingEvidence(
                     targetType: observation.target.type,
                     effectiveFrom: observation.effectiveFrom,
                     officialWording: observation.officialWording,
-                    correctedValue: observation.correctedRulesText,
+                    correctedValue:
+                      observation.game === "pokemon"
+                        ? pokemonCorrectedRulesText(card, observation, await priorErrata.forCard(card.game, card.id))
+                        : observation.correctedRulesText,
                   },
                 ],
               }),

@@ -15,7 +15,7 @@ const object = (properties, required = Object.keys(properties), additionalProper
   additionalProperties,
 });
 const selectedGames = array(
-  { enum: ["one-piece", "fusion-world", "digimon", "gundam", "riftbound", "magic"] },
+  { enum: ["one-piece", "fusion-world", "digimon", "gundam", "riftbound", "magic", "pokemon"] },
   { minItems: 1 },
 );
 const approval = object({
@@ -96,7 +96,7 @@ const evidenceRequest = object(
   true,
 );
 const nonempty = { ...string, pattern: "[\\s\\S]" };
-const game = { enum: ["one-piece", "fusion-world", "digimon", "gundam", "riftbound", "magic"] };
+const game = { enum: ["one-piece", "fusion-world", "digimon", "gundam", "riftbound", "magic", "pokemon"] };
 const record = { type: "object" };
 const curatedFieldTarget = object({
   kind: { const: "field" },

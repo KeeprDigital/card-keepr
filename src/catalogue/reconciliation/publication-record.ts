@@ -16,6 +16,7 @@ export async function publicationRecord(kind: string, envelope: PublicationEnvel
       gundam: "Gundam Card Game",
       riftbound: "Riftbound",
       magic: "Magic: The Gathering",
+      pokemon: "Pokémon Trading Card Game",
     };
     return {
       kind: subrecord === 0 ? "supported_games" : "game_profiles",
@@ -27,7 +28,7 @@ export async function publicationRecord(kind: string, envelope: PublicationEnvel
                 key: game,
                 name: names[game],
                 supported_locales:
-                  game === "magic"
+                  game === "magic" || game === "pokemon"
                     ? ["EN"]
                     : game === "gundam"
                       ? ["EN-ASIA", "EN-US"]

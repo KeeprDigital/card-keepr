@@ -1,0 +1,914 @@
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head><script src="/d-Headiction-our-How-and-ther-Lord-That-manly-sp" async></script>
+        <title>Garchomp | Brilliant Stars | TCG Card Database</title>
+
+
+<!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-V9L7');</script>
+<!-- End Google Tag Manager -->
+
+
+<link rel="shortcut icon" href="https://assets.pokemon.com/static2/_ui/img/favicon.ico"/>
+<link rel="stylesheet" href="https://assets.pokemon.com/static2/_ui/css/main.css"/>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;1,400;1,500&subset=latin-ext&display=swap" rel="stylesheet" type="text/css" />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@700&subset=latin-ext&display=swap" rel="stylesheet" type="text/css" />
+<link href="//fonts.googleapis.com/css?family=Roboto:400,700" rel="stylesheet" type="text/css" />
+
+<script src="https://assets.pokemon.com/static2/_ui/js/vendor/modernizr.custom.js"></script>
+    <script src="https://www.recaptcha.net/recaptcha/enterprise.js?render=6Lc4P0MoAAAAAAhyCYBhoVfHZUF3HMvFdXSRZ-kO&hl=en"></script>
+
+
+<script>
+    // TODO: this should be moved to a better place in the application
+    // needed for image deferred loading in sliders
+    window.addEventListener('load', function () {
+        window.loaded = true;
+    });
+</script>
+
+
+<script>
+    window.token = "4irb2DZnTqszXC3dKKW48KmSgGELh60QcW3VrBbRAo5bgwFIfDdCFypAvQvwR2SK";
+    window.mockAPI = false;
+    window.loginURL = 'https://trainer.pokemon.com/profile';
+    window.pokemonUI = window.pokemonUI || {};
+    window.staticAssetsVersionNumber = 'r1.1.8';
+
+
+    window.pokemonUI.recaptcha_key = "6Lc4P0MoAAAAAAhyCYBhoVfHZUF3HMvFdXSRZ-kO";
+    window.pokemonUI.email_signup_api = "https://api.emo.pokemon.com/";
+    window.pokemonUI.countryCode = 'us';
+    window.pokemonUI.api = {
+        'user-details': 'https://www.pokemon.com/api/users/details',
+        'base-url-secure': 'https://www.pokemon.com',
+
+        'gsa': '/us/search/api/'
+
+    };
+
+    window.pokemonUI.config = {
+        'collection': 'production_pokemon_collection'
+    };
+
+    window.pokemonUI.modals = window.pokemonUI.modals || {};
+    window.pokemonUI.modals = {
+        "season": "Season",
+        "episode": "Episode",
+        "legal": "Notice: If you click on the YouTube video above, you will leave Pokemon.com. The Pokémon Company International is not responsible for the content of any linked website that is not operated by The Pokémon Company International. Please note that these websites' privacy policies and security practices may differ from The Pokémon Company International's standards.",
+
+        "twitchlegal": "Notice: If you click on the Twitch video above, you will leave Pokemon.com. The Pokémon Company International is not responsible for the content of any linked website that is not operated by The Pokémon Company International. Please note that these websites' privacy policies and security practices may differ from The Pokémon Company International's standards.",
+    };
+    window.pokemonUI.dictionary = window.pokemonUI.dictionary || {};
+    window.pokemonUI.dictionary.dashboard = {
+        "youRecentlyPurchased": "You Recently Redeemed",
+        "shopMore": "Shop More"
+    };
+    window.pokemonUI.global_dictionary = window.pokemonUI.global_dictionary || {};
+    window.pokemonUI.global_dictionary.search = {
+        'searchUrl': '/us/search',
+        'GSALanguageCode': 'us',
+        'sortBy': 'Sort by:',
+        'filterBy': 'Filter by:',
+        'selectCategory': 'View All',
+        'mostRelevant': 'Most Relevant',
+        'mostRecent': 'Most Recent',
+        'returnedResults': 'Returned XXXX Results',
+        'shortQuery': 'Your search term is too short.',
+        'recommendedResults': 'Recommended Results',
+        'playGame': 'Play Game',
+        'all': {title: 'View All'},
+        'pokedex': {title: 'Pokédex'},
+        'videogames': {title: 'Video Game'},
+        'tcg': {title: 'Trading Card Game'},
+        'funzone': {title: 'Online Game'},
+        'animation': {title: 'Animation'},
+        'news': {title: 'News'},
+        'events': {title: 'Events'},
+        'strategy': {title: 'Strategy'},
+
+        "numberPrefix": "#"
+    };
+    window.pokemonUI.global_dictionary.datatables = {
+        'search': 'Search:',
+        'previous': 'Previous',
+        'next': 'Next',
+        'emptyTable': "No data is available.",
+        'zeroRecords': "No matching records found."
+    };
+    window.pokemonUI.global_dictionary.errorMessages = {
+        'dataError': 'Currently unavailable. Please try again.'
+    };
+    window.pokemonUI['ui-path'] = 'https://assets.pokemon.com/static2/_ui/'
+
+    window.pokemonUI.global_api = {
+
+        'gsa': '/us/search/api/',
+
+        'status-indicators': {
+            'game-server-status': '/api/tcg/game_server_status',
+            'tcgo-in-maintenance': '/api/tcg/in_maintenance_status',
+            'notifications': 'https://www.pokemon.com/api/user/notifications/config'
+        }
+    };
+
+    window.pokemonUI.site_search_api = {
+        'url': 'https://api.search.prod.pokemon.com/v1/search'
+    }
+
+    window.pokemonUI.cookie = {
+        set: function (name, value, days) {
+            if (days) {
+                var date = new Date();
+                date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+                var expires = "; expires=" + date.toGMTString();
+            } else var expires = "";
+            document.cookie = name + "=" + value + expires + "; path=/";
+        },
+
+        get: function (name) {
+            var nameEQ = name + '=',
+                ca = document.cookie.split(';'),
+                c, i = 0, ii = 0;
+
+            for (i = 0, ii = ca.length; i < ii; i++) {
+                c = ca[i];
+
+                while (c.charAt(0) === ' ') {
+                    c = c.substring(1, c.length);
+                }
+
+                if (c.indexOf(nameEQ) === 0) {
+                    var value = c.substring(nameEQ.length, c.length);
+                    if (value.charAt(0) == '"' && value.charAt(value.length - 1) == '"') {
+                        value = value.substring(1, value.length - 1);
+                    }
+                    return value;
+                }
+            }
+            return null;
+        }
+    };
+
+    window.enableDashboard = true;
+
+</script>
+
+<script type="module" src="/static-assets/app/static3/pcom-next-footer/pcom-next-footer.js?v=r1.1.8"></script>
+
+                <link rel="alternate" hreflang="en" href="https://www.pokemon.com/us/pokemon-tcg/pokemon-cards/series/swsh9/109/" />
+                <link rel="alternate" hreflang="en-gb" href="https://www.pokemon.com/uk/pokemon-tcg/pokemon-cards/series/swsh9/109/" />
+                <link rel="alternate" hreflang="fr" href="https://www.pokemon.com/fr/jcc-pokemon/cartes-pokemon/series/swsh9/109/" />
+                <link rel="alternate" hreflang="it" href="https://www.pokemon.com/it/gcc/archivio-carte/series/swsh9/109/" />
+                <link rel="alternate" hreflang="de" href="https://www.pokemon.com/de/pokemon-sammelkartenspiel/pokemon-karten/series/swsh9/109/" />
+                <link rel="alternate" hreflang="es" href="https://www.pokemon.com/es/jcc-pokemon/cartas-pokemon/series/swsh9/109/" />
+                <link rel="alternate" hreflang="es-xl" href="https://www.pokemon.com/el/jcc-pokemon/cartas-pokemon/series/swsh9/109/" />
+                <link rel="alternate" hreflang="es-do" href="https://www.pokemon.com/el/jcc-pokemon/cartas-pokemon/series/swsh9/109/" />
+                <link rel="alternate" hreflang="es-py" href="https://www.pokemon.com/el/jcc-pokemon/cartas-pokemon/series/swsh9/109/" />
+                <link rel="alternate" hreflang="es-cl" href="https://www.pokemon.com/el/jcc-pokemon/cartas-pokemon/series/swsh9/109/" />
+                <link rel="alternate" hreflang="es-gt" href="https://www.pokemon.com/el/jcc-pokemon/cartas-pokemon/series/swsh9/109/" />
+                <link rel="alternate" hreflang="es-mx" href="https://www.pokemon.com/el/jcc-pokemon/cartas-pokemon/series/swsh9/109/" />
+                <link rel="alternate" hreflang="es-hn" href="https://www.pokemon.com/el/jcc-pokemon/cartas-pokemon/series/swsh9/109/" />
+                <link rel="alternate" hreflang="es-uy" href="https://www.pokemon.com/el/jcc-pokemon/cartas-pokemon/series/swsh9/109/" />
+                <link rel="alternate" hreflang="es-bo" href="https://www.pokemon.com/el/jcc-pokemon/cartas-pokemon/series/swsh9/109/" />
+                <link rel="alternate" hreflang="es-ar" href="https://www.pokemon.com/el/jcc-pokemon/cartas-pokemon/series/swsh9/109/" />
+                <link rel="alternate" hreflang="es-cr" href="https://www.pokemon.com/el/jcc-pokemon/cartas-pokemon/series/swsh9/109/" />
+                <link rel="alternate" hreflang="es-pe" href="https://www.pokemon.com/el/jcc-pokemon/cartas-pokemon/series/swsh9/109/" />
+                <link rel="alternate" hreflang="es-co" href="https://www.pokemon.com/el/jcc-pokemon/cartas-pokemon/series/swsh9/109/" />
+                <link rel="alternate" hreflang="es-pa" href="https://www.pokemon.com/el/jcc-pokemon/cartas-pokemon/series/swsh9/109/" />
+                <link rel="alternate" hreflang="es-sv" href="https://www.pokemon.com/el/jcc-pokemon/cartas-pokemon/series/swsh9/109/" />
+                <link rel="alternate" hreflang="pt-br" href="https://www.pokemon.com/br/pokemon-estampas-ilustradas/cartas-de-pokemon/series/swsh9/109/" />
+
+<meta charset="utf-8"/>
+<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"/>
+<meta http-equiv="Content-Language" content="en"/>
+<meta name="language" content="en"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+
+<meta name="twitter:card" content="summary" />
+
+    <meta name="pkm-title" content="Garchomp" />
+    <meta property="og:title" content="Garchomp" />
+<meta name="twitter:title" content="Garchomp" />
+
+        <meta name="pkm-image" content="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/site_search/SWSH9/SWSH9_EN_109.png"/>
+<meta property="og:image" content="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/SWSH9/SWSH9_EN_109.png" />
+<meta name="twitter:image" content="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/SWSH9/SWSH9_EN_109.png" />
+
+    <meta name="pkm-category" content="tcg" />
+
+    <meta name="pkm-subcategory" content="Brilliant Stars" />
+
+    <meta property="og:description" content="Brilliant Stars | TCG Card Database" />
+    <meta name="twitter:description" content="Brilliant Stars | TCG Card Database" />
+    <meta name="pkm-description" content="Brilliant Stars | TCG Card Database" />
+
+    <meta name="pkm-modified-date" content="20240801" />
+
+    <link rel="canonical" href="https://www.pokemon.com/us/pokemon-tcg/pokemon-cards/series/swsh9/109/" />
+
+<link rel="stylesheet" type="text/css" media="all" href="/static-assets/app/static3/pcom-next-footer/pcom-next-footer-reset.css?v=r1.1.8" />    <meta name="pkm-id" content="109/172" />
+
+    <link rel="stylesheet" href="https://assets.pokemon.com/static2/_ui/css/cards.css" />
+</head>
+
+<body class="us fluid custom-form-elements">
+
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-V9L7"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+
+
+<div class="main-filler"></div>
+
+
+<nav class="main">
+
+    <div class="blocker"></div>
+
+    <div class="content-wrapper">
+
+        <div class="nav-bar" style="display: none;">
+            <a href="#" class="nav-toggle"><span
+                    class="icon icon_hamburger"></span></a>
+
+            <ul class="dashboard-open visible-mobile">
+                <li class="visible-signed-in">
+                    <a href="https://trainer.pokemon.com/profile">
+                        <div class="avatar-icon-wrapper">
+                            <img class="avatar-icon avatar-icon-mobile"
+                                 src="https://assets.pokemon.com/static2/_ui/img/chrome/profile-navigation/profile-nav-avatar.png"
+                                 alt="View Profile"/>
+                        </div>
+                    </a>
+                </li>
+
+                <li class="visible-not-signed-in">
+                    <a href="https://trainer.pokemon.com/profile">
+                        <div class="avatar-icon-wrapper">
+                            <img class="avatar-icon avatar-icon-mobile"
+                                src="https://assets.pokemon.com/static2/_ui/img/chrome/profile-navigation/profile-nav-signup.png"
+                                alt="Log In / Sign Up"/>
+                        </div>
+                        <div class="sign-in-text-wrapper sign-in-text-wrapper-mobile">
+                            Log In
+                        </div>
+                    </a>
+                </li>
+            </ul>
+        </div>
+
+
+    </div>
+
+</nav>
+
+<div class="container">
+    <section class="mosaic section card-detail">
+        <div class="column-6 push-1">
+
+            <div class="content-block content-block-full card-image">
+                <img src="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/SWSH9/SWSH9_EN_109.png"
+                     
+                     alt="Garchomp">
+            </div>
+
+            <div class="content-block content-block-full share-card hidden-mobile"></div>
+
+            <div class="content-block content-block content-block-full hidden-mobile">
+                <a id='pokedex-find' class="button-center" href="/us/pokedex/garchomp" data-pokemon-number='0445'>
+				    <span class="button button-orange">
+                        Find Garchomp in the Pokédex
+                    </span>
+                </a>
+
+                <a id='explore-cards' class="button-center" href="/us/pokemon-tcg/pokemon-cards?">
+                    <span class="button button-orange">
+                        Explore More Cards
+                    </span>
+                </a>
+            </div>
+        </div>
+
+        <div class="column-6 push-7">
+            <div class="content-block content-block-full full-card-information" data-card-id='swsh9/109'>
+
+                <div class="card-description">
+                    <div class="color-block color-block-gray">
+                        <h1>Garchomp</h1>
+                    </div>
+                    <div class="card-basic-info">
+                        <div class="card-type">
+                            <h2>Stage 2 Pokémon</h2>
+                                <h4>Evolves From:
+                                    <a href="/us/pokemon-tcg/pokemon-cards?cardName=Gabite">
+                                        Gabite
+                                    </a>
+                                </h4>
+                        </div>
+                        <div class="right">
+                            <span class="card-hp"><span>HP</span>160</span>
+                            <a href="/us/pokemon-tcg/pokemon-cards?card-dragon=on"><i class="energy icon-dragon" rel="tooltip" title="Dragon"></i></a>
+                        </div>
+                    </div>
+                    <span class="notch-bottom-right"></span>
+                </div>
+
+                <div class="pokemon-abilities">
+
+                    <div class="ability">
+                        <h3>
+                            <div class="poke-ability">Ability</div>
+                            <div>Sonic Slip</div>
+                        </h3>
+                        <p><p>When you play this Pokémon from your hand to evolve 1 of your Pokémon during your turn, you may prevent all damage from and effects of attacks done to this Pokémon until the end of your opponent’s next turn.</p></p>
+                    </div>
+
+
+
+
+
+
+                    <div class="ability">
+                            <ul class="left">
+                                    <li rel="tooltip" title="Water">
+                                    <a href="/us/pokemon-tcg/pokemon-cards?attack-water=on" data-energy-type="Water">
+                                        <i class="energy icon-water"></i>
+                                    </a>
+                                    </li>
+                                    <li rel="tooltip" title="Fighting">
+                                    <a href="/us/pokemon-tcg/pokemon-cards?attack-fighting=on" data-energy-type="Fighting">
+                                        <i class="energy icon-fighting"></i>
+                                    </a>
+                                    </li>
+                            </ul>
+                                <h4 class="left label">Dragonblade</h4>
+                                <span class="right plus">160</span>
+                                <pre><p>Discard the top 2 cards of your deck.</p></pre>
+                    </div>
+
+
+
+
+                </div>                 <div class="pokemon-stats">
+
+                    <div class="stat">
+                        <h4>Weakness</h4>
+                    </div>
+
+                    <div class="stat">
+                        <h4>Resistance</h4>
+                    </div>
+
+                    <div class="stat last">
+                        <h4>Retreat Cost</h4>
+                        <ul class="card-energies">
+                            <li rel="tooltip" title="Colorless">
+                                <a href="/us/pokemon-tcg/pokemon-cards?retreatCostMin=1&retreatCostMax=1">
+                                    <i class="energy icon-colorless"></i>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+
+
+                    <div class="stats-footer">
+                        <h3>
+                        <a
+                                href="/us/pokemon-tcg/pokemon-cards?swsh9=on"
+                        >
+                                Brilliant Stars
+                            </a>
+                        </h3>
+
+                            <span>109/172 Rare Holo</span>
+                    </div>
+                    <div class="expansion">
+                        <a
+                                href="/us/pokemon-tcg/pokemon-cards?swsh9=on"
+                        >
+                            <i class="icon-bw7-expansion-symbol" style="background-image: url(https://www.pokemon.com/static-assets/content-assets/cms/img/tcg/expansion-symbols/_40x40/swsh9-expansion-symbol.png);"></i>
+                        </a>
+                    </div>
+                </div>
+                <div class="content-block content-block content-block-full illustrator">
+                    <h4 class="highlight">Illustrator:
+                        <a href="/us/pokemon-tcg/pokemon-cards?particularArtist=Nurikabe">Nurikabe</a></h4>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="loader"></div>
+    </section>
+
+    <section class="section no-padding card-detail visible-mobile">
+
+        <div class="content-block content-block-full share-card">
+            <a class="button button-orange" href="/us/pokedex/garchomp">
+                Find Garchomp in the Pokédex
+            </a>
+
+            <a class="button button-orange" href="/us/pokemon-tcg/pokemon-cards?">
+                Explore More Cards
+            </a>
+        </div>
+
+    </section>
+
+<section
+    id="trading-card-slider"
+    class="slider-widget generic-slider slider-option-enable-when-all-content-visible-true preload-images
+    
+    slider-option-isinfinite-false
+    slider-option-hasfixedwidthitems-false
+
+    
+    "
+    >
+
+        <div class="slider-title">
+            <div class="column-12 push-1">
+                <h3 class="pokemon-character-slider-title">
+                    <span class="notch-left-top-outer"></span>
+Related Cards</h3>
+            </div>
+        </div>
+
+
+    <div class="slider-wrapper">
+        <ul class="slider">
+<li data-analytics-label="Cynthia’s Garchomp ex | svp | https://www.pokemon.com/us/pokemon-tcg/pokemon-cards/series/swsh9/109/"
+    data-content-id="item-cards"
+    data-content-type="Slider"
+    data-content-variation="slideCenter"
+    data-content-location=""
+    data-content-category="Card"
+    data-content-download=""
+    >
+    <a href="/us/pokemon-tcg/pokemon-cards/series/svp/204/">
+        <div class="card-img">
+            <img data-preload-src="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/SVP/SVP_EN_204.png"
+                 alt="Cynthia’s Garchomp ex"
+                 class="preload">
+        </div>
+        <div class="card-name">
+            <h5>Cynthia’s Garchomp ex</h5>
+            <span class="card-number">204</span>
+            <br style="clear:both;">
+            <img class="card-expansion-symbol" width="25" height="25" src="https://www.pokemon.com/static-assets/content-assets/cms2/img/trading-card-game/_symbols/expansion_symbol_25x25/svp-expansion-symbol.png">
+            <span class="notch-bottom-center-small"></span>
+        </div>
+    </a>
+</li>
+<li data-analytics-label="Garchomp & Giratina-GX | smp | https://www.pokemon.com/us/pokemon-tcg/pokemon-cards/series/swsh9/109/"
+    data-content-id="item-cards"
+    data-content-type="Slider"
+    data-content-variation="slideCenter"
+    data-content-location=""
+    data-content-category="Card"
+    data-content-download=""
+    >
+    <a href="/us/pokemon-tcg/pokemon-cards/series/smp/SM193/">
+        <div class="card-img">
+            <img data-preload-src="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/SMP/SMP_EN_SM193.png"
+                 alt="Garchomp & Giratina-GX"
+                 class="preload">
+        </div>
+        <div class="card-name">
+            <h5>Garchomp & Giratina-GX</h5>
+            <span class="card-number">SM193</span>
+            <br style="clear:both;">
+            <img class="card-expansion-symbol" width="25" height="25" src="https://www.pokemon.com/static-assets/content-assets/cms2/img/trading-card-game/_symbols/expansion_symbol_25x25/smp-expansion-symbol.png">
+            <span class="notch-bottom-center-small"></span>
+        </div>
+    </a>
+</li>
+<li data-analytics-label="Garchomp | sma | https://www.pokemon.com/us/pokemon-tcg/pokemon-cards/series/swsh9/109/"
+    data-content-id="item-cards"
+    data-content-type="Slider"
+    data-content-variation="slideCenter"
+    data-content-location=""
+    data-content-category="Card"
+    data-content-download=""
+    >
+    <a href="/us/pokemon-tcg/pokemon-cards/series/sma/SV40/">
+        <div class="card-img">
+            <img data-preload-src="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/SMA/SMA_EN_SV40.png"
+                 alt="Garchomp"
+                 class="preload">
+        </div>
+        <div class="card-name">
+            <h5>Garchomp</h5>
+            <span class="card-number">SV40</span>
+            <br style="clear:both;">
+            <img class="card-expansion-symbol" width="25" height="25" src="https://www.pokemon.com/static-assets/content-assets/cms2/img/trading-card-game/_symbols/expansion_symbol_25x25/sma-expansion-symbol.png">
+            <span class="notch-bottom-center-small"></span>
+        </div>
+    </a>
+</li>
+<li data-analytics-label="Garchomp-EX | xyp | https://www.pokemon.com/us/pokemon-tcg/pokemon-cards/series/swsh9/109/"
+    data-content-id="item-cards"
+    data-content-type="Slider"
+    data-content-variation="slideCenter"
+    data-content-location=""
+    data-content-category="Card"
+    data-content-download=""
+    >
+    <a href="/us/pokemon-tcg/pokemon-cards/series/xyp/XY09/">
+        <div class="card-img">
+            <img data-preload-src="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/XYP/XYP_EN_XY09.png"
+                 alt="Garchomp-EX"
+                 class="preload">
+        </div>
+        <div class="card-name">
+            <h5>Garchomp-EX</h5>
+            <span class="card-number">XY09</span>
+            <br style="clear:both;">
+            <img class="card-expansion-symbol" width="25" height="25" src="https://www.pokemon.com/static-assets/content-assets/cms2/img/trading-card-game/_symbols/expansion_symbol_25x25/black-star-promo.png">
+            <span class="notch-bottom-center-small"></span>
+        </div>
+    </a>
+</li>
+<li data-analytics-label="Garchomp-EX | xyp | https://www.pokemon.com/us/pokemon-tcg/pokemon-cards/series/swsh9/109/"
+    data-content-id="item-cards"
+    data-content-type="Slider"
+    data-content-variation="slideCenter"
+    data-content-location=""
+    data-content-category="Card"
+    data-content-download=""
+    >
+    <a href="/us/pokemon-tcg/pokemon-cards/series/xyp/XY167/">
+        <div class="card-img">
+            <img data-preload-src="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/XYP/XYP_EN_XY167.png"
+                 alt="Garchomp-EX"
+                 class="preload">
+        </div>
+        <div class="card-name">
+            <h5>Garchomp-EX</h5>
+            <span class="card-number">XY167</span>
+            <br style="clear:both;">
+            <img class="card-expansion-symbol" width="25" height="25" src="https://www.pokemon.com/static-assets/content-assets/cms2/img/trading-card-game/_symbols/expansion_symbol_25x25/black-star-promo.png">
+            <span class="notch-bottom-center-small"></span>
+        </div>
+    </a>
+</li>
+<li data-analytics-label="M Garchomp-EX | xyp | https://www.pokemon.com/us/pokemon-tcg/pokemon-cards/series/swsh9/109/"
+    data-content-id="item-cards"
+    data-content-type="Slider"
+    data-content-variation="slideCenter"
+    data-content-location=""
+    data-content-category="Card"
+    data-content-download=""
+    >
+    <a href="/us/pokemon-tcg/pokemon-cards/series/xyp/XY168/">
+        <div class="card-img">
+            <img data-preload-src="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/XYP/XYP_EN_XY168.png"
+                 alt="M Garchomp-EX"
+                 class="preload">
+        </div>
+        <div class="card-name">
+            <h5>M Garchomp-EX</h5>
+            <span class="card-number">XY168</span>
+            <br style="clear:both;">
+            <img class="card-expansion-symbol" width="25" height="25" src="https://www.pokemon.com/static-assets/content-assets/cms2/img/trading-card-game/_symbols/expansion_symbol_25x25/black-star-promo.png">
+            <span class="notch-bottom-center-small"></span>
+        </div>
+    </a>
+</li>
+<li data-analytics-label="Cynthia’s Garchomp ex | me2pt5 | https://www.pokemon.com/us/pokemon-tcg/pokemon-cards/series/swsh9/109/"
+    data-content-id="item-cards"
+    data-content-type="Slider"
+    data-content-variation="slideCenter"
+    data-content-location=""
+    data-content-category="Card"
+    data-content-download=""
+    >
+    <a href="/us/pokemon-tcg/pokemon-cards/series/me2pt5/111/">
+        <div class="card-img">
+            <img data-preload-src="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/ME2PT5/ME2PT5_EN_111.png"
+                 alt="Cynthia’s Garchomp ex"
+                 class="preload">
+        </div>
+        <div class="card-name">
+            <h5>Cynthia’s Garchomp ex</h5>
+            <span class="card-number">111</span>
+            <br style="clear:both;">
+            <img class="card-expansion-symbol" width="25" height="25" src="https://www.pokemon.com/static-assets/content-assets/cms2/img/trading-card-game/_symbols/expansion_symbol_25x25/me2pt5-expansion-symbol.png">
+            <span class="notch-bottom-center-small"></span>
+        </div>
+    </a>
+</li>
+<li data-analytics-label="Garchomp ex | sv04 | https://www.pokemon.com/us/pokemon-tcg/pokemon-cards/series/swsh9/109/"
+    data-content-id="item-cards"
+    data-content-type="Slider"
+    data-content-variation="slideCenter"
+    data-content-location=""
+    data-content-category="Card"
+    data-content-download=""
+    >
+    <a href="/us/pokemon-tcg/pokemon-cards/series/sv04/38/">
+        <div class="card-img">
+            <img data-preload-src="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/SV04/SV04_EN_38.png"
+                 alt="Garchomp ex"
+                 class="preload">
+        </div>
+        <div class="card-name">
+            <h5>Garchomp ex</h5>
+            <span class="card-number">38</span>
+            <br style="clear:both;">
+            <img class="card-expansion-symbol" width="25" height="25" src="https://www.pokemon.com/static-assets/content-assets/cms2/img/trading-card-game/_symbols/expansion_symbol_25x25/sv04-expansion-symbol.png">
+            <span class="notch-bottom-center-small"></span>
+        </div>
+    </a>
+</li>
+<li data-analytics-label="Garchomp ex | sv04 | https://www.pokemon.com/us/pokemon-tcg/pokemon-cards/series/swsh9/109/"
+    data-content-id="item-cards"
+    data-content-type="Slider"
+    data-content-variation="slideCenter"
+    data-content-location=""
+    data-content-category="Card"
+    data-content-download=""
+    >
+    <a href="/us/pokemon-tcg/pokemon-cards/series/sv04/219/">
+        <div class="card-img">
+            <img data-preload-src="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/SV04/SV04_EN_219.png"
+                 alt="Garchomp ex"
+                 class="preload">
+        </div>
+        <div class="card-name">
+            <h5>Garchomp ex</h5>
+            <span class="card-number">219</span>
+            <br style="clear:both;">
+            <img class="card-expansion-symbol" width="25" height="25" src="https://www.pokemon.com/static-assets/content-assets/cms2/img/trading-card-game/_symbols/expansion_symbol_25x25/sv04-expansion-symbol.png">
+            <span class="notch-bottom-center-small"></span>
+        </div>
+    </a>
+</li>
+<li data-analytics-label="Garchomp ex | sv04 | https://www.pokemon.com/us/pokemon-tcg/pokemon-cards/series/swsh9/109/"
+    data-content-id="item-cards"
+    data-content-type="Slider"
+    data-content-variation="slideCenter"
+    data-content-location=""
+    data-content-category="Card"
+    data-content-download=""
+    >
+    <a href="/us/pokemon-tcg/pokemon-cards/series/sv04/245/">
+        <div class="card-img">
+            <img data-preload-src="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/SV04/SV04_EN_245.png"
+                 alt="Garchomp ex"
+                 class="preload">
+        </div>
+        <div class="card-name">
+            <h5>Garchomp ex</h5>
+            <span class="card-number">245</span>
+            <br style="clear:both;">
+            <img class="card-expansion-symbol" width="25" height="25" src="https://www.pokemon.com/static-assets/content-assets/cms2/img/trading-card-game/_symbols/expansion_symbol_25x25/sv04-expansion-symbol.png">
+            <span class="notch-bottom-center-small"></span>
+        </div>
+    </a>
+</li>
+        </ul>
+    </div>
+
+
+
+    <noscript>
+
+<div>
+    <a href="/us/pokemon-tcg/pokemon-cards/series/svp/204/">
+        <h5>Cynthia’s Garchomp ex</h5>
+        <img src="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/SVP/SVP_EN_204.png" alt="Cynthia’s Garchomp ex" />
+    </a>
+</div>
+
+<div>
+    <a href="/us/pokemon-tcg/pokemon-cards/series/smp/SM193/">
+        <h5>Garchomp & Giratina-GX</h5>
+        <img src="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/SMP/SMP_EN_SM193.png" alt="Garchomp & Giratina-GX" />
+    </a>
+</div>
+
+<div>
+    <a href="/us/pokemon-tcg/pokemon-cards/series/sma/SV40/">
+        <h5>Garchomp</h5>
+        <img src="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/SMA/SMA_EN_SV40.png" alt="Garchomp" />
+    </a>
+</div>
+
+<div>
+    <a href="/us/pokemon-tcg/pokemon-cards/series/xyp/XY09/">
+        <h5>Garchomp-EX</h5>
+        <img src="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/XYP/XYP_EN_XY09.png" alt="Garchomp-EX" />
+    </a>
+</div>
+
+<div>
+    <a href="/us/pokemon-tcg/pokemon-cards/series/xyp/XY167/">
+        <h5>Garchomp-EX</h5>
+        <img src="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/XYP/XYP_EN_XY167.png" alt="Garchomp-EX" />
+    </a>
+</div>
+
+<div>
+    <a href="/us/pokemon-tcg/pokemon-cards/series/xyp/XY168/">
+        <h5>M Garchomp-EX</h5>
+        <img src="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/XYP/XYP_EN_XY168.png" alt="M Garchomp-EX" />
+    </a>
+</div>
+
+<div>
+    <a href="/us/pokemon-tcg/pokemon-cards/series/me2pt5/111/">
+        <h5>Cynthia’s Garchomp ex</h5>
+        <img src="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/ME2PT5/ME2PT5_EN_111.png" alt="Cynthia’s Garchomp ex" />
+    </a>
+</div>
+
+<div>
+    <a href="/us/pokemon-tcg/pokemon-cards/series/sv04/38/">
+        <h5>Garchomp ex</h5>
+        <img src="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/SV04/SV04_EN_38.png" alt="Garchomp ex" />
+    </a>
+</div>
+
+<div>
+    <a href="/us/pokemon-tcg/pokemon-cards/series/sv04/219/">
+        <h5>Garchomp ex</h5>
+        <img src="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/SV04/SV04_EN_219.png" alt="Garchomp ex" />
+    </a>
+</div>
+
+<div>
+    <a href="/us/pokemon-tcg/pokemon-cards/series/sv04/245/">
+        <h5>Garchomp ex</h5>
+        <img src="https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/SV04/SV04_EN_245.png" alt="Garchomp ex" />
+    </a>
+</div>
+    </noscript>
+
+</section>
+
+</div>
+
+
+  <div id="back-to-top" class="visible-mobile">
+    <span class="offscreen">Back to Top</span>
+  </div>
+
+  <footer class="global-footer">
+  </footer>
+
+<div id="modal" class="popup">
+    <div class="externalLink">
+        <h6>
+
+            You are about to leave a site operated by The Pokémon Company International, Inc.
+
+        </h6>
+        <p>
+
+            The Pokémon Company International is not responsible for the content of any linked website that is not operated by The Pokémon Company International. Please note that these websites' privacy policies and security practices may differ from The Pokémon Company International's standards.
+
+        </p>
+        <div class="buttons-wrapper">
+            <a href="#" class="button button-green arrow-right continueBtn">
+
+                Continue
+
+            </a>
+            <a href="#" class="button button-darkgray arrow-left closeBtn">
+
+                Cancel
+
+            </a>
+        </div>
+    </div>
+</div>
+
+<div id="pokemon-center-modal" class="popup">
+    <div class="externalLink centerLink">
+        <h6>
+            Click Continue to visit PokemonCenter.com, our official online shop.
+        </h6>
+        <h6>
+            The privacy and security policies differ.
+        </h6>
+        <div class="buttons-wrapper">
+            <a href="#" class="button button-green arrow-right continueBtn">
+
+                Continue
+
+            </a>
+            <a href="#" class="button button-darkgray arrow-left closeBtn" target="_blank">
+
+                Cancel
+
+            </a>
+        </div>
+    </div>
+</div>
+
+<div id="site-search-modal" class="popup">
+
+	<form id="site-search-widget" class="form-analytics" name="site-search-modal">
+		<span class="search"><input type="search" placeholder="Search" name="search" id="site-search-widget-term" autocomplete="off" /></span>
+		<span class="submit icon icon_search"><input type="submit" value="" id="site-search-widget-submit"/></span>
+        <div id="modal-search-results"></div>
+	</form>
+</div>
+
+<div id='report-screen-name-success-modal' class='popup'>
+  <h6>Report Inappropriate Screen Name</h6>
+
+  <div class='modalBox'>
+    <img src="https://assets.pokemon.com/static2/_ui/img/chrome/external_link_bumper.png" alt="" class="hidden-mobile" />
+
+    <p>
+    Pokemon.com administrators have been notified and will review the screen name for compliance with the Terms of Use.
+    </p>
+
+    <div class='buttons-wrapper'>
+      <a href='#' class='button button-orange closeBtn'>
+        Close
+      </a>
+    </div>
+  </div>
+</div>
+
+<div id='report-screen-name-failure-modal' class='popup'>
+  <h6>Report Inappropriate Screen Name</h6>
+
+  <div class='modalBox'>
+    <img src="https://assets.pokemon.com/static2/_ui/img/chrome/external_link_bumper.png" alt="" class="hidden-mobile" />
+
+    <p>
+    Your request could not be completed. Please try again. If the problem persists, please contact Customer Support.
+    </p>
+
+    <div class='buttons-wrapper'>
+      <a href='#' class='button button-orange closeBtn'>
+        Close
+      </a>
+    </div>
+  </div>
+</div>
+
+<div id='popupScreen' class="popupScreen"></div>
+
+
+  
+    
+<div id="video-modal" class="popup">
+<span class="watch-token-info"><span class="token_icon"></span><p class="token_verbal">You've been awarded <span class="token_amount">0</span> Token(s) for watching Pokémon TV!</p></span>
+    <div class="video-modal-wrapper">
+
+        <header class="video-header">
+            <h4 id="episodeInfo">
+
+            </h4>
+            <!-- HEADLINE -->
+            <h1 id="episodeTitle"></h1>
+        </header>
+
+        <div class="video-container">
+        </div>
+
+        <p class="legal" style="padding-top: 10px"></p>
+
+        <p class="video-summary">
+
+        </p>
+
+        
+
+        <a href="#" class="closeBtn button button-orange no-arrow right"><i class="icon icon_multiply"></i> Close</a>
+
+    </div>
+
+</div>
+
+
+<script type="text/javascript">
+    // define waitSeconds above require script tag
+    // to override the default, until main.js loads
+    window.requirejs = {
+        waitSeconds: 30 // when loaded, main.js also sets waitSeconds to 30
+    };
+</script>
+<script data-main="https://assets.pokemon.com/static2/_ui/js/main.js"
+        src="https://assets.pokemon.com/static2/_ui/js/vendor/require.js"></script>
+
+<script type="text/javascript">
+if (typeof _satellite !== "undefined") {
+  _satellite.pageBottom();
+}
+</script> 
+<script type="text/javascript" src="/_Incapsula_Resource?SWJIYLWA=719d34d31c8e3a6e6fffd425f7e032f3&ns=5&cb=472146261" async></script></body>
+</html>
