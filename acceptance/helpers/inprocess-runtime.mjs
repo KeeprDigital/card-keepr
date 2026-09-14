@@ -161,7 +161,9 @@ export async function startInprocessWorker({
       for await (const chunk of request) chunks.push(chunk);
       const body = ["GET", "HEAD"].includes(request.method) ? undefined : Buffer.concat(chunks);
       const result = await worker.fetch("http://acceptance-bridge.invalid/dispatch", {
-        method: "POST",
+        // HEAD must remain HEAD across the outer transport: wrapping a bodyless
+        // HEAD response in POST makes workerd replace its entity length with 0.
+        method: request.method === "HEAD" ? "HEAD" : "POST",
         headers: {
           "x-acceptance-dispatch": encodeURIComponent(
             JSON.stringify({

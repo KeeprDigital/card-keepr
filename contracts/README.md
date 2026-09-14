@@ -7,7 +7,6 @@ them directly. They are included in normal JSON lint and changed-file formatting
 | Contract             | Source                                                                                                                                                                        |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Generated HTTP       | [Read OpenAPI](read-openapi.json), [administration OpenAPI](admin-openapi.json), [migration bridge](HTTP.md) and [complete route/caller inventory](http-route-inventory.json) |
-| Unmigrated read API  | [Legacy OpenAPI](openapi.json) and [response schemas](schemas/api.schema.json)                                                                                                |
 | Catalogue Export     | [Manifest](schemas/catalogue-export-manifest-v5.schema.json), [records](schemas/catalogue-export-record-v5.schema.json) and [serialization](SERIALIZATION.md)                 |
 | Owner administration | [Administration contract](ADMINISTRATION.md) and [request schemas](schemas/administration.schema.json)                                                                        |
 
@@ -26,7 +25,9 @@ records unknown evidence. Art Cards have inapplicable gameplay properties,
 empty `game_data.attributes` and null `effective_rules_text`. Printings also
 expose `gameplay_applicability`, so null `printed_rules_text` is independently
 distinguishable as unknown or inapplicable. Printing attributes describing the
-issued appearance remain applicable to art Printings.
+issued appearance remain applicable to art Printings. Printing responses include
+the parent Card category and `card_id`. Card associations remain scoped to evidenced
+issued Printings; they do not imply a relationship for every sibling Printing.
 
 A `related_cards` entry identifies an associated canonical Card with
 `kind: shared_artwork`. It means retained evidence connects at least one issued

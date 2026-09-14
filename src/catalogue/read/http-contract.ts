@@ -1,12 +1,12 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { identifier, problemResponses, revisionResponseHeaders, secured } from "../../http/openapi";
-import { gameProfileRegistrations } from "../adapters";
-import { requiredProfileContract } from "../shared";
+import { identifier, digest, problemResponses, revisionResponseHeaders, secured } from "../../http/openapi";
+
+import { registeredGameProfiles, requiredProfileContract } from "../shared";
 
 // Project the profile's declared primitives into wire schemas. The profile's
 // semantic validators and all persisted-document validators remain independent.
 type ProfileSchema = ReturnType<typeof requiredProfileContract>["card"]["properties"][string];
-function profileWire(schema: ProfileSchema): z.ZodType {
+export function profileWire(schema: ProfileSchema): z.ZodType {
   switch (schema.kind) {
     case "string": {
       const value = z.string().min(schema.minimumLength ?? 0);
@@ -39,8 +39,8 @@ function profileWire(schema: ProfileSchema): z.ZodType {
       );
   }
 }
-const profiles = gameProfileRegistrations();
-const supportedGame = z.enum(profiles.map(({ game }) => game));
+export const profiles = registeredGameProfiles();
+export const supportedGame = z.enum(profiles.map(({ game }) => game));
 const gameData = z.union(
   profiles.map(({ id }) =>
     z.strictObject({ profile: z.literal(id), attributes: profileWire(requiredProfileContract(id).card) }),
@@ -56,7 +56,7 @@ const officialIdentity = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("functional_designation"), value: z.literal("DON!!") }),
   z.strictObject({ kind: z.literal("unknown"), value: z.null() }),
 ]);
-const link = z.strictObject({ self: z.url() });
+export const link = z.strictObject({ self: z.url() });
 const cardFields = {
   type: z.literal("card"),
   id: identifier,
@@ -156,6 +156,76 @@ export const cardsRoute = createRoute({
     ...problemResponses,
   },
 });
+
+const profileFieldSchema = z.strictObject({
+  path: identifier,
+  type: z.enum(["string", "integer", "boolean", "enum"]),
+  nullable: z.boolean(),
+  multiple: z.boolean(),
+  values: z.array(z.string()).optional(),
+});
+export function profileFields(
+  schema: ProfileSchema,
+  prefix = "",
+  multiple = false,
+): z.infer<typeof profileFieldSchema>[] {
+  if (schema.kind === "array") return profileFields(schema.items, prefix, true);
+  if (schema.kind === "object")
+    return Object.entries(schema.properties).flatMap(([key, value]) =>
+      profileFields(value, prefix ? `${prefix}.${key}` : key, multiple),
+    );
+  return [
+    {
+      path: prefix,
+      type: schema.kind,
+      nullable: "nullable" in schema && schema.nullable === true,
+      multiple,
+      ...(schema.kind === "enum" ? { values: [...schema.values] } : {}),
+    },
+  ];
+}
+export const gamesSchema = z
+  .strictObject({
+    data: z.array(
+      z.strictObject({
+        type: z.literal("supported_game"),
+        id: identifier,
+        key: supportedGame,
+        name: identifier,
+        supported_locales: z.array(z.enum(["EN-OCEANIA", "EN-ASIA", "EN-US"])),
+        game_profile: z.strictObject({
+          id: z.enum(profiles.map(({ id }) => id)),
+          card_fields: z.array(profileFieldSchema),
+          printing_fields: z.array(profileFieldSchema),
+        }),
+        filters: z.strictObject({
+          cards: z.array(identifier),
+          printings: z.array(identifier),
+          products: z.array(identifier),
+        }),
+        links: z.strictObject({ cards: z.url(), printings: z.url(), products: z.url() }),
+      }),
+    ),
+    meta: z.strictObject({ catalogue_revision_id: identifier, published_at: identifier }),
+    links: link,
+  })
+  .openapi("PublishedGames");
+export const gamesRoute = createRoute({
+  method: "get",
+  path: "/v1/games",
+  operationId: "listPublishedGames",
+  security: secured,
+  request: { query: z.strictObject({}), headers: z.object({ "if-none-match": z.string().optional() }) },
+  responses: {
+    200: {
+      description: "Games present in the published catalogue.",
+      headers: revisionResponseHeaders,
+      content: { "application/json": { schema: gamesSchema } },
+    },
+    304: { description: "Unchanged published discovery; no body.", headers: revisionResponseHeaders },
+    ...problemResponses,
+  },
+});
 const imageHeaders = {
   ETag: { schema: { type: "string" as const } },
   "Accept-Ranges": { schema: { type: "string" as const } },
@@ -223,3 +293,255 @@ export function imageRoute(method: "get" | "head") {
     },
   });
 }
+
+export const meta = cardCollectionSchema.shape.meta;
+const cardDetailData = z.union(
+  cardCollectionSchema.shape.data.element.options.map((schema) =>
+    schema.extend({
+      effective_rules_text: schema.shape.category.safeParse("art").success ? z.null() : z.string().nullable(),
+      printing_ids: z.array(identifier),
+    }),
+  ),
+);
+const identityCorrection = z.strictObject({
+  type: z.literal("identity_correction"),
+  id: identifier,
+  game: supportedGame,
+  entity_kind: z.enum(["card", "printing"]),
+  action: z.enum(["merge", "split"]),
+  replacement_ids: z.array(identifier),
+  links: z.union([z.strictObject({ survivor: z.url() }), z.strictObject({ replacements: z.array(z.url()) })]),
+});
+export const printingSchema = z
+  .strictObject({
+    type: z.literal("printing"),
+    id: identifier,
+    card_id: identifier,
+    category: cardCategory,
+    gameplay_applicability: z.enum(["applicable", "inapplicable"]),
+    rarity: z.strictObject({ normalized: z.string().nullable(), raw: z.string().nullable() }),
+    printed_rules_text: z.string().nullable(),
+    game_data: z
+      .union(
+        profiles.map(({ id }) =>
+          z.strictObject({ profile: z.literal(id), attributes: profileWire(requiredProfileContract(id).printing) }),
+        ),
+      )
+      .nullable(),
+    printing_images: z.array(
+      z.strictObject({
+        id: identifier,
+        role: z.enum(["front", "back", "other"]),
+        media_type: z.string().regex(/^image\//),
+        width: z.number().int().positive(),
+        height: z.number().int().positive(),
+        content_sha256: digest,
+        content_byte_length: z.number().int().nonnegative(),
+        links: z.strictObject({ content: z.url() }),
+      }),
+    ),
+    products: z.array(
+      z.strictObject({ id: identifier, official_code: z.string().nullable(), name: z.string().nullable() }),
+    ),
+    distribution_contexts: z.array(
+      z.strictObject({
+        id: identifier,
+        kind: identifier,
+        label: z.string().nullable(),
+        product_id: identifier.nullable(),
+      }),
+    ),
+    lifecycle: cardFields.lifecycle,
+    links: link,
+  })
+  .openapi("Printing");
+export const cardDetailSchema = z
+  .strictObject({
+    data: z.union([cardDetailData, identityCorrection]),
+    included: z.array(printingSchema).optional(),
+    meta,
+    links: link,
+  })
+  .openapi("CardDocument");
+export const catalogueSchema = z
+  .strictObject({
+    data: z.strictObject({
+      type: z.literal("catalogue"),
+      current_revision_id: identifier,
+      published_at: identifier,
+      current_export: z.url(),
+    }),
+    meta,
+    links: z.strictObject({
+      self: z.url(),
+      cards: z.url(),
+      printings: z.url(),
+      products: z.url(),
+      catalogue_exports: z.url(),
+      games: z.url(),
+    }),
+  })
+  .openapi("CatalogueDocument");
+export const catalogueRoute = createRoute({
+  method: "get",
+  path: "/v1/catalogue",
+  operationId: "getCatalogue",
+  security: secured,
+  request: { query: z.strictObject({}), headers: z.object({ "if-none-match": z.string().optional() }) },
+  responses: {
+    200: {
+      description: "Current Catalogue Revision and consumer links.",
+      headers: revisionResponseHeaders,
+      content: { "application/json": { schema: catalogueSchema } },
+    },
+    304: { description: "Unchanged catalogue; no body.", headers: revisionResponseHeaders },
+    ...problemResponses,
+  },
+});
+export const cardDetailRoute = createRoute({
+  method: "get",
+  path: "/v1/cards/{card}",
+  operationId: "getCard",
+  security: secured,
+  request: {
+    params: z.strictObject({ card: identifier }),
+    query: z.strictObject({ include: z.literal("printings").optional(), revision: identifier.optional() }),
+    headers: z.object({ "if-none-match": z.string().optional() }),
+  },
+  responses: {
+    200: {
+      description: "Published Card or retained identity correction.",
+      headers: revisionResponseHeaders,
+      content: { "application/json": { schema: cardDetailSchema } },
+    },
+    304: { description: "Unchanged validated detail; no body.", headers: revisionResponseHeaders },
+    ...problemResponses,
+  },
+});
+
+export const printingQuerySchema = cardQuerySchema.pick({
+  category: true,
+  game: true,
+  card_id: true,
+  rarity: true,
+  product_id: true,
+  release_region: true,
+  limit: true,
+  after: true,
+  revision: true,
+});
+export const productQuerySchema = cardQuerySchema.pick({
+  q: true,
+  game: true,
+  release_region: true,
+  limit: true,
+  after: true,
+  revision: true,
+});
+export const printingCollectionSchema = z
+  .strictObject({ data: z.array(printingSchema), meta, page: cardCollectionSchema.shape.page, links: link })
+  .openapi("PrintingCollection");
+export const printingDetailSchema = z
+  .strictObject({ data: z.union([printingSchema, identityCorrection]), meta, links: link })
+  .openapi("PrintingDocument");
+export const productSchema = z
+  .strictObject({
+    type: z.literal("product"),
+    id: identifier,
+    game: supportedGame,
+    official_code: z.string().nullable(),
+    name: z.string().nullable(),
+    releases: z.array(
+      z.strictObject({
+        id: identifier,
+        event_key: identifier,
+        region: z.enum(["EN-OCEANIA", "EN-ASIA", "EN-US", "unknown"]),
+        date: z.strictObject({
+          precision: z.enum(["day", "month", "quarter", "season", "year", "unknown"]).nullable(),
+          value: z.string().nullable(),
+        }),
+        status: z.enum(["announced", "released"]).nullable(),
+      }),
+    ),
+    lifecycle: cardFields.lifecycle,
+    links: link,
+  })
+  .openapi("Product");
+export const productCollectionSchema = z
+  .strictObject({ data: z.array(productSchema), meta, page: cardCollectionSchema.shape.page, links: link })
+  .openapi("ProductCollection");
+export const productDetailSchema = z
+  .strictObject({ data: productSchema, meta, links: link })
+  .openapi("ProductDocument");
+export const printingsRoute = createRoute({
+  method: "get",
+  path: "/v1/printings",
+  operationId: "listPrintings",
+  security: secured,
+  request: { query: printingQuerySchema, headers: z.object({ "if-none-match": z.string().optional() }) },
+  responses: {
+    200: {
+      description: "Published Printings pinned to one composition.",
+      headers: revisionResponseHeaders,
+      content: { "application/json": { schema: printingCollectionSchema } },
+    },
+    304: { description: "Unchanged validated query; no body.", headers: revisionResponseHeaders },
+    ...problemResponses,
+  },
+});
+export const printingDetailRoute = createRoute({
+  method: "get",
+  path: "/v1/printings/{printing}",
+  operationId: "getPrinting",
+  security: secured,
+  request: {
+    params: z.strictObject({ printing: identifier }),
+    query: z.strictObject({ revision: identifier.optional() }),
+    headers: z.object({ "if-none-match": z.string().optional() }),
+  },
+  responses: {
+    200: {
+      description: "Published Printing or retained identity correction.",
+      headers: revisionResponseHeaders,
+      content: { "application/json": { schema: printingDetailSchema } },
+    },
+    304: { description: "Unchanged validated detail; no body.", headers: revisionResponseHeaders },
+    ...problemResponses,
+  },
+});
+export const productsRoute = createRoute({
+  method: "get",
+  path: "/v1/products",
+  operationId: "listProducts",
+  security: secured,
+  request: { query: productQuerySchema, headers: z.object({ "if-none-match": z.string().optional() }) },
+  responses: {
+    200: {
+      description: "Published Products and Releases pinned to one composition.",
+      headers: revisionResponseHeaders,
+      content: { "application/json": { schema: productCollectionSchema } },
+    },
+    304: { description: "Unchanged validated query; no body.", headers: revisionResponseHeaders },
+    ...problemResponses,
+  },
+});
+export const productDetailRoute = createRoute({
+  method: "get",
+  path: "/v1/products/{product}",
+  operationId: "getProduct",
+  security: secured,
+  request: {
+    params: z.strictObject({ product: identifier }),
+    query: z.strictObject({ revision: identifier.optional() }),
+    headers: z.object({ "if-none-match": z.string().optional() }),
+  },
+  responses: {
+    200: {
+      description: "Published Product and Releases.",
+      headers: revisionResponseHeaders,
+      content: { "application/json": { schema: productDetailSchema } },
+    },
+    304: { description: "Unchanged validated detail; no body.", headers: revisionResponseHeaders },
+    ...problemResponses,
+  },
+});

@@ -328,6 +328,11 @@ export function gameProfileForGame(game: string): string | null {
   return Object.entries(profileContracts).find(([, contract]) => contract.game === game)?.[0] ?? null;
 }
 
+/** The same registered profile identities drive publication, validation and discovery. */
+export function registeredGameProfiles() {
+  return Object.entries(profileContracts).map(([id, contract]) => ({ id, game: contract.game }));
+}
+
 /** Existing source vocabularies declare tokens through their Game Profile. */
 export function gameProfileCardClassification(
   profile: string,

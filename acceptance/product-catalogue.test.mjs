@@ -241,12 +241,12 @@ test("native publication: the CLI publishes separated Product catalogue data con
   const productResponse = await fetch(`${api.url}/v1/products/${productId}`, { headers });
   assert.equal(productResponse.status, 200);
   const productDocument = await productResponse.json();
-  const apiSchema = JSON.parse(await readFile(resolve(root, "contracts/schemas/api.schema.json"), "utf8"));
+  const productContract = JSON.parse(await readFile(resolve(root, "contracts/read-openapi.json"), "utf8"));
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
   const validateProduct = ajv.compile({
-    ...apiSchema,
-    $ref: "#/$defs/ProductDocument",
+    components: productContract.components,
+    $ref: "#/components/schemas/ProductDocument",
   });
   assert.equal(validateProduct(productDocument), true, ajv.errorsText(validateProduct.errors));
   assert.equal(productDocument.data.releases[0].region, "unknown");

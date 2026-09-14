@@ -5,7 +5,6 @@ import { exports } from "cloudflare:workers";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { beforeEach, expect, test, vi } from "vitest";
-import apiSchema from "../../../contracts/schemas/api.schema.json";
 import { productReleasePublicationStatements } from "../../../src/catalogue/reconciliation";
 import { type CatalogueCandidate, catalogueCandidateContract, catalogueStore } from "../../../src/catalogue/shared";
 import * as curatedQueries from "../../ingestion/test/query-helpers/curated";
@@ -17,6 +16,21 @@ import { apiPublicBase } from "./api-fixtures";
 import { seedPrintingQueryProjection } from "./printing-query-fixtures";
 
 const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
+
+test("published Printing and Product collections and details match generated consumer contracts", async () => {
+  for (const [path, definition] of [
+    ["/v1/printings", "/v1/printings"],
+    ["/v1/printings/printing_st15_event", "/v1/printings/{printing}"],
+    ["/v1/products", "/v1/products"],
+    ["/v1/products/product_st15", "/v1/products/{product}"],
+  ]) {
+    const response = await exports.default.fetch(
+      new Request(`https://card-keepr.invalid${path}`, { headers: { authorization: "Bearer vitest-api-key" } }),
+    );
+    expect(response.status).toBe(200);
+    await assertHttpResponse(contract, definition!, "get", response);
+  }
+});
 
 beforeEach(async () => {
   await applyD1Migrations(testEnv.CATALOGUE_DB, testEnv.TEST_MIGRATIONS);
@@ -428,6 +442,17 @@ test("authenticated Printing Image content is immutable, conditional, and range-
   expect(partial.headers.get("content-range")).toBe("bytes 7-11/18");
   expect(new TextDecoder().decode(await partial.arrayBuffer())).toBe("front");
 
+  for (const validator of [content.headers.get("etag")!, `W/${content.headers.get("etag")!}`, '"other-image"']) {
+    const response = await api("/v1/printing-images/printing_image_st15_front/content", {
+      range: "bytes=7-11",
+      "if-range": validator,
+    });
+    const matched = validator === content.headers.get("etag");
+    expect(response.status).toBe(matched ? 206 : 200);
+    await assertHttpResponse(contract, "/v1/printing-images/{image}/content", "get", response);
+    expect(new TextDecoder().decode(await response.arrayBuffer())).toBe(matched ? "front" : "fusion-front-image");
+  }
+
   const notModified = await api("/v1/printing-images/printing_image_st15_front/content", {
     "if-none-match": '"46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773"',
   });
@@ -572,6 +597,7 @@ test("Printing detail conditional reads bind exact response bytes to one revisio
     publishedCatalogueQueries.insertRevisionPrintingsForPrintingDetailConditionalReadsBindExactResponseBytesOne(
       testEnv.CATALOGUE_DB,
     ),
+    publishedCatalogueQueries.copyPrintingImagesForConditionalRevision(testEnv.CATALOGUE_DB),
     publishedCatalogueQueries.setCatalogueStateCurrentRevisionIdPublishedAtForPrintingDetailConditionalReadsBindExactResponseBytesOne(
       testEnv.CATALOGUE_DB,
     ),
@@ -639,7 +665,7 @@ test("Printing detail rejects removed evidence representations", async () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
       code: "invalid_parameter",
-      title: "Invalid parameter",
+      title: "Invalid request",
     });
   }
 
@@ -666,7 +692,7 @@ test("Product query and include parameters reject invalid public representations
     expect(response.headers.get("content-type")).toContain("application/problem+json");
     await expect(response.json()).resolves.toEqual({
       type: "https://card-keepr.invalid/problems/invalid_parameter",
-      title: "Invalid parameter",
+      title: "Invalid request",
       status: 400,
       code: "invalid_parameter",
       detail: expect.any(String),
@@ -910,6 +936,7 @@ test("Product cursors pin the route and preserve filtered keyset order", async (
     releases: [
       {
         id: "release_st14_oceania",
+        event_key: "release_st14_oceania",
         region: "EN-OCEANIA",
         date: { precision: "day", value: "2026-08-01" },
         status: "released",
@@ -1008,6 +1035,7 @@ test("Printing collection binds every normalized filter to one card-ordered revi
     printed_rules_text: null,
     game_data: null,
     printing_images: [],
+    products: [],
     distribution_contexts: [],
     relationship_evidence: [],
     locator_evidence: { current: [], historical: [] },
@@ -1057,6 +1085,7 @@ test("Printing collection binds every normalized filter to one card-ordered revi
     releases: [
       {
         id: "release_us",
+        event_key: "release_us",
         region: "EN-US",
         date: { precision: "day", value: "2026-01-01" },
         status: "released",
@@ -1260,8 +1289,7 @@ function encodeCursor(value: unknown): string {
 function expectSchema(definition: string, value: unknown): void {
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
-  ajv.addSchema(apiSchema);
-  const validate = ajv.getSchema(`${apiSchema.$id}#/$defs/${definition}`);
+  const validate = ajv.compile({ components: contract.components, $ref: `#/components/schemas/${definition}` });
   expect(validate).toBeDefined();
   expect(validate!(value), JSON.stringify(validate!.errors)).toBe(true);
 }
@@ -1270,15 +1298,49 @@ function expectSchema(definition: string, value: unknown): void {
 test("a missing published Printing Image retains a protected missing-object diagnosis", async () => {
   const logs: string[] = [];
   vi.spyOn(console, "error").mockImplementation((value) => logs.push(String(value)));
-  await testEnv.PRINTING_IMAGES.delete(
-    "printing-images/46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773",
-  );
-  const response = await api("/v1/printing-images/printing_image_st15_front/content");
-  expect(response.status).toBe(500);
-  const problem = await response.json<{ request_id: string }>();
-  expect(problem).toMatchObject({ code: "internal_error", detail: "The request could not be completed." });
-  expect(logs.map((line) => JSON.parse(line)).find((event) => event.event === "request.failed")).toMatchObject({
-    request_id: problem.request_id,
-    causes: [{ classification: "missing_object", stack_reference: expect.any(String) }],
-  });
+  const key = "printing-images/46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773";
+  const original = await testEnv.PRINTING_IMAGES.get(key);
+  expect(original).not.toBeNull();
+  const bytes = await original!.arrayBuffer();
+  try {
+    await testEnv.PRINTING_IMAGES.delete(
+      "printing-images/46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773",
+    );
+    const response = await api("/v1/printing-images/printing_image_st15_front/content");
+    expect(response.status).toBe(500);
+    const problem = await response.json<{ request_id: string }>();
+    expect(problem).toMatchObject({ code: "internal_error", detail: "The request could not be completed." });
+    expect(logs.map((line) => JSON.parse(line)).find((event) => event.event === "request.failed")).toMatchObject({
+      request_id: problem.request_id,
+      causes: [{ classification: "missing_object", stack_reference: expect.any(String) }],
+    });
+  } finally {
+    await testEnv.PRINTING_IMAGES.put(key, bytes, {
+      httpMetadata: original!.httpMetadata,
+      sha256: original!.checksums.sha256,
+    });
+  }
+});
+
+test("explicit missing revisions cannot fall back to current reads or conditional images", async () => {
+  for (const path of [
+    "/v1/cards",
+    "/v1/cards/card_st15_event",
+    "/v1/printings",
+    "/v1/printings/printing_st15_event",
+    "/v1/products",
+    "/v1/products/product_st15",
+    "/v1/printing-images/printing_image_st15_front/content",
+  ]) {
+    const selected = await api(`${path}?revision=catrev_products`);
+    expect(selected.status, path).toBe(200);
+    expect(selected.headers.get("x-catalogue-revision")).toBe("catrev_products");
+    if (!path.endsWith("/content")) {
+      const document = await selected.json<{ links: { self: string } }>();
+      expect(new URL(document.links.self).searchParams.get("revision"), path).toBe("catrev_products");
+    } else await selected.arrayBuffer();
+    const response = await api(`${path}?revision=catrev_never_published`, { "if-none-match": "*" });
+    expect(response.status, path).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({ code: "not_found" });
+  }
 });

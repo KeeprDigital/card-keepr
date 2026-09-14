@@ -93,8 +93,13 @@ export function composedCollectionStatement(
     }
   };
   equal("e.supported_game", filters.game);
-  equal("e.category", filters.category);
-  equal("e.card_id", filters.card_id);
+  if (kind === "printings" && filters.category !== null) {
+    conditions.push(
+      "EXISTS(SELECT 1 FROM publication_read_entities card WHERE card.candidate_id=e.candidate_id AND card.kind='cards' AND card.category=? AND card.entity_id=e.card_id)",
+    );
+    bindings.push(filters.category);
+  } else equal("e.category", filters.category);
+  equal(kind === "cards" ? "e.entity_id" : "e.card_id", filters.card_id);
   equal("e.identity_value", filters.card_number);
   if (after) {
     conditions.push(
@@ -239,7 +244,7 @@ export function composedExportArtifactStatement(db: CatalogueStore, revision: st
 export function composedSupportedGamesStatement(db: CatalogueStore, revision: string) {
   return repositoryStatements(db)
     .prepare(
-      `SELECT supported_game FROM catalogue_composition_games WHERE catalogue_revision_id=? ORDER BY supported_game LIMIT 5`,
+      `SELECT supported_game FROM catalogue_composition_games WHERE catalogue_revision_id=? ORDER BY supported_game`,
     )
     .bind(revision);
 }

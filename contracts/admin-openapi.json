@@ -3,7 +3,7 @@
   "info": {
     "title": "Card Keepr administration API",
     "version": "1.0.0",
-    "description": "Generated HTTP contracts. Unmigrated operations are explicitly inventoried; this document is not yet the complete Worker contract."
+    "description": "Generated administration contracts. Unmigrated operations are explicitly inventoried."
   },
   "servers": [
     {

@@ -1,3 +1,4 @@
+import { retainedPrintingRepresentation } from "./printing-representation";
 import { parseRange } from "./byte-range";
 import { currentCardModelStatement } from "./card-model-repository";
 import { MissingObjectError } from "../shared";
@@ -203,8 +204,12 @@ export async function currentCardResponse(
   request: Request,
   base: PublicBase,
 ): Promise<Response | null> {
-  await requireCurrentCardModel(database);
-  const row = await currentCardStatement(database, cardId).first<RevisionDocumentRow>();
+  await requireCurrentCardModel(database, new URL(request.url).searchParams.get("revision"));
+  const row = await currentCardStatement(
+    database,
+    cardId,
+    new URL(request.url).searchParams.get("revision"),
+  ).first<RevisionDocumentRow>();
   if (row === null) return identityCorrectionResponse(database, cardId, "card", request, base);
   const url = new URL(request.url);
   const include = detailIncludeProjection(
@@ -224,14 +229,20 @@ export async function currentCardResponse(
         cardId: cardId,
       }).all<PrintingDocumentRow>()
     : { results: [] as PrintingDocumentRow[] };
+  const included = [];
+  for (const { document_json } of printings.results)
+    included.push(
+      absoluteDocumentLinks(
+        await retainedPrintingRepresentation(database, row.current_revision_id, detailEnvelope(document_json).data),
+        base,
+      ),
+    );
   return Response.json(
     {
       data: absoluteDocumentLinks(consumerContent(envelope.data), base),
       ...(include.has("printings")
         ? {
-            included: printings.results.map(({ document_json }) =>
-              absoluteDocumentLinks(consumerContent(detailEnvelope(document_json).data), base),
-            ),
+            included,
           }
         : {}),
       meta: {
@@ -250,8 +261,12 @@ export async function currentPrintingResponse(
   request: Request,
   base: PublicBase,
 ): Promise<Response | null> {
-  await requireCurrentCardModel(database);
-  const row = await currentPrintingStatement(database, printingId).first<RevisionDocumentRow>();
+  await requireCurrentCardModel(database, new URL(request.url).searchParams.get("revision"));
+  const row = await currentPrintingStatement(
+    database,
+    printingId,
+    new URL(request.url).searchParams.get("revision"),
+  ).first<RevisionDocumentRow>();
   if (row === null) return identityCorrectionResponse(database, printingId, "printing", request, base);
   const url = new URL(request.url);
   const include = detailIncludeProjection(
@@ -266,7 +281,10 @@ export async function currentPrintingResponse(
   }
   return Response.json(
     {
-      data: absoluteDocumentLinks(consumerContent(envelope.data), base),
+      data: absoluteDocumentLinks(
+        await retainedPrintingRepresentation(database, row.current_revision_id, envelope.data),
+        base,
+      ),
       meta: {
         catalogue_revision_id: row.current_revision_id,
         published_at: row.published_at,
@@ -277,8 +295,8 @@ export async function currentPrintingResponse(
   );
 }
 
-async function requireCurrentCardModel(database: CatalogueStore) {
-  const revision = await currentCardModelStatement(database).first<{ model_ready: number }>();
+async function requireCurrentCardModel(database: CatalogueStore, revisionId: string | null) {
+  const revision = await currentCardModelStatement(database, revisionId).first<{ model_ready: number }>();
   // The empty bootstrap pointer has no publication and still returns missing entities.
   if (revision && revision.model_ready !== 1)
     throw new ReadProblem(503, "catalogue_query_unavailable", "The current Card definition requires regeneration.");
@@ -290,7 +308,11 @@ export async function printingImageContentResponse(
   bucket: R2Bucket,
   imageId: string,
 ): Promise<Response | null> {
-  const row = await printingImageStatement(database, imageId).first<PrintingImageRow>();
+  const row = await printingImageStatement(
+    database,
+    imageId,
+    new URL(request.url).searchParams.get("revision"),
+  ).first<PrintingImageRow>();
   if (row === null) return null;
 
   const etag = `"${row.content_sha256}"`;
@@ -304,7 +326,10 @@ export async function printingImageContentResponse(
   if (!isHead && ifNoneMatch(request, etag)) {
     return new Response(null, { status: 304, headers: baseHeaders });
   }
-  const range = isHead ? null : parseRange(request.headers.get("range"), row.content_byte_length);
+  const range =
+    isHead || (request.headers.has("if-range") && request.headers.get("if-range") !== etag)
+      ? null
+      : parseRange(request.headers.get("range"), row.content_byte_length);
   if (range === "unsatisfiable") {
     throw new ReadProblem(
       416,
@@ -582,7 +607,12 @@ async function identityCorrectionResponse(
   request: Request,
   base: PublicBase,
 ) {
-  const row = await publishedIdentityCorrectionStatement(database, id, kind).first<RevisionDocumentRow>();
+  const row = await publishedIdentityCorrectionStatement(
+    database,
+    id,
+    kind,
+    new URL(request.url).searchParams.get("revision"),
+  ).first<RevisionDocumentRow>();
   if (!row) return null;
   const correction = JSON.parse(row.document_json) as { action: "merge" | "split"; replacement_ids: string[] };
   const route = kind === "card" ? "cards" : "printings";

@@ -1,6 +1,5 @@
 import { absoluteDocumentLinks, type PublicBase, publicUrl } from "../../http/public-base";
-import type { CatalogueStore } from "../shared";
-import { consumerContent } from "../shared";
+import { type CatalogueStore, gameProfileForGame } from "../shared";
 import {
   canonicalEtag,
   collectionFilter,
@@ -17,10 +16,10 @@ import {
   revisionHeaders,
 } from "./collection-endpoint";
 import { printingCollectionStatement } from "./printing-collection-repository";
+import { retainedPrintingRepresentation } from "./printing-representation";
 
 const printingRoute = "/v1/printings";
 const printingOrder = "card-id,printing-id";
-const supportedGames = new Set(["one-piece", "fusion-world", "digimon", "gundam", "riftbound"]);
 const releaseRegions = new Set(["EN-OCEANIA", "EN-ASIA", "EN-US", "unknown"]);
 
 type PrintingCursor = {
@@ -47,11 +46,14 @@ export async function currentPrintingsResponse(
   collectionParameters(url);
   const limit = collectionLimit(url.searchParams.get("limit"));
   const cardId = collectionFilter(url, "card_id");
+  const category = collectionFilter(url, "category");
+  if (category !== null && !["gameplay", "token", "art"].includes(category))
+    throw invalidParameter("category", "Card category is invalid.");
   const game = collectionFilter(url, "game");
   const rarity = normalizedRarity(collectionFilter(url, "rarity"));
   const productId = collectionFilter(url, "product_id");
   const releaseRegion = collectionFilter(url, "release_region");
-  if (game !== null && !supportedGames.has(game)) {
+  if (game !== null && gameProfileForGame(game) === null) {
     throw invalidParameter("game", "Printing Supported Game is invalid.");
   }
   if (releaseRegion !== null && !releaseRegions.has(releaseRegion)) {
@@ -59,6 +61,7 @@ export async function currentPrintingsResponse(
   }
   const filters = {
     card_id: cardId,
+    category,
     game,
     rarity,
     product_id: productId,
@@ -66,7 +69,10 @@ export async function currentPrintingsResponse(
     limit,
   };
   const cursor = parseCursor(url.searchParams.get("after"), filters);
-  const revision = await pinRevision(database, cursor?.revision ?? null, printingRoute, base);
+  const requestedRevision = url.searchParams.get("revision");
+  if (requestedRevision && cursor && requestedRevision !== cursor.revision)
+    throw new ReadProblem(400, "invalid_cursor", "The revision must match the cursor's pinned composition.");
+  const revision = await pinRevision(database, requestedRevision ?? cursor?.revision ?? null, printingRoute, base);
   const revisionId = revision.id;
   const after = cursor?.last ?? null;
   const etag = await canonicalEtag(
@@ -89,7 +95,9 @@ export async function currentPrintingsResponse(
     card_id: row.card_id,
     document: printingData(JSON.parse(row.document_json) as unknown),
   }));
-  const data = selected.slice(0, limit).map(({ document }) => absoluteDocumentLinks(consumerContent(document), base));
+  const data = [];
+  for (const { document } of selected.slice(0, limit))
+    data.push(absoluteDocumentLinks(await retainedPrintingRepresentation(database, revisionId, document), base));
   const next = page.hasMore
     ? encodeCursor({
         route: printingRoute,
@@ -114,8 +122,9 @@ export async function currentPrintingsResponse(
       links: {
         self: publicUrl(
           base,
-          canonicalSelf(url.pathname, {
+          canonicalSelf(url, {
             cardId,
+            category,
             game,
             rarity,
             productId,
@@ -181,9 +190,10 @@ function parseCursor(value: string | null, filters: PrintingCursor["filters"]): 
 }
 
 function canonicalSelf(
-  pathname: string,
+  url: URL,
   values: {
     cardId: string | null;
+    category: string | null;
     game: string | null;
     rarity: string | null;
     productId: string | null;
@@ -192,8 +202,10 @@ function canonicalSelf(
     after: string | null;
   },
 ): string {
-  return collectionSelf(pathname, {
+  return collectionSelf(url.pathname, {
+    revision: url.searchParams.get("revision"),
     card_id: values.cardId,
+    category: values.category,
     game: values.game,
     rarity: values.rarity,
     product_id: values.productId,

@@ -153,12 +153,13 @@ catalogue-read and administration HTTP interfaces, using the authoritative route
 and schema definitions used by the implementation. Automated checks must keep
 the contracts aligned as routes evolve. Hosting the current separately maintained
 specification alone does not complete this direction. The
-[Hono boundary](../contracts/HTTP.md) now routes both Workers through Hono and uses
-its Zod OpenAPI integration for Card search, Printing Image content, asynchronous
-publication, and source and collection administration route and wire-schema
-definitions. Generated contracts cover those migrated operations and explicitly
-inventory the remaining families.
-Complete interface migration and documentation hosting remain accepted direction;
+[Hono implementation](../contracts/HTTP.md) routes both Workers through Hono.
+The complete catalogue-read interface, including published Game Profile discovery
+and API utilities, uses executable Zod OpenAPI definitions. Source and collection
+administration and asynchronous publication are also registered. Other
+administration families continue to migrate; generated inventory names the
+remaining operations. Complete administration migration and documentation hosting
+remain accepted direction;
 retained-document validation and domain transitions stay independent of Zod.
 
 There are no current Catalogue Consumers to constrain this pre-Go-Live HTTP

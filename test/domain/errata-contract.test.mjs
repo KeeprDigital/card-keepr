@@ -150,14 +150,10 @@ test("the baseline enforces the reconciliation workflow and Errata constraints",
 });
 
 test("the Card collection contract normatively exposes projection unavailability as 503", async () => {
-  const [openapi, apiSchema] = await Promise.all([
-    readFile(resolve(root, "contracts/read-openapi.json"), "utf8").then(JSON.parse),
-    readFile(resolve(root, "contracts/schemas/api.schema.json"), "utf8").then(JSON.parse),
-  ]);
+  const openapi = JSON.parse(await readFile(resolve(root, "contracts/read-openapi.json"), "utf8"));
   assert.equal(
     openapi.paths["/v1/cards"].get.responses["503"].content["application/problem+json"].schema.$ref,
     "#/components/schemas/Problem",
   );
   assert.equal(openapi.components.schemas.Problem.properties.code.type, "string");
-  assert.equal(apiSchema.$defs.Problem.properties.code.enum.includes("catalogue_query_unavailable"), true);
 });

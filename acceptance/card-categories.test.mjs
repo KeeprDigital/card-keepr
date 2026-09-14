@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import readContract from "../contracts/read-openapi.json" with { type: "json" };
+import * as wireValidators from "../test/support/http-response-validators.mjs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -137,6 +140,9 @@ test("categories retain distinct identities, evidenced associations and applicab
   assert.ok(admittedPrintings.includes(retainedArt.related_cards[0].evidence[0].related_printing_id));
   api = await startWorker({ config: "apps/api/wrangler.jsonc", statePath, vars: { API_BEARER_KEY: key } });
   await waitForHealth(`${api.url}/health`, key, api);
+  const unpublishedDiscovery = await fetch(`${api.url}/v1/games`, { headers: { authorization: `Bearer ${key}` } });
+  assert.equal(unpublishedDiscovery.status, 200);
+  assert.deepEqual((await unpublishedDiscovery.json()).data, []);
   assert.equal(
     (await fetch(`${api.url}/v1/cards/${retainedArt.id}`, { headers: { authorization: `Bearer ${key}` } })).status,
     404,
@@ -151,9 +157,31 @@ test("categories retain distinct identities, evidenced associations and applicab
   const get = async (path) => {
     const response = await fetch(`${api.url}${path}`, { headers: { authorization: `Bearer ${key}` } });
     assert.equal(response.status, 200, await response.clone().text());
-    return response.json();
+    const document = await response.json();
+    const pathname = new URL(path, api.url).pathname;
+    const segments = pathname.split("/");
+    const parameter = { cards: "card", printings: "printing", products: "product", "catalogue-exports": "revision" }[
+      segments[2]
+    ];
+    const definition = segments.length === 4 ? `/v1/${segments[2]}/{${parameter}}` : pathname;
+    await assertReadWire(response, definition, "get", document);
+    return document;
   };
   const cards = (await get("/v1/cards")).data;
+  const discovery = await get("/v1/games");
+  assert.deepEqual(
+    discovery.data.map((game) => game.key),
+    ["riftbound"],
+  );
+  const publishedGame = discovery.data[0];
+  assert.equal(publishedGame.game_profile.id, "riftbound@1");
+  assert.deepEqual(
+    publishedGame.game_profile.card_fields.find((field) => field.path === "might"),
+    { path: "might", type: "integer", nullable: true, multiple: false },
+  );
+  assert.ok(publishedGame.filters.cards.includes("attribute.supertypes"));
+  assert.ok(publishedGame.filters.printings.includes("category"));
+  assert.equal(JSON.stringify(discovery).includes("source_lineage"), false);
   assert.deepEqual(cards.map((c) => c.category).sort(), ["art", "gameplay", "token"]);
   for (const category of ["art", "gameplay", "token"]) {
     const filtered = (await get(`/v1/cards?category=${category}`)).data;
@@ -163,6 +191,10 @@ test("categories retain distinct identities, evidenced associations and applicab
   const art = (await get(`/v1/cards/${admittedCards.get("art")}`)).data;
   const gameplay = (await get(`/v1/cards/${admittedCards.get("gameplay")}`)).data;
   const token = (await get(`/v1/cards/${admittedCards.get("token")}`)).data;
+  assert.deepEqual(
+    (await get(`/v1/cards?card_id=${art.id}`)).data.map((card) => card.id),
+    [art.id],
+  );
   assert.equal(art.gameplay_applicability, "inapplicable");
   assert.deepEqual(art.game_data.attributes, {});
   assert.equal(art.effective_rules_text, null);
@@ -175,11 +207,94 @@ test("categories retain distinct identities, evidenced associations and applicab
   const printings = (await get("/v1/printings")).data;
   assert.deepEqual(printings.map((p) => p.id).sort(), admittedPrintings.sort());
   const artPrintings = printings.filter((p) => p.card_id === art.id);
+  assert.deepEqual(
+    (await get("/v1/printings?category=art")).data.map((printing) => printing.id).sort(),
+    artPrintings.map((printing) => printing.id).sort(),
+  );
+  for (const printing of printings)
+    assert.equal(
+      printing.category,
+      printing.card_id === art.id ? "art" : printing.card_id === token.id ? "token" : "gameplay",
+    );
   assert.deepEqual(artPrintings.map((p) => p.game_data.attributes.finish).sort(), ["foil", "ordinary", "stamped"]);
+  assert.equal(JSON.stringify(printings).includes("artwork_fingerprint"), false);
+  assert.equal(JSON.stringify(printings).includes("source_observation_id"), false);
+  const cliCards = await runCli(
+    [
+      "cards",
+      "search",
+      "--game",
+      "riftbound",
+      "--category",
+      "art",
+      "--revision",
+      publication.resulting_revision_id,
+      "--json",
+    ],
+    { ...environment, KEEPR_API_URL: api.url, KEEPR_API_KEY: key },
+  );
+  assert.equal(cliCards.code, 0, cliCards.stdout + cliCards.stderr);
+  assert.deepEqual(
+    JSON.parse(cliCards.stdout).data.map((card) => card.id),
+    [art.id],
+  );
   for (const printing of printings) {
     assert.equal(printing.printed_rules_text, null);
     assert.equal(printing.gameplay_applicability, printing.card_id === art.id ? "inapplicable" : "applicable");
   }
+  const image = printings[0].printing_images[0];
+  const imageBytes = Buffer.from(source.cards[0].appearance_evidence.images[0].content_base64, "base64");
+  const imageProof = await verifyBinary(
+    image.links.content,
+    "/v1/printing-images/{image}/content",
+    image.content_byte_length,
+    image.content_sha256,
+    imageBytes,
+  );
+  const manifest = await get(`/v1/catalogue-exports/${publication.resulting_revision_id}`);
+  const component = manifest.data.components[0];
+  const exportProof = await verifyBinary(
+    manifest.links.components[component.name],
+    "/v1/catalogue-exports/{revision}/components/{component}",
+    component.compressed_bytes,
+    component.compressed_sha256,
+  );
+
+  async function verifyBinary(url, definition, length, sha256, expectedBytes) {
+    assert.equal(new URL(url).origin, new URL(api.url).origin);
+    const headers = { authorization: `Bearer ${key}` };
+    const response = await fetch(url, { headers });
+    assert.equal(response.status, 200);
+    await assertReadWire(response, definition, "get");
+    const bytes = Buffer.from(await response.arrayBuffer());
+    assert.equal(bytes.length, length);
+    assert.equal(createHash("sha256").update(bytes).digest("hex"), sha256);
+    if (expectedBytes) assert.deepEqual(bytes, expectedBytes);
+    const etag = response.headers.get("etag");
+    assert.equal(response.headers.get("content-length"), String(length));
+    for (const [method, extra, status] of [
+      ["HEAD", { range: "bytes=1-3" }, 200],
+      ["GET", { range: "bytes=1-3", "if-range": etag }, 206],
+      ["GET", { range: "bytes=1-3", "if-range": '"stale-image"' }, 200],
+      ["GET", { range: `bytes=${length}-` }, 416],
+      ["GET", { "if-none-match": etag }, 304],
+    ]) {
+      const result = await fetch(url, { method, headers: { ...headers, ...extra } });
+      assert.equal(result.status, status, `${method} ${definition} ${JSON.stringify(extra)}`);
+      await assertReadWire(result, definition, method.toLowerCase());
+      if (method === "HEAD") assert.equal(result.headers.get("content-length"), String(length));
+      else if (status === 206) {
+        assert.equal(result.headers.get("content-range"), `bytes 1-3/${length}`);
+        assert.deepEqual(Buffer.from(await result.arrayBuffer()), bytes.subarray(1, 4));
+      } else if (status === 200) assert.deepEqual(Buffer.from(await result.arrayBuffer()), bytes);
+      else if (status === 416) assert.equal(result.headers.get("content-range"), `bytes */${length}`);
+    }
+    const anonymous = await fetch(url);
+    assert.equal(anonymous.status, 401);
+    await assertReadWire(anonymous, definition, "get");
+    return { bytes, etag };
+  }
+
   const reader = nativeExportReader(0);
   const exportedCards = await reader.records(api.url, key, publication.resulting_revision_id, "cards");
   const exportedPrintings = await reader.records(api.url, key, publication.resulting_revision_id, "printings");
@@ -265,6 +380,22 @@ test("categories retain distinct identities, evidenced associations and applicab
   const withoutLinks = (records) => records.map(({ links, ...record }) => record);
   assert.deepEqual(withoutLinks((await get("/v1/cards")).data), withoutLinks(cards));
   assert.equal((await get("/v1/cards?category=art")).data[0].id, art.id);
+  assert.deepEqual(
+    (await get("/v1/games")).data.map(({ links, ...game }) => game),
+    discovery.data.map(({ links, ...game }) => game),
+  );
+  const restoredImage = (await get("/v1/printings")).data[0].printing_images[0];
+  const restoredImageResponse = await fetch(restoredImage.links.content, {
+    headers: { authorization: `Bearer ${key}` },
+  });
+  assert.equal(restoredImageResponse.headers.get("etag"), imageProof.etag);
+  assert.deepEqual(Buffer.from(await restoredImageResponse.arrayBuffer()), imageProof.bytes);
+  const restoredManifest = await get(`/v1/catalogue-exports/${publication.resulting_revision_id}`);
+  const restoredExport = await fetch(restoredManifest.links.components[component.name], {
+    headers: { authorization: `Bearer ${key}` },
+  });
+  assert.equal(restoredExport.headers.get("etag"), exportProof.etag);
+  assert.deepEqual(Buffer.from(await restoredExport.arrayBuffer()), exportProof.bytes);
   reader.clear();
   assert.deepEqual(await reader.records(api.url, key, publication.resulting_revision_id, "cards"), exportedCards);
   assert.deepEqual(
@@ -273,3 +404,21 @@ test("categories retain distinct identities, evidenced associations and applicab
   );
   passed = true;
 });
+
+async function assertReadWire(response, definition, method, body) {
+  const branch = readContract.paths[definition][method].responses[response.status];
+  assert.ok(branch, `${method} ${definition} ${response.status} is declared`);
+  for (const [name, header] of Object.entries(branch.headers ?? {}))
+    if (header.required) assert.ok(response.headers.has(name), name);
+  if (method === "head" || response.status === 304) {
+    assert.equal(response.body, null);
+    return;
+  }
+  const media = response.headers.get("content-type")?.split(";")[0];
+  assert.ok(branch.content[media], `Declared ${media}`);
+  if (media.includes("json")) {
+    const validate =
+      wireValidators[wireValidators.responseValidators[`read ${method} ${definition} ${response.status} ${media}`]];
+    assert.equal(validate(body ?? (await response.clone().json())), true, JSON.stringify(validate.errors));
+  }
+}

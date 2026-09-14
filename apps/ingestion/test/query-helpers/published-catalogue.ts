@@ -786,3 +786,9 @@ export function archiveFixtureQueryRevision(database: D1Database, revisionId: st
 export function readCatalogueRevisionPublishedAt(database: D1Database): D1PreparedStatement {
   return database.prepare("SELECT published_at FROM catalogue_revisions WHERE id = ?");
 }
+
+export function copyPrintingImagesForConditionalRevision(database: D1Database): D1PreparedStatement {
+  return database.prepare(`INSERT INTO revision_printing_images
+    SELECT 'catrev_products_next', image_id, printing_id, media_type, content_sha256, content_byte_length, object_key
+    FROM revision_printing_images WHERE catalogue_revision_id='catrev_products'`);
+}

@@ -10,16 +10,18 @@ import addFormats from "ajv-formats";
 import { runCli, startWorker, stopWorker, waitForHealth } from "./helpers/acceptance-runtime.mjs";
 
 const root = resolve(import.meta.dirname, "..");
-const apiSchema = JSON.parse(readFileSync(resolve(root, "contracts/schemas/api.schema.json"), "utf8"));
+const readContract = JSON.parse(readFileSync(resolve(root, "contracts/read-openapi.json"), "utf8"));
 const exportManifestSchemaV5 = JSON.parse(
   readFileSync(resolve(root, "contracts/schemas/catalogue-export-manifest-v5.schema.json"), "utf8"),
 );
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
 ajv.addSchema(exportManifestSchemaV5);
-ajv.addSchema(apiSchema);
-const validateProblem = ajv.getSchema(`${apiSchema.$id}#/$defs/Problem`);
-const validateCatalogue = ajv.getSchema(`${apiSchema.$id}#/$defs/CatalogueDocument`);
+const validateProblem = ajv.compile({ components: readContract.components, $ref: "#/components/schemas/Problem" });
+const validateCatalogue = ajv.compile({
+  components: readContract.components,
+  $ref: "#/components/schemas/CatalogueDocument",
+});
 // Reserved migration numbers can leave gaps; readiness reports the highest
 // applied migration number, not the number of checked-in files.
 const migrationLevel = Math.max(

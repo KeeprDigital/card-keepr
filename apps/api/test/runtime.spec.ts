@@ -2,7 +2,6 @@ import { exports } from "cloudflare:workers";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { expect, test, vi } from "vitest";
-import apiSchema from "../../../contracts/schemas/api.schema.json";
 import readContract from "../../../contracts/read-openapi.json";
 import exportManifestSchemaV5 from "../../../contracts/schemas/catalogue-export-manifest-v5.schema.json";
 import exportRecordSchemaV5 from "../../../contracts/schemas/catalogue-export-record-v5.schema.json";
@@ -74,7 +73,7 @@ test("API requests emit useful structured diagnostics without leaking failures",
     }),
     testEnv,
   );
-  expect(response.status).toBe(200);
+  expect(response.status).toBe(400);
 
   const record = JSON.parse(records.at(-1) ?? "null") as Record<string, unknown>;
   expect(record).toMatchObject({
@@ -85,9 +84,9 @@ test("API requests emit useful structured diagnostics without leaking failures",
       method: "GET",
       route: "/v1/catalogue",
     },
-    status: 200,
+    status: 400,
     cache: { status: "unknown" },
-    retry: { count: 0, classification: "not_applicable" },
+    retry: { count: 0, classification: "non_retryable" },
     d1: { prepared_statements: expect.any(Number) },
   });
   expect(record).toHaveProperty("request.id");
@@ -405,6 +404,7 @@ test.each([false, true])(
     const firstManifestResponse = await exports.default.fetch(authenticatedRequest(manifestPath));
     const secondManifestResponse = await exports.default.fetch(authenticatedRequest(manifestPath));
     expect(firstManifestResponse.status).toBe(200);
+    await assertHttpResponse(readContract, "/v1/catalogue-exports/{revision}", "get", firstManifestResponse);
     expect(secondManifestResponse.status).toBe(200);
     const firstManifestDocument = await firstManifestResponse.json<{
       data: unknown;
@@ -425,7 +425,32 @@ test.each([false, true])(
     expect(validateErratum!(erratum), JSON.stringify(validateErratum!.errors)).toBe(true);
 
     const componentPath = `${manifestPath}/components/gundam.0`;
-    const firstComponentResponse = await exports.default.fetch(authenticatedRequest(componentPath));
+    const streamingBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+      async get(...args) {
+        const object = await testEnv.CATALOGUE_EXPORTS.get(...args);
+        if (!object || args[0] !== componentKey) return object;
+        return new Proxy(object, {
+          get(target, property) {
+            if (["arrayBuffer", "text", "json", "blob"].includes(String(property)))
+              return () => {
+                throw new Error("Export components must remain streamed.");
+              };
+            const value = Reflect.get(target, property, target);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      },
+    });
+    const firstComponentResponse = await apiWorker.fetch(authenticatedRequest(componentPath), {
+      ...testEnv,
+      CATALOGUE_EXPORTS: streamingBucket,
+    });
+    await assertHttpResponse(
+      readContract,
+      "/v1/catalogue-exports/{revision}/components/{component}",
+      "get",
+      firstComponentResponse,
+    );
     const secondComponentResponse = await exports.default.fetch(authenticatedRequest(componentPath));
     expect(firstComponentResponse.status).toBe(200);
     expect(secondComponentResponse.status).toBe(200);
@@ -447,6 +472,12 @@ test.each([false, true])(
       }),
     );
     expect(headResponse.status).toBe(200);
+    await assertHttpResponse(
+      readContract,
+      "/v1/catalogue-exports/{revision}/components/{component}",
+      "head",
+      headResponse,
+    );
     expect(await headResponse.text()).toBe("");
     expect(headResponse.headers.get("content-length")).toBe(String(compressedErratumBytes.byteLength));
     expect(headResponse.headers.get("content-disposition")).toBe('attachment; filename="gundam.0.ndjson.gz"');
@@ -463,6 +494,12 @@ test.each([false, true])(
       }),
     );
     expect(notModified.status).toBe(304);
+    await assertHttpResponse(
+      readContract,
+      "/v1/catalogue-exports/{revision}/components/{component}",
+      "get",
+      notModified,
+    );
     expect(await notModified.text()).toBe("");
 
     const partial = await exports.default.fetch(
@@ -474,24 +511,60 @@ test.each([false, true])(
       }),
     );
     expect(partial.status).toBe(206);
+    await assertHttpResponse(readContract, "/v1/catalogue-exports/{revision}/components/{component}", "get", partial);
     expect(new Uint8Array(await partial.arrayBuffer())).toEqual(compressedErratumBytes.slice(3, 12));
     expect(partial.headers.get("content-range")).toBe(`bytes 3-11/${compressedErratumBytes.byteLength}`);
     expect(partial.headers.get("content-length")).toBe("9");
     expect(partial.headers.get("etag")).toBe(componentEtag);
 
     await testEnv.CATALOGUE_EXPORTS.put(componentKey, compressedErratumBytes, { sha256: compressedErratumDigest });
+    const metadataOnly = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+      async get(...args) {
+        if (args[0] === componentKey) throw new Error("Verified export HEAD must use metadata only.");
+        return testEnv.CATALOGUE_EXPORTS.get(...args);
+      },
+    });
+    const verifiedHead = await apiWorker.fetch(
+      new Request(authenticatedRequest(componentPath), {
+        method: "HEAD",
+        headers: { ...apiHeaders("export-head"), "if-none-match": componentEtag },
+      }),
+      { ...testEnv, CATALOGUE_EXPORTS: metadataOnly },
+    );
+    expect(verifiedHead.status).toBe(304);
+    await assertHttpResponse(
+      readContract,
+      "/v1/catalogue-exports/{revision}/components/{component}",
+      "head",
+      verifiedHead,
+    );
     const replacedBodyBucket = proxyR2Bucket(testEnv.CATALOGUE_EXPORTS, {
+      async head(key) {
+        const object = await testEnv.CATALOGUE_EXPORTS.head(key);
+        if (!object || key !== componentKey) return object;
+        return new Proxy(object, {
+          get(target, property) {
+            if (property === "checksums") return { toJSON: () => ({}) };
+            const value = Reflect.get(target, property, target);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      },
       async get(...arguments_) {
         const object = await testEnv.CATALOGUE_EXPORTS.get(...arguments_);
         if (arguments_[0] !== componentKey || object === null) return object;
         return new Proxy(object, {
           get(target, property) {
-            if (property === "arrayBuffer")
-              return async () => {
-                const bytes = new Uint8Array(await target.arrayBuffer());
-                bytes[bytes.length - 1] = bytes[bytes.length - 1]! ^ 0xff;
-                return bytes.buffer;
-              };
+            if (property === "body")
+              return target.body.pipeThrough(
+                new TransformStream<Uint8Array, Uint8Array>({
+                  transform(chunk, controller) {
+                    const bytes = chunk.slice();
+                    bytes[bytes.length - 1] = bytes[bytes.length - 1]! ^ 0xff;
+                    controller.enqueue(bytes);
+                  },
+                }),
+              );
             const value = Reflect.get(target, property);
             return typeof value === "function" ? value.bind(target) : value;
           },
@@ -516,6 +589,12 @@ test.each([false, true])(
       }),
     );
     expect(unsatisfiable.status).toBe(416);
+    await assertHttpResponse(
+      readContract,
+      "/v1/catalogue-exports/{revision}/components/{component}",
+      "get",
+      unsatisfiable,
+    );
     expect(unsatisfiable.headers.get("content-range")).toBe(`bytes */${compressedErratumBytes.byteLength}`);
     await expect(unsatisfiable.json()).resolves.toMatchObject({
       code: "range_not_satisfiable",
@@ -536,8 +615,11 @@ test.each([false, true])(
     expect(missingProblem).toMatchObject({ code: "catalogue_export_unavailable" });
     const problemAjv = new Ajv2020({ allErrors: true, strict: false });
     addFormats(problemAjv);
-    problemAjv.addSchema(apiSchema);
-    const validateProblem = problemAjv.getSchema(`${apiSchema.$id}#/$defs/Problem`)!;
+
+    const validateProblem = problemAjv.compile({
+      components: readContract.components,
+      $ref: "#/components/schemas/Problem",
+    });
     expect(validateProblem(missingProblem), JSON.stringify(validateProblem.errors)).toBe(true);
 
     const tamperedBytes = compressedErratumBytes.slice();
@@ -595,8 +677,11 @@ test("Catalogue Export listing is ordered, bounded, and revision-pinned across p
   expect(firstDocument.meta.catalogue_revision_id).toBe("catrev_export_list_middle");
   const collectionAjv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(collectionAjv);
-  collectionAjv.addSchema(apiSchema);
-  const validateCollection = collectionAjv.getSchema(`${apiSchema.$id}#/$defs/CatalogueExportCollection`)!;
+
+  const validateCollection = collectionAjv.compile({
+    components: readContract.components,
+    $ref: "#/components/schemas/CatalogueExportCollection",
+  });
   expect(validateCollection(firstDocument), JSON.stringify(validateCollection.errors)).toBe(true);
 
   await seedCatalogueExportSummary("catrev_export_list_newest", "run_export_list_newest", "2026-07-20T00:00:00.000Z");
@@ -870,6 +955,20 @@ test("the public Printing response validates full Distribution Context objects",
       .insertCatalogueRevisionsForPublicPrintingResponseValidatesFullDistributionContextObjects(testEnv.CATALOGUE_DB)
       .bind("a".repeat(64), previousRevisionId, "a".repeat(64)),
     publishedCatalogueQueries
+      .insertRevisionCardsForAuthenticatedLegalityStatusGivesDefinitiveExclusionsPrecedenceWhileAuditing(
+        testEnv.CATALOGUE_DB,
+      )
+      .bind(
+        "catrev_api_context",
+        document.card_id,
+        JSON.stringify({
+          id: document.card_id,
+          category: "gameplay",
+          gameplay_applicability: "applicable",
+          related_cards: [],
+        }),
+      ),
+    publishedCatalogueQueries
       .insertRevisionPrintingsForPublicPrintingResponseValidatesFullDistributionContextObjects(testEnv.CATALOGUE_DB)
       .bind("catrev_api_context", document.id, document.card_id, JSON.stringify(document)),
     publishedCatalogueQueries.setCatalogueStateCurrentRevisionIdPublishedAtForPublicPrintingResponseValidatesFullDistributionContextObjects(
@@ -889,8 +988,8 @@ test("the public Printing response validates full Distribution Context objects",
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
   ajv.addSchema(exportManifestSchemaV5);
-  ajv.addSchema(apiSchema);
-  const validate = ajv.getSchema(`${apiSchema.$id}#/$defs/PrintingDocument`);
+
+  const validate = ajv.compile({ components: readContract.components, $ref: "#/components/schemas/PrintingDocument" });
   expect(validate).toBeDefined();
   expect(validate!(body), JSON.stringify(validate!.errors)).toBe(true);
   expect(body).toMatchObject({
@@ -959,6 +1058,7 @@ test("authenticated Card and Printing reads expose Effective and Printed Rules T
       attributes: { illustration_types: [] },
     },
     printing_images: [],
+    products: [],
     distribution_contexts: [],
     relationship_evidence: [],
     locator_evidence: { current: [], historical: [] },
@@ -1718,6 +1818,7 @@ test("Card detail includes revision-pinned Printings and explicit unknowns witho
       attributes: { illustration_types: [] },
     },
     printing_images: [],
+    products: [],
     distribution_contexts: [],
     relationship_evidence: [],
     locator_evidence: { current: [], historical: [] },
@@ -1766,8 +1867,8 @@ test("Card detail includes revision-pinned Printings and explicit unknowns witho
   const body = await response.json<Record<string, unknown>>();
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
-  ajv.addSchema(apiSchema);
-  const validate = ajv.getSchema(`${apiSchema.$id}#/$defs/CardDocument`)!;
+
+  const validate = ajv.compile({ components: readContract.components, $ref: "#/components/schemas/CardDocument" });
   expect(validate(body), JSON.stringify(validate.errors)).toBe(true);
   expect(body).toMatchObject({
     data: { effective_rules_text: null },
@@ -1977,11 +2078,12 @@ function proxyR2Bucket(
   bucket: R2Bucket,
   overrides: {
     get?: (...arguments_: Parameters<R2Bucket["get"]>) => ReturnType<R2Bucket["get"]>;
+    head?: (...arguments_: Parameters<R2Bucket["head"]>) => ReturnType<R2Bucket["head"]>;
   },
 ): R2Bucket {
   return new Proxy(bucket, {
     get(target, property) {
-      const override = property === "get" ? overrides.get : undefined;
+      const override = property === "get" ? overrides.get : property === "head" ? overrides.head : undefined;
       if (override !== undefined) return override;
       const value = Reflect.get(target, property);
       return typeof value === "function" ? value.bind(target) : value;

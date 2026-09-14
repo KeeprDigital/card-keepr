@@ -146,12 +146,27 @@ async function representation(
   const value = await hydrate(db, row);
   const id = String(value.id);
   const type = kind === "cards" ? "card" : kind === "printings" ? "printing" : "product";
-  const data: Value = { type, ...value, links: { self: `/v1/${kind}/${id}` } };
+  const data: Value = {
+    type,
+    ...pickPublicFields(value, publicRecordFields[kind]![1]),
+    links: { self: `/v1/${kind}/${id}` },
+  };
   if (kind === "cards")
     data.printing_ids = row.printing_ids
       ? JSON.parse(row.printing_ids)
       : (await related(db, revision.selection ?? revision.id, "printings", "card_id", id)).map((v) => v.id);
   if (kind === "printings") {
+    if (includeImages) {
+      const card = await composedDocumentStatement(
+        db,
+        revision.selection ?? revision.id,
+        "cards",
+        String(value.card_id),
+      ).first<DocumentRow>();
+      if (!card)
+        throw new ReadProblem(503, "catalogue_query_unavailable", "The published Printing Card is unavailable.");
+      data.category = (await hydrate(db, card)).category;
+    }
     const images = includeImages
       ? await related(db, revision.selection ?? revision.id, "printing_images", "printing_id", id)
       : [];
@@ -299,7 +314,7 @@ export async function compositionEntityResponse(
       "limit",
       "after",
       "game",
-      ...(kind === "cards" ? ["category"] : []),
+      ...(["cards", "printings"].includes(kind) ? ["category"] : []),
       "q",
       "card_id",
       "card_number",
@@ -329,12 +344,12 @@ export async function compositionEntityResponse(
   }
   for (const field of ["game", "card_number"] as const)
     if (filters[field] !== null) {
-      filters[field] = filters[field].normalize("NFC").trim();
+      filters[field] = filters[field].normalize("NFKC").trim();
       if (!filters[field]) throw invalidParameter(field, `${field} must contain at least one character.`);
     }
   if (filters.category !== null && !["gameplay", "token", "art"].includes(filters.category))
     throw invalidParameter("category", "category must be gameplay, token, or art.");
-  if (filters.game !== null && !["one-piece", "fusion-world", "digimon", "gundam", "riftbound"].includes(filters.game))
+  if (filters.game !== null && gameProfileForGame(filters.game) === null)
     throw invalidParameter("game", "game is not a Supported Game.");
   if (
     filters.release_region !== null &&
@@ -361,14 +376,16 @@ export async function compositionEntityResponse(
     }
   if (Object.keys(attributes).length) filters.attributes = attributes;
   const pinned = url.searchParams.get("revision") ?? cursor?.revision_id ?? null;
-  const revision = await nativeRevisionStatement(db, pinned, false, !legacy).first<Revision>();
+  const revision = await nativeRevisionStatement(db, pinned, false, false).first<Revision>();
   if (!revision) {
     if (cursor?.contract === "card-keepr-composition-cursor@1")
       throw new ReadProblem(409, "cursor_revision_unavailable", "The cursor Catalogue Revision is unavailable.", null, {
         extensions: { links: { collection: publicUrl(base, url.pathname) } },
       });
+    if (pinned) throw new ReadProblem(404, "not_found", "The requested Catalogue Revision is unknown.");
     return undefined;
   }
+  if (!revision.publication_operation_id && !legacy && !pinned) return undefined;
   if (revision.query_state !== "available")
     throw new ReadProblem(
       cursor ? 409 : 503,
@@ -525,8 +542,13 @@ export async function compositionImageResponse(
 ): Promise<Response | null | undefined> {
   const url = new URL(request.url);
   collectionParameters(url, ["revision"]);
-  const revision = await nativeRevisionStatement(db, url.searchParams.get("revision"), false).first<Revision>();
-  if (!revision) return undefined;
+  const pinned = url.searchParams.get("revision");
+  const revision = await nativeRevisionStatement(db, pinned, false, false).first<Revision>();
+  if (!revision) {
+    if (pinned) throw new ReadProblem(404, "not_found", "The requested Catalogue Revision is unknown.");
+    return undefined;
+  }
+  if (!revision.publication_operation_id) return undefined;
   if (revision.query_state !== "available")
     throw new ReadProblem(
       503,
@@ -547,7 +569,10 @@ export async function compositionImageResponse(
   const isHead = request.method === "HEAD";
   const conditional = isHead ? null : conditionalResponse(request, Object.fromEntries(headers));
   if (conditional) return conditional;
-  const range = isHead ? null : parseRange(request.headers.get("range"), size);
+  const range =
+    isHead || (request.headers.has("if-range") && request.headers.get("if-range") !== etag)
+      ? null
+      : parseRange(request.headers.get("range"), size);
   if (range === "unsatisfiable")
     throw new ReadProblem(
       416,

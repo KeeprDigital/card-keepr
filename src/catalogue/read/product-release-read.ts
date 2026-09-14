@@ -1,5 +1,5 @@
 import { absoluteDocumentLinks, type PublicBase, publicUrl } from "../../http/public-base";
-import type { CatalogueStore } from "../shared";
+import { type CatalogueStore, gameProfileForGame } from "../shared";
 import { consumerContent } from "../shared";
 import {
   canonicalEtag,
@@ -45,7 +45,7 @@ export async function currentProductResponse(
   base: PublicBase,
 ): Promise<Response | null> {
   const url = new URL(request.url);
-  const row = await currentProductStatement(database, productId).first<ProductRow>();
+  const row = await currentProductStatement(database, productId, url.searchParams.get("revision")).first<ProductRow>();
   if (row === null) return null;
   const include = detailIncludeProjection(
     url,
@@ -92,7 +92,10 @@ export async function currentProductsResponse(
   const filters = { q, game, region, limit };
   const requestedAfter = singleParameter(url, "after");
   const cursor = parseCursor(requestedAfter, filters);
-  const revision = await pinRevision(database, cursor?.revision ?? null, productRoute, base);
+  const requestedRevision = url.searchParams.get("revision");
+  if (requestedRevision && cursor && requestedRevision !== cursor.revision)
+    throw new ReadProblem(400, "invalid_cursor", "The revision must match the cursor's pinned composition.");
+  const revision = await pinRevision(database, requestedRevision ?? cursor?.revision ?? null, productRoute, base);
   const revisionId = revision.id;
   const after = cursor?.last ?? null;
   const etag = await canonicalEtag(
@@ -233,6 +236,7 @@ function canonicalProductSelf(
   },
 ): string {
   return collectionSelf(url.pathname, {
+    revision: url.searchParams.get("revision"),
     q: representation.q,
     game: representation.game,
     release_region: representation.region,
@@ -242,7 +246,7 @@ function canonicalProductSelf(
 }
 
 function assertFilter(game: string | null, region: string | null): void {
-  if (game !== null && !["one-piece", "fusion-world", "digimon", "gundam", "riftbound"].includes(game)) {
+  if (game !== null && gameProfileForGame(game) === null) {
     throw new ReadProblem(400, "invalid_parameter", "Product game is invalid.", {
       name: "game",
       reason: "Product game is invalid.",

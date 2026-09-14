@@ -67,22 +67,21 @@ test("Catalogue Export relationship records carry closed endpoints", async () =>
 });
 
 test("Product detail documents invalid include requests", async () => {
-  const openapi = JSON.parse(await readFile(resolve(root, "contracts/openapi.json"), "utf8"));
-  assert.deepEqual(openapi.paths["/products/{product_id}"].get.responses["400"], {
-    $ref: "#/components/responses/InvalidRequest",
-  });
+  const openapi = JSON.parse(await readFile(resolve(root, "contracts/read-openapi.json"), "utf8"));
+  assert.deepEqual(
+    openapi.paths["/v1/products/{product}"].get.responses["400"].content["application/problem+json"].schema,
+    {
+      $ref: "#/components/schemas/Problem",
+    },
+  );
 });
 
 test("consumer OpenAPI omits eligibility routes", async () => {
-  const openapi = JSON.parse(await readFile(resolve(root, "contracts/openapi.json"), "utf8"));
+  const openapi = JSON.parse(await readFile(resolve(root, "contracts/read-openapi.json"), "utf8"));
   assert.equal(Object.hasOwn(openapi.paths, "/legality-status"), false);
 });
 
 test("Card browsing documents and validates collection, detail, and problem representations", async () => {
-  const [openapi, schema] = await Promise.all([
-    readFile(resolve(root, "contracts/openapi.json"), "utf8").then(JSON.parse),
-    readFile(resolve(root, "contracts/schemas/api.schema.json"), "utf8").then(JSON.parse),
-  ]);
   const generated = JSON.parse(await readFile(resolve(root, "contracts/read-openapi.json"), "utf8"));
   assert.deepEqual(generated.paths["/v1/cards"].get.responses["200"].content["application/json"].schema, {
     $ref: "#/components/schemas/CardCollection",
@@ -91,18 +90,17 @@ test("Card browsing documents and validates collection, detail, and problem repr
     assert.deepEqual(generated.paths["/v1/cards"].get.responses[status].content["application/problem+json"].schema, {
       $ref: "#/components/schemas/Problem",
     });
-  assert.deepEqual(openapi.paths["/cards/{card_id}"].get.responses["200"].content["application/json"].schema, {
-    $ref: "./schemas/api.schema.json#/$defs/CardDocument",
+  assert.deepEqual(generated.paths["/v1/cards/{card}"].get.responses["200"].content["application/json"].schema, {
+    $ref: "#/components/schemas/CardDocument",
   });
 
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
-  ajv.addSchema(schema);
   const validateCollection = ajv.compile({
     components: generated.components,
     $ref: "#/components/schemas/CardCollection",
   });
-  const validateDetail = ajv.getSchema(`${schema.$id}#/$defs/CardDocument`);
+  const validateDetail = ajv.compile({ components: generated.components, $ref: "#/components/schemas/CardDocument" });
   const validateProblem = ajv.compile({ components: generated.components, $ref: "#/components/schemas/Problem" });
   const card = {
     type: "card",
@@ -154,7 +152,7 @@ test("Card browsing documents and validates collection, detail, and problem repr
   const detail = {
     data: { ...card, effective_rules_text: null, printing_ids: [] },
     meta,
-    links: { self: "/v1/cards/card_test" },
+    links: { self: "https://card-keepr.invalid/v1/cards/card_test" },
   };
   assert.equal(validateDetail(detail), true, JSON.stringify(validateDetail.errors));
   assert.equal(validateDetail({ ...detail, included: [] }), true, JSON.stringify(validateDetail.errors));
@@ -183,18 +181,11 @@ test("Card browsing documents and validates collection, detail, and problem repr
 });
 
 test("the Catalogue Export schema carries typed Product and Release facts without evidence projections", async () => {
-  const [api, exportSchema, exportManifest] = await Promise.all(
-    ["api.schema.json", "catalogue-export-record-v5.schema.json", "catalogue-export-manifest-v5.schema.json"].map(
-      async (name) => JSON.parse(await readFile(resolve(root, "contracts/schemas", name), "utf8")),
+  const [exportSchema, exportManifest] = await Promise.all(
+    ["catalogue-export-record-v5.schema.json", "catalogue-export-manifest-v5.schema.json"].map(async (name) =>
+      JSON.parse(await readFile(resolve(root, "contracts/schemas", name), "utf8")),
     ),
   );
-  assert.equal(api.$defs.Printing.required.includes("products"), false);
-  assert.equal(api.$defs.Printing.required.includes("distribution_contexts"), true);
-  assert.deepEqual(api.$defs.Product.properties.name.oneOf, [{ type: "string", minLength: 1 }, { type: "null" }]);
-  assert.equal(api.$defs.Release.required.includes("event_key"), true);
-  assert.equal(api.$defs.Release.required.includes("status"), true);
-  assert.equal(Object.hasOwn(api.$defs.PrintingProductProjection.properties, "source_observation_ids"), false);
-  assert.equal(Object.hasOwn(api.$defs.DistributionContext.properties, "source_observation_ids"), false);
   assert.equal(exportSchema.$defs.PrintingRecord.required.includes("products"), false);
   assert.equal(exportSchema.$defs.PrintingRecord.required.includes("distribution_contexts"), false);
   assert.equal(exportSchema.$defs.ProductRecord.properties.name.$ref, "#/$defs/NullableText");

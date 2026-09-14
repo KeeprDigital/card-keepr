@@ -30,10 +30,22 @@ export async function seedPrintingQueryFixture(database: D1Database): Promise<vo
     ),
     publishedCatalogueQueries.insertRevisionPrintingsForSeedPrintingQueryFixture(database).bind(
       JSON.stringify({
+        type: "printing",
         id: "printing_st15_event",
         card_id: "card_st15_event",
         gameplay_applicability: "applicable",
         rarity: { normalized: "leader", raw: "L" },
+        printed_rules_text: null,
+        game_data: { profile: "one-piece@1", attributes: { illustration_types: [] } },
+        printing_images: [],
+        products: [],
+        distribution_contexts: [],
+        lifecycle: {
+          first_revision_id: "catrev_products",
+          last_observed_revision_id: "catrev_products",
+          withdrawn: false,
+        },
+        links: { self: "/v1/printings/printing_st15_event" },
       }),
     ),
     publishedCatalogueQueries.insertRevisionProductsForSeedPrintingQueryFixture(database),

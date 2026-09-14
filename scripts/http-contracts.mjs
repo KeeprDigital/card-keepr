@@ -55,6 +55,15 @@ for (const [worker, families] of Object.entries(workerFamilies)) {
         path,
         contract: route.definition ? "generated" : "legacy",
         slice: migration?.slice ?? "Catalogue reads",
+        ...(worker === "read" && family !== "read"
+          ? {
+              treatment: {
+                readiness: "authenticated-readiness",
+                liveness: "unauthenticated-liveness",
+                preflight: "consumer-CORS-preflight",
+              }[family],
+            }
+          : {}),
         named_cli: migration?.cli ?? (path === "/v1/cards" ? "cards search" : null),
         callers: callers(path.replaceAll(/\{[^}]+\}/g, "resource")),
       });
@@ -73,7 +82,9 @@ for (const [worker, families] of Object.entries(workerFamilies)) {
       title: `Card Keepr ${worker === "read" ? "catalogue read" : "administration"} API`,
       version: "1.0.0",
       description:
-        "Generated HTTP contracts. Unmigrated operations are explicitly inventoried; this document is not yet the complete Worker contract.",
+        worker === "read"
+          ? "Generated catalogue-read and API utility contracts. Catalogue data and readiness require the consumer bearer key; liveness and allowed preflight preserve their separate policies."
+          : "Generated administration contracts. Unmigrated operations are explicitly inventoried.",
     },
     servers,
   });
@@ -120,20 +131,13 @@ for (const [worker, families] of Object.entries(workerFamilies)) {
     .map(({ method, path, family }) => ({ method, path, family }));
   output(`contracts/${worker}-openapi.json`, JSON.stringify(doc, null, 2) + "\n");
 }
-for (const worker of ["read", "admin"])
+for (const worker of ["admin"])
   for (const [method, path, treatment] of [
     ["GET", "/health", "authenticated-readiness"],
     ["GET", "/healthz", "unauthenticated-liveness"],
     ["HEAD", "/healthz", "unauthenticated-liveness"],
   ])
     inventory.push({ worker, method, path, contract: "platform", treatment, callers: callers(path) });
-inventory.push({
-  worker: "read",
-  method: "OPTIONS",
-  path: "/*",
-  contract: "platform",
-  treatment: "consumer-CORS-preflight",
-});
 inventory.push({
   worker: "admin",
   method: "POST",

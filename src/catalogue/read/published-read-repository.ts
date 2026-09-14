@@ -12,7 +12,8 @@ export function exportCollectionStatement(
   }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`WITH RECURSIVE pinned_revision(id) AS (
+    .prepare(
+      `WITH RECURSIVE pinned_revision(id) AS (
          SELECT ?
          UNION ALL
          SELECT revision.expected_previous_revision_id
@@ -28,7 +29,8 @@ export function exportCollectionStatement(
        WHERE revision.publication_operation_id IS NOT NULL AND export.maintenance_state='available' AND EXISTS(SELECT 1 FROM publication_export_preparations prepared WHERE prepared.publication_operation_id=revision.publication_operation_id AND prepared.state='verified')
          AND (? IS NULL OR revision.published_at < ? OR (
              revision.published_at = ? AND revision.id < ?))
-       ORDER BY revision.published_at DESC, revision.id DESC LIMIT ?`)
+       ORDER BY revision.published_at DESC, revision.id DESC LIMIT ?`,
+    )
     .bind(
       input.revisionId,
       input.afterPublishedAt,
@@ -51,17 +53,24 @@ export function catalogueFreshnessStatement(database: CatalogueStore): D1Prepare
          ORDER BY game, area, source_lineage, region`);
 }
 
-export function currentCardStatement(database: CatalogueStore, cardId: string): D1PreparedStatement {
+export function currentCardStatement(
+  database: CatalogueStore,
+  cardId: string,
+  revision: string | null = null,
+): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT
+    .prepare(
+      `SELECT
         card.document_json,
         catalogue.current_revision_id,
         catalogue.published_at
-      FROM catalogue_state AS catalogue
+      FROM (SELECT id AS current_revision_id, published_at FROM catalogue_revisions
+        WHERE id=COALESCE(?,(SELECT current_revision_id FROM catalogue_state WHERE singleton=1))) AS catalogue
       JOIN revision_cards AS card
         ON card.catalogue_revision_id = catalogue.current_revision_id
-      WHERE catalogue.singleton = 1 AND card.card_id = ?`)
-    .bind(cardId);
+      WHERE card.card_id = ?`,
+    )
+    .bind(revision, cardId);
 }
 
 export function cardPrintingsStatement(
@@ -69,42 +78,72 @@ export function cardPrintingsStatement(
   input: Readonly<{ revisionId: string; cardId: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT document_json
+    .prepare(
+      `SELECT document_json
            FROM revision_printings
            WHERE catalogue_revision_id = ? AND card_id = ?
-           ORDER BY printing_id`)
+           ORDER BY printing_id`,
+    )
     .bind(input.revisionId, input.cardId);
 }
 
-export function currentPrintingStatement(database: CatalogueStore, printingId: string): D1PreparedStatement {
+export function currentPrintingStatement(
+  database: CatalogueStore,
+  printingId: string,
+  revision: string | null = null,
+): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT
+    .prepare(
+      `SELECT
         printing.document_json,
         catalogue.current_revision_id,
         catalogue.published_at
-      FROM catalogue_state AS catalogue
+      FROM (SELECT id AS current_revision_id, published_at FROM catalogue_revisions
+        WHERE id=COALESCE(?,(SELECT current_revision_id FROM catalogue_state WHERE singleton=1))) AS catalogue
       JOIN revision_printings AS printing
         ON printing.catalogue_revision_id = catalogue.current_revision_id
-      WHERE catalogue.singleton = 1 AND printing.printing_id = ?`)
-    .bind(printingId);
+      WHERE printing.printing_id = ?`,
+    )
+    .bind(revision, printingId);
 }
 
-export function printingImageStatement(database: CatalogueStore, imageId: string): D1PreparedStatement {
+export function printingImageStatement(
+  database: CatalogueStore,
+  imageId: string,
+  revision: string | null = null,
+): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT
+    .prepare(
+      `SELECT
          image.media_type,
          image.content_sha256,
          image.content_byte_length,
          image.object_key,
          catalogue.current_revision_id
-       FROM catalogue_state AS catalogue
+       FROM (SELECT id AS current_revision_id, published_at FROM catalogue_revisions
+        WHERE id=COALESCE(?,(SELECT current_revision_id FROM catalogue_state WHERE singleton=1))) AS catalogue
        JOIN revision_printing_images AS image
          ON image.catalogue_revision_id = catalogue.current_revision_id
        JOIN revision_printings AS printing
          ON printing.catalogue_revision_id = catalogue.current_revision_id
         AND printing.printing_id = image.printing_id
-       WHERE catalogue.singleton = 1 AND image.image_id = ?`)
-    .bind(imageId);
+       WHERE image.image_id = ?`,
+    )
+    .bind(revision, imageId);
+}
+
+export function printingImageMetadataStatement(database: CatalogueStore, revision: string, printingId: string) {
+  return repositoryStatements(database)
+    .prepare(
+      `SELECT image_id,content_byte_length FROM revision_printing_images WHERE catalogue_revision_id=? AND printing_id=? ORDER BY image_id`,
+    )
+    .bind(revision, printingId);
+}
+
+export function retainedPrintingCardStatement(database: CatalogueStore, revision: string, cardId: string) {
+  return repositoryStatements(database)
+    .prepare(`SELECT document_json FROM revision_cards WHERE catalogue_revision_id=? AND card_id=?`)
+    .bind(revision, cardId);
 }
 
 export function pendingExportComponentDeletionStatement(
@@ -112,20 +151,23 @@ export function pendingExportComponentDeletionStatement(
   input: Readonly<{ revisionId: string; componentName: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT 1 AS present
+    .prepare(
+      `SELECT 1 AS present
        FROM catalogue_exports AS export
        JOIN catalogue_export_deletions AS deletion
          ON deletion.id = export.deletion_operation_id
        JOIN catalogue_export_deletion_plans AS plan
          ON plan.id = deletion.plan_id
        JOIN json_each(plan.component_names_json) AS component
-       WHERE export.catalogue_revision_id = ? AND component.value = ?`)
+       WHERE export.catalogue_revision_id = ? AND component.value = ?`,
+    )
     .bind(input.revisionId, input.componentName);
 }
 
 export function catalogueExportStatement(database: CatalogueStore, revisionId: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT
+    .prepare(
+      `SELECT
         export.catalogue_revision_id,
         revision.published_at,
         export.manifest_key,
@@ -134,19 +176,27 @@ export function catalogueExportStatement(database: CatalogueStore, revisionId: s
       FROM catalogue_exports AS export
       JOIN catalogue_revisions AS revision
         ON revision.id = export.catalogue_revision_id
-      WHERE export.catalogue_revision_id = ? AND export.verified = 1`)
+      WHERE export.catalogue_revision_id = ? AND export.verified = 1`,
+    )
     .bind(revisionId);
 }
 
-export function currentProductStatement(database: CatalogueStore, productId: string): D1PreparedStatement {
+export function currentProductStatement(
+  database: CatalogueStore,
+  productId: string,
+  revision: string | null = null,
+): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT product.document_json, catalogue.current_revision_id,
+    .prepare(
+      `SELECT product.document_json, catalogue.current_revision_id,
               catalogue.published_at
-       FROM catalogue_state AS catalogue
+       FROM (SELECT id AS current_revision_id, published_at FROM catalogue_revisions
+        WHERE id=COALESCE(?,(SELECT current_revision_id FROM catalogue_state WHERE singleton=1))) AS catalogue
        JOIN revision_products AS product
          ON product.catalogue_revision_id = catalogue.current_revision_id
-       WHERE catalogue.singleton = 1 AND product.product_id = ?`)
-    .bind(productId);
+       WHERE product.product_id = ?`,
+    )
+    .bind(revision, productId);
 }
 
 export function productCuratedEvidenceStatement(
@@ -154,12 +204,14 @@ export function productCuratedEvidenceStatement(
   input: Readonly<{ revisionId: string; revisionIdsJson: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT curated_revision_id AS id,
+    .prepare(
+      `SELECT curated_revision_id AS id,
               json_extract(provenance_json, '$.created_at') AS created_at,
               json_extract(provenance_json, '$.author') AS author
        FROM catalogue_curated_provenance
        WHERE catalogue_revision_id = ?
-         AND curated_revision_id IN (SELECT value FROM json_each(?))`)
+         AND curated_revision_id IN (SELECT value FROM json_each(?))`,
+    )
     .bind(input.revisionId, input.revisionIdsJson);
 }
 
@@ -182,7 +234,8 @@ export function productCollectionStatement(
   }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT document_json
+    .prepare(
+      `SELECT document_json
        FROM revision_products
        WHERE catalogue_revision_id = ?
          AND (? IS NULL OR supported_game = ?)
@@ -216,7 +269,8 @@ export function productCollectionStatement(
                 name IS NULL,
                 name,
                 product_id
-       LIMIT ?`)
+       LIMIT ?`,
+    )
     .bind(
       input.revisionId,
       input.game,
@@ -288,11 +342,18 @@ export type RuleRow = {
   source_retrieved_at: string | null;
 };
 
-export function publishedIdentityCorrectionStatement(database: CatalogueStore, id: string, kind: string) {
+export function publishedIdentityCorrectionStatement(
+  database: CatalogueStore,
+  id: string,
+  kind: string,
+  revision: string | null = null,
+) {
   return repositoryStatements(database)
-    .prepare(`SELECT c.document_json, s.current_revision_id, r.published_at
-    FROM catalogue_state s JOIN catalogue_revisions r ON r.id = s.current_revision_id
-    JOIN revision_identity_corrections c ON c.catalogue_revision_id = s.current_revision_id
-    WHERE s.singleton = 1 AND c.entity_id = ? AND c.entity_kind = ?`)
-    .bind(id, kind);
+    .prepare(
+      `SELECT c.document_json, r.id AS current_revision_id, r.published_at
+    FROM catalogue_revisions r JOIN revision_identity_corrections c ON c.catalogue_revision_id=r.id
+    WHERE r.id=COALESCE(?,(SELECT current_revision_id FROM catalogue_state WHERE singleton=1))
+      AND c.entity_id = ? AND c.entity_kind = ?`,
+    )
+    .bind(revision, id, kind);
 }
