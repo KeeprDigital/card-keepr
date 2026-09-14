@@ -8,12 +8,23 @@ import {
 } from "../../src/catalogue/adapters/pokemon-official-source-adapter";
 import { parseReconciliationObservation } from "../../src/catalogue/reconciliation/reconciliation-observation";
 import { pokemonCorrectedRulesText } from "../../src/catalogue/reconciliation/pokemon-errata";
+import { AdapterParseFailure } from "../../src/catalogue/adapters/adapter-parse-failure";
 import {
   deriveEffectiveRulesText,
   identifyRulesTextErrata,
 } from "../../src/catalogue/reconciliation/errata-rules-text";
 
 const fixture = new URL("../../acceptance/fixtures/real-sources/2026-09-14-pokemon/raw/", import.meta.url);
+
+test("the official Card parser rejects changed or missing physical content instead of inventing an empty value", () => {
+  const html = readFileSync(new URL("official-garchomp-card.html", fixture), "utf8");
+  for (const changed of [
+    html.replace("<h4>Weakness</h4>", "<h4>Weakness</h4><p>Fire ×2</p>"),
+    html.replace("<h4>Resistance</h4>", "<h4>Unknown field</h4>"),
+    html.replace('class="left label">Dragonblade', 'class="left label">Another Attack'),
+  ])
+    expect(() => pokemonOfficialGarchomp(new TextEncoder().encode(changed))).toThrow(AdapterParseFailure);
+});
 
 test("the selected official Product separately lists stamped and plain Snorlax without claiming unique coverage or a release region", () => {
   const product = pokemonOfficialProduct(readFileSync(new URL("official-snorlax-product.html", fixture)));
