@@ -41,7 +41,7 @@ test("dev status uses only its scoped credential and canonical dev route", async
   });
   assert.equal(result, 0);
   assert.deepEqual(observed, [
-    { url: "https://dev.card.keepr.digital/ingest/v1/status", token: "Bearer synthetic-dev-key" },
+    { url: "https://card-dev.keepr.digital/ingest/v1/status", token: "Bearer synthetic-dev-key" },
   ]);
 });
 
@@ -63,7 +63,7 @@ test("isolated dev config rejects production D1 identities", async () => {
   assert.equal(configs.api.name, "card-keepr-api-dev");
   assert.equal(configs.ingestion.services[0].service, "card-keepr-ingestion-dev");
   assert.equal(configs.ingestion.vars.KEEPR_ENVIRONMENT, "dev");
-  assert.equal(configs.api.vars.PUBLIC_BASE_URL, "https://dev.card.keepr.digital/api");
+  assert.equal(configs.api.vars.PUBLIC_BASE_URL, "https://card-dev.keepr.digital/api");
   assert.deepEqual(
     configs.ingestion.r2_buckets.map((item) => item.bucket_name),
     [

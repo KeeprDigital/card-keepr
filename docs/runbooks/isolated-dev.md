@@ -89,12 +89,12 @@ defines D1 Edit and Workers Scripts Edit at account scope. A separate token on t
 existing shared account therefore has provider authority over production resources
 too; its name does not enforce a dev-only boundary. Application namespace/binding
 checks constrain this executor's requests, but cannot contain a compromised token.
-Before configuring live credentials, record the owner's choice of shared-account
-authority or a separate non-production account. The selected account must also
-own the configured `keepr.digital` route zone: the current compiler preserves
-that zone and the provider verifier rejects foreign-account zones. A separate
-account therefore needs its zone/DNS arrangement resolved before installation;
-changing the account ID alone does not establish a usable isolated route.
+The owner selected the current account for dev and staging and accepted this
+shared provider authority; [architecture](../architecture.md#software-release-direction)
+records the decision. Use that account's `keepr.digital` zone for the dev route.
+The provider verifier still requires the configured zone to belong to the target
+account. Confirm the account's runtime plan and refresh capacity evidence before
+installation; the dev-only reservation below does not allocate staging capacity.
 
 The config compiler owns the exact target inventory:
 
@@ -107,9 +107,13 @@ The config compiler owns the exact target inventory:
 | Service binding                   | `OFFICIAL_SOURCE_TRANSPORT` → `card-keepr-ingestion-dev` / `OfficialSourceTransport`                                                    |
 | Rate limits                       | API 2001, image 2002, administration 2003, API liveness 2004, ingestion liveness 2005                                                   |
 
-Routes are `dev.card.keepr.digital/api[/…]` and `/ingest[/…]`. Configure a proxied
+Routes are `card-dev.keepr.digital/api[/…]` and `/ingest[/…]`. Configure a proxied
 DNS placeholder for that hostname in `keepr.digital`; do not change production
-DNS. R2 public access stays disabled. Workers.dev and preview URLs stay disabled.
+DNS. Verify active HTTPS certificate coverage before the first installation.
+The dev and staging hosts (`card-dev.keepr.digital` and
+`card-staging.keepr.digital`) fit the zone's existing `*.keepr.digital` Universal
+SSL certificate; deeper subdomains would require additional certificate coverage.
+R2 public access stays disabled. Workers.dev and preview URLs stay disabled.
 
 The config compiler requires real distinct UUIDs and rejects production D1 IDs.
 Generated `apps/*/wrangler.dev.json` files are ignored and rebuilt from the exact

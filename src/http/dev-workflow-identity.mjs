@@ -1,6 +1,6 @@
 const repository = "KeeprDigital/card-keepr";
 const issuer = "https://token.actions.githubusercontent.com";
-export const devAudience = "https://dev.card.keepr.digital/ingest/v1/dev-deployments";
+export const devAudience = "https://card-dev.keepr.digital/ingest/v1/dev-deployments";
 export const requiredCiChecks = [
   "lint",
   "checks",

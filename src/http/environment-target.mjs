@@ -3,7 +3,7 @@ export function environmentNames(environment = "production") {
   if (!["production", "dev", "staging"].includes(environment)) throw new Error("invalid_environment");
   const suffix = environment === "production" ? "" : `-${environment}`;
   const name = (base) => `${base}${suffix}`;
-  const host = environment === "production" ? "card.keepr.digital" : `${environment}.card.keepr.digital`;
+  const host = environment === "production" ? "card.keepr.digital" : `card-${environment}.keepr.digital`;
   return {
     environment,
     host,

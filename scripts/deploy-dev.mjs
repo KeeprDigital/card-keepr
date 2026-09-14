@@ -117,8 +117,8 @@ export async function deployDev(input, executeCommand = promisify(execFile)) {
     );
     requireResult(await sql("binding"), "transitioned");
     const common = {
-      apiUrl: "https://dev.card.keepr.digital/api",
-      ingestionUrl: "https://dev.card.keepr.digital/ingest",
+      apiUrl: "https://card-dev.keepr.digital/api",
+      ingestionUrl: "https://card-dev.keepr.digital/ingest",
       apiKey: environment.API_TRAFFIC_TOKEN,
       currentRevisionId: environment.EXPECTED_CURRENT_REVISION,
     };
