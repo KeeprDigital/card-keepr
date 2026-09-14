@@ -27,19 +27,23 @@ export function httpRoute<C extends HttpContext>() {
   });
 }
 
-/** Retained JSON, like binary evidence, is an opaque stream. Check its declared
- * status/media/headers without materializing it into Hono's c.json body type. */
+/** Retained JSON and binary content stay streamed. Check the declared wire
+ * envelope without materializing the body into Hono's JSON response type. */
 export function streamingHttpRoute<C extends HttpContext>() {
   return <R extends RouteConfig>(
     definition: R,
     handler: (...args: Parameters<RouteHandler<R, { Bindings: C }>>) => Promise<Response>,
   ): HttpRoute<C> => {
     const checked = async (...args: Parameters<typeof handler>) => {
-      const response = await handler(...args);
+      const result = await handler(...args);
+      const response = args[0].env.request.method === "HEAD" ? new Response(null, result) : result;
       const branch = definition.responses[response.status];
-      const media = response.headers.get("Content-Type")?.split(";")[0]?.trim();
-      if (!branch || !("content" in branch) || !media || !(branch.content?.[media] ?? branch.content?.["*/*"]))
-        throw new Error("Retained stream does not match its declared HTTP status and media.");
+      if (!branch || "$ref" in branch) throw new Error("Retained stream does not match its declared HTTP status.");
+      const media = response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase();
+      if ("content" in branch && branch.content) {
+        if (!media || !(branch.content[media] ?? branch.content["*/*"]))
+          throw new Error("Retained stream does not match its declared HTTP media.");
+      } else if (response.body !== null) throw new Error("This HTTP response must have no body.");
       for (const [name, header] of Object.entries(branch.headers ?? {})) {
         if ("required" in header && header.required && !response.headers.has(name))
           throw new Error(`Retained stream is missing its declared ${name} header.`);
@@ -47,7 +51,7 @@ export function streamingHttpRoute<C extends HttpContext>() {
       return response;
     };
     // Hono assumes application/json is built with c.json. The explicit stream
-    // boundary checks the wire envelope; actual-byte tests verify its schema.
+    // boundary checks the envelope; actual-byte tests verify its schema.
     return httpRoute<C>()(definition, checked as RouteHandler<R, { Bindings: C }>);
   };
 }
@@ -145,9 +149,9 @@ export const problemResponses = Object.fromEntries(
     {
       description: "Request, authorization, domain conflict or service failure. See code and detail.",
       headers: {
-        "Cache-Control": { schema: { type: "string" } },
-        "Retry-After": { schema: { type: "string" } },
-        "WWW-Authenticate": { schema: { type: "string" } },
+        "Cache-Control": { schema: { type: "string" as const } },
+        "Retry-After": { schema: { type: "string" as const } },
+        "WWW-Authenticate": { schema: { type: "string" as const } },
       },
       content: { "application/problem+json": { schema: problemSchema } },
     },

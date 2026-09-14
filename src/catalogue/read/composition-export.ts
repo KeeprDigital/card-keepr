@@ -1,5 +1,6 @@
 import { type PublicBase, publicUrl } from "../../http/public-base";
-import { type CatalogueStore, canonicalJson, sha256Text, sha256 } from "../shared";
+import { type CatalogueStore, canonicalJson, sha256Text, gameProfileForGame } from "../shared";
+import { verifiedObject, verifiedObjectBody } from "./verified-object";
 import { catalogueExportStatement, pendingExportComponentDeletionStatement } from "./published-read-repository";
 import { parseRange } from "./byte-range";
 import {
@@ -95,7 +96,7 @@ export async function compositionExportResponse(
   if (
     cursor &&
     (cursor.revision_id !== revisionId ||
-      !["one-piece", "fusion-world", "digimon", "gundam", "riftbound"].includes(cursor.game ?? "") ||
+      gameProfileForGame(cursor.game ?? "") === null ||
       !Number.isSafeInteger(cursor.ordinal) ||
       cursor.ordinal! < 0)
   )
@@ -159,8 +160,8 @@ export async function compositionExportComponentResponse(
     return undefined;
   }
   requirePublicExport(ready);
-  const match = /^(one-piece|fusion-world|digimon|gundam|riftbound)\.(0|[1-9]\d*)$/.exec(name);
-  if (!match || !Number.isSafeInteger(Number(match[2]))) return null;
+  const match = /^([a-z][a-z0-9-]*)\.(0|[1-9]\d*)$/.exec(name);
+  if (!match || gameProfileForGame(match[1]!) === null || !Number.isSafeInteger(Number(match[2]))) return null;
   const artifact = await composedExportArtifactStatement(db, revisionId, match[1]!, Number(match[2])).first<Artifact>();
   if (!artifact) return null;
   if (receipt && receipt.maintenance_state !== "available")
@@ -175,11 +176,10 @@ export async function compositionExportComponentResponse(
     "content-disposition": `attachment; filename="${name}.ndjson.gz"`,
     "cache-control": "private, max-age=31536000, immutable",
   };
-  const object = await bucket.get(artifact.object_key);
-  if (!object || object.size !== size || size > 4_000_000)
+  if (size > 4_000_000)
     throw new ReadProblem(503, "catalogue_export_unavailable", "The verified public component is unavailable.");
-  const bytes = new Uint8Array(await object.arrayBuffer());
-  if ((await sha256(bytes)) !== artifact.sha256)
+  const object = await verifiedObject(bucket, artifact.object_key, size, artifact.sha256);
+  if (!object)
     throw new ReadProblem(503, "catalogue_export_unavailable", "The immutable public component failed verification.");
   const conditional = conditionalResponse(request, headers);
   if (conditional) return conditional;
@@ -198,7 +198,14 @@ export async function compositionExportComponentResponse(
   headers["content-length"] = String(range?.length ?? size);
   if (range) headers["content-range"] = `bytes ${range.offset}-${range.offset + range.length - 1}/${size}`;
   if (request.method === "HEAD") return new Response(null, { status: 200, headers });
-  return new Response(range ? bytes.slice(range.offset, range.offset + range.length) : bytes, {
+  const body = await verifiedObjectBody(bucket, object, range);
+  if (!body)
+    throw new ReadProblem(
+      503,
+      "catalogue_export_unavailable",
+      "The verified public component changed during the read.",
+    );
+  return new Response(body, {
     status: range ? 206 : 200,
     headers,
   });

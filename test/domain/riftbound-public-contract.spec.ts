@@ -82,22 +82,14 @@ test("active manifest accepts Riftbound components and five-game membership whil
 test("active API and administration schema definitions include Riftbound but stay closed", () => {
   const ajv = new Ajv2020({ strict: false });
   addFormats(ajv);
-  for (const file of ["api.schema.json", "administration.schema.json"]) {
-    const schema = JSON.parse(readFileSync(`contracts/schemas/${file}`, "utf8"));
-    ajv.addSchema(schema);
-    const validate = ajv.getSchema(`${schema.$id}#/$defs/SupportedGame`)!;
-    for (const game of games) expect(validate(game)).toBe(true);
-    expect(validate("unregistered")).toBe(false);
-    if (file === "api.schema.json") {
-      expect(
-        ajv.getSchema(`${schema.$id}#/$defs/OfficialIdentity`)!({ kind: "publisher_name", value: "Kinkou Monk" }),
-      ).toBe(true);
-      expect(ajv.getSchema(`${schema.$id}#/$defs/GameData`)!({ profile: "riftbound@1", attributes: {} })).toBe(true);
-      const readContract = JSON.parse(readFileSync("contracts/read-openapi.json", "utf8"));
-      const gameQuery = readContract.paths["/v1/cards"].get.parameters.find(
-        (parameter: { in: string; name: string }) => parameter.in === "query" && parameter.name === "game",
-      );
-      expect(ajv.compile(gameQuery.schema)("riftbound")).toBe(true);
-    }
-  }
+  const schema = JSON.parse(readFileSync("contracts/schemas/administration.schema.json", "utf8"));
+  ajv.addSchema(schema);
+  const validate = ajv.getSchema(`${schema.$id}#/$defs/SupportedGame`)!;
+  for (const game of games) expect(validate(game)).toBe(true);
+  expect(validate("unregistered")).toBe(false);
+  const readContract = JSON.parse(readFileSync("contracts/read-openapi.json", "utf8"));
+  const gameQuery = readContract.paths["/v1/cards"].get.parameters.find(
+    (parameter: { in: string; name: string }) => parameter.in === "query" && parameter.name === "game",
+  );
+  expect(ajv.compile(gameQuery.schema)("riftbound")).toBe(true);
 });

@@ -2,19 +2,22 @@ import { Hono } from "hono";
 import { catalogueRoutes } from "../../../src/catalogue/read";
 import { catalogueEnvironment } from "../../../src/catalogue/shared";
 import { authenticateBearer } from "../../../src/http/authentication";
-import { allowedPreflightResponse, hasAllowedOrigin, withCorsHeaders } from "../../../src/http/cors";
-import { isLivenessRequest, livenessRequest, readinessResponse } from "../../../src/http/health";
+import { hasAllowedOrigin, withCorsHeaders } from "../../../src/http/cors";
+import { isLivenessRequest } from "../../../src/http/health";
 import { withOperationalRequestLog } from "../../../src/http/operational-log";
 import { problemResponse } from "../../../src/http/problem";
 import { mountedRequest, type PublicBase, publicBase, routePath } from "../../../src/http/public-base";
 import { rateLimitFailure } from "../../../src/http/rate-limit";
 import { httpDispatch } from "../../../src/http/openapi";
 import { routeSegments } from "../../../src/http/routes";
-import { apiCapabilities } from "../../../src/runtime-capabilities.mjs";
+import { apiLivenessRoutes, apiReadinessRoutes, apiPreflightRoutes } from "./utility-routes";
 import { apiProblemResponse } from "./problem";
 
 const routes = [...catalogueRoutes];
 const dispatch = httpDispatch(routes);
+const dispatchLiveness = httpDispatch(apiLivenessRoutes);
+const dispatchReadiness = httpDispatch(apiReadinessRoutes);
+const dispatchPreflight = httpDispatch(apiPreflightRoutes);
 const logOptions = { routeSegments: routeSegments(routes, ["/health", "/healthz"]) };
 
 const apiHttp = new Hono<{ Bindings: { env: Env; requestId: string; base: PublicBase } }>();
@@ -22,18 +25,8 @@ apiHttp.onError((error, c) => apiProblemResponse(error, c.env.requestId));
 apiHttp.use("*", async (c, next) => {
   const { env, requestId } = c.env;
   const request = c.req.raw;
-  const preflight = allowedPreflightResponse(request, env.CORS_ALLOWED_ORIGINS);
-  if (preflight !== null) return preflight;
-  if (request.method === "OPTIONS") {
-    return problemResponse({
-      requestId,
-      status: 403,
-      code: "forbidden_origin",
-      title: "Forbidden preflight",
-      detail: "The browser preflight does not match the allowed origin, method, or headers.",
-      headers: { vary: "Origin" },
-    });
-  }
+  if (request.method === "OPTIONS")
+    return dispatchPreflight(request.method, new URL(request.url).pathname, { ...c.env, request });
   if (!hasAllowedOrigin(request, env.CORS_ALLOWED_ORIGINS)) {
     return problemResponse({
       requestId,
@@ -51,7 +44,7 @@ apiHttp.use("*", async (c, next) => {
   c.res = withCorsHeaders(c.req.raw, c.res);
 });
 apiHttp.use("*", async (c, next) => {
-  const { env, requestId, base } = c.env;
+  const { env, requestId } = c.env;
   const request = c.req.raw;
   const url = new URL(request.url);
   if (url.pathname.startsWith("/v1/")) {
@@ -75,25 +68,14 @@ apiHttp.use("*", async (c, next) => {
     return authenticationFailure;
   }
 
-  if (request.method === "GET" && url.pathname === "/health") {
-    return readinessResponse("api", apiCapabilities, {
-      database: env.CATALOGUE_DB,
-      buckets: {
-        PRINTING_IMAGES: env.PRINTING_IMAGES,
-        CATALOGUE_EXPORTS: env.CATALOGUE_EXPORTS,
-      },
-      publicBase: base,
-      request,
-      version: env.CF_VERSION_METADATA,
-    });
-  }
-
   await next();
 });
 apiHttp.all("*", async (c) => {
   const { env, requestId, base } = c.env;
   const request = c.req.raw;
   const url = new URL(request.url);
+  if (request.method === "GET" && url.pathname === "/health")
+    return dispatchReadiness(request.method, url.pathname, { env, request, base, requestId });
   return dispatch(request.method, url.pathname, {
     request,
     env: catalogueEnvironment(env),
@@ -140,7 +122,8 @@ const apiWorker = {
         "api",
         mounted,
         env,
-        (observedEnv, requestId) => livenessRequest(mounted, observedEnv.API_LIVENESS_RATE_LIMIT, "api", requestId),
+        async (observedEnv, requestId) =>
+          dispatchLiveness(mounted.method, route, { env: observedEnv, request: mounted, base, requestId }),
         { logged: false },
       );
     }

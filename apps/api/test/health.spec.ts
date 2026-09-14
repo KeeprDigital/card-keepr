@@ -1,6 +1,8 @@
 import { withoutCatalogueSchemaState } from "../../ingestion/test/query-helpers/database-failures";
 import { expect, test, vi } from "vitest";
 import apiWorker from "../src/index";
+import readContract from "../../../contracts/read-openapi.json";
+import { assertHttpResponse } from "../../../test/support/http-contract";
 import { apiHeaders, installApiSuite, testEnv } from "./api-fixtures";
 
 installApiSuite();
@@ -60,6 +62,7 @@ function brokenBucket(): R2Bucket {
 
 test("liveness answers without a bearer key and reports only status and runtime", async () => {
   const response = await anonymous("/healthz");
+  await assertHttpResponse(readContract, "/healthz", "get", response);
   expect(response.status).toBe(200);
   expect(response.headers.get("cache-control")).toBe("no-store");
   await expect(response.json()).resolves.toEqual({
@@ -68,6 +71,7 @@ test("liveness answers without a bearer key and reports only status and runtime"
   });
 
   const head = await anonymous("/healthz", { method: "HEAD" });
+  await assertHttpResponse(readContract, "/healthz", "head", head);
   expect(head.status).toBe(200);
   expect(await head.text()).toBe("");
 });

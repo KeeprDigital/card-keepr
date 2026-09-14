@@ -1,9 +1,13 @@
 import { type CatalogueStore, repositoryStatements } from "../shared";
 
-export function currentCardModelStatement(database: CatalogueStore) {
-  return repositoryStatements(database).prepare(`SELECT ${currentCardModelSql("revision")} AS model_ready
+export function currentCardModelStatement(database: CatalogueStore, revision: string | null = null) {
+  return repositoryStatements(database)
+    .prepare(
+      `SELECT ${currentCardModelSql("revision")} AS model_ready
     FROM catalogue_revisions revision
-    WHERE revision.id=(SELECT current_revision_id FROM catalogue_state WHERE singleton=1)`);
+    WHERE revision.id=COALESCE(?,(SELECT current_revision_id FROM catalogue_state WHERE singleton=1))`,
+    )
+    .bind(revision);
 }
 
 /** Current responses require every selected game to have regenerated definitions.

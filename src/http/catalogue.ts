@@ -56,6 +56,7 @@ export function catalogueResponse(status: CatalogueStatus, base: PublicBase, req
       },
       links: {
         self: publicUrl(base, "/v1/catalogue"),
+        games: publicUrl(base, "/v1/games"),
         cards: publicUrl(base, "/v1/cards"),
         printings: publicUrl(base, "/v1/printings"),
         products: publicUrl(base, "/v1/products"),

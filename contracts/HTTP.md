@@ -1,23 +1,24 @@
 # Generated HTTP contracts and migration
 
-The Hono pilot in [#315](https://github.com/KeeprDigital/card-keepr/issues/315)
-implements the HTTP direction approved in [#312](https://github.com/KeeprDigital/card-keepr/issues/312).
-The generated [read](read-openapi.json) and [administration](admin-openapi.json)
-OpenAPI 3.1 documents describe the migrated operations. They are deliberately
-partial during migration; `x-unmigrated-operations` accounts for the remaining
-operations. Public documentation hosting and final complete-contract cutover
-belong to the later HTTP tickets.
+The catalogue-read interface is fully registered through Hono under
+[#316](https://github.com/KeeprDigital/card-keepr/issues/316), following the
+[#315](https://github.com/KeeprDigital/card-keepr/issues/315) pilot and
+[#312](https://github.com/KeeprDigital/card-keepr/issues/312) direction. The generated
+[read OpenAPI](read-openapi.json) covers all consumer routes, API health/liveness
+and CORS preflight. The [administration OpenAPI](admin-openapi.json) remains
+partial while its families migrate; `x-unmigrated-operations` inventories the
+remaining operations. Documentation hosting belongs to the later HTTP tickets.
 
 ## Authoring and boundaries
 
-Each migrated operation uses `createRoute` from `@hono/zod-openapi` in its owning
+Each registered operation uses `createRoute` from `@hono/zod-openapi` in its owning
 catalogue cluster. That registration owns method, path, wire inputs, status/media
 combinations, headers and security. `httpRoute` binds it to a typed Hono handler;
 handlers consume `c.req.valid(...)`. JSON responses parse the declared response
 schema before `c.json`, especially when presenters return stored or broadly typed
 JSON. Hono does not automatically validate outgoing JSON.
 
-The Card search wire schema projects the Game Profile's declared primitives and
+The Card and Printing wire schemas project the Game Profile's declared primitives and
 filter paths into Zod. Profile semantic checks, retained-document validators and
 domain transitions remain independent of Zod. Card queries retain their existing
 normalization, published-value checks, canonical ETags and revision-pinned cursors.
@@ -27,7 +28,9 @@ unsupported JSON media uses 415, typed command errors use 422, and domain confli
 use 409. Command bodies are capped at 16 KiB by actual streamed byte count, even
 when Content-Length is absent or inaccurate.
 
-Printing Image GET and HEAD retain the existing R2 read functions. HEAD uses
+Printing Image and Catalogue Export component responses use the checked
+`streamingHttpRoute` boundary: declared status, media and required headers are
+checked without materializing the body. Image HEAD uses
 metadata only and ignores range/conditional headers. GET can return 200, 206,
 304 or 416; the response contract names binary media and headers. Neither the
 router nor response validation reads or buffers image bodies. Hono's implicit
@@ -101,8 +104,9 @@ response validators used by Worker tests. `check:generated` rejects stale output
 unresolved or unbundled references, duplicate operation IDs/registrations and
 migrated operations missing from the generated paths. Servers come from each
 Worker's configured public base, including its mount. The inventory explicitly
-classifies health, CORS preflight, dev deployment and signed staging release
-endpoints outside ordinary route arrays;
+classifies API health/liveness/preflight registrations and administration utility
+surfaces, including dev deployment and signed staging release endpoints, outside
+ordinary catalogue route arrays;
 there are currently no deployed documentation endpoints.
 
 Follow the repository's [validation policy](../docs/testing.md). Generated response

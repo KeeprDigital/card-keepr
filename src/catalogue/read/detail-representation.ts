@@ -5,7 +5,7 @@ export function detailIncludeProjection(
   invalid: (message: string) => Error,
   allowed: readonly DetailInclude[] = [],
 ): ReadonlySet<DetailInclude> {
-  if ([...url.searchParams.keys()].some((key) => key !== "include")) {
+  if ([...url.searchParams.keys()].some((key) => key !== "include" && key !== "revision")) {
     throw invalid("Unsupported detail query parameter.");
   }
   const rawValues = url.searchParams.getAll("include");
@@ -27,6 +27,8 @@ export function detailRepresentationKey(include: ReadonlySet<DetailInclude>): st
 
 export function canonicalDetailSelf(url: URL, include: ReadonlySet<DetailInclude>): string {
   const query = new URLSearchParams();
+  const revision = url.searchParams.get("revision");
+  if (revision) query.set("revision", revision);
   const values = [...include].sort();
   if (values.length > 0) query.set("include", values.join(","));
   const serialized = query.toString();

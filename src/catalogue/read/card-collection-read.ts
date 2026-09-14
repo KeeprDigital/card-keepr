@@ -59,8 +59,13 @@ export async function cardCollectionResponse(
   const filters = parseFilters(url);
   const cursor = parseCursor(url.searchParams.get("after"));
   if (cursor === "invalid") throw invalidCursor();
+  const requestedRevision = url.searchParams.get("revision");
+  if (requestedRevision && cursor && requestedRevision !== cursor.revision_id) throw invalidCursor();
   const revision =
-    pinnedRevision ?? (await pinRevision(database, cursor?.revision_id ?? null, "/v1/cards", base, { search: true }));
+    pinnedRevision ??
+    (await pinRevision(database, requestedRevision ?? cursor?.revision_id ?? null, "/v1/cards", base, {
+      search: true,
+    }));
   if (cursor && canonicalJson(cursor.filters) !== canonicalJson(filters)) throw invalidCursor();
   await validatePublishedFilters(database, revision.id, filters);
   const etag = await canonicalEtag({
@@ -105,6 +110,7 @@ export async function cardCollectionResponse(
         self: publicUrl(
           base,
           collectionSelf("/v1/cards", {
+            revision: requestedRevision,
             q: filters.q,
             game: filters.game,
             category: filters.category,
@@ -174,6 +180,7 @@ function parseFilters(url: URL): CollectionFilters {
     "rarity",
     "limit",
     "after",
+    "revision",
     ...[...url.searchParams.keys()].filter((name) => name.startsWith("attribute.")),
   ]);
   const limit = collectionLimit(url.searchParams.get("limit"));
@@ -183,7 +190,7 @@ function parseFilters(url: URL): CollectionFilters {
   const rawGame = collectionFilter(url, "game");
   const game = normalizedFilter(rawGame);
   if (rawGame !== null && game === null) throw invalidParameter("game", "game must contain at least one character.");
-  if (game !== null && !["one-piece", "fusion-world", "digimon", "gundam", "riftbound"].includes(game))
+  if (game !== null && gameProfileForGame(game) === null)
     throw invalidParameter("game", "game is not a Supported Game.");
   const category = collectionFilter(url, "category");
   if (category !== null && !["gameplay", "token", "art"].includes(category))

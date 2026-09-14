@@ -239,6 +239,7 @@
     "slice": "Backup and recovery",
     "named_cli": "backup status --attempt-id",
     "callers": [
+      "acceptance/card-categories.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/helpers/native-catalogue-runtime.mjs",
       "acceptance/riftbound-catalogue.test.mjs",
@@ -298,6 +299,7 @@
     "slice": "Maintenance and runtime operations",
     "named_cli": "catalogue-export deletion status",
     "callers": [
+      "acceptance/card-categories.test.mjs",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
       "cli/keepr.mjs",
       "cli/staging-release.mjs"
@@ -337,6 +339,7 @@
     "slice": "Maintenance and runtime operations",
     "named_cli": "repairCatalogueSearch",
     "callers": [
+      "acceptance/card-categories.test.mjs",
       "acceptance/fixtures/combined-card-keepr-runtime.ts",
       "acceptance/ingestion-cli.test.mjs",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
@@ -419,6 +422,7 @@
     "slice": "Identity and admission",
     "named_cli": "entity-proposal inspect",
     "callers": [
+      "acceptance/card-categories.test.mjs",
       "apps/ingestion/test/entity-admission-card-model.spec.ts",
       "apps/ingestion/test/entity-admission.spec.ts",
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
@@ -464,6 +468,7 @@
     "slice": "Maintenance and runtime operations",
     "named_cli": "evidenceCleanupStatus",
     "callers": [
+      "acceptance/card-categories.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "apps/ingestion/test/evidence-cleanup.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
@@ -946,6 +951,7 @@
     "slice": "Identity and admission",
     "named_cli": "identity-correction inspect",
     "callers": [
+      "acceptance/card-categories.test.mjs",
       "apps/ingestion/test/identity-corrections.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
       "cli/staging-release.mjs"
@@ -960,6 +966,7 @@
     "slice": "Identity and admission",
     "named_cli": "identity-correction validate",
     "callers": [
+      "acceptance/card-categories.test.mjs",
       "apps/ingestion/test/game-candidate-integrity.spec.ts",
       "apps/ingestion/test/identity-corrections.spec.ts",
       "apps/ingestion/test/native-no-change-publication.spec.ts",
@@ -976,6 +983,7 @@
     "slice": "Retained runs",
     "named_cli": "showRun",
     "callers": [
+      "acceptance/card-categories.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/helpers/cli-http.mjs",
       "acceptance/operational-diagnostics-leak.test.mjs",
@@ -1443,6 +1451,7 @@
     "slice": "Sources and collection",
     "named_cli": "source collect",
     "callers": [
+      "acceptance/card-categories.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/fixtures/native-retained-evidence-harness.ts",
       "acceptance/fixtures/retained-evidence-base-harness.ts",
@@ -1553,6 +1562,7 @@
     "slice": "Publication and preparation",
     "named_cli": "publicationStatus",
     "callers": [
+      "acceptance/card-categories.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/errata-runtime.test.mjs",
       "acceptance/helpers/native-catalogue-runtime.mjs",
@@ -1626,6 +1636,7 @@
     "slice": "Publication and preparation",
     "named_cli": "publicationStart",
     "callers": [
+      "acceptance/card-categories.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/errata-runtime.test.mjs",
       "acceptance/helpers/native-catalogue-runtime.mjs",
@@ -1683,6 +1694,7 @@
     "slice": "Identity and admission",
     "named_cli": "identityReviews",
     "callers": [
+      "acceptance/card-categories.test.mjs",
       "apps/ingestion/test/game-reconciliation-operations.spec.ts",
       "apps/ingestion/test/reconciliation-card-identity.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
@@ -1746,6 +1758,7 @@
     "slice": "Backup and recovery",
     "named_cli": "inspectRecovery",
     "callers": [
+      "acceptance/card-categories.test.mjs",
       "acceptance/helpers/cli-http.mjs",
       "acceptance/ingestion-cli.test.mjs",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
@@ -1955,6 +1968,7 @@
     "slice": "Maintenance and runtime operations",
     "named_cli": "release staging-status",
     "callers": [
+      "acceptance/card-categories.test.mjs",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
       "cli/staging-release.mjs"
     ]
@@ -2012,6 +2026,7 @@
     "slice": "Maintenance and runtime operations",
     "named_cli": "release staging-status",
     "callers": [
+      "acceptance/card-categories.test.mjs",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
       "cli/staging-release.mjs"
     ]
@@ -2056,17 +2071,24 @@
   },
   {
     "worker": "read",
+    "family": "preflight",
     "method": "OPTIONS",
     "path": "/*",
-    "contract": "platform",
-    "treatment": "consumer-CORS-preflight"
+    "contract": "generated",
+    "slice": "Catalogue reads",
+    "treatment": "consumer-CORS-preflight",
+    "named_cli": null,
+    "callers": []
   },
   {
     "worker": "read",
+    "family": "readiness",
     "method": "GET",
     "path": "/health",
-    "contract": "platform",
+    "contract": "generated",
+    "slice": "Catalogue reads",
     "treatment": "authenticated-readiness",
+    "named_cli": null,
     "callers": [
       "acceptance/bounded-capacity-pilot.test.mjs",
       "acceptance/card-categories.test.mjs",
@@ -2114,10 +2136,13 @@
   },
   {
     "worker": "read",
+    "family": "liveness",
     "method": "GET",
     "path": "/healthz",
-    "contract": "platform",
+    "contract": "generated",
+    "slice": "Catalogue reads",
     "treatment": "unauthenticated-liveness",
+    "named_cli": null,
     "callers": [
       "acceptance/operational-diagnostics-leak.test.mjs",
       "acceptance/production-release-smoke.test.mjs",
@@ -2131,10 +2156,13 @@
   },
   {
     "worker": "read",
+    "family": "liveness",
     "method": "HEAD",
     "path": "/healthz",
-    "contract": "platform",
+    "contract": "generated",
+    "slice": "Catalogue reads",
     "treatment": "unauthenticated-liveness",
+    "named_cli": null,
     "callers": [
       "acceptance/operational-diagnostics-leak.test.mjs",
       "acceptance/production-release-smoke.test.mjs",
@@ -2191,7 +2219,7 @@
     "family": "read",
     "method": "GET",
     "path": "/v1/cards/{card}",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Catalogue reads",
     "named_cli": null,
     "callers": [
@@ -2211,6 +2239,7 @@
       "acceptance/riftbound-catalogue.test.mjs",
       "acceptance/shared-game-profiles.test.mjs",
       "apps/api/test/api-fixtures.ts",
+      "apps/api/test/hono-contract.spec.ts",
       "apps/api/test/product-release.spec.ts",
       "apps/api/test/public-mount.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
@@ -2223,7 +2252,7 @@
     "family": "read",
     "method": "GET",
     "path": "/v1/catalogue",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Catalogue reads",
     "named_cli": null,
     "callers": [
@@ -2239,6 +2268,7 @@
       "acceptance/staging-execution.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
       "apps/api/test/health.spec.ts",
+      "apps/api/test/hono-contract.spec.ts",
       "apps/api/test/product-release.spec.ts",
       "apps/api/test/protected-failures.spec.ts",
       "apps/api/test/public-mount.spec.ts",
@@ -2251,7 +2281,7 @@
     "family": "read",
     "method": "GET",
     "path": "/v1/catalogue-exports",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Catalogue reads",
     "named_cli": null,
     "callers": [
@@ -2269,10 +2299,11 @@
     "family": "read",
     "method": "GET",
     "path": "/v1/catalogue-exports/{revision}",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Catalogue reads",
     "named_cli": null,
     "callers": [
+      "acceptance/card-categories.test.mjs",
       "acceptance/card-model-migration.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/digimon-catalogue.test.mjs",
@@ -2297,13 +2328,14 @@
     "family": "read",
     "method": "GET",
     "path": "/v1/catalogue-exports/{revision}/components/{component}",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Catalogue reads",
     "named_cli": null,
     "callers": [
       "acceptance/card-model-migration.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/fixtures/catalogue-runtime-harness.mjs",
+      "apps/api/test/runtime.spec.ts",
       "apps/ingestion/test/reconciliation-helpers.ts",
       "scripts/production-smoke.mjs"
     ]
@@ -2313,15 +2345,33 @@
     "family": "read",
     "method": "HEAD",
     "path": "/v1/catalogue-exports/{revision}/components/{component}",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Catalogue reads",
     "named_cli": null,
     "callers": [
       "acceptance/card-model-migration.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/fixtures/catalogue-runtime-harness.mjs",
+      "apps/api/test/runtime.spec.ts",
       "apps/ingestion/test/reconciliation-helpers.ts",
       "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/games",
+    "contract": "generated",
+    "slice": "Catalogue reads",
+    "named_cli": null,
+    "callers": [
+      "acceptance/card-categories.test.mjs",
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/api/test/hono-contract.spec.ts",
+      "apps/api/test/public-mount.spec.ts"
     ]
   },
   {
@@ -2365,7 +2415,7 @@
     "family": "read",
     "method": "GET",
     "path": "/v1/printings",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Catalogue reads",
     "named_cli": null,
     "callers": [
@@ -2392,11 +2442,12 @@
     "family": "read",
     "method": "GET",
     "path": "/v1/printings/{printing}",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Catalogue reads",
     "named_cli": null,
     "callers": [
       "acceptance/bounded-capacity-pilot.test.mjs",
+      "acceptance/card-categories.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/errata-runtime.test.mjs",
       "acceptance/gundam-catalogue.test.mjs",
@@ -2405,6 +2456,7 @@
       "acceptance/one-piece-two-source.test.mjs",
       "acceptance/product-catalogue.test.mjs",
       "acceptance/riftbound-catalogue.test.mjs",
+      "apps/api/test/product-release.spec.ts",
       "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
       "cli/staging-release.mjs",
@@ -2416,7 +2468,7 @@
     "family": "read",
     "method": "GET",
     "path": "/v1/products",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Catalogue reads",
     "named_cli": null,
     "callers": [
@@ -2433,11 +2485,13 @@
     "family": "read",
     "method": "GET",
     "path": "/v1/products/{product}",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Catalogue reads",
     "named_cli": null,
     "callers": [
+      "acceptance/card-categories.test.mjs",
       "acceptance/product-catalogue.test.mjs",
+      "apps/api/test/product-release.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
       "apps/ingestion/test/reconciliation-product-identity.spec.ts",
       "apps/ingestion/test/reconciliation-product-release.spec.ts",

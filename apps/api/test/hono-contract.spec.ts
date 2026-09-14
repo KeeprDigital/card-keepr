@@ -6,6 +6,54 @@ import contract from "../../../contracts/read-openapi.json";
 
 installApiSuite();
 
+test("game discovery exposes only published consumer facts and validates before conditional responses", async () => {
+  const request = (query = "", key = "vitest-api-key") =>
+    apiWorker.fetch(
+      new Request(`https://card-keepr.invalid/v1/games${query}`, {
+        headers: { authorization: `Bearer ${key}`, "if-none-match": "*" },
+      }),
+      testEnv,
+    );
+  const response = await apiWorker.fetch(
+    new Request("https://card-keepr.invalid/v1/games", { headers: apiHeaders("discovery") }),
+    testEnv,
+  );
+  expect(response.status).toBe(200);
+  const body = await response.json();
+  expect(body).toMatchObject({ data: [] });
+  expect((await request("?source_lineage=one-piece-en")).status).toBe(400);
+  expect((await request("", "vitest-administration-key")).status).toBe(401);
+  expect((await request()).status).toBe(304);
+  await assertHttpResponse(contract, "/v1/games", "get", response, body);
+});
+
+test("Card detail and catalogue status use generated contracts for actual success and validation branches", async () => {
+  await seedApiRevision({
+    revisionId: "catrev_detail_wire",
+    runId: "run_detail_wire",
+    cards: [apiCard({ id: "card_detail_wire", cardNumber: "OP01-001", name: "Captain" })],
+  });
+  for (const [path, definition] of [
+    ["/v1/cards/card_detail_wire", "/v1/cards/{card}"],
+    ["/v1/catalogue", "/v1/catalogue"],
+  ]) {
+    const response = await apiWorker.fetch(
+      new Request(`https://card-keepr.invalid${path}`, { headers: apiHeaders("detail-wire") }),
+      testEnv,
+    );
+    expect(response.status).toBe(200);
+    await assertHttpResponse(contract, definition!, "get", response);
+    const invalid = await apiWorker.fetch(
+      new Request(`https://card-keepr.invalid${path}?private=true`, {
+        headers: { ...apiHeaders("detail-invalid"), "if-none-match": "*" },
+      }),
+      testEnv,
+    );
+    expect(invalid.status).toBe(400);
+    await assertHttpResponse(contract, definition!, "get", invalid);
+  }
+});
+
 test("Card search and validation responses conform to the generated wire contract", async () => {
   await seedApiRevision({
     revisionId: "catrev_hono",

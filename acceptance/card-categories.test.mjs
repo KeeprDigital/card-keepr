@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import readContract from "../contracts/read-openapi.json" with { type: "json" };
+import * as wireValidators from "../test/support/http-response-validators.mjs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -137,6 +139,9 @@ test("categories retain distinct identities, evidenced associations and applicab
   assert.ok(admittedPrintings.includes(retainedArt.related_cards[0].evidence[0].related_printing_id));
   api = await startWorker({ config: "apps/api/wrangler.jsonc", statePath, vars: { API_BEARER_KEY: key } });
   await waitForHealth(`${api.url}/health`, key, api);
+  const unpublishedDiscovery = await fetch(`${api.url}/v1/games`, { headers: { authorization: `Bearer ${key}` } });
+  assert.equal(unpublishedDiscovery.status, 200);
+  assert.deepEqual((await unpublishedDiscovery.json()).data, []);
   assert.equal(
     (await fetch(`${api.url}/v1/cards/${retainedArt.id}`, { headers: { authorization: `Bearer ${key}` } })).status,
     404,
@@ -151,9 +156,32 @@ test("categories retain distinct identities, evidenced associations and applicab
   const get = async (path) => {
     const response = await fetch(`${api.url}${path}`, { headers: { authorization: `Bearer ${key}` } });
     assert.equal(response.status, 200, await response.clone().text());
-    return response.json();
+    const document = await response.json();
+    const pathname = new URL(path, api.url).pathname;
+    const segments = pathname.split("/");
+    const definition = segments.length === 4 ? `/v1/${segments[2]}/{${segments[2].slice(0, -1)}}` : pathname;
+    const branch = readContract.paths[definition].get.responses[200];
+    for (const [name, header] of Object.entries(branch.headers ?? {}))
+      if (header.required) assert.ok(response.headers.has(name), name);
+    const validate = wireValidators[wireValidators.responseValidators[`read get ${definition} 200 application/json`]];
+    assert.equal(validate(document), true, JSON.stringify(validate.errors));
+    return document;
   };
   const cards = (await get("/v1/cards")).data;
+  const discovery = await get("/v1/games");
+  assert.deepEqual(
+    discovery.data.map((game) => game.key),
+    ["riftbound"],
+  );
+  const publishedGame = discovery.data[0];
+  assert.equal(publishedGame.game_profile.id, "riftbound@1");
+  assert.deepEqual(
+    publishedGame.game_profile.card_fields.find((field) => field.path === "might"),
+    { path: "might", type: "integer", nullable: true, multiple: false },
+  );
+  assert.ok(publishedGame.filters.cards.includes("attribute.supertypes"));
+  assert.ok(publishedGame.filters.printings.includes("category"));
+  assert.equal(JSON.stringify(discovery).includes("source_lineage"), false);
   assert.deepEqual(cards.map((c) => c.category).sort(), ["art", "gameplay", "token"]);
   for (const category of ["art", "gameplay", "token"]) {
     const filtered = (await get(`/v1/cards?category=${category}`)).data;
@@ -175,7 +203,37 @@ test("categories retain distinct identities, evidenced associations and applicab
   const printings = (await get("/v1/printings")).data;
   assert.deepEqual(printings.map((p) => p.id).sort(), admittedPrintings.sort());
   const artPrintings = printings.filter((p) => p.card_id === art.id);
+  assert.deepEqual(
+    (await get("/v1/printings?category=art")).data.map((printing) => printing.id).sort(),
+    artPrintings.map((printing) => printing.id).sort(),
+  );
+  for (const printing of printings)
+    assert.equal(
+      printing.category,
+      printing.card_id === art.id ? "art" : printing.card_id === token.id ? "token" : "gameplay",
+    );
   assert.deepEqual(artPrintings.map((p) => p.game_data.attributes.finish).sort(), ["foil", "ordinary", "stamped"]);
+  assert.equal(JSON.stringify(printings).includes("artwork_fingerprint"), false);
+  assert.equal(JSON.stringify(printings).includes("source_observation_id"), false);
+  const cliCards = await runCli(
+    [
+      "cards",
+      "search",
+      "--game",
+      "riftbound",
+      "--category",
+      "art",
+      "--revision",
+      publication.resulting_revision_id,
+      "--json",
+    ],
+    { ...environment, KEEPR_API_URL: api.url, KEEPR_API_KEY: key },
+  );
+  assert.equal(cliCards.code, 0, cliCards.stdout + cliCards.stderr);
+  assert.deepEqual(
+    JSON.parse(cliCards.stdout).data.map((card) => card.id),
+    [art.id],
+  );
   for (const printing of printings) {
     assert.equal(printing.printed_rules_text, null);
     assert.equal(printing.gameplay_applicability, printing.card_id === art.id ? "inapplicable" : "applicable");
@@ -265,6 +323,10 @@ test("categories retain distinct identities, evidenced associations and applicab
   const withoutLinks = (records) => records.map(({ links, ...record }) => record);
   assert.deepEqual(withoutLinks((await get("/v1/cards")).data), withoutLinks(cards));
   assert.equal((await get("/v1/cards?category=art")).data[0].id, art.id);
+  assert.deepEqual(
+    (await get("/v1/games")).data.map(({ links, ...game }) => game),
+    discovery.data.map(({ links, ...game }) => game),
+  );
   reader.clear();
   assert.deepEqual(await reader.records(api.url, key, publication.resulting_revision_id, "cards"), exportedCards);
   assert.deepEqual(

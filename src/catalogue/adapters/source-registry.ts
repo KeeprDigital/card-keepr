@@ -1,4 +1,4 @@
-import { exportedGameProfileSchema, gameProfileForGame, type SupportedGame } from "../shared";
+import { exportedGameProfileSchema, registeredGameProfiles, type SupportedGame } from "../shared";
 
 export const publishers = [
   { id: "bandai", name: "Bandai" },
@@ -43,8 +43,7 @@ export const sourceLineages: readonly SourceLineageRegistration[] = [
 ];
 
 export function gameProfileRegistrations() {
-  return (["one-piece", "fusion-world", "digimon", "gundam", "riftbound"] as const).map((game) => {
-    const id = gameProfileForGame(game)!;
+  return registeredGameProfiles().map(({ id, game }) => {
     return {
       id,
       game,

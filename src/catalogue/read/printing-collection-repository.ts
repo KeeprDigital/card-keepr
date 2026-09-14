@@ -1,6 +1,7 @@
 import { type CatalogueStore, repositoryStatements } from "../shared";
 export type PrintingCollectionFilters = {
   card_id: string | null;
+  category?: string | null;
   game: string | null;
   rarity: string | null;
   product_id: string | null;
@@ -25,6 +26,12 @@ export function printingCollectionQuery(
   };
   equal("projection.card_id", filters.card_id);
   equal("projection.supported_game", filters.game);
+  if (filters.category != null) {
+    predicates.push(
+      "EXISTS(SELECT 1 FROM revision_card_query_documents card WHERE card.catalogue_revision_id=projection.catalogue_revision_id AND card.card_id=projection.card_id AND card.category=?)",
+    );
+    bindings.push(filters.category);
+  }
   equal("projection.normalized_rarity", filters.rarity);
   if (after !== null) {
     predicates.push(`(${source}.card_id, ${source}.printing_id) > (?, ?)`);

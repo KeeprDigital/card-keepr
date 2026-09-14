@@ -3,13 +3,23 @@ import { requestDocument } from "./lib/json-client.mjs";
 
 export async function runCatalogueCommand(arguments_, environment, json) {
   if (arguments_[0] !== "search") return usageFailure(json);
-  const options = parseOptions(arguments_.slice(1), ["--query", "--game", "--card-number", "--limit", "--after"]);
+  const options = parseOptions(arguments_.slice(1), [
+    "--query",
+    "--game",
+    "--card-number",
+    "--category",
+    "--revision",
+    "--limit",
+    "--after",
+  ]);
   if (options.error !== null) return usageFailure(json);
   const parameters = new URLSearchParams();
   for (const [option, parameter] of [
     ["--query", "q"],
     ["--game", "game"],
     ["--card-number", "card_number"],
+    ["--category", "category"],
+    ["--revision", "revision"],
     ["--limit", "limit"],
     ["--after", "after"],
   ]) {
@@ -43,7 +53,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr cards search [--query TEXT] [--game GAME] [--card-number NUMBER] [--limit N] [--after CURSOR]",
+        "Usage: keepr cards search [--query TEXT] [--game GAME] [--card-number NUMBER] [--category gameplay|token|art] [--revision REVISION] [--limit N] [--after CURSOR]",
     },
     2,
   );

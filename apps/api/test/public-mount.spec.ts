@@ -1,12 +1,6 @@
 import { expect, test } from "vitest";
 import apiWorker from "../src/index";
-import {
-  apiCard,
-  apiHeaders,
-  installApiSuite,
-  seedApiRevision,
-  testEnv,
-} from "./api-fixtures";
+import { apiCard, apiHeaders, installApiSuite, seedApiRevision, testEnv } from "./api-fixtures";
 
 installApiSuite();
 
@@ -46,17 +40,11 @@ test("the health route answers under the mount and nowhere else", async () => {
 });
 
 test("requests outside the mount are refused before authentication", async () => {
-  const anonymous = await apiWorker.fetch(
-    new Request("https://card.keepr.digital/v1/cards"),
-    mountedEnv,
-  );
+  const anonymous = await apiWorker.fetch(new Request("https://card.keepr.digital/v1/cards"), mountedEnv);
   expect(anonymous.status).toBe(404);
   await expect(anonymous.json()).resolves.toMatchObject({ code: "not_found" });
 
-  const mountedAnonymous = await apiWorker.fetch(
-    new Request("https://card.keepr.digital/api/v1/cards"),
-    mountedEnv,
-  );
+  const mountedAnonymous = await apiWorker.fetch(new Request("https://card.keepr.digital/api/v1/cards"), mountedEnv);
   expect(mountedAnonymous.status).toBe(401);
 });
 
@@ -77,15 +65,14 @@ test("the catalogue document links are absolute public URLs", async () => {
     data: { current_revision_id: string; current_export: string };
     links: Record<string, string>;
   }>();
-  expect(document.data.current_export).toBe(
-    `${publicBase}/v1/catalogue-exports/${document.data.current_revision_id}`,
-  );
+  expect(document.data.current_export).toBe(`${publicBase}/v1/catalogue-exports/${document.data.current_revision_id}`);
   expect(document.links).toEqual({
     self: `${publicBase}/v1/catalogue`,
     cards: `${publicBase}/v1/cards`,
     printings: `${publicBase}/v1/printings`,
     products: `${publicBase}/v1/products`,
     catalogue_exports: `${publicBase}/v1/catalogue-exports`,
+    games: `${publicBase}/v1/games`,
   });
 });
 
@@ -108,33 +95,29 @@ test("card collection pages carry absolute self links and mount-free cursors", a
   }>();
   expect(page.links.self).toBe(`${publicBase}/v1/cards?limit=1`);
   expect(page.data).toHaveLength(1);
-  expect(page.data[0]!.links.self).toBe(
-    `${publicBase}/v1/cards/${page.data[0]!.id}`,
-  );
+  expect(page.data[0]!.links.self).toBe(`${publicBase}/v1/cards/${page.data[0]!.id}`);
   expect(page.page.next_cursor).not.toBeNull();
   expect(decodeCursor(page.page.next_cursor!)).toMatchObject({
     route: "/v1/cards",
   });
 
-  const second = await mountedRequest(
-    `/api/v1/cards?limit=1&after=${encodeURIComponent(page.page.next_cursor!)}`,
-  );
+  const second = await mountedRequest(`/api/v1/cards?limit=1&after=${encodeURIComponent(page.page.next_cursor!)}`);
   expect(second.status).toBe(200);
   const next = await second.json<{
     data: { id: string }[];
     links: { self: string };
   }>();
   expect(next.data.map(({ id }) => id)).toEqual(["card_mount_b"]);
-  expect(next.links.self).toBe(
-    `${publicBase}/v1/cards?limit=1&after=${encodeURIComponent(page.page.next_cursor!)}`,
-  );
+  expect(next.links.self).toBe(`${publicBase}/v1/cards?limit=1&after=${encodeURIComponent(page.page.next_cursor!)}`);
 
   const stale = await mountedRequest(
     `/api/v1/cards?limit=1&after=${encodeURIComponent(
-      btoa(JSON.stringify({
-        ...decodeCursor(page.page.next_cursor!),
-        revision_id: "catrev_never_published",
-      })),
+      btoa(
+        JSON.stringify({
+          ...decodeCursor(page.page.next_cursor!),
+          revision_id: "catrev_never_published",
+        }),
+      ),
     )}`,
   );
   expect(stale.status).toBe(409);
@@ -148,13 +131,9 @@ test("card detail documents rewrite stored links to the public base", async () =
   await seedApiRevision({
     revisionId: "catrev_public_mount_detail",
     runId: "run_public_mount_detail",
-    cards: [
-      apiCard({ id: "card_mount_detail", cardNumber: "OP01-003", name: "Gamma" }),
-    ],
+    cards: [apiCard({ id: "card_mount_detail", cardNumber: "OP01-003", name: "Gamma" })],
   });
-  const response = await mountedRequest(
-    "/api/v1/cards/card_mount_detail?include=printings",
-  );
+  const response = await mountedRequest("/api/v1/cards/card_mount_detail?include=printings");
   expect(response.status).toBe(200);
   await expect(response.json()).resolves.toMatchObject({
     data: {
