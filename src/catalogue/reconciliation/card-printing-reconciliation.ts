@@ -1,4 +1,5 @@
 import { prepareNativeSourceHistory } from "./native-source-history";
+import { requiredSourceAdapter, type SourceAdapterRegistration } from "../adapters";
 import { sourceHistoryCandidateStatement, type SourceHistoryCandidate } from "./native-source-history-repository";
 import { correctionPinStatement } from "./identity-correction-repository";
 import { type CheckedCardScope } from "./scoped-disappearance";
@@ -491,14 +492,19 @@ export async function reconcileRetainedCardPrintingEvidence(
   const evidenceLineages = new Set<string>();
   const completeLineages = new Set<string>();
   const checkedCardScopes: CheckedCardScope[] = [];
-  const ownerReviewedPrintingLineages = new Set<string>();
+  const printingAdmissionPolicies = new Map<string, "owner_review" | "source_qualification" | "unqualified">();
+  const printingIdentityQualifications = new Map<string, SourceAdapterRegistration["qualifiesPrintingIdentity"]>();
   let errataOnlyEvidence = true;
   const evidencePlanSnapshot: unknown[] = [];
   for await (const plan of retained.evidencePlans) {
     evidencePlanSnapshot.push(plan);
     evidenceGames.add(plan.supportedGame);
     evidenceLineages.add(plan.sourceLineage);
-    if (plan.printingAdmission === "owner_review") ownerReviewedPrintingLineages.add(plan.sourceLineage);
+    printingAdmissionPolicies.set(plan.sourceLineage, plan.printingAdmission);
+    printingIdentityQualifications.set(
+      plan.sourceLineage,
+      requiredSourceAdapter(plan.adapterVersion).qualifiesPrintingIdentity,
+    );
     if ((plan.subset ?? "complete") === "complete") completeLineages.add(plan.sourceLineage);
     if (plan.reconciliationCapability !== "errata") {
       errataOnlyEvidence = false;
@@ -751,9 +757,8 @@ export async function reconcileRetainedCardPrintingEvidence(
             break observationUnit;
           }
           const admission = await assessSourceAdmission(database, runId, observation, observedAt, {
-            printingAdmission: ownerReviewedPrintingLineages.has(observation.sourceLineage)
-              ? "owner_review"
-              : "source_qualification",
+            qualifiesPrintingIdentity: printingIdentityQualifications.get(observation.sourceLineage),
+            printingAdmission: printingAdmissionPolicies.get(observation.sourceLineage) ?? "unqualified",
           });
           if (admission?.identityExceptionConflict) {
             await diagnostics.push({

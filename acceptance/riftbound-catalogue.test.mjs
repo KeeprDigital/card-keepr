@@ -26,7 +26,7 @@ import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs"
 
 // Actual retained HTTP bodies. External HTTP and Cloudflare control plane are
 // replayed locally; collection, parsing and all owner operations are shipped code.
-test("retained Riot catalogue: owner reviews, publishes and restores English inventory, Errata and Products", async (t) => {
+test("retained Riot catalogue: qualified intake, owner corrections, publication and restore", async (t) => {
   const startedAt = performance.now();
   const initialCpu = process.cpuUsage();
   const exportReader = nativeExportReader(250);
@@ -246,25 +246,12 @@ test("retained Riot catalogue: owner reviews, publishes and restores English inv
   const admittedPrintings = new Map();
   const admittedCards = new Map();
   const decisionPath = join(directory, "decision.json");
-  for (const [locator, evidenceText] of reviewed) {
+  for (const [locator] of reviewed) {
     const proposal = proposals.find((p) => JSON.parse(p.reference)[0] === locator);
     assert.ok(proposal, locator);
-    await writeFile(
-      decisionPath,
-      JSON.stringify({
-        expected_generation: "0",
-        idempotency_key: `review-${locator}`,
-        rationale: evidenceText,
-        exception: {
-          scope: ["identity"],
-          attestation: `Visual review of retained 2026-09-06 Riot image: ${evidenceText} Physical finish remains unknown.`,
-        },
-      }),
-    );
-    const admitted = resumePublicationId
-      ? await cli(["entity-proposal", "inspect", "--proposal-id", proposal.id])
-      : await cli(["entity-proposal", "admit", "--proposal-id", proposal.id, "--decision", decisionPath, "--yes"]);
+    const admitted = await cli(["entity-proposal", "inspect", "--proposal-id", proposal.id]);
     assert.equal(admitted.status, "admitted");
+    if (!resumeDirectory) assert.equal(admitted.history[0].actor, "automation");
     admittedPrintings.set(locator, admitted.history[0].decision.printing.id);
     admittedCards.set(admitted.history[0].decision.card.name, admitted.history[0].decision.card.id);
   }

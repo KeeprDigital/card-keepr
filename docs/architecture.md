@@ -65,8 +65,11 @@ Scryfall for Magic's card facts, Printing details and corrected card content;
 TCGdex for Pokémon's card facts and Printing details, with selected official
 Pokémon publications for corrected card content; and Riot for all three areas of
 Riftbound content. Register these choices for their exact applicable English and
-release-region scopes. These are accepted designations to implement, not a claim
-that deployed decisions have changed. Competing observations remain inspectable;
+release-region scopes. Riot's registered English/US scope now starts with these
+three designations; retained explicit owner decisions take precedence. Magic and
+Pokémon designations remain accepted direction for their later registrations.
+The initial policy selects areas per exact registered lineage, independently of
+publisher ownership. Competing observations remain inspectable;
 repeated claims across Sources do not establish independent corroboration or
 silently override the designated authority. Corrected wording does not by itself
 establish original Printed Rules Text or a dated publisher Erratum.
@@ -110,11 +113,17 @@ evidenced Cards and Printings from designated authorities after their adapters
 have demonstrated reliable identity handling. Ambiguous identities and new Cards
 or Printings evidenced only by supplementary Sources still require explicit owner
 admission. Qualification cannot invent physical distinctions or turn unknown
-properties into established facts. This deliberately changes the current Riot
-adapter's requirement for individual admission of every new Printing; authority
-designation alone does not remove that gate. Retain reusable prior owner decisions
-and the separate requirement to approve each whole Catalogue Candidate before
-publication. The changed admission behavior is not yet implemented.
+properties into established facts. Unqualified adapters require owner admission
+even when their lineage is authoritative; existing qualified parser contracts are
+explicitly selected. Riot now qualifies a numeric publisher Printing code only
+when its record locator, variant, set and collector number agree and retained
+front-image evidence supplies the physical proof. Other identities remain
+unresolved for explicit review. This preserves existing fingerprints and makes
+no finish, back or original printed-wording inference. A later image outage
+retains admitted identity and decisions with an explicit image gap. Owner
+exceptions, prior automatic decisions and category/profile equivalence survive
+refresh and recovery. Admission remains separate from approval of the whole
+Catalogue Candidate and publication.
 
 ## Runtime and storage boundaries
 

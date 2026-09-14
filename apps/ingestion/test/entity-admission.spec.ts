@@ -441,6 +441,24 @@ async function designateSupplemental() {
   }
 }
 const supplemental = { game: "one-piece", lineage: "limitless-one-piece-en", adapter: "fixture-one-piece-tabular@1" };
+test.each(["inspection-base", "card-without-printing"])(
+  "an authoritative lineage does not qualify a newly registered adapter: %s",
+  async (scenario) => {
+    const source = { game: "one-piece", lineage: "one-piece-en", adapter: "fixture-unqualified-one-piece-json@1" };
+    const result = await prepareAdmissionSource(
+      `/reconciliation/${scenario}`,
+      "unqualified-intake",
+      "catrev_spine_000",
+      source,
+    );
+    expect(result.records.cards ?? []).toEqual([]);
+    expect(result.records.printings ?? []).toEqual([]);
+    const proposals = await get("/v1/entity-proposals?game=one-piece");
+    expect(proposals.document.proposals).toEqual([
+      expect.objectContaining({ status: "unresolved", source_lineage: "one-piece-en" }),
+    ]);
+  },
+);
 test("permitted supplemental authority automatically admits through a retained proposal", async () => {
   await designateSupplemental();
   await prepareAdmissionSource("/reconciliation/canonical-tabular", "auto-admit", "catrev_spine_000", supplemental);
@@ -846,7 +864,8 @@ test.each([
     const initial = await assessSourceAdmission(db, run.id, observation, at, required);
     expect(initial?.policy.automatic).toBe(true);
     expect(initial?.permitted).toBe(false);
-    expect((await assessSourceAdmission(db, run.id, observation, at))?.permitted).toBe(true);
+    const qualified = { printingAdmission: "source_qualification" as const };
+    expect((await assessSourceAdmission(db, run.id, observation, at, qualified))?.permitted).toBe(true);
     const decision = {
       card: { ...parsed.observedCardAndPrinting.card, id: "reviewed-card" },
       printing: hasPrinting
@@ -871,7 +890,7 @@ test.each([
     const assessed = await assessSourceAdmission(db, run.id, observation, at, required);
     expect(assessed?.permitted).toBe(permitted);
     expect(assessed?.decision).toEqual(decision);
-    expect((await assessSourceAdmission(db, run.id, observation, at))?.permitted).toBe(true);
+    expect((await assessSourceAdmission(db, run.id, observation, at, qualified))?.permitted).toBe(true);
     const cardOnly = {
       ...observation,
       observedCardAndPrinting: { ...observation.observedCardAndPrinting, printing: null },

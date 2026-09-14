@@ -24,6 +24,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
   [
     {
       adapterVersion: "fixture-one-piece-erratum-target@1",
+      printingAdmission: "source_qualification" as const,
       sourceLineage: "one-piece-en",
       supportedGame: "one-piece",
       gameProfileVersion: "one-piece@1",
@@ -39,6 +40,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
     },
     {
       adapterVersion: "fixture-one-piece-refresh-errata@1",
+      printingAdmission: "source_qualification" as const,
       sourceLineage: "one-piece-en",
       supportedGame: "one-piece",
       gameProfileVersion: "one-piece@1",
@@ -54,6 +56,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
     },
     {
       adapterVersion: "fixture-one-piece-official-errata-json@1",
+      printingAdmission: "source_qualification" as const,
       sourceLineage: "one-piece-en",
       supportedGame: "one-piece",
       gameProfileVersion: "one-piece@1",
@@ -67,6 +70,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
     },
     {
       adapterVersion: "fixture-one-piece-tabular@1",
+      printingAdmission: "source_qualification" as const,
       sourceLineage: "limitless-one-piece-en",
       supportedGame: "one-piece",
       gameProfileVersion: "one-piece@1",
@@ -112,6 +116,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
     ...[
       {
         adapterVersion: "fixture-limitless-json@1",
+        printingAdmission: "source_qualification" as const,
         sourceLineage: "limitless-one-piece-en",
         supportedGame: "one-piece",
         gameProfileVersion: "one-piece@1",
@@ -119,6 +124,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
       },
       {
         adapterVersion: "fixture-one-piece-json@3",
+        printingAdmission: "source_qualification" as const,
         sourceLineage: "one-piece-en",
         supportedGame: "one-piece",
         gameProfileVersion: "one-piece@1",
@@ -126,6 +132,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
       },
       {
         adapterVersion: "fixture-one-piece-json-capped@1",
+        printingAdmission: "source_qualification" as const,
         sourceLineage: "one-piece-en",
         supportedGame: "one-piece",
         gameProfileVersion: "one-piece@1",
@@ -134,6 +141,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
       },
       {
         adapterVersion: "fixture-fusion-world-json@2",
+        printingAdmission: "source_qualification" as const,
         sourceLineage: "fusion-world-en",
         supportedGame: "fusion-world",
         gameProfileVersion: "fusion-world@1",
@@ -141,6 +149,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
       },
       {
         adapterVersion: "fixture-fusion-world-json-large@1",
+        printingAdmission: "source_qualification" as const,
         sourceLineage: "fusion-world-en",
         supportedGame: "fusion-world",
         gameProfileVersion: "fusion-world@1",
@@ -148,6 +157,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
       },
       {
         adapterVersion: "fixture-riftbound-json@1",
+        printingAdmission: "source_qualification" as const,
         sourceLineage: "riftbound-en",
         supportedGame: "riftbound",
         gameProfileVersion: "riftbound@1",
@@ -155,6 +165,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
       },
       {
         adapterVersion: "fixture-digimon-json@2",
+        printingAdmission: "source_qualification" as const,
         sourceLineage: "digimon-en",
         supportedGame: "digimon",
         gameProfileVersion: "digimon@1",
@@ -162,6 +173,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
       },
       {
         adapterVersion: "fixture-gundam-en-asia-json@2",
+        printingAdmission: "source_qualification" as const,
         sourceLineage: "gundam-en-asia",
         supportedGame: "gundam",
         gameProfileVersion: "gundam@1",
@@ -169,6 +181,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
       },
       {
         adapterVersion: "fixture-gundam-en-us-json@2",
+        printingAdmission: "source_qualification" as const,
         sourceLineage: "gundam-en-us",
         supportedGame: "gundam",
         gameProfileVersion: "gundam@1",
@@ -184,6 +197,20 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
       parse: parseCardSourceDocument,
     })),
     capacitySourceAdapter,
+    {
+      adapterVersion: "fixture-unqualified-one-piece-json@1",
+      sourceLineage: "one-piece-en",
+      supportedGame: "one-piece",
+      gameProfileVersion: "one-piece@1",
+      parserContract: "synthetic-unqualified-card-document@1",
+      maximumSnapshotBytes: 16 * 1024 * 1024,
+      origin: "production" as const,
+      requestSurface: { kind: "credential-free-https" as const },
+      reconciliationCapability: "catalogue" as const,
+      printingAdmission: undefined,
+      jsonRecordContainers: ["cards", "product_surfaces"],
+      parse: parseCardSourceDocument,
+    },
   ].map((adapter) =>
     Object.freeze({
       ...adapter,

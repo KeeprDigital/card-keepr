@@ -52,6 +52,10 @@ authority cannot silently fall back to another source. Optional availability
 outages can carry accepted facts forward with warnings; required capture failures,
 identity uncertainty and contradictory evidence still block the refresh.
 
+Riot starts with all three areas for its registered English/US scope. An existing
+explicit owner designation remains selected. Magic's Scryfall and Pokémon's
+TCGdex/official correction choices await their exact source registrations.
+
 `source show` reports coverage, request counts, successful check time and actual
 content capture time. A partial check never advances successful freshness. A
 complete named check can report a Printing no longer observed without deleting it.
@@ -130,6 +134,15 @@ Resolve with mutation idle, then retry the blocked collection. Decisions retain
 the exact semantic evidence and do not approve publication.
 
 ## Admit missing real entities
+
+Qualified, sufficiently evidenced authoritative observations can enter a candidate
+automatically. For Riot, matching publisher Printing code, locator, set and
+collector number plus retained front-image proof establish eligible intake;
+unknown finish, back and original printed wording remain unknown. An unqualified
+adapter, insufficient identity or supplementary-only discovery retains an Entity
+Proposal for explicit owner review. Existing admission decisions are reused after
+refresh and recovery, including when a new image request fails. Inspect those
+image gaps and all candidate exclusions before whole-candidate approval.
 
 ```sh
 keepr entity-proposal create --proposal proposal.json --yes --json
