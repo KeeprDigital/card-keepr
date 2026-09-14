@@ -12,6 +12,8 @@ import { installLegacyCurrentHead, restoreFixtureSpine } from "./query-helpers/a
 import { admitSyntheticCurrentCheckpoint, currentGameMembers } from "./query-helpers/atomic-publication";
 import { rejectedAtomicSwitch, publicationStateSnapshot } from "./query-helpers/atomic-publication";
 import { expect, test } from "vitest";
+import { assertHttpResponse } from "../../../test/support/http-contract";
+import contract from "../../../contracts/admin-openapi.json";
 import { collect, get, post, installReconciliationSuite, requiredString, testEnv } from "./reconciliation-helpers";
 
 installReconciliationSuite();
@@ -221,6 +223,13 @@ test.each(["contention", "backup-wait expiry"])("whole-candidate approval and %s
       { generation: 0 },
       { "x-keepr-test-now": String(second.deadline) },
     );
+    await assertHttpResponse(
+      contract,
+      "/v1/publications/{publication}/advance",
+      "post",
+      expired.response,
+      expired.document,
+    );
     expect(expired.document).toMatchObject({
       state: "failed",
       failure_code: "publication_deadline_expired",
@@ -249,6 +258,14 @@ test.each(["contention", "backup-wait expiry"])("whole-candidate approval and %s
     generation: 0,
     idempotency_key: "resume-exact-approval",
   });
+  expect(resumed.response.status).toBe(202);
+  await assertHttpResponse(
+    contract,
+    "/v1/publications/{publication}/resume",
+    "post",
+    resumed.response,
+    resumed.document,
+  );
   expect(resumed.document).toMatchObject({
     generation: 1,
     deadline: second.deadline,

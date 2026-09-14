@@ -67,7 +67,22 @@ on production before selected code executes; deployment preparation and outcomes
 run only on staging. These platform endpoints authenticate the signed manual
 workflow separately from owner-key administration.
 
-## Asynchronous publication pilot
+## Publication preparation and execution
+
+[#319](https://github.com/KeeprDigital/card-keepr/issues/319) registers all 13
+publication-family operations, including the pilot's two operations and every
+script-only preparation, composition and export-advance operation. All remain
+available; none are consolidated or retired. The maintained family inventory
+accounts for their ownership and CLI callers.
+
+Artifact start/resume returns 202 with an immutable
+`card-keepr-publication-preparation-acceptance@1` receipt derived from the retained
+action, an absolute `links.status`, `Location`, `Retry-After: 2` and no-store.
+Replay preserves its original checkpoint and deadline even after the artifact
+state changes or dispatch fails. GET preparation status observes that current
+state. The unsuffixed preparation POST commits one bounded unit and returns 200.
+Query/artifact reads and composition preparation preserve their bounded private
+representations; they cannot select the published composition.
 
 POST `/v1/publications/start` takes canonical JSON integer `generation`, retains
 whole-candidate approval and dispatches its existing Workflow. It returns 202 with
@@ -84,6 +99,16 @@ failed publication exits 8; published exits 0 and still requires separate backup
 inspection. Target resolution, confirmation and canonical release dispatch bytes
 remain server-owned. Unmigrated families retain their documented outcome semantics.
 There is no server-negotiated CLI representation.
+
+Preparation acceptance and pending/paused status also exit 10; failed preparation
+exits 8 and verified artifacts exit 0. Generation and sequence are JSON integers;
+the CLI converts decimal options once. Publication resume returns the immutable
+202 acceptance for its next generation and the same original candidate deadline.
+Approval-only POST retains its original approval without dispatch. Publication
+advance returns its current status; export advance declares its waiting, terminal
+and committed-checkpoint responses separately. Only committed export units bind
+immutable replay; waiting replies observe current guards. Domain and retained
+document validation stay independent of these wire schemas.
 
 ## Source and collection migration
 

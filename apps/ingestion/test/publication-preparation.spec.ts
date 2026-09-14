@@ -1,5 +1,7 @@
 import worker from "../src/index";
 import { expect, test } from "vitest";
+import { assertHttpResponse } from "../../../test/support/http-contract";
+import contract from "../../../contracts/admin-openapi.json";
 import { collect, get, post, installReconciliationSuite, requiredString, testEnv } from "./reconciliation-helpers";
 
 installReconciliationSuite();
@@ -57,6 +59,26 @@ test("an owner prepares immutable game artifacts in bounded steps and replays a 
   expect(stages).toEqual(new Set(["images", "exports", "projections", "composition"]));
   expect((await get(path)).document).toEqual(status);
   expect((await get(`/v1/game-candidates/${candidate.id}`)).document).toEqual(candidate);
+  for (const suffix of ["/artifacts", "/query?kind=cards&q=Monkey"]) {
+    const shown = await get(`${path}${suffix}`);
+    expect(shown.response.status).toBe(200);
+    await assertHttpResponse(
+      contract,
+      `/v1/game-candidates/{candidate}/publication-preparation${suffix.split("?")[0]}`,
+      "get",
+      shown.response,
+      shown.document,
+    );
+  }
+  const composition = await post("/v1/publication-compositions", { candidate_ids: [candidate.id] });
+  expect(composition.response.status).toBe(200);
+  await assertHttpResponse(
+    contract,
+    "/v1/publication-compositions",
+    "post",
+    composition.response,
+    composition.document,
+  );
 });
 
 test("one owner start drives durable publication preparation to verification independently of the request", async () => {
@@ -70,6 +92,19 @@ test("one owner start drives durable publication preparation to verification ind
   };
   const start = await post(`${path}/start`, intent);
   expect(start.response.status, JSON.stringify(start.document)).toBe(202);
+  expect(start.document).toMatchObject({
+    contract: "card-keepr-publication-preparation-acceptance@1",
+    candidate_id: candidate.id,
+    sequence: 1,
+    deadline: candidate.deadline,
+  });
+  await assertHttpResponse(
+    contract,
+    "/v1/game-candidates/{candidate}/publication-preparation/start",
+    "post",
+    start.response,
+    start.document,
+  );
   let status = (await get(path)).document;
   const until = Date.now() + 15000;
   while (status.state === "preparing" && Date.now() < until) {
@@ -77,7 +112,18 @@ test("one owner start drives durable publication preparation to verification ind
     status = (await get(path)).document;
   }
   expect(status, JSON.stringify(status)).toMatchObject({ state: "verified", deadline: candidate.deadline });
-  expect((await post(`${path}/start`, intent)).response.status).toBe(202);
+  const replay = await post(`${path}/start`, intent);
+  expect(replay.response.status).toBe(202);
+  expect(replay.document).toEqual(start.document);
+  expect(replay.response.headers.get("location")).toBe(start.response.headers.get("location"));
+  const current = await get(path);
+  await assertHttpResponse(
+    contract,
+    "/v1/game-candidates/{candidate}/publication-preparation",
+    "get",
+    current.response,
+    current.document,
+  );
 });
 
 async function advanceWith(env: Env, path: string, input: Record<string, unknown>) {
@@ -547,6 +593,13 @@ test("initial Workflow dispatch exhaustion is retained and resumes from the same
   };
   const result = await advanceWith({ ...testEnv, RECONCILIATION_WORKFLOW: workflow }, `${path}/start`, intent);
   expect(result.response.status, JSON.stringify(result.document)).toBe(202);
+  await assertHttpResponse(
+    contract,
+    "/v1/game-candidates/{candidate}/publication-preparation/start",
+    "post",
+    result.response,
+    result.document,
+  );
   expect(attempts).toBe(3);
   const status = (await get(path)).document;
   expect(status).toMatchObject({
@@ -560,6 +613,13 @@ test("initial Workflow dispatch exhaustion is retained and resumes from the same
     idempotency_key: "dispatch-recovered",
   });
   expect(resumed.response.status).toBe(202);
+  await assertHttpResponse(
+    contract,
+    "/v1/game-candidates/{candidate}/publication-preparation/resume",
+    "post",
+    resumed.response,
+    resumed.document,
+  );
   let complete = (await get(path)).document;
   const deadline = Date.now() + 15000;
   while (complete.state === "preparing" && Date.now() < deadline) {
@@ -567,6 +627,12 @@ test("initial Workflow dispatch exhaustion is retained and resumes from the same
     complete = (await get(path)).document;
   }
   expect(complete, JSON.stringify(complete)).toMatchObject({ state: "verified", deadline: candidate.deadline });
+  const replay = await post(`${path}/resume`, {
+    ...intent,
+    sequence: status.sequence,
+    idempotency_key: "dispatch-recovered",
+  });
+  expect(replay.document).toEqual(resumed.document);
 });
 
 test.each(["projections", "composition"])("%s rejects corrupted staged bytes without replacing them", async (phase) => {

@@ -6,6 +6,8 @@ import { catalogueStore } from "../../../src/catalogue/shared";
 import { verifyCompositionArtifacts } from "../../../src/catalogue/backup-recovery/composition-artifacts";
 import { retainedPublicComponent } from "./query-helpers/public-export-recovery";
 import { expect, test } from "vitest";
+import { assertHttpResponse } from "../../../test/support/http-contract";
+import contract from "../../../contracts/admin-openapi.json";
 import { collect, get, post, installReconciliationSuite, requiredString, testEnv } from "./reconciliation-helpers";
 
 installReconciliationSuite();
@@ -36,6 +38,7 @@ test("native backup consumes its reservation and rejects legacy-only simulated r
   };
   const approved = await post("/v1/publications", intent);
   expect(approved.response.status, JSON.stringify(approved.document)).toBe(202);
+  await assertHttpResponse(contract, "/v1/publications", "post", approved.response, approved.document);
   expect(approved.document).toMatchObject({
     candidate_id: id,
     deadline: candidate.deadline,
@@ -73,6 +76,18 @@ test("native backup consumes its reservation and rejects legacy-only simulated r
       idempotency_key: `recovery-public-${unit}`,
     });
     expect(prepared.response.status, JSON.stringify(prepared.document)).toBe(200);
+    await assertHttpResponse(
+      contract,
+      "/v1/publications/{publication}/export-preparation/advance",
+      "post",
+      prepared.response,
+      prepared.document,
+    );
+    const replay = await post(`/v1/publications/${approved.document.id}/export-preparation/advance`, {
+      generation: 0,
+      idempotency_key: `recovery-public-${unit}`,
+    });
+    expect(replay.document).toEqual(prepared.document);
     if (prepared.document.state !== "preparing") {
       expect(prepared.document.state).toBe("verified");
       break;
@@ -80,6 +95,13 @@ test("native backup consumes its reservation and rejects legacy-only simulated r
   }
   const switched = await post(`/v1/publications/${approved.document.id}/advance`, { generation: 0 });
   expect(switched.response.status, JSON.stringify(switched.document)).toBe(200);
+  await assertHttpResponse(
+    contract,
+    "/v1/publications/{publication}/advance",
+    "post",
+    switched.response,
+    switched.document,
+  );
   expect(switched.document).toMatchObject({
     state: "published",
     deadline: candidate.deadline,

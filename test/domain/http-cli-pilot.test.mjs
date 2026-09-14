@@ -4,6 +4,11 @@ import { administrationPresentation } from "../../src/http/administration-presen
 test("CLI distinguishes immutable acceptance, pending, paused, failed and published outcomes", () => {
   for (const [contract, state, expected] of [
     ["card-keepr-publication-acceptance@1", "approved", 10],
+    ["card-keepr-publication-preparation-acceptance@1", "preparing", 10],
+    ["card-keepr-publication-preparation@1", "preparing", 10],
+    ["card-keepr-publication-preparation@1", "retry_paused", 10],
+    ["card-keepr-publication-preparation@1", "failed", 8],
+    ["card-keepr-publication-preparation@1", "verified", 0],
     ["card-keepr-game-publication@1", "waiting_artifacts", 10],
     ["card-keepr-game-publication@1", "retry_paused", 10],
     ["card-keepr-game-publication@1", "failed", 8],
