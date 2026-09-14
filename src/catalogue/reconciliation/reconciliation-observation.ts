@@ -1,4 +1,5 @@
 import type { VerifiedPrintingImage } from "./reconciliation-images";
+import { parseCardRelationships, type ObservedCardRelationship } from "./card-relationships";
 import { createHash } from "node:crypto";
 import {
   type CatalogueCard,
@@ -7,6 +8,7 @@ import {
   type SupportedGame,
   canonicalJson,
   canonicalProfileAttributes,
+  gameProfileCardClassification,
   requiredProfileContract,
   sourceFieldWarning,
   type ProfileWarning,
@@ -61,6 +63,7 @@ export type ParsedCardPrintingObservation = Readonly<{
   productReleaseValue: unknown;
   sourceWarnings: readonly ReconciliationWarning[];
   errata: readonly ParsedRulesTextErratum[];
+  cardRelationships: readonly ObservedCardRelationship[];
 }>;
 
 export type ParsedOfficialErratumObservation = Readonly<{
@@ -96,6 +99,7 @@ export type Withdrawal = Readonly<{
 }>;
 
 const rootFields = new Set([
+  "card_relationships",
   "card",
   "printing",
   "identity_evidence",
@@ -108,8 +112,17 @@ const rootFields = new Set([
   "errata",
   "legality_rules",
 ]);
-const cardFields = new Set(["game", "official_identity", "name", "effective_rules_text", "game_data"]);
-const printingFields = new Set(["rarity", "printed_rules_text", "game_data"]);
+const cardFields = new Set([
+  "category",
+  "gameplay_applicability",
+  "related_cards",
+  "game",
+  "official_identity",
+  "name",
+  "effective_rules_text",
+  "game_data",
+]);
+const printingFields = new Set(["gameplay_applicability", "rarity", "printed_rules_text", "game_data"]);
 const gameDataFields = new Set(["profile", "attributes"]);
 const identityFields = new Set(["kind", "value"]);
 const rarityFields = new Set(["raw", "normalized"]);
@@ -201,9 +214,15 @@ export function parseReconciliationObservation(
       productReleaseValue: record.product_release_catalogue,
       sourceWarnings: sortedWarnings(warnings),
       errata: [],
+      cardRelationships: [],
     };
   }
   const rawCard = requiredRecord(record.card, "card");
+  if (
+    rawCard.related_cards !== undefined &&
+    (!Array.isArray(rawCard.related_cards) || rawCard.related_cards.length !== 0)
+  )
+    throw new Error("Source Card relationships require exact Printing locator evidence in card_relationships.");
   const gameData = requiredRecord(rawCard.game_data, "card.game_data");
   const profile = requiredString(gameData.profile, "card.game_data.profile");
   const contract = requiredProfileContract(profile);
@@ -225,16 +244,27 @@ export function parseReconciliationObservation(
   inspectSourceSidecar(sourceObservationId, profile, record.source_sidecar, warnings);
   detectUnknownFields(sourceObservationId, profile, rawCard, cardFields, "card", warnings);
   const rawCardAttributes = requiredRecord(gameData.attributes, "card.game_data.attributes");
+  const classification = gameProfileCardClassification(profile, rawCardAttributes, rawCard.category);
+  if (
+    rawCard.gameplay_applicability !== undefined &&
+    rawCard.gameplay_applicability !== classification.gameplay_applicability
+  )
+    throw new Error("Card gameplay applicability conflicts with its category.");
+  if (classification.category === "art" && rawCard.effective_rules_text !== null)
+    throw new Error("Art Card rules text is inapplicable.");
   const canonicalCardAttributes = canonicalProfileAttributes(
     sourceObservationId,
     profile,
     "card",
     rawCardAttributes,
     warnings,
+    classification.category,
   );
   const identity = parseOfficialIdentity(rawCard.official_identity, contract.game);
   const card: Omit<CatalogueCard, "id"> = {
     game: contract.game,
+    ...classification,
+    related_cards: [],
     official_identity: identity,
     name: requiredString(rawCard.name, "card.name"),
     effective_rules_text: nullableString(rawCard.effective_rules_text, "card.effective_rules_text"),
@@ -251,6 +281,8 @@ export function parseReconciliationObservation(
     throw new Error("The One Piece card_type don requires functional DON!! identity.");
   }
   if (record.printing === undefined) {
+    if (parseCardRelationships(record.card_relationships).length)
+      throw new Error("Card relationships require an issued Printing.");
     return {
       kind: "card_printing",
       sourceObservationId,
@@ -269,10 +301,18 @@ export function parseReconciliationObservation(
       productReleaseValue: record.product_release_catalogue,
       sourceWarnings: sortedWarnings(warnings),
       errata: parseRulesTextErrata(record.errata),
+      cardRelationships: [],
     };
   }
 
   const rawPrinting = requiredRecord(record.printing, "printing");
+  if (classification.category === "art" && rawPrinting.printed_rules_text !== null)
+    throw new Error("Art Printing rules text is inapplicable.");
+  if (
+    rawPrinting.gameplay_applicability !== undefined &&
+    rawPrinting.gameplay_applicability !== classification.gameplay_applicability
+  )
+    throw new Error("Printing gameplay applicability conflicts with its Card.");
   detectUnknownFields(sourceObservationId, profile, rawPrinting, printingFields, "printing", warnings);
   const rarity = requiredRecord(rawPrinting.rarity, "printing.rarity");
   const printingGameData = requiredRecord(rawPrinting.game_data, "printing.game_data");
@@ -290,6 +330,7 @@ export function parseReconciliationObservation(
     warnings,
   );
   const printing: Omit<CataloguePrinting, "id" | "card_id"> = {
+    gameplay_applicability: classification.gameplay_applicability,
     rarity: {
       raw: nullableString(rarity.raw, "printing.rarity.raw"),
       normalized: nullableString(rarity.normalized, "printing.rarity.normalized"),
@@ -341,6 +382,7 @@ export function parseReconciliationObservation(
     productReleaseValue: record.product_release_catalogue,
     sourceWarnings: sortedWarnings(warnings),
     errata: parseRulesTextErrata(record.errata),
+    cardRelationships: parseCardRelationships(record.card_relationships),
   };
 }
 

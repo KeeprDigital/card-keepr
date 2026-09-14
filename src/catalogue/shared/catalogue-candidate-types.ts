@@ -12,6 +12,19 @@ export const catalogueCandidateContract = "card-keepr-catalogue-candidate@1" as 
 
 export type SupportedGame = "one-piece" | "fusion-world" | "digimon" | "gundam" | "riftbound";
 
+export type CardCategory = "gameplay" | "token" | "art";
+export type CardRelationship = {
+  kind: "shared_artwork";
+  card_id: string;
+  evidence: readonly {
+    source_observation_id: string;
+    printing_id: string;
+    related_printing_id: string;
+    related_source_observation_id: string;
+    artwork_fingerprint: string;
+  }[];
+};
+
 export type CatalogueCandidate = {
   contract: typeof catalogueCandidateContract;
   selected_games: readonly SupportedGame[];
@@ -44,6 +57,9 @@ export type CatalogueSourceCheck = {
 export type CatalogueCard = CuratedProvenanceBearing & {
   id: string;
   game: SupportedGame;
+  category: CardCategory;
+  gameplay_applicability: "applicable" | "inapplicable";
+  related_cards: readonly CardRelationship[];
   official_identity:
     | { kind: "unknown"; value: null }
     | { kind: "publisher_name"; value: string }
@@ -66,6 +82,7 @@ export type CatalogueCard = CuratedProvenanceBearing & {
 export type CataloguePrinting = CuratedProvenanceBearing & {
   id: string;
   card_id: string;
+  gameplay_applicability: CatalogueCard["gameplay_applicability"];
   /** Private, manifest-bound source identities retained across native refreshes. */
   locator_evidence?: readonly {
     source_lineage: string;
@@ -138,13 +155,7 @@ export type ProductEvidenceResource = {
 };
 
 export type ProductAuthorityClass =
-  | "product_detail"
-  | "release_schedule"
-  | "product_listing"
-  | "card_detail"
-  | "card_listing"
-  | "policy"
-  | "unknown";
+  "product_detail" | "release_schedule" | "product_listing" | "card_detail" | "card_listing" | "policy" | "unknown";
 
 export type ProductDisagreement = {
   path: string;

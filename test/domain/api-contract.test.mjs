@@ -108,6 +108,9 @@ test("Card browsing documents and validates collection, detail, and problem repr
     type: "card",
     id: "card_test",
     game: "one-piece",
+    category: "gameplay",
+    gameplay_applicability: "applicable",
+    related_cards: [],
     official_identity: { kind: "card_number", value: "OP01-001" },
     name: "Test Card",
     game_data: {

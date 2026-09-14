@@ -27,7 +27,7 @@ export async function seedNativeExportReadFacts(
   await db.batch([
     db
       .prepare(
-        `INSERT INTO reconciliation_operations(id,ingestion_run_id,supported_game,expected_game_revision_id,state,created_at,deadline,definition_pins_json,observation_cutoff,identity_decision_cutoff,authority_decision_cutoff) VALUES (?,?,'gundam','catrev_spine_000','sealed',?,?,'{}',0,0,0)`,
+        `INSERT INTO reconciliation_operations(id,ingestion_run_id,supported_game,expected_game_revision_id,state,created_at,deadline,definition_pins_json,observation_cutoff,identity_decision_cutoff,authority_decision_cutoff) VALUES (?,?,'gundam','catrev_spine_000','sealed',?,?,'{"card_model":"categories"}',0,0,0)`,
       )
       .bind(preparation, input.runId, input.publishedAt, input.publishedAt),
     db

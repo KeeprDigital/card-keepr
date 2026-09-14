@@ -1,13 +1,16 @@
 import { admissionPolicyDigest } from "./entity-admission-source";
+import { cardAllocationIdentity } from "./canonical-identity";
 import { parseReconciliationObservation } from "./reconciliation-observation";
 import {
   AdministrationProblem,
   type CatalogueStore,
+  type CatalogueCard,
   type CataloguePrinting,
   canonicalProfileAttributes,
   type ProfileWarning,
   sourceFieldWarning,
   canonicalJson,
+  derivedCardModel,
 } from "../shared";
 import { sourceLineages } from "../adapters";
 import {
@@ -258,6 +261,7 @@ async function validateAdmission(
         proposal.id,
         rawPrinting,
         parsed.observedCardAndPrinting.card.game_data.profile,
+        parsed.observedCardAndPrinting.card.gameplay_applicability,
         printingWarnings,
       );
       parsed = { ...parsed, observedCardAndPrinting: { ...parsed.observedCardAndPrinting, printing } };
@@ -279,11 +283,16 @@ async function validateAdmission(
   const previousRow = await latestAcceptedAdmissionStatement(database, proposal.id).first<AdmissionDecisionRow>();
   const previous = previousRow
     ? (JSON.parse(previousRow.decision_json) as {
-        card: { id: string; official_identity: unknown };
+        card: CatalogueCard;
         printing: { id: string } | null;
       })
     : null;
-  if (previous && canonicalJson(previous.card.official_identity) !== canonicalJson(card!.official_identity))
+  if (
+    previous &&
+    (derivedCardModel(previous.card).category !== card!.category ||
+      previous.card.game_data.profile !== card!.game_data.profile ||
+      canonicalJson(previous.card.official_identity) !== canonicalJson(card!.official_identity))
+  )
     throw new AdministrationProblem(
       422,
       "admission_identity_correction_required",
@@ -291,7 +300,12 @@ async function validateAdmission(
     );
   if (card!.official_identity.kind !== "unknown" && input.action === "admit" && !input.card_id && !previous) {
     const matches = (
-      await admissionCardIdentityStatement(database, proposal.game, canonicalJson(card!.official_identity)).all<{
+      await admissionCardIdentityStatement(
+        database,
+        proposal.game,
+        canonicalJson(card!.official_identity),
+        card!.category,
+      ).all<{
         id: string;
       }>()
     ).results;
@@ -351,6 +365,8 @@ async function validateAdmission(
     const target = document.data ?? document;
     if (
       target.game !== proposal.game ||
+      derivedCardModel(target).category !== card!.category ||
+      target.game_data?.profile !== card!.game_data.profile ||
       (card!.official_identity.kind !== "unknown" &&
         canonicalJson(target.official_identity) !== canonicalJson(card!.official_identity))
     )
@@ -380,7 +396,9 @@ async function validateAdmission(
       id: cardId,
       key: canonicalJson([
         "card",
-        card!.official_identity.kind === "unknown" ? ["owner", proposal.id] : [card!.game, card!.official_identity],
+        card!.official_identity.kind === "unknown"
+          ? ["owner", proposal.id]
+          : await cardAllocationIdentity(database, card!),
       ]),
     });
   if (decision.printing && !printingId)
@@ -399,6 +417,7 @@ function validatePrinting(
   id: string,
   value: unknown,
   profile: string,
+  applicability: CataloguePrinting["gameplay_applicability"],
   warnings: ProfileWarning[],
 ): Omit<CataloguePrinting, "id" | "card_id"> {
   if (
@@ -410,7 +429,7 @@ function validatePrinting(
   )
     throw new Error("Printing requires rarity and the Card's Game Profile structure.");
   for (const [object, known, path] of [
-    [value, ["rarity", "printed_rules_text", "game_data"], "printing"],
+    [value, ["gameplay_applicability", "rarity", "printed_rules_text", "game_data"], "printing"],
     [value.rarity, ["raw", "normalized"], "printing.rarity"],
     [value.game_data, ["profile", "attributes"], "printing.game_data"],
   ] as const) {
@@ -422,7 +441,12 @@ function validatePrinting(
     if (value === null || typeof value === "string") return value;
     throw new Error("Printing text and rarity must be strings or explicit unknown nulls.");
   };
+  if (applicability === "inapplicable" && value.printed_rules_text !== null)
+    throw new Error("Art Printing rules text is inapplicable.");
+  if (value.gameplay_applicability !== undefined && value.gameplay_applicability !== applicability)
+    throw new Error("Printing gameplay applicability conflicts with its Card.");
   return {
+    gameplay_applicability: applicability,
     rarity: { raw: nullableText(value.rarity.raw), normalized: nullableText(value.rarity.normalized) },
     printed_rules_text: nullableText(value.printed_rules_text),
     game_data: {

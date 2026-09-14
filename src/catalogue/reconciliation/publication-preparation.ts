@@ -1,4 +1,5 @@
 import { trackedStagingBucket } from "../shared";
+import { assertCurrentCardModel } from "./card-model-definition";
 import { publicExportPreparationStatement } from "./game-publication-repository";
 import { publicationRecord, type PublicationEnvelope } from "./publication-record";
 import { preparePublicLifecycle } from "./publication-lifecycle";
@@ -119,6 +120,7 @@ export async function advancePublicationPreparation(
     .publicationPreparationActionStatement(db, input.idempotency_key)
     .first<{ request_json: string; result_json: string }>();
   if (replay) return replayResult(replay, request);
+  await assertCurrentCardModel(db, id);
   const [candidates, preparations] = await db.batch([
     gameCandidateStatement(db, id),
     repository.publicationPreparationStatement(db, id),
@@ -729,6 +731,7 @@ export async function composePublicationArtifacts(env: Environment, ids: unknown
 
 /** Reservations survive Workflow replay; each is charged a full 100-call callback allowance. */
 export async function reservePublicationWork(db: CatalogueStore, id: string, first: number) {
+  await assertCurrentCardModel(db, id);
   return Boolean(await repository.reservePublicationWorkflowAttempt(db, id, first).first());
 }
 export async function pausePublicationWorkflow(

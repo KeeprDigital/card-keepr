@@ -8,7 +8,7 @@ import {
   operationalDiagnostics,
 } from "../shared";
 
-import { parseCandidate } from "./candidate-codec";
+import { candidateGamesForInspection } from "./candidate-codec";
 import {
   type ApproveRunRequest,
   type PublicationCleanupRow,
@@ -179,10 +179,8 @@ export function publicRun(row: RunRow, cleanup: PublicationCleanupRow | null = n
   const progress = parseProgress(row.progress_json);
   const approval = row.approval_json === null ? null : parseApproval(row.approval_json);
   const approvalHistory = parseApprovalHistory(row.approval_history_json);
-  if (
-    row.candidate_digest !== null &&
-    !selectedGames.every((game) => parseCandidate(row).selected_games.includes(game))
-  ) {
+  const candidateGames = row.candidate_digest === null ? null : candidateGamesForInspection(row);
+  if (candidateGames !== null && !selectedGames.every((game) => candidateGames.includes(game))) {
     throw new Error("The persisted Ingestion Run document is inconsistent.");
   }
   const document = decodePublicRunDocument({

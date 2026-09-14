@@ -17,6 +17,40 @@ to judge source provenance. This is the scope of former ADRs 0013–0014;
 and [card-content scope](https://github.com/KeeprDigital/card-keepr/issues/214#issuecomment-5558719187)
 record the reasons.
 
+The accepted scope includes gameplay and collectible Cards across Supported
+Games, including tokens and art cards. Advertising and incidental pack inserts
+remain outside scope. This expands the former rules-level-only meaning of Card;
+market value does not determine admission. Non-gameplay Cards must be
+representable without invented gameplay properties, and non-applicable properties
+must be distinguishable from missing evidence. The shared Game Profiles represent
+categories and gameplay applicability; each source's declared coverage still
+needs its own evidence.
+
+The accepted first private release scope includes completed Riftbound, Magic:
+The Gathering and Pokémon support alongside the existing game scope, plus the
+Hono and generated OpenAPI direction below. Magic and Pokémon are required for
+that release. This is accepted scope, not a claim of implemented adapters or
+verified coverage; each game's declared Source Coverage still requires its own
+publication and recovery evidence.
+[Expansion specification](https://github.com/KeeprDigital/card-keepr/issues/312).
+
+Coverage should expand through multiple Sources and reconciliation. A complete
+check of every selected Source does not establish that every real Card or
+Printing is known; some games have no exhaustively knowable catalogue. Preserve
+declared scope, known gaps and unresolved conflicts while pursuing the widest
+supported coverage. Each game has an explicitly agreed, fixed set of Sources
+for the first release. Additional Sources can be added later without making an
+unbounded search for sources part of launch completion.
+
+Magic's agreed launch Source is Scryfall alone; its breadth does not establish
+exhaustive real-world coverage or change its status as an independent Source.
+Pokémon's agreed launch Sources are TCGdex and selected official Pokémon card,
+Product and correction publications. Riftbound's agreed set combines existing
+Riot evidence with Piltover Archive, Riftbound DB and HexDeck, prioritizing
+complementary promotional Printings since no one catalogue is assumed to contain
+every promo. Each selected publication surface needs declared coverage; selecting
+these Sources does not itself designate Source Authority.
+
 Publisher ownership, transport permission and Source Authority are independent.
 The owner designates authority by game, locale, region and content area; a newly
 available publisher source does not silently replace that choice. Every adapter
@@ -25,6 +59,17 @@ source values and actionable warnings; required structure, identity and evidence
 integrity fail closed. This supports games with incomplete official coverage
 without inventing publisher confirmation.
 [Source authority decision](https://github.com/KeeprDigital/card-keepr/issues/209).
+
+The accepted initial Source Authority designations for the expanded games are
+Scryfall for Magic's card facts, Printing details and corrected card content;
+TCGdex for Pokémon's card facts and Printing details, with selected official
+Pokémon publications for corrected card content; and Riot for all three areas of
+Riftbound content. Register these choices for their exact applicable English and
+release-region scopes. These are accepted designations to implement, not a claim
+that deployed decisions have changed. Competing observations remain inspectable;
+repeated claims across Sources do not establish independent corroboration or
+silently override the designated authority. Corrected wording does not by itself
+establish original Printed Rules Text or a dated publisher Erratum.
 
 Coverage and freshness describe the declared Source scope. Selective refresh
 carries forward unaffected facts with their actual evidence dates. A required
@@ -43,12 +88,33 @@ ambiguous replacement sets; a split never chooses which replacement represents a
 consumer-owned copy.
 [Identity decision](https://github.com/KeeprDigital/card-keepr/issues/210#issuecomment-5556048893).
 
+An art Card and a gameplay Card remain separate Cards even when they depict the
+same illustration. Expose their relationship when evidence establishes it,
+without merging identities. Publisher-issued foil or stamped versions of an art
+Card are distinct Printings of that art Card under the ordinary treatment rules.
+Identity comparison must respect the applicable Card kind and Game Profile.
+A shared-artwork relationship binds the particular issued Printings and retained
+observations that establish the association. It does not assert that every
+Printing shares an illustration. Self-reference, missing targets and unresolved
+Printing associations block the candidate.
+
 Unresolved intake remains an Entity Proposal outside published data. Source rules
 can admit sufficiently established real entities; the owner can record explicit
 exceptions with evidence, but cannot waive required Game Profile structure or a
 Printing's identified Card. Curated Revisions correct existing facts. Admission,
 identity resolution and correction decisions do not publish a candidate.
 [Admission decision](https://github.com/KeeprDigital/card-keepr/issues/211#issuecomment-5556519627).
+
+The accepted admission direction automatically admits unambiguous, sufficiently
+evidenced Cards and Printings from designated authorities after their adapters
+have demonstrated reliable identity handling. Ambiguous identities and new Cards
+or Printings evidenced only by supplementary Sources still require explicit owner
+admission. Qualification cannot invent physical distinctions or turn unknown
+properties into established facts. This deliberately changes the current Riot
+adapter's requirement for individual admission of every new Printing; authority
+designation alone does not remove that gate. Retain reusable prior owner decisions
+and the separate requirement to approve each whole Catalogue Candidate before
+publication. The changed admission behavior is not yet implemented.
 
 ## Runtime and storage boundaries
 
@@ -69,6 +135,41 @@ private R2 retains exact source bytes, partitioned artifacts, images and backups
 An R2 object alone proves neither publication nor recovery. D1 receipts and
 verified reference closure must agree with its bytes. Reconciliation uses
 retained evidence rather than silently fetching a changed source.
+
+## HTTP interface direction
+
+The accepted direction is Hono for maintainable HTTP routing and middleware in
+both Workers. Separate generated OpenAPI specifications cover the complete
+catalogue-read and administration HTTP interfaces, using the authoritative route
+and schema definitions used by the implementation. Automated checks must keep
+the contracts aligned as routes evolve. Hosting the current separately maintained
+specification alone does not complete this direction. The
+[Hono pilot](../contracts/HTTP.md) now routes both Workers through Hono and uses
+its Zod OpenAPI integration for Card search, Printing Image content and
+asynchronous publication route and wire-schema definitions. Generated contracts
+cover those migrated operations and explicitly inventory the remaining families.
+Complete interface migration and documentation hosting remain accepted direction;
+retained-document validation and domain transitions stay independent of Zod.
+
+There are no current Catalogue Consumers to constrain this pre-Go-Live HTTP
+redesign. Routes, wire formats and interface structure may change where there
+is a concrete benefit; preserving existing HTTP compatibility is not a goal.
+Update the repository CLI, operational callers and contract checks together with
+the adopted interfaces. This freedom concerns HTTP contracts; retained evidence,
+canonical identity and recovery remain governed by their existing policies.
+
+The specification initially supports the owner's applications. Future use beyond
+those applications is intended, while the first release remains private and
+single-owner. Catalogue OpenAPI and its documentation will be publicly readable;
+catalogue data requests remain authenticated and administration documentation
+stays protected. Documentation readership and later external API access are
+separate decisions; neither changes the current Catalogue Consumer definition
+implicitly.
+
+Unfiltered catalogue browsing includes gameplay and collectible Cards. Responses
+identify their category, and applications can filter for the relevant categories,
+including tokens and art cards. Exports and generated contracts carry the same
+distinctions; collectible Cards do not require a special opt-in to be visible.
 
 ## Per-game publication and recovery
 
@@ -108,6 +209,27 @@ identifier suffixes. Regenerate incompatible derived data. Guarded forward
 migrations update populated databases; fold them into the baseline when an
 approved recreation occurs and before the Go-Live freeze. Documentation cleanup
 or a schema change does not authorize resetting a database or deleting evidence.
+
+The Card category expansion records its definition in each new preparation's
+immutable pins. Sealing validates every Card and Printing, including carried
+facts and relationships after identity corrections. Older pending candidates
+cannot prepare publication artifacts or receive a new approval. Normal fresh
+collection and reconciliation preserve their canonical IDs and derive category
+and applicability from retained profile facts; approval still covers the whole
+candidate. Games may refresh sequentially while other game components remain
+unchanged. Until every component has the expanded definition, entity projections
+return 503 (pinned collection cursors return 409 with a restart link) and generated
+current export manifests return 503, including conditional requests. Existing
+explicit revision/component downloads preserve verified historical bytes and
+their original access, deletion, range and conditional rules. SQL backup and
+restore verify the exact mixed composition, allowing refresh to progress without
+rewriting its retained evidence. See [publication](runbooks/publication.md) and
+[#313](https://github.com/KeeprDigital/card-keepr/issues/313).
+
+Legacy eligibility uses generated record readiness and partial indexes, maintained
+automatically by migration and publication/repair writes. Reads seek unready
+records without rescanning immutable document bytes. Readiness is distinct from
+the semantic validation required when sealing new candidates.
 
 From Go-Live, definitions become immutable and advance by explicit versions;
 earlier retained export majors stay readable and the baseline is never edited.

@@ -1,4 +1,5 @@
 import { parseRange } from "./byte-range";
+import { currentCardModelStatement } from "./card-model-repository";
 import { MissingObjectError } from "../shared";
 import { parseCatalogueRevisionId, parsePublicationInstant } from "../../http/catalogue";
 import { ifNoneMatchMatches as ifNoneMatch } from "../../http/conditional-request";
@@ -202,6 +203,7 @@ export async function currentCardResponse(
   request: Request,
   base: PublicBase,
 ): Promise<Response | null> {
+  await requireCurrentCardModel(database);
   const row = await currentCardStatement(database, cardId).first<RevisionDocumentRow>();
   if (row === null) return identityCorrectionResponse(database, cardId, "card", request, base);
   const url = new URL(request.url);
@@ -248,6 +250,7 @@ export async function currentPrintingResponse(
   request: Request,
   base: PublicBase,
 ): Promise<Response | null> {
+  await requireCurrentCardModel(database);
   const row = await currentPrintingStatement(database, printingId).first<RevisionDocumentRow>();
   if (row === null) return identityCorrectionResponse(database, printingId, "printing", request, base);
   const url = new URL(request.url);
@@ -272,6 +275,13 @@ export async function currentPrintingResponse(
     },
     { headers },
   );
+}
+
+async function requireCurrentCardModel(database: CatalogueStore) {
+  const revision = await currentCardModelStatement(database).first<{ model_ready: number }>();
+  // The empty bootstrap pointer has no publication and still returns missing entities.
+  if (revision && revision.model_ready !== 1)
+    throw new ReadProblem(503, "catalogue_query_unavailable", "The current Card definition requires regeneration.");
 }
 
 export async function printingImageContentResponse(

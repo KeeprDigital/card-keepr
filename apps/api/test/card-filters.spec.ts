@@ -156,7 +156,12 @@ async function seedCards() {
     ...printings.map((printing) =>
       publishedCatalogueQueries
         .insertRevisionPrintingsForSeedCards(testEnv.CATALOGUE_DB)
-        .bind(revisionId, printing.printing_id, printing.card_id, JSON.stringify(printing)),
+        .bind(
+          revisionId,
+          printing.printing_id,
+          printing.card_id,
+          JSON.stringify({ ...printing, gameplay_applicability: "applicable" }),
+        ),
     ),
     publishedCatalogueQueries.insertRevisionProductsForSeedCards(testEnv.CATALOGUE_DB).bind(revisionId),
     ...["printing_captain_common", "printing_crew"].map((id) =>

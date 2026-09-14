@@ -11,9 +11,11 @@ export function allocateIdentityStatement(
   const statements = repositoryStatements(database);
   return atomicRepositoryStatement(database, {
     statement: statements
-      .prepare(`INSERT INTO canonical_identity_allocations
+      .prepare(
+        `INSERT INTO canonical_identity_allocations
       (allocation_key, entity_id, entity_kind, allocated_at) VALUES (?, ?, ?, ?)
-      ON CONFLICT(allocation_key) DO NOTHING RETURNING entity_id`)
+      ON CONFLICT(allocation_key) DO NOTHING RETURNING entity_id`,
+      )
       .bind(key, id, kind, at),
     before: [identityRunGuard(database, run)],
   });
@@ -22,6 +24,33 @@ export function allocatedIdentityStatement(database: CatalogueStore, key: string
   return repositoryStatements(database)
     .prepare("SELECT entity_id FROM canonical_identity_allocations WHERE allocation_key = ?")
     .bind(key);
+}
+
+/** Exact keys bound this lookup; legacy keys need retained Card attribution. */
+export function cardAllocationLookupStatement(database: CatalogueStore, legacyKey: string, qualifiedKey: string) {
+  return repositoryStatements(database)
+    .prepare(
+      `SELECT allocation.allocation_key, CASE WHEN allocation.allocation_key=?2 THEN NULL ELSE coalesce(
+      (SELECT json_extract(batch.content, '$.records[0].value')
+        FROM catalogue_state state JOIN catalogue_composition_games member ON member.catalogue_revision_id=state.current_revision_id
+        JOIN publication_read_entities entity ON entity.candidate_id=member.candidate_id AND entity.kind='cards' AND entity.entity_id=allocation.entity_id
+        JOIN publication_projection_batches batch ON batch.candidate_id=entity.candidate_id AND batch.ordinal=entity.batch_ordinal
+        WHERE state.singleton=1 LIMIT 1),
+      (SELECT coalesce(json_extract(card.document_json,'$.data'),card.document_json)
+        FROM catalogue_state state JOIN revision_cards card ON card.catalogue_revision_id=state.current_revision_id AND card.card_id=allocation.entity_id
+        WHERE state.singleton=1 LIMIT 1),
+      (SELECT json_extract(decision_json,'$.card') FROM entity_admission_decisions
+        WHERE action IN ('admit','link') AND json_extract(decision_json,'$.card.id')=allocation.entity_id
+        ORDER BY decided_at DESC,generation DESC LIMIT 1),
+      (SELECT json_extract(evidence_json,'$.card') FROM canonical_source_mappings
+        WHERE entity_id=allocation.entity_id AND json_type(evidence_json,'$.card')='object'
+        ORDER BY source_observation_id LIMIT 1),
+      (SELECT json_extract(evidence_json,'$.card') FROM reconciliation_source_mappings
+        WHERE entity_id=allocation.entity_id AND json_type(evidence_json,'$.card')='object'
+        ORDER BY preparation_id,source_observation_id LIMIT 1)
+      ) END AS card_json FROM canonical_identity_allocations allocation WHERE allocation.allocation_key IN (?1,?2)`,
+    )
+    .bind(legacyKey, qualifiedKey);
 }
 export function identityAllocationStatement(database: CatalogueStore, id: string) {
   return repositoryStatements(database)
@@ -36,10 +65,12 @@ export function identityMappingsStatement(
 ) {
   if (preparationId)
     return repositoryStatements(database)
-      .prepare(`SELECT mapping.*, candidate.state AS publication_state FROM reconciliation_source_mappings AS mapping
+      .prepare(
+        `SELECT mapping.*, candidate.state AS publication_state FROM reconciliation_source_mappings AS mapping
       JOIN game_candidates AS candidate ON candidate.id = mapping.preparation_id
       WHERE mapping.preparation_id = ? AND mapping.entity_id = ? AND mapping.source_observation_id > ?
-      ORDER BY mapping.source_observation_id LIMIT 101`)
+      ORDER BY mapping.source_observation_id LIMIT 101`,
+      )
       .bind(preparationId, id, after);
   return repositoryStatements(database)
     .prepare(
@@ -63,7 +94,8 @@ export type SourceMapping = {
 export function insertSourceMappingsStatement(database: CatalogueStore, runId: string, payload: string) {
   return atomicRepositoryStatement(database, {
     statement: repositoryStatements(database)
-      .prepare(`INSERT INTO canonical_source_mappings
+      .prepare(
+        `INSERT INTO canonical_source_mappings
       (entity_id, entity_kind, source_observation_id, source_lineage, ingestion_run_id,
        source_snapshot_id, source_observation_set_id, locator, variant_key, evidence_json, mapped_at)
       SELECT json_extract(value, '$.entityId'), json_extract(value, '$.kind'),
@@ -72,12 +104,14 @@ export function insertSourceMappingsStatement(database: CatalogueStore, runId: s
        json_extract(value, '$.sourceSnapshotId'), json_extract(value, '$.sourceObservationSetId'),
        json_extract(value, '$.locator'), json_extract(value, '$.variantKey'),
        json_extract(value, '$.evidenceJson'), json_extract(value, '$.mappedAt')
-      FROM json_each(?2) WHERE EXISTS (SELECT 1 FROM reconciliation_operations WHERE id = ?1 AND supported_game IS NULL) ON CONFLICT(entity_id, source_observation_id) DO NOTHING`)
+      FROM json_each(?2) WHERE EXISTS (SELECT 1 FROM reconciliation_operations WHERE id = ?1 AND supported_game IS NULL) ON CONFLICT(entity_id, source_observation_id) DO NOTHING`,
+      )
       .bind(runId, payload),
     before: [identityRunGuard(database, runId)],
     after: [
       repositoryStatements(database)
-        .prepare(`INSERT INTO reconciliation_source_mappings
+        .prepare(
+          `INSERT INTO reconciliation_source_mappings
         (preparation_id, entity_id, entity_kind, source_observation_id, source_lineage, ingestion_run_id,
          source_snapshot_id, source_observation_set_id, locator, variant_key, evidence_json, mapped_at)
         SELECT operation.id, json_extract(value, '$.entityId'), json_extract(value, '$.kind'),
@@ -87,14 +121,16 @@ export function insertSourceMappingsStatement(database: CatalogueStore, runId: s
           json_extract(value, '$.evidenceJson'), json_extract(value, '$.mappedAt')
         FROM reconciliation_operations AS operation, json_each(?2)
         WHERE operation.id = ?1 AND operation.supported_game IS NOT NULL
-        ON CONFLICT(preparation_id, entity_id, source_observation_id) DO NOTHING`)
+        ON CONFLICT(preparation_id, entity_id, source_observation_id) DO NOTHING`,
+        )
         .bind(runId, payload),
     ],
   });
 }
 export function identityRunGuard(database: CatalogueStore, run: string) {
   return repositoryStatements(database)
-    .prepare(`SELECT CASE WHEN EXISTS (
+    .prepare(
+      `SELECT CASE WHEN EXISTS (
     SELECT 1 FROM operation_state AS operation
     WHERE operation.singleton = 1 AND operation.recovery_health <> 'blocked'
       AND (EXISTS (SELECT 1 FROM reconciliation_operations AS preparation
@@ -104,7 +140,8 @@ export function identityRunGuard(database: CatalogueStore, run: string) {
         JOIN ingestion_collection_reservations AS reservation ON reservation.ingestion_run_id = run.ingestion_run_id
         WHERE run.ingestion_run_id = ?1 AND run.state IN ('parsing', 'reconciling')))
       AND (operation.active_production_release_id IS NULL OR operation.active_production_release_expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-    ) THEN 1 ELSE json_extract('{}', 'canonical_identity_run_not_active') END`)
+    ) THEN 1 ELSE json_extract('{}', 'canonical_identity_run_not_active') END`,
+    )
     .bind(run);
 }
 
@@ -121,9 +158,11 @@ export type IdentityReview = {
 export function insertIdentityReviewStatement(database: CatalogueStore, review: IdentityReview) {
   return atomicRepositoryStatement(database, {
     statement: repositoryStatements(database)
-      .prepare(`INSERT INTO canonical_identity_reviews
+      .prepare(
+        `INSERT INTO canonical_identity_reviews
       (id, ingestion_run_id, source_lineage, source_observation_id, source_snapshot_id, evidence_json, candidate_printing_ids_json, created_at)
-      VALUES (?, (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?), ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`)
+      VALUES (?, (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?), ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
+      )
       .bind(
         review.id,
         review.ingestion_run_id,
@@ -137,14 +176,18 @@ export function insertIdentityReviewStatement(database: CatalogueStore, review: 
     before: [identityRunGuard(database, review.ingestion_run_id)],
     after: [
       repositoryStatements(database)
-        .prepare(`INSERT INTO canonical_identity_review_runs
+        .prepare(
+          `INSERT INTO canonical_identity_review_runs
       (review_id, ingestion_run_id, source_observation_id, source_snapshot_id) VALUES (?, (SELECT ingestion_run_id FROM reconciliation_operations WHERE id = ?), ?, ?)
-      ON CONFLICT(review_id, ingestion_run_id) DO NOTHING`)
+      ON CONFLICT(review_id, ingestion_run_id) DO NOTHING`,
+        )
         .bind(review.id, review.ingestion_run_id, review.source_observation_id, review.source_snapshot_id),
       repositoryStatements(database)
-        .prepare(`INSERT INTO reconciliation_identity_reviews (preparation_id, review_id, source_observation_id, source_snapshot_id)
+        .prepare(
+          `INSERT INTO reconciliation_identity_reviews (preparation_id, review_id, source_observation_id, source_snapshot_id)
           SELECT id, ?2, ?3, ?4 FROM reconciliation_operations WHERE id = ?1 AND supported_game IS NOT NULL
-          ON CONFLICT(preparation_id, review_id) DO NOTHING`)
+          ON CONFLICT(preparation_id, review_id) DO NOTHING`,
+        )
         .bind(review.ingestion_run_id, review.id, review.source_observation_id, review.source_snapshot_id),
     ],
   });
@@ -160,17 +203,21 @@ export function identityReviewsStatement(
 ) {
   if (preparationId)
     return repositoryStatements(database)
-      .prepare(`SELECT review.id, review.source_lineage, review.evidence_json, review.candidate_printing_ids_json, review.created_at,
+      .prepare(
+        `SELECT review.id, review.source_lineage, review.evidence_json, review.candidate_printing_ids_json, review.created_at,
       preparation.ingestion_run_id, capture.preparation_id, capture.source_observation_id, capture.source_snapshot_id
       FROM reconciliation_identity_reviews AS capture JOIN canonical_identity_reviews AS review ON review.id = capture.review_id
       JOIN reconciliation_operations AS preparation ON preparation.id = capture.preparation_id
-      WHERE capture.preparation_id = ? AND capture.review_id > ? ORDER BY capture.review_id LIMIT 101`)
+      WHERE capture.preparation_id = ? AND capture.review_id > ? ORDER BY capture.review_id LIMIT 101`,
+      )
       .bind(preparationId, after);
   return repositoryStatements(database)
-    .prepare(`SELECT review.id, review.source_lineage, review.evidence_json, review.candidate_printing_ids_json, review.created_at,
+    .prepare(
+      `SELECT review.id, review.source_lineage, review.evidence_json, review.candidate_printing_ids_json, review.created_at,
        capture.ingestion_run_id, capture.source_observation_id, capture.source_snapshot_id
        FROM canonical_identity_reviews AS review JOIN canonical_identity_review_runs AS capture ON capture.review_id = review.id
-       WHERE capture.ingestion_run_id = ? AND review.id > ? ORDER BY review.id LIMIT 101`)
+       WHERE capture.ingestion_run_id = ? AND review.id > ? ORDER BY review.id LIMIT 101`,
+    )
     .bind(run, after);
 }
 export type IdentityDecision = {
@@ -183,15 +230,18 @@ export type IdentityDecision = {
 };
 export function identityDecisionStatement(database: CatalogueStore, id: string, runId?: string) {
   return repositoryStatements(database)
-    .prepare(`SELECT review_id,printing_id,rationale,idempotency_key,request_json,decided_at
+    .prepare(
+      `SELECT review_id,printing_id,rationale,idempotency_key,request_json,decided_at
       FROM canonical_identity_decisions WHERE review_id = ?
-      AND (? IS NULL OR rowid <= (SELECT identity_decision_cutoff FROM reconciliation_operations WHERE id = ?))`)
+      AND (? IS NULL OR rowid <= (SELECT identity_decision_cutoff FROM reconciliation_operations WHERE id = ?))`,
+    )
     .bind(id, runId ?? null, runId ?? null);
 }
 export function insertIdentityDecisionStatement(database: CatalogueStore, decision: IdentityDecision) {
   return atomicRepositoryStatement(database, {
     statement: repositoryStatements(database)
-      .prepare(`WITH reviewed_predecessor AS (
+      .prepare(
+        `WITH reviewed_predecessor AS (
         SELECT predecessor.predecessor_candidate_id AS candidate_id
         FROM reconciliation_identity_reviews capture
         LEFT JOIN game_candidate_predecessors predecessor ON predecessor.candidate_id=capture.preparation_id
@@ -199,7 +249,8 @@ export function insertIdentityDecisionStatement(database: CatalogueStore, decisi
       ) INSERT INTO canonical_identity_decisions
       (review_id,printing_id,rationale,idempotency_key,request_json,decided_at,native_candidate_id,historical_printing_id)
       SELECT ?1,?2,?3,?4,?5,?6,(SELECT candidate_id FROM reviewed_predecessor),
-        CASE WHEN (SELECT candidate_id FROM reviewed_predecessor) IS NULL THEN ?2 ELSE NULL END`)
+        CASE WHEN (SELECT candidate_id FROM reviewed_predecessor) IS NULL THEN ?2 ELSE NULL END`,
+      )
       .bind(
         decision.review_id,
         decision.printing_id,

@@ -1,10 +1,21 @@
 import { type CatalogueStore, repositoryStatements } from "../shared";
 import { gamePredecessorCandidateSql } from "./game-candidate-predecessor-repository";
 
+export function candidateCardModelStatement(database: CatalogueStore, candidateId: string) {
+  return repositoryStatements(database)
+    .prepare(
+      `SELECT 1 AS ready FROM game_candidates c
+    JOIN reconciliation_operations o ON o.id=c.preparation_id
+    WHERE c.id=? AND json_extract(o.definition_pins_json,'$.card_model')='categories'`,
+    )
+    .bind(candidateId);
+}
+
 /** Collection provenance is distinct from the identity of each proposed game revision. */
 export function createGameCandidateIdentitiesStatement(database: CatalogueStore, runId: string) {
   return repositoryStatements(database)
-    .prepare(`WITH RECURSIVE ancestry(id, ingestion_run_id, previous_id, distance) AS (
+    .prepare(
+      `WITH RECURSIVE ancestry(id, ingestion_run_id, previous_id, distance) AS (
       SELECT revision.id, revision.ingestion_run_id, revision.expected_previous_revision_id, 0
       FROM catalogue_revisions AS revision JOIN ingestion_runs AS run ON run.expected_current_revision_id = revision.id
       WHERE run.id = ?
@@ -19,7 +30,8 @@ export function createGameCandidateIdentitiesStatement(database: CatalogueStore,
         WHERE previous.game = games.game ORDER BY revision.distance LIMIT 1), 'catrev_spine_000'),
       operation.created_at, operation.deadline, 'preparing', operation.generation
     FROM ingestion_run_selected_games AS games JOIN reconciliation_operations AS operation ON operation.id = games.ingestion_run_id
-    WHERE games.ingestion_run_id = ? ON CONFLICT (id) DO NOTHING`)
+    WHERE games.ingestion_run_id = ? ON CONFLICT (id) DO NOTHING`,
+    )
     .bind(runId, runId);
 }
 
@@ -31,33 +43,41 @@ export function gameCandidatesForPreparationStatement(database: CatalogueStore, 
 
 export function gameCandidatesForCollectionStatement(database: CatalogueStore, runId: string, after: string) {
   return repositoryStatements(database)
-    .prepare(`SELECT candidate.id, candidate.preparation_id, candidate.ingestion_run_id, candidate.supported_game,
+    .prepare(
+      `SELECT candidate.id, candidate.preparation_id, candidate.ingestion_run_id, candidate.supported_game,
       candidate.expected_game_revision_id, candidate.created_at, candidate.deadline, candidate.state, candidate.generation,
       candidate.manifest_digest, candidate.partition_count, operation.failure_code
       FROM game_candidates AS candidate JOIN reconciliation_operations AS operation ON operation.id = candidate.preparation_id
       WHERE candidate.ingestion_run_id = ? AND candidate.id > ? AND operation.supported_game IS NOT NULL
-      ORDER BY candidate.id LIMIT 101`)
+      ORDER BY candidate.id LIMIT 101`,
+    )
     .bind(runId, after);
 }
 
 export function gameCandidateStatement(database: CatalogueStore, candidateId: string) {
   return repositoryStatements(database)
-    .prepare(`SELECT candidate.*, operation.failure_code, operation.terminal_result_json FROM game_candidates AS candidate
-      JOIN reconciliation_operations AS operation ON operation.id = candidate.preparation_id WHERE candidate.id = ?`)
+    .prepare(
+      `SELECT candidate.*, operation.failure_code, operation.terminal_result_json FROM game_candidates AS candidate
+      JOIN reconciliation_operations AS operation ON operation.id = candidate.preparation_id WHERE candidate.id = ?`,
+    )
     .bind(candidateId);
 }
 
 export function gameCandidatePartitionsStatement(database: CatalogueStore, candidateId: string, after: number) {
   return repositoryStatements(database)
-    .prepare(`SELECT ordinal, kind, sha256, byte_length, record_count
-    FROM game_candidate_partitions WHERE candidate_id = ? AND ordinal > ? ORDER BY ordinal LIMIT 100`)
+    .prepare(
+      `SELECT ordinal, kind, sha256, byte_length, record_count
+    FROM game_candidate_partitions WHERE candidate_id = ? AND ordinal > ? ORDER BY ordinal LIMIT 100`,
+    )
     .bind(candidateId, after);
 }
 
 export function gameCandidatePartitionStatement(database: CatalogueStore, candidateId: string, ordinal: number) {
   return repositoryStatements(database)
-    .prepare(`SELECT ordinal, kind, content, sha256, byte_length, record_count
-    FROM game_candidate_partitions WHERE candidate_id = ? AND ordinal = ?`)
+    .prepare(
+      `SELECT ordinal, kind, content, sha256, byte_length, record_count
+    FROM game_candidate_partitions WHERE candidate_id = ? AND ordinal = ?`,
+    )
     .bind(candidateId, ordinal);
 }
 
@@ -68,7 +88,8 @@ export function retainGameEntityScopesStatement(
   content: string,
 ) {
   return repositoryStatements(database)
-    .prepare(`INSERT INTO game_candidate_entity_scopes
+    .prepare(
+      `INSERT INTO game_candidate_entity_scopes
     (preparation_id, kind, id, supported_game)
     SELECT ?, ?, json_extract(record.value, '$.id'), ${kind === "cards" ? "json_extract(record.value, '$.game')" : "scope.supported_game"}
     FROM json_each(?) AS record ${
@@ -77,7 +98,8 @@ export function retainGameEntityScopesStatement(
       ON scope.preparation_id = ? AND scope.kind = 'cards' AND scope.id = json_extract(record.value, '$.card_id')`
         : ""
     }
-    WHERE 1 ON CONFLICT (preparation_id, kind, id) DO NOTHING`)
+    WHERE 1 ON CONFLICT (preparation_id, kind, id) DO NOTHING`,
+    )
     .bind(...(kind === "cards" ? [runId, kind, content] : [runId, kind, content, runId]));
 }
 
@@ -128,9 +150,11 @@ export function insertGameCandidatePartitionStatement(
   records: number,
 ) {
   return repositoryStatements(database)
-    .prepare(`INSERT INTO game_candidate_partitions
+    .prepare(
+      `INSERT INTO game_candidate_partitions
     (candidate_id, ordinal, kind, content, sha256, byte_length, record_count) VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT (candidate_id, ordinal) DO NOTHING`)
+    ON CONFLICT (candidate_id, ordinal) DO NOTHING`,
+    )
     .bind(candidateId, ordinal, kind, content, sha256, new TextEncoder().encode(content).byteLength, records);
 }
 
@@ -144,7 +168,8 @@ export function sealGameCandidateStatement(
   terminalState: "sealed" | "failed" = "sealed",
 ) {
   return repositoryStatements(database)
-    .prepare(`UPDATE game_candidates SET state = ?, manifest_digest = ?, partition_count = ?, preparation_manifest_digest = ?
+    .prepare(
+      `UPDATE game_candidates SET state = ?, manifest_digest = ?, partition_count = ?, preparation_manifest_digest = ?
     WHERE id = ? AND state = 'preparing' AND CASE WHEN
       EXISTS (SELECT 1 FROM (
         SELECT content FROM reconciliation_checkpoints WHERE preparation_id = ? AND phase = 'game_preparation'
@@ -154,7 +179,8 @@ export function sealGameCandidateStatement(
         AND json_extract(checkpoint.content, '$.inputManifest') = ?
         AND json_extract(seal.value, '$.id') = ? AND json_extract(seal.value, '$.digest') = ?
         AND json_extract(seal.value, '$.count') = ?)
-    THEN 1 ELSE json_extract('{}', 'game_candidate_partition_count_mismatch') END`)
+    THEN 1 ELSE json_extract('{}', 'game_candidate_partition_count_mismatch') END`,
+    )
     .bind(
       terminalState,
       digest,
@@ -172,12 +198,14 @@ export function sealGameCandidateStatement(
 /** Temporary run-command adapter; game operation commands replace this as orchestration moves. */
 export function synchronizeGameCandidatePauseStatement(database: CatalogueStore, runId: string) {
   return repositoryStatements(database)
-    .prepare(`UPDATE game_candidates SET
+    .prepare(
+      `UPDATE game_candidates SET
     state = (SELECT state FROM reconciliation_operations WHERE id = ?),
     generation = (SELECT generation FROM reconciliation_operations WHERE id = ?)
     WHERE preparation_id = ? AND (state IN ('preparing', 'paused') OR
       (state = 'sealed' AND EXISTS (SELECT 1 FROM reconciliation_operations AS operation
-        WHERE operation.id = game_candidates.preparation_id AND operation.supported_game IS NOT NULL AND operation.state = 'abandoned')))`)
+        WHERE operation.id = game_candidates.preparation_id AND operation.supported_game IS NOT NULL AND operation.state = 'abandoned')))`,
+    )
     .bind(runId, runId, runId);
 }
 
@@ -188,27 +216,33 @@ export function predecessorGameCandidateStatement(
   preparationId: string | null = null,
 ) {
   return repositoryStatements(database)
-    .prepare(`SELECT candidate.id,candidate.preparation_id,candidate.partition_count
+    .prepare(
+      `SELECT candidate.id,candidate.preparation_id,candidate.partition_count
     FROM game_candidates candidate WHERE candidate.id=${gamePredecessorCandidateSql("?1", "?2", "?3")}
     UNION ALL SELECT candidate.id,candidate.preparation_id,candidate.partition_count
     FROM catalogue_revisions revision JOIN game_candidates candidate
       ON candidate.ingestion_run_id=revision.ingestion_run_id AND candidate.supported_game=?2
     WHERE revision.id=?1 AND candidate.manifest_digest IS NOT NULL
-      AND candidate.preparation_id=candidate.ingestion_run_id LIMIT 1`)
+      AND candidate.preparation_id=candidate.ingestion_run_id LIMIT 1`,
+    )
     .bind(revisionId, game, preparationId);
 }
 
 export function gameCandidateInspectionSummaryStatement(database: CatalogueStore, candidateId: string) {
   return repositoryStatements(database)
-    .prepare(`SELECT ordinal FROM game_candidate_partitions
-    WHERE candidate_id = ? AND kind = 'inspection_summary' ORDER BY ordinal DESC LIMIT 1`)
+    .prepare(
+      `SELECT ordinal FROM game_candidate_partitions
+    WHERE candidate_id = ? AND kind = 'inspection_summary' ORDER BY ordinal DESC LIMIT 1`,
+    )
     .bind(candidateId);
 }
 export function gameCandidateInspectionCountsStatement(database: CatalogueStore, candidateId: string) {
   return repositoryStatements(database)
-    .prepare(`SELECT kind, count(*) AS partitions, sum(record_count) AS records,
+    .prepare(
+      `SELECT kind, count(*) AS partitions, sum(record_count) AS records,
     min(ordinal) AS first_ordinal, max(ordinal) AS last_ordinal
-    FROM game_candidate_partitions WHERE candidate_id = ? GROUP BY kind`)
+    FROM game_candidate_partitions WHERE candidate_id = ? GROUP BY kind`,
+    )
     .bind(candidateId);
 }
 
@@ -226,7 +260,9 @@ export function nativePredecessorGameCandidateStatement(
   preparationId: string | null = null,
 ) {
   return repositoryStatements(database)
-    .prepare(`SELECT candidate.id,candidate.preparation_id,candidate.partition_count
-    FROM game_candidates candidate WHERE candidate.id=${gamePredecessorCandidateSql("?1", "?2", "?3")}`)
+    .prepare(
+      `SELECT candidate.id,candidate.preparation_id,candidate.partition_count
+    FROM game_candidates candidate WHERE candidate.id=${gamePredecessorCandidateSql("?1", "?2", "?3")}`,
+    )
     .bind(revisionId, game, preparationId);
 }

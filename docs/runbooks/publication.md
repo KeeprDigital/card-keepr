@@ -64,6 +64,27 @@ evidence. A new intent may then prepare from the same collection. Resume never
 renews the original deadline. Use owner actions, not restarts of old Workflow
 generations. Shared-database recovery fences all mutation.
 
+After the Card category definition migration, a pre-expansion pending candidate
+returns `reconciliation_definition_changed` for readiness or publication. Inspect
+and abandon it, collect fresh evidence, then prepare, inspect and approve a new
+whole candidate for that game. Repeat for each game in the published composition;
+each publication must finish its normal verified SQL checkpoint before the next.
+The migration itself preserves existing evidence, approvals and exports. Entity
+reads and generated current export manifests remain unavailable until all game
+components have refreshed; a stale collection cursor requires restarting from
+the collection link. Explicit historical export component downloads retain their
+original bytes. These are implemented guards and regeneration steps; applying
+the migration does not establish that any environment has completed the refresh.
+An intact retained aggregate run remains inspectable through its receipt, but
+retrying its pre-expansion candidate returns the same definition conflict. Its
+stored digest and selected-game header must still agree with the retained bytes
+and run; damaged history remains an integrity error.
+An occupied legacy canonical allocation with no attributable Card facts returns
+`canonical_card_allocation_unresolved`. Inspect the retained identity evidence
+before proceeding; this refusal creates neither a replacement ID nor an admission
+decision. Attributed legacy allocations keep their original IDs and keys, while
+new allocations record the category and Game Profile in their keys.
+
 ## Prepare publication artifacts
 
 ```sh

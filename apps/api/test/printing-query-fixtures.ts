@@ -19,13 +19,20 @@ export async function seedPrintingQueryFixture(database: D1Database): Promise<vo
     ingestionQueries.setOperationStateActiveIngestionRunId(database),
     publishedCatalogueQueries.insertCatalogueRevisions(database).bind("a".repeat(64), "a".repeat(64)),
     publishedCatalogueQueries.insertCatalogueQueryRevisions(database),
-    publishedCatalogueQueries
-      .insertRevisionCardsForSeedPrintingQueryFixture(database)
-      .bind(JSON.stringify({ id: "card_st15_event", game: "one-piece" })),
+    publishedCatalogueQueries.insertRevisionCardsForSeedPrintingQueryFixture(database).bind(
+      JSON.stringify({
+        id: "card_st15_event",
+        game: "one-piece",
+        category: "gameplay",
+        gameplay_applicability: "applicable",
+        related_cards: [],
+      }),
+    ),
     publishedCatalogueQueries.insertRevisionPrintingsForSeedPrintingQueryFixture(database).bind(
       JSON.stringify({
         id: "printing_st15_event",
         card_id: "card_st15_event",
+        gameplay_applicability: "applicable",
         rarity: { normalized: "leader", raw: "L" },
       }),
     ),

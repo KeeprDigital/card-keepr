@@ -14,6 +14,8 @@ export { isIsoCalendarDate } from "./calendar-date";
 export {
   type CatalogueCandidate,
   type CatalogueCard,
+  type CardRelationship,
+  type CardCategory,
   type CatalogueDistributionContext,
   type CatalogueErratum,
   type CataloguePrinting,
@@ -110,7 +112,10 @@ export {
 // and reconciliation alike.
 export {
   canonicalProfileAttributes,
+  gameProfileCardClassification,
+  derivedCardModel,
   exportedGameProfileSchema,
+  retainedGameProfileSchema,
   gameProfileFilterValue,
   gameProfileForGame,
   type ProfileWarning,

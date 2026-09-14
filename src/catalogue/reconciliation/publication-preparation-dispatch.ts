@@ -1,4 +1,5 @@
 import { logProtectedFailure } from "../../http/protected-failure";
+import { assertCurrentCardModel } from "./card-model-definition";
 import { type CatalogueStore, sha256Text, workflowDriver } from "../shared";
 import type { ReconciliationWorkflowParams } from "./reconciliation-workflow";
 import {
@@ -38,6 +39,7 @@ export async function startPublicationPreparation(
   const receipt = await advancePublicationPreparation(env, id, input, at);
   const status = await inspectPublicationPreparation(env.CATALOGUE_DB, id);
   if (status.state !== "preparing") return { preparation: status, workflow: null };
+  await assertCurrentCardModel(env.CATALOGUE_DB, id);
   const params: ReconciliationWorkflowParams = {
     ingestion_run_id: status.ingestion_run_id,
     preparation_id: status.preparation_id,

@@ -281,7 +281,19 @@
     "CardRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "id", "game", "official_identity", "name", "effective_rules_text", "game_data", "lifecycle"],
+      "required": [
+        "type",
+        "id",
+        "game",
+        "official_identity",
+        "name",
+        "effective_rules_text",
+        "game_data",
+        "lifecycle",
+        "category",
+        "gameplay_applicability",
+        "related_cards"
+      ],
       "properties": {
         "type": {
           "const": "card"
@@ -307,8 +319,56 @@
         },
         "lifecycle": {
           "$ref": "#/$defs/Lifecycle"
+        },
+        "category": {
+          "$ref": "#/$defs/CardCategory"
+        },
+        "gameplay_applicability": {
+          "$ref": "#/$defs/GameplayApplicability"
+        },
+        "related_cards": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/CardRelationship"
+          }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "category": {
+                "const": "art"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "gameplay_applicability": {
+                "const": "inapplicable"
+              },
+              "effective_rules_text": {
+                "type": "null"
+              },
+              "game_data": {
+                "properties": {
+                  "attributes": {
+                    "maxProperties": 0
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "gameplay_applicability": {
+                "const": "applicable"
+              }
+            }
+          }
+        }
+      ]
     },
     "PrintingProductProjection": {
       "type": "object",
@@ -398,7 +458,16 @@
     "PrintingRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "id", "card_id", "rarity", "printed_rules_text", "game_data", "lifecycle"],
+      "required": [
+        "type",
+        "id",
+        "card_id",
+        "rarity",
+        "printed_rules_text",
+        "game_data",
+        "lifecycle",
+        "gameplay_applicability"
+      ],
       "properties": {
         "type": {
           "const": "printing"
@@ -439,8 +508,29 @@
         },
         "lifecycle": {
           "$ref": "#/$defs/Lifecycle"
+        },
+        "gameplay_applicability": {
+          "$ref": "#/$defs/GameplayApplicability"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "gameplay_applicability": {
+                "const": "inapplicable"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "printed_rules_text": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
     },
     "PrintingImageRecord": {
       "type": "object",
@@ -816,6 +906,25 @@
           "items": {
             "$ref": "#/$defs/OpaqueId"
           }
+        }
+      }
+    },
+    "CardCategory": {
+      "enum": ["gameplay", "token", "art"]
+    },
+    "GameplayApplicability": {
+      "enum": ["applicable", "inapplicable"]
+    },
+    "CardRelationship": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "card_id"],
+      "properties": {
+        "kind": {
+          "const": "shared_artwork"
+        },
+        "card_id": {
+          "$ref": "#/$defs/OpaqueId"
         }
       }
     }

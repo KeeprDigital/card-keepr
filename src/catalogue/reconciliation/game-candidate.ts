@@ -34,6 +34,7 @@ import {
   sealGameCandidateStatement,
 } from "./game-candidate-repository";
 import { sourceAdapterRegistrations } from "../adapters";
+import { assertCurrentCardModel, validateCardModelRecord } from "./card-model-definition";
 import { newestReconciliationCheckpointStatement } from "./reconciliation-checkpoint-repository";
 
 export type GameCandidate = {
@@ -110,12 +111,16 @@ export async function prepareGameCandidateManifests(
       scopes = [];
     };
     for await (const record of candidate.values(kind, cursor.after)) {
+      await validateCardModelRecord(kind, record, candidate);
       const scope =
         "game" in record ? { id: record.id, game: record.game } : { id: record.id, card_id: record.card_id };
       scopes.push(scope);
       cursor.after = record.id;
       bytes += new TextEncoder().encode(canonicalJson(record)).byteLength;
-      if (++work === 64 || bytes >= 512000) {
+      if (
+        ++work >= (kind === "cards" && "related_cards" in record && record.related_cards.length > 0 ? 1 : 16) ||
+        bytes >= 512000
+      ) {
         await flush();
         await save();
       }
@@ -435,6 +440,7 @@ export async function inspectGameCandidateReadiness(
   manifest: string | null,
   observedAt = new Date().toISOString(),
 ) {
+  await assertCurrentCardModel(database, candidateId);
   const candidate = await inspectGameCandidate(database, candidateId);
   if (manifest !== null && manifest !== candidate.manifest_digest)
     throw new AdministrationProblem(409, "candidate_pin_mismatch", "Use the exact candidate manifest.");

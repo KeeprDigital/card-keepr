@@ -3,6 +3,7 @@ import {
   type CataloguePrinting,
   type CatalogueStore,
   canonicalJson,
+  derivedCardModel,
   repositoryStatements,
 } from "../shared";
 import { gamePredecessorCandidateSql } from "./game-candidate-predecessor-repository";
@@ -12,6 +13,7 @@ import type { PrintingCompatibility } from "./reconciliation-model";
 export type ReconciledCardRow = {
   id: string;
   supported_game: string;
+  category: CatalogueCard["category"];
   official_identity_kind: string;
   official_identity_value: string;
   first_revision_id: string;
@@ -34,6 +36,7 @@ export async function existingCard(
   database: CatalogueStore,
   input: {
     supportedGame: string;
+    category: CatalogueCard["category"];
     identityKind: string;
     identityValue: string;
   },
@@ -43,9 +46,9 @@ export async function existingCard(
       `SELECT * FROM reconciled_cards
        WHERE supported_game = ?
          AND official_identity_kind = ?
-         AND official_identity_value = ?`,
+         AND official_identity_value = ? AND category = ?`,
     )
-    .bind(input.supportedGame, input.identityKind, input.identityValue)
+    .bind(input.supportedGame, input.identityKind, input.identityValue, input.category)
     .first<ReconciledCardRow>();
 }
 
@@ -56,9 +59,11 @@ export function publishedCardPresentStatement(
   revision: string,
 ) {
   return repositoryStatements(database)
-    .prepare(`SELECT 1 AS present FROM reconciled_cards WHERE supported_game = ?1
+    .prepare(
+      `SELECT 1 AS present FROM reconciled_cards WHERE supported_game = ?1
       UNION ALL SELECT 1 FROM publication_read_entities WHERE kind='cards'
-        AND candidate_id=${gamePredecessorCandidateSql("?3", "?1", "?2")} LIMIT 1`)
+        AND candidate_id=${gamePredecessorCandidateSql("?3", "?1", "?2")} LIMIT 1`,
+    )
     .bind(game, preparation, revision);
 }
 
@@ -67,9 +72,11 @@ export async function compatiblePrintings(
   compatibility: PrintingCompatibility,
 ): Promise<ReconciledPrintingRow[]> {
   const result = await repositoryStatements(database)
-    .prepare(`SELECT * FROM reconciled_printings
+    .prepare(
+      `SELECT * FROM reconciled_printings
       WHERE card_id IS ? AND artwork_fingerprint IS ? AND printed_fields_digest IS ?
-        AND rarity_normalized IS ? AND treatment IS ? ORDER BY id LIMIT 9`)
+        AND rarity_normalized IS ? AND treatment IS ? ORDER BY id LIMIT 9`,
+    )
     .bind(
       compatibility.card_id,
       compatibility.artwork_fingerprint,
@@ -103,10 +110,10 @@ export async function printingAtLocatorVariant(
   sourceLineage: string,
   locator: string,
   variantKey: string | null,
-): Promise<ReconciledPrintingRow | null> {
+): Promise<(ReconciledPrintingRow & { source_observation_id?: string | null }) | null> {
   const row = await repositoryStatements(database)
     .prepare(
-      `SELECT printing.*, mapping.evidence_json AS mapped_evidence_json
+      `SELECT printing.*, mapping.evidence_json AS mapped_evidence_json, mapping.source_observation_id
        FROM reconciled_printing_locators AS locator
        JOIN reconciled_printings AS printing
          ON printing.id = locator.printing_id
@@ -121,7 +128,7 @@ export async function printingAtLocatorVariant(
                 locator.last_observed_revision_id DESC, mapping.mapped_at DESC LIMIT 1`,
     )
     .bind(sourceLineage, locator, variantKey ?? "")
-    .first<ReconciledPrintingRow & { mapped_evidence_json: string | null }>();
+    .first<ReconciledPrintingRow & { mapped_evidence_json: string | null; source_observation_id: string | null }>();
   if (row?.mapped_evidence_json) {
     const evidence = JSON.parse(row.mapped_evidence_json) as { compatibility: PrintingCompatibility };
     return { ...row, ...evidence.compatibility };
@@ -242,10 +249,12 @@ export async function gundamPrintingHasProductMembership(
     return false;
   }
   const row = await repositoryStatements(database)
-    .prepare(`SELECT 1
+    .prepare(
+      `SELECT 1
     FROM reconciled_printing_memberships
     WHERE printing_id = ? AND relationship_kind = 'product'
-      AND relationship_value IN (SELECT value FROM json_each(?)) LIMIT 1`)
+      AND relationship_value IN (SELECT value FROM json_each(?)) LIMIT 1`,
+    )
     .bind(printingId, canonicalJson(products))
     .first();
   return row !== null;
@@ -294,8 +303,11 @@ export async function canonicalCardConflict(
         .first<{ document_json: string }>();
   if (row === null) return null;
   const current = native?.card ?? revisionDocumentData(row.document_json);
+  const classification = derivedCardModel(current as CatalogueCard);
   const currentCanonical = {
     game: current.game,
+    category: classification.category,
+    gameplay_applicability: classification.gameplay_applicability,
     official_identity:
       authority.confirmedPublisherNumber &&
       canonicalJson(current.official_identity) === canonicalJson({ kind: "unknown", value: null })
@@ -307,6 +319,8 @@ export async function canonicalCardConflict(
   };
   const proposedCanonical = {
     game: proposed.game,
+    category: proposed.category,
+    gameplay_applicability: proposed.gameplay_applicability,
     official_identity: proposed.official_identity,
     name: proposed.name,
     game_data: proposed.game_data,
@@ -372,6 +386,7 @@ export async function canonicalPrintingConflict(
   if (row === null) return null;
   const current = native?.printing ?? (revisionDocumentData(row.document_json) as CataloguePrinting);
   const currentCanonical: PrintingFacts = {
+    gameplay_applicability: current.gameplay_applicability,
     rarity: current.rarity,
     printed_rules_text: current.printed_rules_text,
     game_data: current.game_data,
@@ -487,9 +502,11 @@ export async function crossSourcePrintingCandidates(
   return boundedPrintingMatches(
     (
       await repositoryStatements(database)
-        .prepare(`SELECT * FROM reconciled_printings
+        .prepare(
+          `SELECT * FROM reconciled_printings
     WHERE card_id = ? AND source_lineage <> ? AND printed_fields_digest = ?
-      AND rarity_normalized IS ? AND treatment IS ? ORDER BY id LIMIT 9`)
+      AND rarity_normalized IS ? AND treatment IS ? ORDER BY id LIMIT 9`,
+        )
         .bind(
           compatibility.card_id,
           compatibility.source_lineage,
@@ -516,11 +533,13 @@ export async function* gundamAffectedPrintingIds(
   for (;;) {
     const rows = (
       await repositoryStatements(database)
-        .prepare(`SELECT DISTINCT printing_id
+        .prepare(
+          `SELECT DISTINCT printing_id
       FROM reconciled_printing_locators
       WHERE printing_id > ? AND current = 1 AND source_lineage IN ('gundam-en-asia', 'gundam-en-us')
         AND source_lineage IN (SELECT value FROM json_each(?))
-      ORDER BY printing_id LIMIT 100`)
+      ORDER BY printing_id LIMIT 100`,
+        )
         .bind(after, canonicalJson(checkedLineages))
         .all<{ printing_id: string }>()
     ).results;

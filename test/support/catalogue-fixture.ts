@@ -27,6 +27,9 @@ export async function fixtureCandidate(
       {
         id: firstFixtureCardId,
         game: "one-piece",
+        category: "gameplay",
+        related_cards: [],
+        gameplay_applicability: "applicable",
         official_identity: {
           kind: "card_number",
           value: "OP01-001",
@@ -55,6 +58,7 @@ export async function fixtureCandidate(
       {
         id: firstFixturePrintingId,
         card_id: firstFixtureCardId,
+        gameplay_applicability: "applicable" as const,
         rarity: {
           normalized: "leader",
           raw: "L",

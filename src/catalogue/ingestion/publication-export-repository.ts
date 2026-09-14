@@ -15,11 +15,13 @@ export type PublicExportState = {
 export function reserveExportAttempt(db: CatalogueStore, id: string, generation: number, shard: number) {
   const prefix = `public-export-attempt:${id}:${generation}:${shard}:`;
   return repositoryStatements(db)
-    .prepare(`INSERT INTO game_publication_actions
+    .prepare(
+      `INSERT INTO game_publication_actions
  SELECT ?,id,?,? FROM game_publication_operations WHERE id=? AND generation=?
  AND state IN ('approved','waiting_artifacts','waiting_backup') AND julianday(deadline)>julianday('now')
  AND (SELECT count(*) FROM game_publication_actions WHERE idempotency_key>=? AND idempotency_key<?)<40
- RETURNING idempotency_key`)
+ RETURNING idempotency_key`,
+    )
     .bind(
       `${prefix}${crypto.randomUUID()}`,
       JSON.stringify({ contract: "public-export-attempt@1", generation, shard }),
@@ -37,12 +39,15 @@ export function exportPreparation(db: CatalogueStore, id: string) {
 }
 export function exportOwner(db: CatalogueStore, id: string) {
   return repositoryStatements(db)
-    .prepare(`SELECT p.*,c.supported_game,a.state AS private_state,a.root_digest AS private_root_digest,
+    .prepare(
+      `SELECT p.*,c.supported_game,a.state AS private_state,a.root_digest AS private_root_digest,
+ (SELECT json_extract(definition_pins_json,'$.card_model') FROM reconciliation_operations WHERE id=c.preparation_id) AS card_model,
  (SELECT state FROM card_search_fts_state WHERE singleton=1) AS search_state,
  (SELECT recovery_health FROM operation_state WHERE singleton=1) AS recovery_health,
  (SELECT revision_id FROM game_catalogue_heads WHERE supported_game=c.supported_game) AS current_game_revision
  FROM game_publication_operations p JOIN game_candidates c ON c.id=p.candidate_id
- LEFT JOIN publication_preparations a ON a.candidate_id=p.candidate_id WHERE p.id=?`)
+ LEFT JOIN publication_preparations a ON a.candidate_id=p.candidate_id WHERE p.id=?`,
+    )
     .bind(id);
 }
 export function exportReplay(db: CatalogueStore, key: string) {
@@ -52,13 +57,15 @@ export function exportReplay(db: CatalogueStore, key: string) {
 }
 export function guardExportUnit(db: CatalogueStore, id: string, generation: number, sequence: number) {
   return repositoryStatements(db)
-    .prepare(`SELECT CASE
+    .prepare(
+      `SELECT CASE
  WHEN NOT EXISTS (SELECT 1 FROM game_publication_operations p JOIN game_candidates c ON c.id=p.candidate_id JOIN game_catalogue_heads h ON h.supported_game=c.supported_game AND h.revision_id=p.expected_game_revision_id
  JOIN publication_preparations a ON a.candidate_id=c.id AND a.state='verified' AND a.manifest_digest=p.manifest_digest
  WHERE p.id=?1 AND p.generation=?2 AND p.state IN ('approved','waiting_artifacts','waiting_backup') AND julianday(p.deadline)>julianday('now') AND c.state='sealed' AND c.generation=p.candidate_generation)
  THEN json_extract('{}','publication_export_owner_conflict')
  WHEN COALESCE((SELECT sequence FROM publication_export_preparations WHERE publication_operation_id=?1),0)<>?3 THEN json_extract('{}','publication_export_sequence_conflict')
- ELSE 1 END`)
+ ELSE 1 END`,
+    )
     .bind(id, generation, sequence);
 }
 export function createExportPreparation(db: CatalogueStore, s: PublicExportState) {
@@ -109,8 +116,10 @@ export function priorExportComponent(
   digest: string,
 ) {
   return repositoryStatements(db)
-    .prepare(`SELECT e.* FROM catalogue_composition_games m JOIN publication_export_components e ON e.candidate_id=m.candidate_id
- WHERE m.catalogue_revision_id=? AND m.supported_game=? AND e.kind=? AND e.entity_id=? AND e.input_digest=?`)
+    .prepare(
+      `SELECT e.* FROM catalogue_composition_games m JOIN publication_export_components e ON e.candidate_id=m.candidate_id
+ WHERE m.catalogue_revision_id=? AND m.supported_game=? AND e.kind=? AND e.entity_id=? AND e.input_digest=?`,
+    )
     .bind(revision, game, kind, entity, digest);
 }
 export function retainExportComponent(

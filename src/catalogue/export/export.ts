@@ -14,7 +14,7 @@ import {
   compareUtf8,
   consumerContent,
   deterministicGzipStream,
-  exportedGameProfileSchema,
+  retainedGameProfileSchema,
   maximumCatalogueExportBytes,
   maximumCatalogueExportObjectBytes,
   maximumExportComponentBytes,
@@ -295,6 +295,21 @@ function byteStream(bytes: Uint8Array): ReadableStream<Uint8Array> {
   });
 }
 
+/** This private replay path cannot encode expanded-only consumer facts. */
+function retainedEntityFields(entity: CatalogueCandidate["cards"][number] | CatalogueCandidate["printings"][number]) {
+  if (
+    entity.gameplay_applicability === "inapplicable" ||
+    ("category" in entity && entity.category === "art") ||
+    ("related_cards" in entity && entity.related_cards.length > 0)
+  )
+    throw new Error("Retained aggregate exports cannot encode art Cards or Card relationships.");
+  return Object.fromEntries(
+    Object.entries(entity).filter(
+      ([field]) => !["category", "gameplay_applicability", "related_cards"].includes(field),
+    ),
+  );
+}
+
 function fixedLengthBody(
   source: ReadableStream<Uint8Array>,
   byteLength: number,
@@ -474,14 +489,14 @@ async function exportRecordFactories(
         type: "game_profile",
         profile: `${game}@1`,
         game,
-        schema: exportedGameProfileSchema(`${game}@1`),
+        schema: retainedGameProfileSchema(`${game}@1`),
       })),
     "identity-corrections": () =>
       (candidate.identity_corrections ?? []).map((c) => ({ type: "identity_correction", ...c })),
     cards: () =>
       candidate.cards.map((card) => ({
         type: "card",
-        ...card,
+        ...retainedEntityFields(card),
         source_lineages: [...new Set(lifecycles?.cardEvidence?.[card.id]?.map(({ source }) => source) ?? [])].sort(),
         lifecycle: lifecycles?.cards[card.id] ?? defaultLifecycle,
       })),
@@ -495,7 +510,7 @@ async function exportRecordFactories(
         );
         return {
           type: "printing",
-          ...printing,
+          ...retainedEntityFields(printing),
           source_lineages: [
             ...new Set(lifecycles?.printingEvidence?.[printing.id]?.map(({ source }) => source) ?? []),
           ].sort(),

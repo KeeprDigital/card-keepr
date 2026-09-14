@@ -1,4 +1,5 @@
 import { acceptUnchangedGamePublication } from "./game-publication-no-change";
+import { assertCurrentCardModel } from "./card-model-definition";
 import { publicationUnchangedFactsStatement } from "./game-publication-no-change-repository";
 import { trackedStagingBucket } from "../shared";
 import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
@@ -148,6 +149,7 @@ export async function advanceGamePublication(
   if (!operation)
     throw new AdministrationProblem(404, "publication_not_found", "The publication operation does not exist.");
   if (["published", "failed", "retry_paused"].includes(operation.state)) return inspectPublication(db, id);
+  await assertCurrentCardModel(db, operation.candidate_id);
   if (operation.generation !== generation)
     throw new AdministrationProblem(409, "publication_writer_conflict", "Use the current publication generation.");
   if (operation.deadline <= at) {
@@ -277,6 +279,9 @@ export async function startGamePublication(
   at: string,
 ) {
   const approval = await approveGamePublication(env.CATALOGUE_DB, input, at);
+  const current = await inspectPublication(env.CATALOGUE_DB, approval.id);
+  if (!["published", "failed", "retry_paused"].includes(current.state))
+    await assertCurrentCardModel(env.CATALOGUE_DB, current.candidate_id);
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       await dispatchGamePublication(
@@ -330,6 +335,7 @@ export async function pauseGamePublication(
   code: string,
   successor?: { shard: number; sequence: number },
 ) {
+  await assertCurrentCardModel(db, (await inspectPublication(db, id)).candidate_id);
   await (
     successor
       ? pausePublicationSuccessor(db, id, generation, successor.shard, successor.sequence)
@@ -343,6 +349,7 @@ export async function resumeGamePublication(
   input: { generation: number; idempotency_key: string },
   at: string,
 ) {
+  await assertCurrentCardModel(env.CATALOGUE_DB, (await inspectPublication(env.CATALOGUE_DB, id)).candidate_id);
   const request = canonicalJson({ id, ...input });
   const prior = await publicationResumeAction(env.CATALOGUE_DB, input.idempotency_key).first<{
     request_json: string;
@@ -385,5 +392,8 @@ export async function resumeGamePublication(
 
 /** Classification avoids generating new public exports; the final guard rechecks the immutable receipts. */
 export async function gamePublicationHasUnchangedFacts(db: CatalogueStore, id: string): Promise<boolean> {
+  const operation = await inspectPublication(db, id);
+  if (!["published", "failed", "retry_paused"].includes(operation.state))
+    await assertCurrentCardModel(db, operation.candidate_id);
   return (await publicationUnchangedFactsStatement(db, id).first<{ equal: number }>())?.equal === 1;
 }

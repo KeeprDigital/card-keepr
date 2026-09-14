@@ -1,5 +1,25 @@
-import type { SupportedGame } from "./catalogue-candidate-types";
+import type { CatalogueCard, CardCategory, SupportedGame } from "./catalogue-candidate-types";
 import { canonicalJson } from "./serialization";
+
+/** Re-derive model fields while preparing fresh work from retained Card facts.
+ * The retained document and its identity remain untouched.
+ */
+export function derivedCardModel(
+  card: Pick<CatalogueCard, "game_data"> &
+    Partial<Pick<CatalogueCard, "category" | "gameplay_applicability" | "related_cards">>,
+) {
+  const classification = gameProfileCardClassification(
+    card.game_data.profile,
+    card.game_data.attributes,
+    card.category,
+  );
+  if (
+    card.gameplay_applicability !== undefined &&
+    card.gameplay_applicability !== classification.gameplay_applicability
+  )
+    throw new Error("Retained Card gameplay applicability conflicts with its category.");
+  return { ...classification, related_cards: card.related_cards ?? [] };
+}
 
 export type ProfileWarning = Readonly<{
   code: "unknown_source_vocabulary" | "unknown_source_field";
@@ -308,6 +328,29 @@ export function gameProfileForGame(game: string): string | null {
   return Object.entries(profileContracts).find(([, contract]) => contract.game === game)?.[0] ?? null;
 }
 
+/** Existing source vocabularies declare tokens through their Game Profile. */
+export function gameProfileCardClassification(
+  profile: string,
+  attributes: Record<string, unknown>,
+  category?: unknown,
+) {
+  requiredProfileContract(profile);
+  const token =
+    (profile === "gundam@1" && attributes.card_type === "unit_token") ||
+    (profile === "riftbound@1" && Array.isArray(attributes.supertypes) && attributes.supertypes.includes("token"));
+  const resolved = category === undefined ? (token ? "token" : "gameplay") : category;
+  if (
+    typeof resolved !== "string" ||
+    !["gameplay", "token", "art"].includes(resolved) ||
+    (resolved === "token") !== token
+  )
+    throw new Error("Card category conflicts with its Game Profile.");
+  return {
+    category: resolved as CardCategory,
+    gameplay_applicability: resolved === "art" ? ("inapplicable" as const) : ("applicable" as const),
+  };
+}
+
 /** Parse equality against a scalar profile leaf; arrays mean membership. */
 export function gameProfileFilterValue(profile: string, path: string, raw: string): string | null {
   let schema: Schema | undefined = requiredProfileContract(profile).card;
@@ -330,6 +373,31 @@ export function gameProfileFilterValue(profile: string, path: string, raw: strin
 }
 
 export function exportedGameProfileSchema(profile: string) {
+  const contract = requiredProfileContract(profile);
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["category", "gameplay_applicability", "card", "printing"],
+    properties: {
+      category: { enum: ["gameplay", "token", "art"] },
+      gameplay_applicability: { enum: ["applicable", "inapplicable"] },
+      card: { ...exportedSchema(contract.card), required: [] } as Record<string, unknown>,
+      printing: exportedSchema(contract.printing),
+    },
+    allOf: [
+      {
+        if: { properties: { category: { const: "art" } } },
+        then: { properties: { gameplay_applicability: { const: "inapplicable" }, card: { maxProperties: 0 } } },
+        else: {
+          properties: { gameplay_applicability: { const: "applicable" }, card: { required: contract.card.required } },
+        },
+      },
+    ],
+  };
+}
+
+/** Retained aggregate export replay keeps the original profile bytes. */
+export function retainedGameProfileSchema(profile: string) {
   const contract = requiredProfileContract(profile);
   return {
     type: "object",
@@ -387,8 +455,14 @@ export function canonicalProfileAttributes(
   entity: "card" | "printing",
   raw: Record<string, unknown>,
   warnings: ProfileWarning[],
+  category: CardCategory = "gameplay",
 ): Record<string, unknown> {
   const contract = requiredProfileContract(profile);
+  if (entity === "card" && category === "art") {
+    if (Object.keys(raw).length !== 0)
+      throw new Error("Art Card gameplay attributes are inapplicable and must be empty.");
+    return {};
+  }
   const schema = entity === "card" ? contract.card : contract.printing;
   const canonical = sanitize(raw, schema, entity, sourceObservationId, profile, warnings);
   if (!isRecord(canonical)) {

@@ -25,7 +25,7 @@ Published facts about Supported Games, their cards, and related official release
 _Avoid_: Collection data, inventory
 
 **Game Profile**:
-A shared schema defining the shape and meaning of a Supported Game’s rules-relevant Catalogue Data independently of any Source’s presentation; all sources for the game map to the applicable profile. Its definitions evolve with game content and field meanings, with one definition edited in place before Go-Live and explicitly versioned definitions from Go-Live.
+A shared schema defining the shape and meaning of a Supported Game's Catalogue Data and Card equivalence independently of any Source's presentation, including gameplay properties only where applicable; all sources for the game map to the applicable profile. Its definitions evolve with game content and field meanings, with one definition edited in place before Go-Live and explicitly versioned definitions from Go-Live.
 _Avoid_: Source schema, adapter payload
 
 **Source**:
@@ -97,7 +97,7 @@ The owner-authored request for a Curated Revision: the Supported Game, the exact
 _Avoid_: Curated Revision, patch, override, Catalogue Candidate
 
 **Card**:
-A rules-level game piece representing a real card, with equivalence defined by its Supported Game's Game Profile rather than functional similarity or publisher number alone. A Card may have multiple Printings; original or custom creations are excluded regardless of how a record enters the catalogue.
+A real issued gameplay or collectible card design associated with a Supported Game, including tokens and art cards, with equivalence defined by its Game Profile rather than functional similarity or publisher number alone. A Card may have multiple Printings; advertising, incidental pack inserts and original or custom creations are outside scope.
 _Avoid_: Artwork variant, physical copy, custom card
 
 **Entity Proposal**:

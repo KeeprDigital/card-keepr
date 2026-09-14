@@ -72,6 +72,7 @@ beforeEach(async () => {
   };
   const printing = {
     type: "printing",
+    gameplay_applicability: "applicable",
     id: "printing_st15_event",
     card_id: "card_st15_event",
     rarity: { normalized: "leader", raw: "L" },
@@ -97,6 +98,9 @@ beforeEach(async () => {
   };
   const card = {
     type: "card",
+    category: "gameplay",
+    gameplay_applicability: "applicable",
+    related_cards: [],
     id: printing.card_id,
     game: "one-piece",
     official_identity: { kind: "card_number", value: "ST15-001" },
@@ -997,6 +1001,7 @@ test("Product cursors pin the route and preserve filtered keyset order", async (
 test("Printing collection binds every normalized filter to one card-ordered revision-pinned keyset", async () => {
   const secondPrinting = {
     type: "printing",
+    gameplay_applicability: "applicable",
     id: "printing_zzz_us",
     card_id: "card_aaa_us",
     rarity: { normalized: "rare", raw: "R" },
@@ -1015,6 +1020,9 @@ test("Printing collection binds every normalized filter to one card-ordered revi
   };
   const secondCard = {
     type: "card",
+    category: "gameplay",
+    gameplay_applicability: "applicable",
+    related_cards: [],
     id: secondPrinting.card_id,
     game: "one-piece",
     official_identity: { kind: "card_number", value: "ST-US-001" },

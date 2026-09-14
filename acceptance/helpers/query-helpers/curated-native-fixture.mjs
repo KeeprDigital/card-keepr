@@ -51,6 +51,9 @@ export function curatedNativeFixture() {
   entity("candidate_before_curated_cards", {
     id: "card_monk",
     game: "riftbound",
+    category: "gameplay",
+    gameplay_applicability: "applicable",
+    related_cards: [],
     name: "Kinkou Monk",
     official_identity: { kind: "publisher_name", value: "Kinkou Monk" },
     effective_rules_text: null,
@@ -73,6 +76,7 @@ export function curatedNativeFixture() {
   entity("candidate_before_curated_printings", {
     id: "printing_monk",
     card_id: "card_monk",
+    gameplay_applicability: "applicable",
     printed_rules_text: null,
     rarity: { normalized: "uncommon", raw: "Uncommon" },
     game_data: null,

@@ -1,11 +1,13 @@
 import { type CatalogueStore, repositoryStatements } from "../shared";
+import { currentCardModelSql } from "./card-model-repository";
 export function collectionRevisionStatement(
   database: CatalogueStore,
   cursorRevision: string | null,
   options: { search?: boolean; projection?: boolean },
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`
+    .prepare(
+      `
     SELECT revision.id, revision.published_at
     FROM catalogue_revisions AS revision
     ${
@@ -16,6 +18,8 @@ export function collectionRevisionStatement(
     }
     ${options.search === true ? "JOIN card_search_fts_state AS search ON search.singleton = 1 AND search.state = 'ready'" : ""}
     WHERE revision.id = coalesce(?, (SELECT current_revision_id FROM catalogue_state WHERE singleton = 1))
-  `)
+    ${options.projection === false ? "" : `AND ${currentCardModelSql("revision")}`}
+  `,
+    )
     .bind(cursorRevision);
 }
