@@ -20,6 +20,10 @@ function publicationExitCode(document) {
   return document.state === "published" ? 0 : 10;
 }
 function formatAdministrationResult(document) {
+  if (document.contract === "card-keepr-evidence-acceptance@1")
+    return `Collection ${document.id} accepted; resume explicitly, then inspect ${document.links.status} for current status.`;
+  if (document.contract === "card-keepr-collection-dispatch@1")
+    return `Collection ${document.ingestion_run_id} dispatch accepted; inspect ${document.links.status} for completion.`;
   if (document.contract === "card-keepr-publication-acceptance@1")
     return `Publication ${document.id} accepted; inspect ${document.links.status} for current status.`;
   if (document.contract === "card-keepr-game-publication@1")

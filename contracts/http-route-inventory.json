@@ -1042,7 +1042,7 @@
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/ingestion-runs/{run}/capacity/extension",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Sources and collection",
     "named_cli": "source capacity extend",
     "callers": [
@@ -1058,12 +1058,13 @@
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/ingestion-runs/{run}/collection/pause",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Sources and collection",
     "named_cli": "pauseEvidenceCollection",
     "callers": [
       "apps/ingestion/test/runtime-collection-resume.spec.ts",
       "apps/ingestion/test/runtime-owner-pause.spec.ts",
+      "apps/ingestion/test/source-http-contract.spec.ts",
       "cli/keepr.mjs"
     ]
   },
@@ -1072,11 +1073,12 @@
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/ingestion-runs/{run}/collection/resume",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Sources and collection",
     "named_cli": "resumeEvidenceCollection",
     "callers": [
       "acceptance/operational-diagnostics-leak.test.mjs",
+      "acceptance/source-evidence-cli.test.mjs",
       "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
       "apps/ingestion/test/runtime-adapter-reparse.spec.ts",
       "apps/ingestion/test/runtime-capacity-resume.spec.ts",
@@ -1096,6 +1098,7 @@
       "apps/ingestion/test/runtime-synthetic-transport.spec.ts",
       "apps/ingestion/test/runtime-workflow-collection.spec.ts",
       "apps/ingestion/test/runtime-workflow-recovery.spec.ts",
+      "apps/ingestion/test/source-http-contract.spec.ts",
       "cli/keepr.mjs"
     ]
   },
@@ -1104,7 +1107,7 @@
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/ingestion-runs/{run}/collection/retry",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Sources and collection",
     "named_cli": "retryEvidenceCollection",
     "callers": [
@@ -1113,6 +1116,7 @@
       "apps/ingestion/test/runtime-capacity-pause.spec.ts",
       "apps/ingestion/test/runtime-diagnostics.spec.ts",
       "apps/ingestion/test/runtime-workflow-collection.spec.ts",
+      "apps/ingestion/test/source-http-contract.spec.ts",
       "cli/keepr.mjs"
     ]
   },
@@ -1121,15 +1125,17 @@
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/ingestion-runs/{run}/collection/termination",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Sources and collection",
     "named_cli": "terminateEvidenceCollection",
     "callers": [
       "acceptance/operational-diagnostics-leak.test.mjs",
+      "acceptance/source-evidence-cli.test.mjs",
       "apps/ingestion/test/runtime-collection-termination.spec.ts",
       "apps/ingestion/test/runtime-owner-pause.spec.ts",
       "apps/ingestion/test/runtime-workflow-collection.spec.ts",
       "apps/ingestion/test/runtime-workflow-recovery.spec.ts",
+      "apps/ingestion/test/source-http-contract.spec.ts",
       "cli/keepr.mjs"
     ]
   },
@@ -1138,7 +1144,7 @@
     "family": "source-evidence",
     "method": "GET",
     "path": "/v1/ingestion-runs/{run}/evidence",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Sources and collection",
     "named_cli": "showSourceEvidence",
     "callers": [
@@ -1155,9 +1161,11 @@
       "apps/ingestion/test/native-semantic-receipts.spec.ts",
       "apps/ingestion/test/publication-caller-retirement.spec.ts",
       "apps/ingestion/test/reconciliation-provenance-locators.spec.ts",
+      "apps/ingestion/test/runtime-diagnostics.spec.ts",
       "apps/ingestion/test/runtime-game-preparation-dispatch.spec.ts",
       "apps/ingestion/test/runtime-helpers.ts",
       "apps/ingestion/test/runtime-workflow-collection.spec.ts",
+      "apps/ingestion/test/source-http-contract.spec.ts",
       "apps/ingestion/test/source-refresh-publication.spec.ts",
       "cli/keepr.mjs"
     ]
@@ -1426,7 +1434,7 @@
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/ingestion-runs/evidence",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Sources and collection",
     "named_cli": "source collect",
     "callers": [
@@ -1435,6 +1443,7 @@
       "acceptance/fixtures/retained-evidence-base-harness.ts",
       "acceptance/helpers/cli-http.mjs",
       "acceptance/operational-diagnostics-leak.test.mjs",
+      "acceptance/source-evidence-cli.test.mjs",
       "apps/ingestion/test/capacity-pause-helpers.ts",
       "apps/ingestion/test/errata-rules-text.spec.ts",
       "apps/ingestion/test/game-candidate-integrity.spec.ts",
@@ -1462,6 +1471,7 @@
       "apps/ingestion/test/runtime-synthetic-transport.spec.ts",
       "apps/ingestion/test/runtime-workflow-collection.spec.ts",
       "apps/ingestion/test/source-authority.spec.ts",
+      "apps/ingestion/test/source-http-contract.spec.ts",
       "apps/ingestion/test/source-refresh.spec.ts",
       "cli/keepr.mjs",
       "cli/staging-release.mjs"
@@ -1769,12 +1779,13 @@
     "family": "source-evidence",
     "method": "GET",
     "path": "/v1/source-authorities",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Sources and collection",
     "named_cli": "sourceAuthorities",
     "callers": [
       "acceptance/composition-smoke-targets.test.mjs",
       "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/source-evidence-cli.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
       "apps/ingestion/test/entity-admission.spec.ts",
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
@@ -1782,6 +1793,7 @@
       "apps/ingestion/test/reconciliation-card-identity.spec.ts",
       "apps/ingestion/test/reviewed-printing-matches.spec.ts",
       "apps/ingestion/test/source-authority.spec.ts",
+      "apps/ingestion/test/source-http-contract.spec.ts",
       "apps/ingestion/test/source-refresh.spec.ts",
       "cli/keepr.mjs"
     ]
@@ -1791,12 +1803,13 @@
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/source-authorities",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Sources and collection",
     "named_cli": "selectSourceAuthority",
     "callers": [
       "acceptance/composition-smoke-targets.test.mjs",
       "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/source-evidence-cli.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
       "apps/ingestion/test/entity-admission.spec.ts",
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
@@ -1804,6 +1817,7 @@
       "apps/ingestion/test/reconciliation-card-identity.spec.ts",
       "apps/ingestion/test/reviewed-printing-matches.spec.ts",
       "apps/ingestion/test/source-authority.spec.ts",
+      "apps/ingestion/test/source-http-contract.spec.ts",
       "apps/ingestion/test/source-refresh.spec.ts",
       "cli/keepr.mjs"
     ]
@@ -1813,10 +1827,12 @@
     "family": "source-evidence",
     "method": "GET",
     "path": "/v1/source-lineages/{lineage}/lifecycle",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Sources and collection",
     "named_cli": "sourceLifecycle",
     "callers": [
+      "acceptance/source-evidence-cli.test.mjs",
+      "apps/ingestion/test/source-http-contract.spec.ts",
       "cli/keepr.mjs"
     ]
   },
@@ -1825,10 +1841,12 @@
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/source-lineages/{lineage}/lifecycle",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Sources and collection",
     "named_cli": "decideSourceLifecycle",
     "callers": [
+      "acceptance/source-evidence-cli.test.mjs",
+      "apps/ingestion/test/source-http-contract.spec.ts",
       "cli/keepr.mjs"
     ]
   },
@@ -1837,13 +1855,14 @@
     "family": "source-evidence",
     "method": "GET",
     "path": "/v1/source-observation-sets/{observationSet}/content",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Sources and collection",
     "named_cli": null,
     "callers": [
       "acceptance/digimon-catalogue.test.mjs",
       "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
-      "apps/ingestion/test/runtime-workflow-collection.spec.ts"
+      "apps/ingestion/test/runtime-workflow-collection.spec.ts",
+      "apps/ingestion/test/source-http-contract.spec.ts"
     ]
   },
   {
@@ -1851,24 +1870,28 @@
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/source-observation-sets/{observationSet}/records",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Sources and collection",
     "named_cli": null,
-    "callers": []
+    "callers": [
+      "apps/ingestion/test/source-http-contract.spec.ts"
+    ]
   },
   {
     "worker": "admin",
     "family": "source-evidence",
     "method": "GET",
     "path": "/v1/source-registry",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Sources and collection",
     "named_cli": "sourceRegistry",
     "callers": [
       "acceptance/composition-smoke-targets.test.mjs",
       "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/source-evidence-cli.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
       "apps/ingestion/test/source-authority.spec.ts",
+      "apps/ingestion/test/source-http-contract.spec.ts",
       "cli/keepr.mjs"
     ]
   },
@@ -1877,13 +1900,14 @@
     "family": "source-evidence",
     "method": "GET",
     "path": "/v1/source-snapshots/{snapshot}/content",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Sources and collection",
     "named_cli": null,
     "callers": [
       "acceptance/composed-recovery.test.mjs",
       "apps/ingestion/test/reconciliation-progress.spec.ts",
-      "apps/ingestion/test/runtime-workflow-collection.spec.ts"
+      "apps/ingestion/test/runtime-workflow-collection.spec.ts",
+      "apps/ingestion/test/source-http-contract.spec.ts"
     ]
   },
   {
@@ -1891,13 +1915,14 @@
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/source-snapshots/{snapshot}/observations",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Sources and collection",
     "named_cli": "reparseSourceSnapshot",
     "callers": [
       "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
       "apps/ingestion/test/runtime-adapter-reparse.spec.ts",
       "apps/ingestion/test/runtime-storage-recovery.spec.ts",
+      "apps/ingestion/test/source-http-contract.spec.ts",
       "cli/keepr.mjs"
     ]
   },

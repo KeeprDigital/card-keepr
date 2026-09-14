@@ -438,14 +438,14 @@ permission and publisher ownership do not grant Source Authority.
   "release_region": "OCEANIA",
   "area": "card_facts",
   "source_lineage": "limitless-one-piece-en",
-  "expected_generation": "0",
+  "expected_generation": 0,
   "rationale": "Owner selected this source for the declared scope",
   "idempotency_key": "one-piece-card-authority-selection"
 }
 ```
 
 Areas are `card_facts`, `printing_details` and `corrected_card_content`. The expected
-generation is a non-negative decimal string. Success retains an append-only
+generation is a non-negative JSON integer. Success retains an append-only
 decision and incremented generation. Exact replay returns that decision; changed
 key reuse or stale generation returns 409; invalid scope returns 422. Changes
 require idle collection, review/publication, recovery and release. Selected
@@ -457,3 +457,39 @@ identity decisions and Curated Revisions. Official Erratum observation shapes
 are defined by [their schema](schemas/official-errata.schema.json). Publisher
 corrections preserve Printed Rules Text; publication uses the inspected candidate
 and does not activate/recalculate corrections when an applicability date passes.
+
+## Source and collection HTTP
+
+All 16 source/collection operations are defined by the shared Hono registrations
+and the generated [administration specification](admin-openapi.json). Authority
+and lifecycle commands use JSON integer `expected_generation`; capacity commands
+use JSON integer capacities and generations. Unknown JSON fields are rejected.
+Resume accepts no body or an empty JSON object. Other commands require JSON.
+All command bodies retain the shared 16 KiB bound and problem responses.
+
+Creation and linked retry return 201 with `card-keepr-evidence-acceptance@1`.
+The receipt's `state: collecting` records initial acceptance, never current state.
+Its retained run identity, initial plan, start time and predecessor link replay
+unchanged after pause, completion or termination. Creation does not dispatch work.
+`Location` and `links.status` identify the absolute evidence-status resource;
+`Retry-After` is 1 second. Resume returns 202 with
+`card-keepr-collection-dispatch@1`, its deterministic Workflow Attempt, currently
+observed Workflow status and the same status link. A repeated resume reacquires
+the current attempt; it cannot resume a terminal run. Inspect status to distinguish
+capacity, retry and Workflow pauses, collection completion and later publication.
+
+Pause, capacity extension, authority and lifecycle decisions replay their retained
+results. Termination retains its immutable decision and reports current reservation
+release separately in `active_run_released`. Extension leaves the run paused.
+Collection Termination preserves evidence and only a new linked retry may collect
+again. The CLI's zero exit acknowledges a successful source command or inspection;
+its acceptance text directs the owner to resume/status and does not claim successful
+collection or publication.
+
+Snapshot content streams exact retained bytes with the original media type.
+Observation content streams retained JSON, including historical adapter-owned
+fields. Both carry immutable private caching, Content-Length and digest ETag;
+neither route buffers its body. Parsing appends an immutable observation set for a
+new key and replays the same set for the same intent. Explicit record import seals
+bounded retained records without rewriting the original evidence. Metadata, status
+and command JSON responses use `Cache-Control: no-store`.

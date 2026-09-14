@@ -4,7 +4,9 @@ import { administrationRequest, installRuntimeSuite } from "./runtime-helpers";
 installRuntimeSuite();
 
 test("new publisher authority remains opt-in and an explicit owner designation is visible", async () => {
-  const before = await (await administrationRequest("/v1/source-authorities", "GET")).json<{
+  const before = await (
+    await administrationRequest("/v1/source-authorities", "GET")
+  ).json<{
     authorities: { game: string }[];
   }>();
   expect(before.authorities.some((a) => a.game === "riftbound")).toBe(false);
@@ -14,7 +16,7 @@ test("new publisher authority remains opt-in and an explicit owner designation i
     release_region: "US",
     area: "corrected_card_content",
     source_lineage: "riftbound-en",
-    expected_generation: "0",
+    expected_generation: 0,
     rationale: "Use retained Riot corrections for the English scope.",
     idempotency_key: "riftbound-corrections-authority",
   };
@@ -72,7 +74,7 @@ test("owner explicitly changes scoped authority with replay, stale-write rejecti
     release_region: "OCEANIA",
     area: "card_facts",
     source_lineage: "limitless-one-piece-en",
-    expected_generation: "0",
+    expected_generation: 0,
     rationale: "Selected supplemental card facts",
     idempotency_key: "select-limitless",
   };
@@ -94,7 +96,7 @@ test("owner explicitly changes scoped authority with replay, stale-write rejecti
     (
       await administrationRequest("/v1/source-authorities", "POST", {
         ...selection,
-        expected_generation: "1",
+        expected_generation: 1,
         idempotency_key: "wrong-game",
         source_lineage: "digimon-en",
       })
@@ -104,7 +106,7 @@ test("owner explicitly changes scoped authority with replay, stale-write rejecti
     (
       await administrationRequest("/v1/source-authorities", "POST", {
         ...selection,
-        expected_generation: "1",
+        expected_generation: 1,
         idempotency_key: "wrong-locale",
         locale: "ja",
       })
@@ -144,7 +146,7 @@ test("an in-flight collection fences authority changes", async () => {
     release_region: "OCEANIA",
     area: "printing_details",
     source_lineage: "limitless-one-piece-en",
-    expected_generation: "0",
+    expected_generation: 0,
     rationale: "Must wait for collection",
     idempotency_key: "busy-authority",
   });

@@ -66,6 +66,7 @@ const commandRoutes = {
   },
   sourceLifecycle: { path: "/v1/source-lineages/{lineage}/lifecycle" },
   decideSourceLifecycle: {
+    integers: ["expected_generation"],
     path: "/v1/source-lineages/{lineage}/lifecycle",
     fields: {
       state: "state",
@@ -77,6 +78,7 @@ const commandRoutes = {
   sourceRegistry: { path: "/v1/source-registry" },
   sourceAuthorities: { path: "/v1/source-authorities" },
   selectSourceAuthority: {
+    integers: ["expected_generation"],
     path: "/v1/source-authorities",
     fields: {
       game: "game",

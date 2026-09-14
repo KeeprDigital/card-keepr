@@ -41,10 +41,13 @@ test("evidence run diagnostics retain safe adapter, workflow, coverage, and retr
     requests: officialSourceDiscoveryRequests("one-piece-en"),
   });
   expect(response.status).toBe(201);
-  const run = await response.json<Record<string, unknown>>();
+  const receipt = await response.json<{ id: string }>();
   const requestLog = JSON.parse(records.at(-1) ?? "null") as {
     request: { id: string };
   };
+  const status = await administrationRequest(`/v1/ingestion-runs/${receipt.id}/evidence`, "GET");
+  expect(status.status).toBe(200);
+  const run = await status.json<Record<string, unknown>>();
   expect(run).toMatchObject({
     operational_diagnostics: {
       contract: "card-keepr-operational-diagnostics@1",
@@ -127,7 +130,10 @@ test("terminal evidence diagnostics expose collection retry guidance without a s
     idempotency_key: "terminal-evidence-diagnostics-retry",
   });
   expect(retried.status).toBe(201);
-  const retryDocument = await retried.json<Record<string, unknown>>();
+  const retryReceipt = await retried.json<{ id: string }>();
+  const retryStatus = await administrationRequest(`/v1/ingestion-runs/${retryReceipt.id}/evidence`, "GET");
+  expect(retryStatus.status).toBe(200);
+  const retryDocument = await retryStatus.json<Record<string, unknown>>();
   const retryLog = records
     .map((record) => JSON.parse(record))
     .reverse()
