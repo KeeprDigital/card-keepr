@@ -267,6 +267,51 @@ when the HTTP request succeeded. See the
 [publication protocol](../docs/runbooks/publication.md#approve-and-observe-publication) for the
 composition and recovery rules.
 
+## Identity review and Entity Proposals
+
+All 13 identity/admission operations use the generated administration contract.
+Every operation requires the owner bearer key and returns JSON with
+`Cache-Control: no-store`. Commands accept `application/json`, bounded to 16 KiB
+by streamed byte count. Malformed JSON returns 400, unsupported media 415,
+oversized bodies 413, invalid typed commands 422, invalid queries 400 and domain
+conflicts 409. Domain evidence, category/profile structure, idle-operation and
+recovery guards continue to apply after wire validation.
+
+| Operation                    | Route                                                       | Result                                                  |
+| ---------------------------- | ----------------------------------------------------------- | ------------------------------------------------------- |
+| List/create Entity Proposals | GET/POST `/v1/entity-proposals`                             | 200 list / 201 current inspection                       |
+| Inspect proposal/history     | GET `/v1/entity-proposals/{proposal}`                       | 200 inspection; `after_generation` pages history        |
+| Inspect captured evidence    | GET `/v1/entity-proposals/{proposal}/evidence`              | 200 evidence references; `after` pages captures         |
+| Admit/link/reject/reconsider | POST `/v1/entity-proposals/{proposal}/decisions`            | 200 current inspection                                  |
+| Validate correction          | POST `/v1/identity-corrections/validate`                    | 200 reviewed identities, relationships and digest       |
+| List/create corrections      | GET/POST `/v1/identity-corrections`                         | 200 list / 201 immutable decision                       |
+| Inspect correction           | GET `/v1/identity-corrections/{correction}`                 | 200 retained decision and reviewed evidence             |
+| Inspect canonical identity   | GET `/v1/reconciliation/identities/{identity}`              | 200 retained mappings                                   |
+| List identity reviews        | GET `/v1/reconciliation/identity-reviews`                   | 200 retained reviews                                    |
+| Resolve review               | POST `/v1/reconciliation/identity-reviews/{review}/resolve` | 200 immutable decision                                  |
+| Inspect reconciled Printing  | GET `/v1/reconciliation/printings/{printing}`               | 200 accepted locator, membership and withdrawal history |
+
+Proposal and correction lists require `game`. Correction `after` and proposal
+`after_generation` are canonical non-negative decimal strings. Proposal decisions
+retain that same representation for `expected_generation`, preserving stored
+intent bytes. Creating a proposal retains incomplete intake for review; admission
+still requires valid current Card/Printing structure. Reconsideration appends
+intake and never overwrites the initial intake or earlier decisions.
+
+Proposal creation/decision replay returns current inspection while preserving the
+original immutable intake/decision; subsequent decisions can change its status and
+history. Correction creation and identity resolution return their original
+immutable decision on exact replay. Reusing an intent for different content
+conflicts. None of these acknowledgements approves or publishes a candidate.
+
+Identity inspection accepts `after` and optional `preparation_id`; review listing
+accepts `after` and requires `run_id` or `preparation_id`. Preparation-scoped mappings
+include their candidate state, while ordinary identity inspection reads
+retained canonical mappings. Historical evidence remains inspectable using the
+shared retained schemas without rewriting bytes. A split retains every replacement
+and never chooses which one represents a consumer-owned copy. Follow the
+[owner decision procedure](../docs/runbooks/sources.md).
+
 ## Historical run operations
 
 New POST `/v1/ingestion-runs/:run/approval` intents return HTTP `410`

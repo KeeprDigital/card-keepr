@@ -152,11 +152,13 @@ const artCard = z.strictObject({
 export const cardRecord = z
   .union([gameplayCard.openapi("CandidateGameplayCard"), artCard.openapi("CandidateArtCard")])
   .openapi("CandidateCard");
-export const observedCard = z.union([gameplayCard.omit({ id: true }), artCard.omit({ id: true })]);
+export const observedCard = z
+  .union([gameplayCard.omit({ id: true }), artCard.omit({ id: true })])
+  .openapi("CandidateObservedCard");
 export const historicalCard = gameplayCard
   .omit({ category: true, gameplay_applicability: true, related_cards: true })
   .openapi("RetainedPreCategoryCard");
-export const historicalObservedCard = historicalCard.omit({ id: true });
+export const historicalObservedCard = historicalCard.omit({ id: true }).openapi("RetainedPreCategoryObservedCard");
 const printingFields = {
   ...curated,
   id: identifier,
@@ -180,8 +182,10 @@ export const printingRecord = z.strictObject(printingFields).openapi("CandidateP
 export const historicalPrinting = printingRecord
   .omit({ gameplay_applicability: true })
   .openapi("RetainedPreCategoryPrinting");
-export const historicalObservedPrinting = historicalPrinting.omit({ id: true, card_id: true });
-export const observedPrinting = printingRecord.omit({ id: true, card_id: true });
+export const historicalObservedPrinting = historicalPrinting
+  .omit({ id: true, card_id: true })
+  .openapi("RetainedPreCategoryObservedPrinting");
+export const observedPrinting = printingRecord.omit({ id: true, card_id: true }).openapi("CandidateObservedPrinting");
 export const imageRecord = z
   .strictObject({
     id: identifier,

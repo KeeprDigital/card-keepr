@@ -1,4 +1,6 @@
 import { expect, test } from "vitest";
+import contract from "../../../contracts/admin-openapi.json";
+import { assertHttpResponse } from "../../../test/support/http-contract";
 import { catalogueStore, canonicalJson } from "../../../src/catalogue/shared";
 import { allocatedIdentityStatement } from "../../../src/catalogue/reconciliation/canonical-identity-repository";
 import {
@@ -115,6 +117,13 @@ test.each(["gameplay", "token"] as const)(
     const retained = await proposalHistoryStatement(database, proposal).first();
     const replay = await post(`/v1/entity-proposals/${proposal}/decisions`, input);
     expect(replay.response.status).toBe(200);
+    await assertHttpResponse(
+      contract,
+      "/v1/entity-proposals/{proposal}/decisions",
+      "post",
+      replay.response,
+      replay.document,
+    );
     expect(replay.document.history).toEqual([expect.objectContaining({ decision })]);
     const reconsidered = await post(`/v1/entity-proposals/${proposal}/decisions`, {
       action: "reconsider",
@@ -129,6 +138,13 @@ test.each(["gameplay", "token"] as const)(
       idempotency_key: "reaffirm-retained",
     });
     expect(reaffirmed.response.status, JSON.stringify(reaffirmed.document)).toBe(200);
+    await assertHttpResponse(
+      contract,
+      "/v1/entity-proposals/{proposal}/decisions",
+      "post",
+      reaffirmed.response,
+      reaffirmed.document,
+    );
     expect(reaffirmed.document.history).toEqual([
       expect.objectContaining({ decision }),
       expect.objectContaining({

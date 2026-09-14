@@ -139,6 +139,17 @@ fact/input shapes without rewriting immutable evidence. Source-defined values
 remain JSON. Candidate image inspection uses the shared streaming boundary to
 check declared media and headers without buffering bytes.
 
+## Identity review and admission
+
+All 13 identity/admission operations are registered through the reconciliation
+module. The [administration protocol](ADMINISTRATION.md#identity-review-and-entity-proposals)
+defines wire inputs, retained decision replay, status-specific responses and
+history pagination. Proposal evidence and preparation-scoped identity review are
+available in the CLI as well as HTTP. Current profile checks and evidence-backed
+admission stay in the domain; retained correction and identity evidence reuse
+the shared historical schemas. Admission, correction and review resolution leave
+whole-candidate approval and publication separate.
+
 ## Migrating a family
 
 1. Find the operation and potential callers in [the generated inventory](http-route-inventory.json).

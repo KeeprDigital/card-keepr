@@ -1,4 +1,6 @@
 import { expect, test } from "vitest";
+import contract from "../../../contracts/admin-openapi.json";
+import { assertHttpResponse } from "../../../test/support/http-contract";
 import {
   insertAdmissionDecisionStatement,
   proposalHistoryStatement,
@@ -54,6 +56,7 @@ test("owner retains incomplete intake, rejects and explicitly reconsiders withou
     idempotency_key: "proposal-1",
   });
   expect(created.response.status).toBe(201);
+  await assertHttpResponse(contract, "/v1/entity-proposals", "post", created.response, created.document);
   const id = String(created.document.id);
   expect(created.document).toMatchObject({ status: "unresolved", generation: 0 });
   const rejected = await post(`/v1/entity-proposals/${id}/decisions`, {
@@ -64,6 +67,13 @@ test("owner retains incomplete intake, rejects and explicitly reconsiders withou
   });
   expect(rejected.document).not.toHaveProperty("code");
   expect(rejected.response.status).toBe(200);
+  await assertHttpResponse(
+    contract,
+    "/v1/entity-proposals/{proposal}/decisions",
+    "post",
+    rejected.response,
+    rejected.document,
+  );
   expect(rejected.document).toMatchObject({ status: "rejected", generation: 1 });
   const reconsidered = await post(`/v1/entity-proposals/${id}/decisions`, {
     action: "reconsider",
@@ -73,11 +83,48 @@ test("owner retains incomplete intake, rejects and explicitly reconsiders withou
   });
   expect(reconsidered.response.status).toBe(200);
   const inspected = await get(`/v1/entity-proposals/${id}`);
+  await assertHttpResponse(contract, "/v1/entity-proposals/{proposal}", "get", inspected.response, inspected.document);
   expect(inspected.document).toMatchObject({ status: "unresolved", generation: 2 });
   expect(inspected.document.history).toEqual([
     expect.objectContaining({ action: "reject", rationale: "Identity not established" }),
     expect.objectContaining({ action: "reconsider", rationale: "Owner will inspect again" }),
   ]);
+  const listed = await get("/v1/entity-proposals?game=one-piece");
+  await assertHttpResponse(contract, "/v1/entity-proposals", "get", listed.response, listed.document);
+  expect(listed.document.proposals).toEqual([expect.objectContaining({ id, generation: 2, status: "unresolved" })]);
+  const evidence = await get(`/v1/entity-proposals/${id}/evidence`);
+  await assertHttpResponse(
+    contract,
+    "/v1/entity-proposals/{proposal}/evidence",
+    "get",
+    evidence.response,
+    evidence.document,
+  );
+  expect(evidence.document).toEqual({ evidence: [], next_cursor: null });
+  const invalid = await get(`/v1/entity-proposals/${id}?after_generation=-1`);
+  expect(invalid.response.status).toBe(400);
+  await assertHttpResponse(contract, "/v1/entity-proposals/{proposal}", "get", invalid.response, invalid.document);
+  const replay = await post(`/v1/entity-proposals/${id}/decisions`, {
+    action: "reject",
+    expected_generation: "0",
+    rationale: "Identity not established",
+    idempotency_key: "reject-1",
+  });
+  expect(replay.document).toEqual(inspected.document);
+  const conflict = await post(`/v1/entity-proposals/${id}/decisions`, {
+    action: "reject",
+    expected_generation: "0",
+    rationale: "Changed intent",
+    idempotency_key: "reject-1",
+  });
+  expect(conflict.response.status).toBe(409);
+  await assertHttpResponse(
+    contract,
+    "/v1/entity-proposals/{proposal}/decisions",
+    "post",
+    conflict.response,
+    conflict.document,
+  );
 });
 
 const syntheticCard = {

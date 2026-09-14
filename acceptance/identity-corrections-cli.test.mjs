@@ -1,4 +1,5 @@
 import { readWorkerConfig } from "../cli/lib/config.mjs";
+import { assertIdentityCliDocument } from "./helpers/identity-http-contract.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -77,7 +78,9 @@ test("owner CLI publishes a reviewed split and authenticated consumers retain th
       args[0] === "game-candidate" && ["prepare", "pause", "resume", "abandon"].includes(args[1]) ? 10 : 0,
       `${result.stdout}\n${result.stderr}`,
     );
-    return JSON.parse(result.stdout);
+    const document = JSON.parse(result.stdout);
+    assertIdentityCliDocument(args, document);
+    return document;
   };
   const file = join(directory, "proposal.json");
   const ids = [],
@@ -229,6 +232,7 @@ test("owner CLI publishes a reviewed split and authenticated consumers retain th
   assert.equal((await cli(["identity-correction", "inspect", "--correction-id", decision.id])).action, "split");
   assert.equal((await cli(["identity-correction", "list", "--game", "one-piece"])).decisions.length, 2);
   const publication = await publish("corrected", initial.resulting_revision_id);
+  assert.deepEqual(await cli(["identity-correction", "create", "--proposal", file, "--yes"]), decision);
   await stopWorker(ingestion);
   api = await startWorker({ config: "apps/api/wrangler.jsonc", envFile: apiEnv, statePath });
   await waitForHealth(`${api.url}/health`, key, api);

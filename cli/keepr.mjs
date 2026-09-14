@@ -58,8 +58,14 @@ const commandRoutes = {
     },
   },
 
-  identityInspect: { path: "/v1/reconciliation/identities/{identity-id}?after={after}", optional: ["after"] },
-  identityReviews: { path: "/v1/reconciliation/identity-reviews?run_id={run-id}&after={after}", optional: ["after"] },
+  identityInspect: {
+    path: "/v1/reconciliation/identities/{identity-id}?after={after}&preparation_id={preparation-id}",
+    optional: ["after", "preparation-id"],
+  },
+  identityReviews: {
+    path: "/v1/reconciliation/identity-reviews?run_id={run-id}&after={after}&preparation_id={preparation-id}",
+    optional: ["after", "run-id", "preparation-id"],
+  },
   identityResolve: {
     path: "/v1/reconciliation/identity-reviews/{review-id}/resolve",
     yes: true,

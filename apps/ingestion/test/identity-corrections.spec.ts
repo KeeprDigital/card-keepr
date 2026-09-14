@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, test } from "vitest";
+import contract from "../../../contracts/admin-openapi.json";
+import { assertHttpResponse } from "../../../test/support/http-contract";
 import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
@@ -84,9 +86,27 @@ test("reviewed Card merge retains its decision and changes only a newly approved
   };
   const validation = await post("/v1/identity-corrections/validate", proposal);
   expect(validation.response.status, JSON.stringify(validation.document)).toBe(200);
+  await assertHttpResponse(
+    contract,
+    "/v1/identity-corrections/validate",
+    "post",
+    validation.response,
+    validation.document,
+  );
   const request = { ...proposal, review_digest: validation.document.review_digest, idempotency_key: "merge" };
   const decision = await post("/v1/identity-corrections", request);
   expect(decision.response.status, JSON.stringify(decision.document)).toBe(201);
+  await assertHttpResponse(contract, "/v1/identity-corrections", "post", decision.response, decision.document);
+  const inspected = await get(`/v1/identity-corrections/${decision.document.id}`);
+  await assertHttpResponse(
+    contract,
+    "/v1/identity-corrections/{correction}",
+    "get",
+    inspected.response,
+    inspected.document,
+  );
+  const listed = await get("/v1/identity-corrections?game=one-piece");
+  await assertHttpResponse(contract, "/v1/identity-corrections", "get", listed.response, listed.document);
   expect((await post("/v1/identity-corrections", request)).document.id).toBe(decision.document.id);
   expect((await get(`/v1/identity-corrections/${decision.document.id}`)).document).toMatchObject({
     action: "merge",

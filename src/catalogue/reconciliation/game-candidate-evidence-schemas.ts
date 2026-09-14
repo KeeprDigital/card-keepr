@@ -16,7 +16,7 @@ import {
 } from "./game-candidate-record-schemas";
 const count = z.number().int().nonnegative();
 const text = z.string().nullable();
-const correctionRequest = z.strictObject({
+export const correctionRequest = z.strictObject({
   game: identifier,
   entity_kind: z.enum(["card", "printing"]),
   action: z.enum(["merge", "split", "assign"]),
@@ -56,13 +56,20 @@ const admissionDecision = (
     publisher_confirmed_fields: z.array(z.string()),
     new_card: z.boolean().optional(),
   });
-const admission = z.union([
-  admissionDecision(cardRecord, printingRecord),
-  admissionDecision(historicalCard, historicalPrinting),
-  z.strictObject({ content: z.record(z.string(), sourceValue), evidence: z.record(z.string(), sourceValue) }),
-  z.strictObject({}),
-]);
-const compatibility = z.strictObject({
+export const admission = z
+  .union([
+    admissionDecision(cardRecord, printingRecord),
+    admissionDecision(historicalCard, historicalPrinting),
+    // Early retained owner decisions predate policy/confirmation annotations.
+    // Keep that complete historical shape separate from strict current decisions.
+    admissionDecision(historicalCard, historicalPrinting)
+      .omit({ policy_digest: true, publisher_confirmed_fields: true })
+      .openapi("RetainedUnversionedAdmissionDecision"),
+    z.strictObject({ content: z.record(z.string(), sourceValue), evidence: z.record(z.string(), sourceValue) }),
+    z.strictObject({}),
+  ])
+  .openapi("RetainedAdmissionDecision");
+export const compatibility = z.strictObject({
   card_id: identifier,
   source_lineage: identifier,
   artwork_fingerprint: text,
@@ -70,29 +77,31 @@ const compatibility = z.strictObject({
   rarity_normalized: text,
   treatment: text,
 });
-const mappingEvidence = z.union([
-  z.strictObject({
-    card: z.union([observedCard, z.null()]),
-    printing: z.union([observedPrinting, z.null()]),
-    compatibility: compatibility.nullable(),
-    publisher_confirmation: z.strictObject({ fields: z.array(z.string()) }).nullable(),
-  }),
-  z.strictObject({
-    card: z.union([historicalObservedCard, z.null()]),
-    printing: z.union([historicalObservedPrinting, z.null()]),
-    compatibility: compatibility.nullable(),
-    publisher_confirmation: z.strictObject({ fields: z.array(z.string()) }).nullable(),
-  }),
-  z.strictObject({
-    compatibility: compatibility.nullable(),
-    retained_evidence: z.strictObject({
-      source_observation_id: identifier,
-      source_observation_set_id: identifier,
-      source_snapshot_id: identifier,
-      content_digest: digest,
+export const mappingEvidence = z
+  .union([
+    z.strictObject({
+      card: z.union([observedCard, z.null()]),
+      printing: z.union([observedPrinting, z.null()]),
+      compatibility: compatibility.nullable(),
+      publisher_confirmation: z.strictObject({ fields: z.array(z.string()) }).nullable(),
     }),
-  }),
-]);
+    z.strictObject({
+      card: z.union([historicalObservedCard, z.null()]),
+      printing: z.union([historicalObservedPrinting, z.null()]),
+      compatibility: compatibility.nullable(),
+      publisher_confirmation: z.strictObject({ fields: z.array(z.string()) }).nullable(),
+    }),
+    z.strictObject({
+      compatibility: compatibility.nullable(),
+      retained_evidence: z.strictObject({
+        source_observation_id: identifier,
+        source_observation_set_id: identifier,
+        source_snapshot_id: identifier,
+        content_digest: digest,
+      }),
+    }),
+  ])
+  .openapi("RetainedIdentityMappingEvidence");
 const evidence = {
   identity: z.strictObject({
     entity_id: identifier,
@@ -158,6 +167,7 @@ const evidence = {
       .optional(),
   }),
 };
+export const correctionEvidence = evidence.correction;
 export const candidateEvidenceSchema = z
   .union(
     Object.entries(evidence).map(([kind, schema]) =>

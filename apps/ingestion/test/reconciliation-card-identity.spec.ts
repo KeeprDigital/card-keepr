@@ -202,6 +202,13 @@ test("withdrawal assertions are longitudinal, append-only, and preserve the firs
     resulting_revision_id: firstRevision,
   });
   const retained = await get(`/v1/reconciliation/printings/${printingId}`);
+  await assertHttpResponse(
+    contract,
+    "/v1/reconciliation/printings/{printing}",
+    "get",
+    retained.response,
+    retained.document,
+  );
   expect(retained.document).toMatchObject({
     lifecycle: {
       withdrawn: true,
@@ -1037,6 +1044,13 @@ test("opaque identities retain inspectable source mappings before and after publ
   const printing = requiredFirst(await nativeCandidateRecords(String(candidate.id), ["printings"]), "printings");
   const mapped = await get(`/v1/reconciliation/identities/${printing.id}?preparation_id=${candidate.id}`);
   expect(mapped.response.status).toBe(200);
+  await assertHttpResponse(
+    contract,
+    "/v1/reconciliation/identities/{identity}",
+    "get",
+    mapped.response,
+    mapped.document,
+  );
   expect(mapped.document).toMatchObject({
     id: printing.id,
     kind: "printing",
@@ -1154,6 +1168,7 @@ test("equal source-local artwork labels require owner evidence review across sou
   const blocked = await prepareFailedNativeIdentity(run.id, "one-piece", predecessor, "review-ambiguous-candidate");
   const reviews = await get(`/v1/reconciliation/identity-reviews?run_id=${run.id}&preparation_id=${blocked.id}`);
   expect(reviews.response.status).toBe(200);
+  await assertHttpResponse(contract, "/v1/reconciliation/identity-reviews", "get", reviews.response, reviews.document);
   const review = requiredFirst(reviews.document, "reviews");
   expect(review).toMatchObject({ candidate_printing_ids: [printingId], source_lineage: "limitless-one-piece-en" });
   expect(review.evidence).toBeDefined();
@@ -1179,8 +1194,22 @@ test("equal source-local artwork labels require owner evidence review across sou
   });
   expect(invalidTarget.response.status).toBe(422);
   expect(invalidTarget.document.code).toBe("identity_review_target_invalid");
+  await assertHttpResponse(
+    contract,
+    "/v1/reconciliation/identity-reviews/{review}/resolve",
+    "post",
+    invalidTarget.response,
+    invalidTarget.document,
+  );
   const resolved = await post(`/v1/reconciliation/identity-reviews/${review.id}/resolve`, request);
   expect(resolved.response.status, JSON.stringify(resolved.document)).toBe(200);
+  await assertHttpResponse(
+    contract,
+    "/v1/reconciliation/identity-reviews/{review}/resolve",
+    "post",
+    resolved.response,
+    resolved.document,
+  );
   expect(resolved.document).not.toHaveProperty("native_candidate_id");
   expect(resolved.document).not.toHaveProperty("historical_printing_id");
   expect((await post(`/v1/reconciliation/identity-reviews/${review.id}/resolve`, request)).document).toEqual(
@@ -1193,6 +1222,13 @@ test("equal source-local artwork labels require owner evidence review across sou
     const refused = await post(`/v1/reconciliation/identity-reviews/${review.id}/resolve`, changed);
     expect(refused.response.status).toBe(409);
     expect(refused.document.code).toBe("identity_review_already_resolved");
+    await assertHttpResponse(
+      contract,
+      "/v1/reconciliation/identity-reviews/{review}/resolve",
+      "post",
+      refused.response,
+      refused.document,
+    );
   }
   const retry = await collect("/reconciliation/canonical-tabular-ambiguous", "review-retry", source);
   const matched = await prepareNativeCandidate(retry.id, "one-piece", predecessor, "review-retry-candidate");
@@ -1389,3 +1425,5 @@ async function nativeWithdrawalAssertions(preparation: string, printingId: strin
   for await (const plan of plans.values()) if (plan.printingId === printingId && plan.withdrawal) assertions.push(plan);
   return assertions;
 }
+import contract from "../../../contracts/admin-openapi.json";
+import { assertHttpResponse } from "../../../test/support/http-contract";
