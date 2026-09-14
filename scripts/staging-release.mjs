@@ -174,25 +174,29 @@ function failureCause(error) {
   return /^[a-z][a-z0-9_]{0,79}$/u.test(code) ? code : "staging_operation_failed";
 }
 
-async function runExtendedValidation(scenarios, directory) {
+export async function runExtendedValidation(scenarios, directory) {
   const log = await open(`${directory}/retained-source-rehearsal.log`, "w", 0o600);
   try {
-    const code = await new Promise((resolve, reject) => {
-      const child = spawn("pnpm", ["run", "test:acceptance:extended", ...scenarios], {
-        stdio: ["ignore", log.fd, log.fd],
-        env: {
-          PATH: process.env.PATH,
-          HOME: process.env.HOME,
-          TMPDIR: process.env.TMPDIR,
-          CI: "true",
-          WRANGLER_SEND_METRICS: "false",
-        },
+    const results = [];
+    for (const scenario of scenarios) {
+      const code = await new Promise((resolve, reject) => {
+        const child = spawn("pnpm", ["run", "test:acceptance:extended", scenario], {
+          stdio: ["ignore", log.fd, log.fd],
+          env: {
+            PATH: process.env.PATH,
+            HOME: process.env.HOME,
+            TMPDIR: process.env.TMPDIR,
+            CI: "true",
+            WRANGLER_SEND_METRICS: "false",
+          },
+        });
+        child.once("error", reject);
+        child.once("exit", (status) => resolve(status));
       });
-      child.once("error", reject);
-      child.once("exit", (status) => resolve(status));
-    });
-    if (code !== 0) throw new Error("retained_source_rehearsal_failed");
-    return { exit_code: code };
+      if (code !== 0) throw new Error("retained_source_rehearsal_failed");
+      results.push({ scenario, exit_code: code });
+    }
+    return { exit_code: 0, results };
   } finally {
     await log.close();
   }
