@@ -327,7 +327,7 @@ const optionalEmptyJson: typeof boundedJson = async (c, next) => {
     reader.releaseLock();
     const headers = new Headers(c.req.raw.headers);
     headers.delete("content-type");
-    c.req.raw = new Request(c.req.raw, { headers, body: null });
+    c.req.raw = new Request(c.req.raw, { method: c.req.raw.method, headers, body: null });
     return next();
   }
   const initial = first.value;
@@ -342,7 +342,7 @@ const optionalEmptyJson: typeof boundedJson = async (c, next) => {
     },
     cancel: (reason) => reader.cancel(reason),
   });
-  c.req.raw = new Request(c.req.raw, { body });
+  c.req.raw = new Request(c.req.raw, { method: c.req.raw.method, body });
   return boundedJson(c, next);
 };
 export const resumeEvidenceRoute = createRoute({
