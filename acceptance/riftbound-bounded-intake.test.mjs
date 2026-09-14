@@ -125,6 +125,7 @@ test("qualified Riot intake keeps explicit exceptions through publication, refre
     { deadlineMs: 120000 },
   );
   const intake = await inspectNativeCollection(run.id, environment, {
+    candidates: collection.candidates,
     partitionKinds: ["cards", "printings", "errata", "warnings", "shared_warnings"],
   });
   assert.equal((intake.records.cards ?? []).length, 2);
@@ -242,7 +243,8 @@ test("qualified Riot intake keeps explicit exceptions through publication, refre
     assert.equal(result.code, 0, result.stdout + result.stderr);
     return JSON.parse(result.stdout);
   };
-  const backup = await cli(["backup", "status", "--attempt-id", publication.backup_attempt_id]);
+  const backup = publication.checkpoint;
+  assert.equal(backup.idempotency_key, publication.backup_attempt_id);
   const recoveryId = "bounded-admission-recovery";
   const recovery = await mutate([
     "recovery",
@@ -383,7 +385,7 @@ test("qualified Riot intake keeps explicit exceptions through publication, refre
   const refreshed = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", "restored-refresh"]);
   assert.notEqual(refreshed.id, run.id);
   await cli(["source", "resume", "--run-id", refreshed.id]);
-  await waitForAdministrationDocument(
+  const refreshedCollection = await waitForAdministrationDocument(
     `/v1/ingestion-runs/${refreshed.id}/game-candidates`,
     (d) =>
       d.candidates.some((candidate) => ["failed", "paused"].includes(candidate.state))
@@ -394,6 +396,7 @@ test("qualified Riot intake keeps explicit exceptions through publication, refre
     { deadlineMs: 120000 },
   );
   const refreshedIntake = await inspectNativeCollection(refreshed.id, environment, {
+    candidates: refreshedCollection.candidates,
     partitionKinds: ["cards", "printings", "warnings", "shared_warnings"],
   });
   assert.ok(imageOutages > 0, "Refresh must exercise an actual current image failure");

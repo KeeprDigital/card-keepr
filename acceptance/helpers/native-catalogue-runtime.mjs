@@ -84,8 +84,16 @@ export async function waitForNativeCollection(runId, expected, environment, work
 }
 
 /** Aggregate assertion data from the shipped per-game inspection and partition APIs. */
-export async function inspectNativeCollection(runId, environment, { partitionKinds } = {}) {
-  const collection = await get(`/v1/ingestion-runs/${runId}/game-candidates`, environment);
+export async function inspectNativeCollection(
+  runId,
+  environment,
+  { partitionKinds, candidates: knownCandidates } = {},
+) {
+  // A caller that just observed sealed candidates can reuse those exact headers.
+  // Inspection still verifies readiness and their manifest against current storage.
+  const collection = knownCandidates
+    ? { candidates: knownCandidates }
+    : await get(`/v1/ingestion-runs/${runId}/game-candidates`, environment);
   assert.ok(collection.candidates.length > 0, "Native collection must prepare game candidates");
   const candidates = [],
     changes = [],
@@ -93,7 +101,7 @@ export async function inspectNativeCollection(runId, environment, { partitionKin
     counts = {},
     records = {};
   for (const member of collection.candidates) {
-    const candidate = await get(`/v1/game-candidates/${member.id}`, environment);
+    const candidate = knownCandidates ? member : await get(`/v1/game-candidates/${member.id}`, environment);
     const inspection = await get(`/v1/game-candidates/${member.id}/inspection`, environment);
     assert.equal(inspection.ready, true, JSON.stringify(inspection));
     assert.equal(inspection.manifest_digest, candidate.manifest_digest);
@@ -141,7 +149,7 @@ export async function publishNativeCollection(runId, idempotencyKey, environment
   // of every catalogue partition already inspected by the caller.
   const inspection =
     typeof runId === "string" ? await inspectNativeCollection(runId, environment, { partitionKinds: [] }) : runId;
-  let publication;
+  let publication, checkpoint;
   const publications = [];
   for (const candidate of inspection.candidates) {
     const key = `${idempotencyKey}-${candidate.supported_game}`;
@@ -202,7 +210,7 @@ export async function publishNativeCollection(runId, idempotencyKey, environment
       { deadlineMs },
     );
     assert.equal(publication.deadline, candidate.deadline);
-    const checkpoint = await waitForAdministrationDocument(
+    checkpoint = await waitForAdministrationDocument(
       `/v1/backups/${publication.backup_attempt_id}`,
       (document) => document.state === "verified" || (document.state === "failed" ? JSON.stringify(document) : false),
       environment,
@@ -212,7 +220,7 @@ export async function publishNativeCollection(runId, idempotencyKey, environment
     assert.equal(checkpoint.catalogue_revision_id, publication.resulting_revision_id);
     publications.push(publication);
   }
-  return { ...publication, publications };
+  return { ...publication, publications, checkpoint };
 }
 
 /** Follow the current paged manifest and verify both compressed and public NDJSON bytes. */
