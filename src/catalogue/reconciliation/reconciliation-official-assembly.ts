@@ -9,6 +9,7 @@ import {
   canonicalJson,
 } from "../shared";
 import { deriveEffectiveRulesText, ErratumRulesTextError } from "./errata-rules-text";
+import { pokemonCorrectedCard } from "./pokemon-errata";
 import { ReconciliationCandidateState } from "./reconciliation-candidate-state";
 import type { ReconciliationCardState } from "./reconciliation-card-state";
 import { reconciliationCheckpoint, retainReconciliationCheckpoint } from "./reconciliation-checkpoint";
@@ -146,8 +147,9 @@ export async function prepareOfficialCandidate(
         if (sources.games.has(card.game)) {
           try {
             resolved = {
-              ...card,
-              effective_rules_text: deriveEffectiveRulesText(card, errata, observedAt),
+              ...(card.game === "pokemon"
+                ? pokemonCorrectedCard(card, errata, observedAt)
+                : { ...card, effective_rules_text: deriveEffectiveRulesText(card, errata, observedAt) }),
               related_cards: await sources.relatedCards(card),
             };
           } catch (error) {

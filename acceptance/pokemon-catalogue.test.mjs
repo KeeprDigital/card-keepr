@@ -264,6 +264,12 @@ test("the real Pokémon pilot preserves treatments and official correction throu
   const corrected = cardDetails.find((card) => card.id === garchompId);
   assert.match(corrected.effective_rules_text, /effects of attacks from your opponent’s Pokémon done/u);
   assert.ok(corrected.effective_rules_text.endsWith("Dragonblade: Discard the top 2 cards of your deck."));
+  assert.match(
+    corrected.game_data.attributes.abilities[0].text,
+    /effects of attacks from your opponent’s Pokémon done/u,
+  );
+  assert.deepEqual(corrected.game_data.attributes.attacks, originalGarchomp.game_data.attributes.attacks);
+  assert.deepEqual(cards.find((card) => card.id === garchompId).game_data, corrected.game_data);
   const printings = (await get("/v1/printings?game=pokemon")).data;
   assert.deepEqual(printings.map((printing) => printing.id).sort(), printingIds.sort());
   assert.equal(new Set(printingIds).size, 7);

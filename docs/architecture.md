@@ -112,9 +112,9 @@ The selected official Garchomp correction uses `BRILLIANT-STARS-109/172`, our
 normalization of the publisher's set and printed number. It is not an upstream
 global identifier or a cross-reprint equivalence rule. Retain the exact set,
 number and publication locator as supporting evidence. The dated correction
-replaces only the evidenced Sonic Slip paragraph, preserves Dragonblade and the
-original Printed Rules Text, and does not establish later corrected physical
-stock. Missing, ambiguous or stale targets block reconciliation; replay of
+replaces only the evidenced Sonic Slip paragraph and its structured Card ability
+text. It preserves Dragonblade, other Card facts, original Printed Rules Text and
+retained observation bytes, and does not establish later corrected physical stock. Missing, ambiguous or stale targets block reconciliation; replay of
 already-corrected text requires the same attributable correction history.
 [Pokémon pilot](https://github.com/KeeprDigital/card-keepr/issues/328).
 

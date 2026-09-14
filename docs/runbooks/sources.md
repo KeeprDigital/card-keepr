@@ -31,7 +31,8 @@ checks the complete detailed treatment inventories of TCGdex Snorlax `svp-051`
 and Charizard `base1-4`, plus the selected official Garchomp card and 151 Pokémon
 Center Elite Trainer Box publications. The separate
 [correction plan](../examples/pokemon-correction-plan.json) checks the exact
-9 February 2022 Garchomp Sonic Slip article after that Card is published. Retained
+9 February 2022 Garchomp Sonic Slip article after that Card is published, together
+with the same complete Card and Product scopes required by the selected authority. Retained
 [scope and evidence](../../acceptance/fixtures/real-sources/2026-09-14-pokemon/README.md)
 explain the three available scans, four missing treatment scans, overlapping
 Product text and full-import gaps. These plans do not select the whole game.

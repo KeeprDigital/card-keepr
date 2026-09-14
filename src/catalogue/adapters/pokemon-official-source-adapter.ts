@@ -228,7 +228,7 @@ export function pokemonOfficialProduct(bytes: Uint8Array) {
 const surfaces: Readonly<Record<string, string>> = {
   "snorlax-product": pokemonSnorlaxProductUrl,
   "garchomp-card": pokemonGarchompCardUrl,
-  "garchomp-correction": pokemonGarchompErratumUrl,
+  errata: pokemonGarchompErratumUrl,
 };
 function surfaceUrl(surface: string) {
   const url = surfaces[surface];
@@ -253,6 +253,12 @@ export const pokemonOfficialSourceAdapterRegistration = {
   requiredSurfaces: Object.keys(surfaces),
   requestUrlForSurface: surfaceUrl,
   coverageContracts: {
+    "card-product-correction-pilot": {
+      description: "The selected Garchomp Card, 151 Product and dated Sonic Slip correction publications together.",
+      reconciliationAreas: ["catalogue", "errata"],
+      requiredSurfaces: Object.keys(surfaces),
+      requestUrlForSurface: surfaceUrl,
+    },
     "card-product-pilot": {
       description:
         "Exactly Garchomp Brilliant Stars 109/172 and the 151 Pokémon Center Elite Trainer Box publication. No global unique-coverage claim.",
@@ -264,7 +270,7 @@ export const pokemonOfficialSourceAdapterRegistration = {
       description: "Exactly the 9 February 2022 Garchomp Brilliant Stars 109/172 Sonic Slip correction.",
       reconciliationAreas: ["errata"],
       reconciliationCapability: "errata",
-      requiredSurfaces: ["garchomp-correction"],
+      requiredSurfaces: ["errata"],
       requestUrlForSurface: surfaceUrl,
     },
   },

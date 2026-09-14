@@ -7,7 +7,7 @@ import {
   pokemonOfficialErratum,
 } from "../../src/catalogue/adapters/pokemon-official-source-adapter";
 import { parseReconciliationObservation } from "../../src/catalogue/reconciliation/reconciliation-observation";
-import { pokemonCorrectedRulesText } from "../../src/catalogue/reconciliation/pokemon-errata";
+import { pokemonCorrectedRulesText, pokemonCorrectedCard } from "../../src/catalogue/reconciliation/pokemon-errata";
 import { AdapterParseFailure } from "../../src/catalogue/adapters/adapter-parse-failure";
 import {
   deriveEffectiveRulesText,
@@ -76,6 +76,25 @@ test("the attributed correction replays while stale, ambiguous and unrelated Gar
   });
   const corrected = { ...card, effective_rules_text: value };
   expect(pokemonCorrectedRulesText(corrected, correction, errata)).toBe(value);
+  const published = pokemonCorrectedCard(card, errata, "2026-09-14T00:00:00.000Z");
+  expect(published.game_data.attributes.abilities).toEqual([
+    { kind: "Ability", name: "Sonic Slip", text: correction.correctedRulesText },
+  ]);
+  expect(published.effective_rules_text).toBe(value);
+  expect(published.game_data.attributes.attacks).toEqual(card.game_data.attributes.attacks);
+  expect(card.game_data.attributes.abilities).toEqual([
+    { kind: "Ability", name: "Sonic Slip", text: correction.observedPrintedRulesText },
+  ]);
+  expect(pokemonCorrectedCard(published, errata, "2026-09-14T00:00:00.000Z")).toEqual(published);
+  expect(pokemonCorrectedCard(card, errata, "2022-02-08T00:00:00.000Z")).toEqual(card);
+  for (const abilities of [[], [{ kind: "Ability", name: "Sonic Slip", text: "Unrelated content" }]])
+    expect(() =>
+      pokemonCorrectedCard(
+        { ...card, game_data: { ...card.game_data, attributes: { ...card.game_data.attributes, abilities } } },
+        errata,
+        "2026-09-14T00:00:00.000Z",
+      ),
+    ).toThrow();
   expect(() => pokemonCorrectedRulesText(corrected, correction, [])).toThrow();
   for (const content of [
     "Unexpected aggregator wording",

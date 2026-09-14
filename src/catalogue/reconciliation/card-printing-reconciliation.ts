@@ -977,7 +977,7 @@ export async function reconcileRetainedCardPrintingEvidence(
                 sourceObservationId: observation.sourceObservationId,
                 errata: observation.errata.filter((erratum) => erratum.targetType === "card"),
               }),
-              ...matchingStandaloneErrata.map((erratum) =>
+              ...matchingStandaloneErrata.map(async (erratum) =>
                 identifyRulesTextErrata({
                   game: proposedCard.game,
                   cardId,
@@ -989,7 +989,14 @@ export async function reconcileRetainedCardPrintingEvidence(
                       targetType: "card" as const,
                       effectiveFrom: erratum.effectiveFrom,
                       officialWording: erratum.officialWording,
-                      correctedValue: erratum.correctedRulesText,
+                      correctedValue:
+                        erratum.game === "pokemon"
+                          ? pokemonCorrectedRulesText(
+                              { id: cardId, ...proposedCard },
+                              erratum,
+                              await priorErrata.forCard(proposedCard.game, cardId),
+                            )
+                          : erratum.correctedRulesText,
                     },
                   ],
                 }),
