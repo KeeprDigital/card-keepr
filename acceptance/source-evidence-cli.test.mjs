@@ -342,7 +342,7 @@ async function collectResumeAndShow(
   assert.equal(run.contract, "card-keepr-evidence-acceptance@1");
   validateSourceDocument("/v1/ingestion-runs/evidence", "post", 201, run);
   const resumed = await runCli(["source", "resume", "--run-id", run.id, "--json"], environment);
-  assert.equal(resumed.code, 0, resumed.stderr);
+  assert.equal(resumed.code, 0, `${resumed.stdout}\n${resumed.stderr}\n${ingestion.getOutput()}`);
 
   const current = await waitForRunState(run.id, expectedState, environment, ingestion, { deadlineMs: 20_000 });
   validateSourceDocument("/v1/ingestion-runs/{run}/evidence", "get", 200, current);
