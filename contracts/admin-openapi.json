@@ -20929,6 +20929,9 @@
                                 }
                               ]
                             },
+                            "card_design_key": {
+                              "type": "string"
+                            },
                             "compatibility": {
                               "type": [
                                 "object",
@@ -22977,6 +22980,9 @@
                                 }
                               ]
                             },
+                            "card_design_key": {
+                              "type": "string"
+                            },
                             "compatibility": {
                               "type": [
                                 "object",
@@ -23056,6 +23062,9 @@
                         {
                           "type": "object",
                           "properties": {
+                            "card_design_key": {
+                              "type": "string"
+                            },
                             "compatibility": {
                               "type": [
                                 "object",
@@ -23249,6 +23258,9 @@
                             "card": {
                               "$ref": "#/components/schemas/CandidateCard"
                             },
+                            "card_design_key": {
+                              "type": "string"
+                            },
                             "printing": {
                               "anyOf": [
                                 {
@@ -23327,6 +23339,9 @@
                           "properties": {
                             "card": {
                               "$ref": "#/components/schemas/RetainedPreCategoryCard"
+                            },
+                            "card_design_key": {
+                              "type": "string"
                             },
                             "printing": {
                               "anyOf": [
@@ -26461,6 +26476,9 @@
                                               }
                                             ]
                                           },
+                                          "card_design_key": {
+                                            "type": "string"
+                                          },
                                           "compatibility": {
                                             "type": [
                                               "object",
@@ -28509,6 +28527,9 @@
                                               }
                                             ]
                                           },
+                                          "card_design_key": {
+                                            "type": "string"
+                                          },
                                           "compatibility": {
                                             "type": [
                                               "object",
@@ -28588,6 +28609,9 @@
                                       {
                                         "type": "object",
                                         "properties": {
+                                          "card_design_key": {
+                                            "type": "string"
+                                          },
                                           "compatibility": {
                                             "type": [
                                               "object",

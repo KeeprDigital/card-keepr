@@ -705,7 +705,9 @@
     "named_cli": "gameCandidateEvidence",
     "callers": [
       "acceptance/card-model-migration.test.mjs",
+      "acceptance/scryfall-catalogue.test.mjs",
       "apps/ingestion/test/game-candidate-http.spec.ts",
+      "apps/ingestion/test/source-design-identity.spec.ts",
       "cli/keepr.mjs"
     ]
   },

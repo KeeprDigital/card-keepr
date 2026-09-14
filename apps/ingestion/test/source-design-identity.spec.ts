@@ -1,3 +1,5 @@
+import { assertHttpResponse } from "../../../test/support/http-contract";
+import contract from "../../../contracts/admin-openapi.json";
 import { nativeDiagnosticRecords } from "./query-helpers/native-diagnostic-records";
 import { createHash } from "node:crypto";
 import { expect, test } from "vitest";
@@ -81,6 +83,19 @@ test("qualified designs separate equal facts, share finishes and retain IDs acro
   const first = await prepare(values, "design-base");
   expect(first.records!.cards).toHaveLength(2);
   expect(first.records!.printings).toHaveLength(3);
+  for (const kind of ["identity", "admission"]) {
+    const result = await get(
+      `/v1/game-candidates/${first.candidate.id}/inspection/evidence/${kind}?manifest=${first.candidate.manifest_digest}`,
+    );
+    expect(result.response.status).toBe(200);
+    await assertHttpResponse(
+      contract,
+      "/v1/game-candidates/{candidate}/inspection/evidence/{kind}",
+      "get",
+      result.response,
+      result.document,
+    );
+  }
   const publication = await approveNativeCandidate(first.candidate, "design-publish");
   const predecessor = String(publication.document.resulting_revision_id);
   const cardIds = first.records!.cards!.map((c) => c.id).sort();

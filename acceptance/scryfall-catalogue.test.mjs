@@ -1,3 +1,4 @@
+import * as responseValidators from "../test/support/http-response-validators.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
@@ -114,7 +115,34 @@ test("retained Scryfall Cards publish with stable finish identities, private evi
       }),
     };
   };
+  const candidateDesignEvidence = async (candidate) => {
+    const evidence = {};
+    const validator =
+      responseValidators[
+        responseValidators.responseValidators[
+          "admin get /v1/game-candidates/{candidate}/inspection/evidence/{kind} 200 application/json"
+        ]
+      ];
+    assert.equal(typeof validator, "function");
+    // One actual key-bearing record in each strict branch. The separate
+    // candidate HTTP whole file owns pagination and historical-absence coverage.
+    for (const kind of ["identity", "admission"]) {
+      const response = await fetch(
+        `${environment.KEEPR_INGESTION_URL}/v1/game-candidates/${candidate.id}/inspection/evidence/${kind}?manifest=${candidate.manifest_digest}`,
+        { headers: { authorization: `Bearer ${key}` } },
+      );
+      assert.equal(response.status, 200, await response.clone().text());
+      const body = await response.json();
+      assert.equal(validator(body), true, JSON.stringify(validator.errors));
+      assert.equal(body.records.length, 1);
+      const record = body.records[0];
+      assert.match((kind === "identity" ? record.evidence : record.decision).card_design_key, /^oracle:/u);
+      evidence[kind] = body.records;
+    }
+    return evidence;
+  };
   const first = await collect("scryfall-pilot");
+  const privateEvidence = await candidateDesignEvidence(first.candidates[0]);
   assert.equal(fetched.length, 10);
   assert.equal(first.inspection.records.cards.length, 4);
   assert.equal(first.inspection.records.printings.length, 7);
@@ -204,6 +232,7 @@ test("retained Scryfall Cards publish with stable finish identities, private evi
   await waitForHealth(`${ingestion.url}/health`, key, ingestion);
   environment.KEEPR_INGESTION_URL = ingestion.url;
   reader.clear();
+  assert.deepEqual(await candidateDesignEvidence(first.candidates[0]), privateEvidence);
   assert.deepEqual(await reader.records(api.url, key, publication.resulting_revision_id, "cards"), exportedCards);
   assert.deepEqual(
     await reader.records(api.url, key, publication.resulting_revision_id, "printings"),
