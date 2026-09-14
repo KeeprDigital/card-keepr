@@ -519,7 +519,7 @@
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/game-candidates",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Game Candidates",
     "named_cli": "gameCandidatePrepare",
     "callers": [
@@ -535,6 +535,7 @@
       "apps/api/test/collection-contract.spec.ts",
       "apps/ingestion/test/composed-recovery.spec.ts",
       "apps/ingestion/test/errata-rules-text.spec.ts",
+      "apps/ingestion/test/game-candidate-http.spec.ts",
       "apps/ingestion/test/game-candidate-integrity.spec.ts",
       "apps/ingestion/test/game-publication-workflow.spec.ts",
       "apps/ingestion/test/game-publication.spec.ts",
@@ -564,7 +565,7 @@
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/{candidate}",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Game Candidates",
     "named_cli": "gameCandidate",
     "callers": [
@@ -581,6 +582,7 @@
       "acceptance/supplementary-printing-intake.test.mjs",
       "apps/ingestion/test/composed-recovery.spec.ts",
       "apps/ingestion/test/entity-admission.spec.ts",
+      "apps/ingestion/test/game-candidate-http.spec.ts",
       "apps/ingestion/test/game-candidate-integrity.spec.ts",
       "apps/ingestion/test/game-publication-workflow.spec.ts",
       "apps/ingestion/test/game-publication.spec.ts",
@@ -591,16 +593,20 @@
       "apps/ingestion/test/identity-corrections.spec.ts",
       "apps/ingestion/test/native-candidate-helpers.ts",
       "apps/ingestion/test/native-errata-locators.spec.ts",
+      "apps/ingestion/test/native-no-change-publication.spec.ts",
       "apps/ingestion/test/native-printing-images-assertions.ts",
       "apps/ingestion/test/publication-caller-retirement.spec.ts",
       "apps/ingestion/test/publication-preparation.spec.ts",
+      "apps/ingestion/test/reconciliation-card-identity.spec.ts",
       "apps/ingestion/test/reconciliation-collection-notification.spec.ts",
       "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
       "apps/ingestion/test/reconciliation-curated-lookup.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "apps/ingestion/test/reconciliation-export-and-repair.spec.ts",
       "apps/ingestion/test/reconciliation-input-cursor.spec.ts",
       "apps/ingestion/test/reconciliation-observed-erratum-recovery.spec.ts",
       "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/reconciliation-provenance-locators.spec.ts",
       "apps/ingestion/test/reconciliation-scale.stress.spec.ts",
       "apps/ingestion/test/reviewed-printing-matches.spec.ts",
       "apps/ingestion/test/runtime-game-preparation-dispatch.spec.ts",
@@ -614,11 +620,12 @@
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/game-candidates/{candidate}/abandon",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Game Candidates",
     "named_cli": "gameCandidateAbandon",
     "callers": [
       "apps/ingestion/test/errata-rules-text.spec.ts",
+      "apps/ingestion/test/game-candidate-http.spec.ts",
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
       "apps/ingestion/test/game-reconciliation-operations.spec.ts",
       "apps/ingestion/test/native-no-change-publication.spec.ts",
@@ -637,12 +644,15 @@
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/{candidate}/inputs",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Game Candidates",
     "named_cli": null,
     "callers": [
+      "acceptance/card-model-migration.test.mjs",
+      "apps/ingestion/test/game-candidate-http.spec.ts",
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
-      "apps/ingestion/test/game-reconciliation-operations.spec.ts"
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "cli/keepr.mjs"
     ]
   },
   {
@@ -650,10 +660,12 @@
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/{candidate}/inputs/{ordinal}",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Game Candidates",
     "named_cli": null,
     "callers": [
+      "acceptance/card-model-migration.test.mjs",
+      "apps/ingestion/test/game-candidate-http.spec.ts",
       "apps/ingestion/test/game-reconciliation-operations.spec.ts"
     ]
   },
@@ -662,11 +674,12 @@
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/{candidate}/inspection",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Game Candidates",
     "named_cli": "gameCandidateInspection",
     "callers": [
       "acceptance/helpers/native-catalogue-runtime.mjs",
+      "apps/ingestion/test/game-candidate-http.spec.ts",
       "apps/ingestion/test/game-candidate-integrity.spec.ts",
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
       "apps/ingestion/test/native-publication-helpers.ts",
@@ -681,10 +694,12 @@
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/{candidate}/inspection/evidence/{kind}",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Game Candidates",
     "named_cli": "gameCandidateEvidence",
     "callers": [
+      "acceptance/card-model-migration.test.mjs",
+      "apps/ingestion/test/game-candidate-http.spec.ts",
       "cli/keepr.mjs"
     ]
   },
@@ -693,13 +708,14 @@
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/{candidate}/partitions",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Game Candidates",
     "named_cli": "gameCandidatePartitions",
     "callers": [
       "acceptance/composed-recovery.test.mjs",
       "acceptance/helpers/errata-runtime.mjs",
       "acceptance/publication-preparation.test.mjs",
+      "apps/ingestion/test/game-candidate-http.spec.ts",
       "apps/ingestion/test/game-candidate-integrity.spec.ts",
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
       "apps/ingestion/test/game-reconciliation-operations.spec.ts",
@@ -720,7 +736,7 @@
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/{candidate}/partitions/{ordinal}",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Game Candidates",
     "named_cli": "gameCandidatePartition",
     "callers": [
@@ -728,6 +744,7 @@
       "acceptance/helpers/errata-runtime.mjs",
       "acceptance/helpers/native-catalogue-runtime.mjs",
       "acceptance/publication-preparation.test.mjs",
+      "apps/ingestion/test/game-candidate-http.spec.ts",
       "apps/ingestion/test/game-candidate-integrity.spec.ts",
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
       "apps/ingestion/test/game-reconciliation-operations.spec.ts",
@@ -747,22 +764,26 @@
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/{candidate}/partitions/{ordinal}/images/{record}",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Game Candidates",
     "named_cli": null,
-    "callers": []
+    "callers": [
+      "apps/ingestion/test/game-candidate-integrity.spec.ts"
+    ]
   },
   {
     "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/game-candidates/{candidate}/pause",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Game Candidates",
-    "named_cli": null,
+    "named_cli": "gameCandidatePause",
     "callers": [
+      "apps/ingestion/test/game-candidate-http.spec.ts",
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
-      "apps/ingestion/test/game-reconciliation-operations.spec.ts"
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "cli/keepr.mjs"
     ]
   },
   {
@@ -770,12 +791,14 @@
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/{candidate}/progress",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Game Candidates",
     "named_cli": null,
     "callers": [
+      "apps/ingestion/test/game-candidate-http.spec.ts",
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
-      "apps/ingestion/test/game-reconciliation-operations.spec.ts"
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "cli/keepr.mjs"
     ]
   },
   {
@@ -793,6 +816,7 @@
       "acceptance/publication-preparation.test.mjs",
       "apps/ingestion/test/composed-recovery.spec.ts",
       "apps/ingestion/test/errata-rules-text.spec.ts",
+      "apps/ingestion/test/game-candidate-http.spec.ts",
       "apps/ingestion/test/game-publication-workflow.spec.ts",
       "apps/ingestion/test/game-publication.spec.ts",
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
@@ -820,6 +844,7 @@
       "acceptance/publication-preparation.test.mjs",
       "apps/ingestion/test/composed-recovery.spec.ts",
       "apps/ingestion/test/errata-rules-text.spec.ts",
+      "apps/ingestion/test/game-candidate-http.spec.ts",
       "apps/ingestion/test/game-publication-workflow.spec.ts",
       "apps/ingestion/test/game-publication.spec.ts",
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
@@ -841,6 +866,7 @@
     "slice": "Publication and preparation",
     "named_cli": "publicationArtifacts",
     "callers": [
+      "apps/ingestion/test/game-candidate-http.spec.ts",
       "cli/keepr.mjs"
     ]
   },
@@ -852,7 +878,9 @@
     "contract": "legacy",
     "slice": "Publication and preparation",
     "named_cli": null,
-    "callers": []
+    "callers": [
+      "apps/ingestion/test/game-candidate-http.spec.ts"
+    ]
   },
   {
     "worker": "admin",
@@ -863,6 +891,7 @@
     "slice": "Publication and preparation",
     "named_cli": "publicationResume",
     "callers": [
+      "apps/ingestion/test/game-candidate-http.spec.ts",
       "cli/keepr.mjs"
     ]
   },
@@ -875,6 +904,7 @@
     "slice": "Publication and preparation",
     "named_cli": "publicationPrepare",
     "callers": [
+      "apps/ingestion/test/game-candidate-http.spec.ts",
       "apps/ingestion/test/publication-caller-retirement.spec.ts",
       "cli/keepr.mjs"
     ]
@@ -884,14 +914,16 @@
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/game-candidates/{candidate}/resume",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Game Candidates",
-    "named_cli": null,
+    "named_cli": "gameCandidateResume",
     "callers": [
+      "apps/ingestion/test/game-candidate-http.spec.ts",
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
       "apps/ingestion/test/game-reconciliation-operations.spec.ts",
       "apps/ingestion/test/native-preparation-fixture.ts",
-      "apps/ingestion/test/reconciliation-curated-lookup.spec.ts"
+      "apps/ingestion/test/reconciliation-curated-lookup.spec.ts",
+      "cli/keepr.mjs"
     ]
   },
   {
@@ -899,7 +931,7 @@
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/{candidate}/text/{digest}/{ordinal}",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Game Candidates",
     "named_cli": null,
     "callers": [
@@ -1200,7 +1232,7 @@
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/ingestion-runs/{run}/game-candidates",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Game Candidates",
     "named_cli": "collectionGameCandidates",
     "callers": [
@@ -1213,6 +1245,7 @@
       "acceptance/riftbound-bounded-intake.test.mjs",
       "acceptance/riftbound-catalogue.test.mjs",
       "acceptance/supplementary-printing-intake.test.mjs",
+      "apps/ingestion/test/game-candidate-http.spec.ts",
       "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
       "apps/ingestion/test/runtime-workflow-collection.spec.ts",
       "cli/keepr.mjs"

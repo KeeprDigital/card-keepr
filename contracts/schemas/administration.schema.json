@@ -71,28 +71,6 @@
       "minimum": 0,
       "maximum": 9007199254740991
     },
-    "GameCandidatePrepareCommandRequest": {
-      "description": "POST /v1/game-candidates. HTTP 201 creates the independently prepared game candidate; exact replay returns HTTP 200 and the current candidate header.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["ingestion_run_id", "supported_game", "expected_game_revision_id", "idempotency_key"],
-      "properties": {
-        "ingestion_run_id": { "$ref": "#/$defs/NativeIdentifier" },
-        "supported_game": { "$ref": "#/$defs/SupportedGame" },
-        "expected_game_revision_id": { "$ref": "#/$defs/NativeIdentifier" },
-        "idempotency_key": { "$ref": "#/$defs/NativeIdentifier" }
-      }
-    },
-    "GameCandidateActionCommandRequest": {
-      "description": "POST /v1/game-candidates/:candidate/pause, /resume or /abandon. Generation is the candidate generation; exact replay returns its retained action result.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["generation", "idempotency_key"],
-      "properties": {
-        "generation": { "$ref": "#/$defs/Generation" },
-        "idempotency_key": { "$ref": "#/$defs/NativeIdentifier" }
-      }
-    },
     "PublicationPreparationCommandRequest": {
       "description": "POST /v1/game-candidates/:candidate/publication-preparation/start or /resume dispatches durable artifact preparation (HTTP 202); the unsuffixed route advances one unit (HTTP 200). The /resume route sets resume=true. Start at sequence 0, then use the retained sequence. Generation binds the candidate.",
       "type": "object",

@@ -50,7 +50,7 @@ test.each(["base", "large-card-content"])(
       expected_game_revision_id: revision,
       idempotency_key: "native-current-predecessor",
     });
-    expect(current.response.status, JSON.stringify(current.document)).toBe(201);
+    expect(current.response.status, JSON.stringify(current.document)).toBe(202);
     const fusion = await collect("/reconciliation/profile-fusion-world", "native-unrelated-predecessor", {
       game: "fusion-world",
       lineage: "fusion-world-en",
@@ -62,7 +62,7 @@ test.each(["base", "large-card-content"])(
       expected_game_revision_id: "catrev_spine_000",
       idempotency_key: "native-unrelated-game",
     });
-    expect(unrelated.response.status, JSON.stringify(unrelated.document)).toBe(201);
+    expect(unrelated.response.status, JSON.stringify(unrelated.document)).toBe(202);
     for (const candidate of [current, unrelated]) {
       const id = requiredString(candidate.document, "id");
       const deadline = Date.now() + 15000;
@@ -151,7 +151,7 @@ test("rejected high degree intake cannot produce a publishable game candidate", 
     expected_game_revision_id: "catrev_spine_000",
     idempotency_key: "rejected-intake",
   });
-  expect(created.response.status).toBe(201);
+  expect(created.response.status).toBe(202);
   const id = requiredString(created.document, "id");
   let candidate = (await get(`/v1/game-candidates/${id}`)).document;
   const deadline = Date.now() + 15000;
@@ -180,7 +180,7 @@ test.each([
     idempotency_key: "native-capacity-intent",
   };
   const created = await post("/v1/game-candidates", intent);
-  expect(created.response.status).toBe(201);
+  expect(created.response.status).toBe(202);
   const id = requiredString(created.document, "id");
   let candidate = (await get(`/v1/game-candidates/${id}`)).document;
   const deadline = Date.now() + 15000;
@@ -203,7 +203,8 @@ test.each([
     expect.arrayContaining([expect.objectContaining({ status: "incomplete", successful_checked_at: null })]),
   );
   expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
-  expect((await post("/v1/game-candidates", intent)).document).toEqual(candidate);
+  expect((await post("/v1/game-candidates", intent)).document).toEqual(created.document);
+  expect((await get(`/v1/game-candidates/${id}`)).document).toEqual(candidate);
   const replayedWorkflow = await runReconciliationWorkflow(
     testEnv,
     {
@@ -285,21 +286,25 @@ test("two games from one collection prepare independently while one operation is
     idempotency_key: "independent-one-piece",
   };
   const first = await post("/v1/game-candidates", intent);
-  expect(first.response.status).toBe(201);
+  expect(first.response.status).toBe(202);
   const firstId = requiredString(first.document, "id");
   const paused = await post(`/v1/game-candidates/${firstId}/pause`, {
     generation: 0,
     idempotency_key: "pause-one-piece",
   });
-  expect(paused.response.status).toBe(200);
-  expect(paused.document).toMatchObject({ state: "paused", generation: 1, deadline: first.document.deadline });
+  expect(paused.response.status).toBe(202);
+  expect((await get(`/v1/game-candidates/${firstId}`)).document).toMatchObject({
+    state: "paused",
+    generation: 1,
+    deadline: first.document.deadline,
+  });
 
   const second = await post("/v1/game-candidates", {
     ...intent,
     supported_game: "fusion-world",
     idempotency_key: "independent-fusion-world",
   });
-  expect(second.response.status).toBe(201);
+  expect(second.response.status).toBe(202);
   const secondId = requiredString(second.document, "id");
   expect(secondId).not.toBe(firstId);
   const deadline = Date.now() + 15000;
@@ -319,8 +324,8 @@ test("two games from one collection prepare independently while one operation is
     deadline: first.document.deadline,
   });
   const replay = await post("/v1/game-candidates", intent);
-  expect(replay.response.status).toBe(200);
-  expect(replay.document).toMatchObject({ id: firstId, state: "paused" });
+  expect(replay.response.status).toBe(202);
+  expect(replay.document).toEqual(first.document);
   const inputs = await get(`/v1/game-candidates/${secondId}/inputs`);
   expect(inputs.response.status).toBe(200);
   expect(inputs.document).toMatchObject({ ingestion_run_id: runId, preparation_id: secondId, verified: true });
@@ -339,8 +344,12 @@ test("two games from one collection prepare independently while one operation is
     generation: 1,
     idempotency_key: "resume-one-piece",
   });
-  expect(resumed.response.status).toBe(200);
-  expect(resumed.document).toMatchObject({ state: "preparing", generation: 1, deadline: first.document.deadline });
+  expect(resumed.response.status).toBe(202);
+  expect((await get(`/v1/game-candidates/${firstId}`)).document).toMatchObject({
+    state: "preparing",
+    generation: 1,
+    deadline: first.document.deadline,
+  });
   const resumedDeadline = Date.now() + 15000;
   let completed = (await get(`/v1/game-candidates/${firstId}`)).document;
   while (completed.state === "preparing" && Date.now() < resumedDeadline) {
@@ -364,12 +373,12 @@ test("abandonment releases only its game slot and a new intent creates a fresh c
     idempotency_key: "first-game-intent",
   };
   const first = await post("/v1/game-candidates", intent);
-  expect(first.response.status).toBe(201);
+  expect(first.response.status).toBe(202);
   const id = requiredString(first.document, "id");
   expect(
     (await post(`/v1/game-candidates/${id}/pause`, { generation: 0, idempotency_key: "pause-before-abandon" })).response
       .status,
-  ).toBe(200);
+  ).toBe(202);
   const occupied = await post("/v1/game-candidates", { ...intent, idempotency_key: "competing-game-intent" });
   expect(occupied.response.status).toBe(409);
   expect(occupied.document).toMatchObject({ code: "game_candidate_slot_occupied" });
@@ -387,10 +396,14 @@ test("abandonment releases only its game slot and a new intent creates a fresh c
     generation: 1,
     idempotency_key: "abandon-game-intent",
   });
-  expect(abandoned.response.status).toBe(200);
-  expect(abandoned.document).toMatchObject({ state: "abandoned", generation: 2, deadline: first.document.deadline });
+  expect(abandoned.response.status).toBe(202);
+  expect((await get(`/v1/game-candidates/${id}`)).document).toMatchObject({
+    state: "abandoned",
+    generation: 2,
+    deadline: first.document.deadline,
+  });
   const fresh = await post("/v1/game-candidates", { ...intent, idempotency_key: "competing-game-intent" });
-  expect(fresh.response.status, JSON.stringify(fresh.document)).toBe(201);
+  expect(fresh.response.status, JSON.stringify(fresh.document)).toBe(202);
   expect(fresh.document.id).not.toBe(id);
   expect(fresh.document).toMatchObject({ ingestion_run_id: run.id, generation: 0 });
   expect((await get(`/v1/game-candidates/${id}`)).document).toMatchObject({
@@ -399,8 +412,8 @@ test("abandonment releases only its game slot and a new intent creates a fresh c
     deadline: first.document.deadline,
   });
   const replay = await post("/v1/game-candidates", intent);
-  expect(replay.response.status).toBe(200);
-  expect(replay.document).toMatchObject({ id, state: "abandoned" });
+  expect(replay.response.status).toBe(202);
+  expect(replay.document).toEqual(first.document);
 });
 
 test("a native source change retains reconfirmable curated diagnostics without failing the collection", async () => {
@@ -441,7 +454,7 @@ test("a native source change retains reconfirmable curated diagnostics without f
     expected_game_revision_id: published.revisionId,
     idempotency_key: "native-curated-candidate",
   });
-  expect(created.response.status).toBe(201);
+  expect(created.response.status).toBe(202);
   const id = requiredString(created.document, "id");
   let candidate = (await get(`/v1/game-candidates/${id}`)).document;
   const deadline = Date.now() + 15000;
@@ -482,7 +495,7 @@ test("a native source change retains reconfirmable curated diagnostics without f
     expected_game_revision_id: published.revisionId,
     idempotency_key: "native-curated-after-reaffirmation",
   });
-  expect(fresh.response.status, JSON.stringify(fresh.document)).toBe(201);
+  expect(fresh.response.status, JSON.stringify(fresh.document)).toBe(202);
   const freshId = requiredString(fresh.document, "id");
   expect(freshId).not.toBe(id);
   let freshCandidate = (await get(`/v1/game-candidates/${freshId}`)).document;
@@ -534,7 +547,7 @@ test("invalid native curated composition fails terminally and replays its retain
     idempotency_key: "native-invalid-curated-candidate",
   };
   const created = await post("/v1/game-candidates", intent);
-  expect(created.response.status).toBe(201);
+  expect(created.response.status).toBe(202);
   const id = requiredString(created.document, "id");
   let candidate = (await get(`/v1/game-candidates/${id}`)).document;
   const deadline = Date.now() + 15000;
@@ -552,8 +565,9 @@ test("invalid native curated composition fails terminally and replays its retain
 
   expect((await get(`/v1/ingestion-runs/${changed.id}`)).document).toMatchObject({ state: "parsing" });
   const replay = await post("/v1/game-candidates", intent);
-  expect(replay.response.status).toBe(200);
-  expect(replay.document).toEqual(candidate);
+  expect(replay.response.status).toBe(202);
+  expect(replay.document).toEqual(created.document);
+  expect((await get(`/v1/game-candidates/${id}`)).document).toEqual(candidate);
   const workflowReplay = await runReconciliationWorkflow(
     testEnv,
     {
@@ -629,7 +643,7 @@ test("a fresh native preparation pins later owner corrections and retains them a
     }),
     { ...testEnv, RECONCILIATION_WORKFLOW: binding },
   );
-  expect(created.status).toBe(201);
+  expect(created.status).toBe(202);
   const id = requiredString(await created.json<Record<string, unknown>>(), "id");
   const retired = await post(`/admin/v1/curated-revisions/${revision.document.curated_revision_id}/retire`, {
     environment: "production",
@@ -678,7 +692,7 @@ test("a delayed native worker fails at its original deadline without sealing or 
     idempotency_key: "expired-native-intent",
   };
   const created = await post("/v1/game-candidates", intent, { "x-keepr-test-now": createdAt });
-  expect(created.response.status).toBe(201);
+  expect(created.response.status).toBe(202);
   const id = requiredString(created.document, "id");
   let candidate = (await get(`/v1/game-candidates/${id}`)).document;
   const deadline = Date.now() + 15000;
@@ -691,7 +705,8 @@ test("a delayed native worker fails at its original deadline without sealing or 
     failure_code: "reconciliation_deadline_expired",
     deadline: new Date(Date.parse(createdAt) + 7 * 86400000).toISOString(),
   });
-  expect((await post("/v1/game-candidates", intent)).document).toEqual(candidate);
+  expect((await post("/v1/game-candidates", intent)).document).toEqual(created.document);
+  expect((await get(`/v1/game-candidates/${id}`)).document).toEqual(candidate);
   expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
 });
 
@@ -723,7 +738,7 @@ test("native supplemental admission retains collection evidence and preparation-
     expected_game_revision_id: "catrev_spine_000",
     idempotency_key: "native-admission-intent",
   });
-  expect(created.response.status).toBe(201);
+  expect(created.response.status).toBe(202);
   const id = requiredString(created.document, "id");
   let candidate = (await get(`/v1/game-candidates/${id}`)).document;
   const deadline = Date.now() + 15000;
@@ -823,7 +838,7 @@ test.each([
       expected_game_revision_id: published.document.resulting_revision_id,
       idempotency_key: "native-review-intent",
     });
-    expect(created.response.status).toBe(201);
+    expect(created.response.status).toBe(202);
     const id = requiredString(created.document, "id");
     let candidate = (await get(`/v1/game-candidates/${id}`)).document;
     const deadline = Date.now() + 15000;
@@ -875,9 +890,9 @@ test("an owner can abandon an expired sealed candidate and create a fresh prepar
     idempotency_key: "sealed-abandon-candidate",
   };
   const created = await post("/v1/game-candidates", intent);
-  expect(created.response.status).toBe(201);
+  expect(created.response.status).toBe(202);
   const id = requiredString(created.document, "id");
-  let sealed = created.document;
+  let sealed = (await get(`/v1/game-candidates/${id}`)).document;
   const until = Date.now() + 15000;
   while (sealed.state === "preparing" && Date.now() < until) {
     await new Promise((resolve) => setTimeout(resolve, 25));
@@ -890,8 +905,8 @@ test("an owner can abandon an expired sealed candidate and create a fresh prepar
   const abandoned = await post(`/v1/game-candidates/${id}/abandon`, action, {
     "x-keepr-test-now": new Date(Date.parse(String(sealed.deadline)) + 1).toISOString(),
   });
-  expect(abandoned.response.status, JSON.stringify(abandoned.document)).toBe(200);
-  expect(abandoned.document).toMatchObject({
+  expect(abandoned.response.status, JSON.stringify(abandoned.document)).toBe(202);
+  expect((await get(`/v1/game-candidates/${id}`)).document).toMatchObject({
     state: "abandoned",
     generation: 1,
     deadline: sealed.deadline,
@@ -901,9 +916,9 @@ test("an owner can abandon an expired sealed candidate and create a fresh prepar
   expect((await get(`/v1/game-candidates/${id}`)).document).toMatchObject({ state: "abandoned", generation: 1 });
   expect((await get(`/v1/ingestion-runs/${source.id}`)).document.source_coverage).toEqual(sealedCoverage);
   const replacement = await post("/v1/game-candidates", { ...intent, idempotency_key: "sealed-abandon-replacement" });
-  expect(replacement.response.status).toBe(201);
+  expect(replacement.response.status).toBe(202);
   expect(replacement.document.id).not.toBe(id);
-  expect((await post("/v1/game-candidates", intent)).document).toMatchObject({ id, state: "abandoned", generation: 1 });
+  expect((await post("/v1/game-candidates", intent)).document).toEqual(created.document);
   expect(
     (await post(`/v1/game-candidates/${id}/resume`, { generation: 0, idempotency_key: "old-sealed-resume" })).response
       .status,

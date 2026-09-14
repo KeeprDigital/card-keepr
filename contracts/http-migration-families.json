@@ -396,14 +396,14 @@
     "method": "POST",
     "path": "/v1/game-candidates/:candidate/pause",
     "slice": "Game Candidates",
-    "cli": null
+    "cli": "gameCandidatePause"
   },
   {
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/game-candidates/:candidate/resume",
     "slice": "Game Candidates",
-    "cli": null
+    "cli": "gameCandidateResume"
   },
   {
     "family": "reconciliation",

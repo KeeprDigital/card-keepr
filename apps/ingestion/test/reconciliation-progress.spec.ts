@@ -1991,7 +1991,7 @@ test.each(["entity", "selection", "entity after commit"])(
       state: "paused",
       generation: 1,
     });
-    expect((await preparation.resume(1, `resume-curated-draft-${fixture}`)).status).toBe(200);
+    expect((await preparation.resume(1, `resume-curated-draft-${fixture}`)).status).toBe(202);
     unavailable = false;
     await runReconciliationWorkflow(
       { ...testEnv, CATALOGUE_DB: database },

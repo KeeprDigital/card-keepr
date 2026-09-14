@@ -52,7 +52,7 @@ export default {
         }),
         { ...env, RECONCILIATION_WORKFLOW: binding },
       );
-      if (response.status !== 201 || !params) return response;
+      if (response.status !== 202 || !params) return response;
       const captured = await env.CATALOGUE_DB.prepare(
         "SELECT content_digest, content_byte_length FROM source_snapshots WHERE ingestion_run_id = ?",
       )

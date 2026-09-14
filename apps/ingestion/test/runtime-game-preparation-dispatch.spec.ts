@@ -105,7 +105,7 @@ test("an occupied game slot does not prevent the collection parent from dispatch
     expected_game_revision_id: "catrev_spine_000",
     idempotency_key: "parent-occupied-fusion-candidate",
   });
-  expect(occupied.status).toBe(201);
+  expect(occupied.status).toBe(202);
   const original = await occupied.json<{ id: string }>();
   const collection = await injectFixtureEvidencePlan(env.CATALOGUE_DB, {
     idempotency_key: "parent-occupied-two-games",
@@ -209,9 +209,9 @@ test("pending reconfirmation in the first game does not prevent the collection p
     expected_game_revision_id: predecessor,
     idempotency_key: "pending-parent-conflict",
   });
-  expect(conflicted.response.status).toBe(201);
+  expect(conflicted.response.status).toBe(202);
   const id = requiredString(conflicted.document, "id");
-  let failed = conflicted.document;
+  let failed = (await get(`/v1/game-candidates/${id}`)).document;
   const until = Date.now() + 15000;
   while (failed.state === "preparing" && Date.now() < until) {
     await new Promise((resolve) => setTimeout(resolve, 25));

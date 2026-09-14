@@ -330,14 +330,12 @@ test("a game can prepare again after another game publishes and its own evidence
   const next = await prepared("/reconciliation/repeatable", "cross-game-next", gameRevision);
   expect(next.state).toBe("sealed");
   expect(await nativeCandidatePredecessor(testEnv.CATALOGUE_DB, String(next.id))).toBe(repeated.id);
-  expect(
-    (
-      await post(`/v1/game-candidates/${next.id}/abandon`, {
-        generation: next.generation,
-        idempotency_key: "cross-game-next-abandon",
-      })
-    ).document.state,
-  ).toBe("abandoned");
+  const abandoned = await post(`/v1/game-candidates/${next.id}/abandon`, {
+    generation: next.generation,
+    idempotency_key: "cross-game-next-abandon",
+  });
+  expect(abandoned.response.status).toBe(202);
+  expect((await get(`/v1/game-candidates/${next.id}`)).document.state).toBe("abandoned");
 });
 
 test("retained Printing history can cross the identity-match limit without losing observation evidence", async () => {

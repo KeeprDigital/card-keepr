@@ -201,7 +201,7 @@ test("mixed-game composition and current plus two survive an actual SQL import",
         idempotency_key: `mixed-refresh-candidate-${repeat}`,
       }),
     });
-    assert.equal(prepared.status, 201, await prepared.clone().text());
+    assert.equal(prepared.status, 202, await prepared.clone().text());
     const refreshedCollection = await waitForAdministrationDocument(
       `/v1/ingestion-runs/${refreshed.id}/game-candidates`,
       (d) => d.candidates.length === 1 && d.candidates[0].state === "sealed",

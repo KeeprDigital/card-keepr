@@ -6,6 +6,7 @@ import {
 import { inspectionEvidenceClasses, inspectionEvidenceStatement } from "./game-inspection-evidence-repository";
 import {
   prepareCandidateInspection,
+  assertCandidateManifest,
   verifiedCandidatePartition,
   type InspectionCursor,
 } from "./game-candidate-inspection";
@@ -23,6 +24,7 @@ import {
   gameCandidatesForPreparationStatement,
   gameCandidatesForCollectionStatement,
   gameCandidateStatement,
+  predecessorGameCandidateStatement,
   inspectionGameHeadStatement,
   gameCandidateInspectionSummaryStatement,
   gameCandidateInspectionCountsStatement,
@@ -34,7 +36,7 @@ import {
   sealGameCandidateStatement,
 } from "./game-candidate-repository";
 import { sourceAdapterRegistrations } from "../adapters";
-import { assertCurrentCardModel, validateCardModelRecord } from "./card-model-definition";
+import { assertCurrentCardModel, candidateCardModel, validateCardModelRecord } from "./card-model-definition";
 import { newestReconciliationCheckpointStatement } from "./reconciliation-checkpoint-repository";
 
 export type GameCandidate = {
@@ -392,8 +394,7 @@ export async function inspectGameCandidatePartitions(
   manifest: string | null = null,
 ) {
   const candidate = await inspectGameCandidate(database, candidateId);
-  if (manifest !== null && manifest !== candidate.manifest_digest)
-    throw new AdministrationProblem(409, "candidate_pin_mismatch", "Use pages from the exact candidate manifest.");
+  assertCandidateManifest(candidate, manifest);
   const parts = after?.split(":");
   if (parts && (parts.length !== 2 || parts[0] !== candidate.manifest_digest))
     throw new AdministrationProblem(409, "candidate_pin_mismatch", "Use the returned manifest-bound cursor.");
@@ -417,16 +418,30 @@ export async function inspectGameCandidatePartition(
   manifest: string | null = null,
 ) {
   const candidate = await inspectGameCandidate(database, candidateId);
-  if (manifest !== null && manifest !== candidate.manifest_digest)
-    throw new AdministrationProblem(409, "candidate_pin_mismatch", "Use pages from the exact candidate manifest.");
+  assertCandidateManifest(candidate, manifest);
   if (!/^\d+$/.test(ordinal) || !Number.isSafeInteger(Number(ordinal)))
     throw new AdministrationProblem(422, "invalid_cursor", "Use a retained partition ordinal.");
   const partition = await verifiedCandidatePartition(database, candidateId, Number(ordinal));
   const envelopes = partition.records;
+  const predecessor = await predecessorGameCandidateStatement(
+    database,
+    candidate.expected_game_revision_id,
+    candidate.supported_game,
+    candidate.preparation_id,
+  ).first<{ id: string }>();
+  const card_model = await candidateCardModel(database, candidate.id);
+  const predecessor_card_model =
+    candidate.expected_game_revision_id === "catrev_spine_000"
+      ? null
+      : predecessor
+        ? await candidateCardModel(database, predecessor.id)
+        : "unversioned";
   return {
     candidate_id: candidate.id,
     manifest_digest: candidate.manifest_digest,
     expected_game_revision_id: candidate.expected_game_revision_id,
+    card_model,
+    predecessor_card_model,
     kind: partition.kind,
     sha256: partition.sha256,
     records: envelopes.map((record) => record.value),

@@ -673,6 +673,7 @@ async function proveNativeComposition(t, proof) {
     expected_game_revision_id: initialGameRevision,
     idempotency_key: "native-restored-pending",
   });
+  pending = await get(new URL(pending.links.status).pathname);
   const pendingDeadline = Date.now() + 30000;
   while (pending.state === "preparing" && Date.now() < pendingDeadline) {
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -860,6 +861,7 @@ async function proveNativeComposition(t, proof) {
     expected_game_revision_id: publication.resulting_revision_id,
     idempotency_key: "native-restored-last-pending",
   });
+  pending = await get(new URL(pending.links.status).pathname);
   const lastCandidateDeadline = Date.now() + 30000;
   while (pending.state === "preparing" && Date.now() < lastCandidateDeadline) {
     await new Promise((resolve) => setTimeout(resolve, 100));

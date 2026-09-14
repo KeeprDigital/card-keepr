@@ -71,7 +71,7 @@ export async function assertNativePrintingImagePublication(workload: "2-images" 
     { ...testEnv, RECONCILIATION_WORKFLOW: deferredWorkflow },
   );
   const created = (await started.json()) as Record<string, unknown>;
-  expect(started.status, JSON.stringify(created)).toBe(201);
+  expect(started.status, JSON.stringify(created)).toBe(202);
   const id = requiredString(created, "id");
   expect(payload).toBeDefined();
   const event = { payload: payload! } as import("cloudflare:workers").WorkflowEvent<ReconciliationWorkflowParams>;

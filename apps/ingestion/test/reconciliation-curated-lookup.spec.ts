@@ -78,7 +78,7 @@ describe.each(["release", "relationships"] as const)("a curated %s lookup", (kin
       expected_game_revision_id: published.revisionId,
       idempotency_key: "curated-lookup-next-prepare",
     });
-    expect(created.response.status, JSON.stringify(created.document)).toBe(201);
+    expect(created.response.status, JSON.stringify(created.document)).toBe(202);
     const candidateId = requiredString(created.document, "id");
     let calls = 0;
     let prefix = "";
@@ -172,7 +172,7 @@ describe.each(["release", "relationships"] as const)("a curated %s lookup", (kin
           idempotency_key: "curated-lookup-resume",
         })
       ).response.status,
-    ).toBe(200);
+    ).toBe(202);
     resumed = true;
     await runReconciliationWorkflow({ ...testEnv, CATALOGUE_DB: database }, { payload: params! } as typeof event, step);
     expect((await get(`/v1/game-candidates/${candidateId}`)).document).toMatchObject({

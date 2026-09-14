@@ -42,7 +42,9 @@ export async function assertHttpResponse(
   const validate = validators[name as keyof typeof validators];
   expect(typeof validate).toBe("function");
   if (typeof validate !== "function") throw new Error("Missing generated response validator.");
-  expect(validate(body ?? (await response.clone().json())), `${method} ${path} response matches generated schema`).toBe(
-    true,
-  );
+  const matches = validate(body ?? (await response.clone().json()));
+  expect(
+    matches,
+    `${method} ${path} response matches generated schema: ${JSON.stringify(Reflect.get(validate, "errors"))}`,
+  ).toBe(true);
 }

@@ -1,3 +1,4 @@
+import { get } from "./reconciliation-helpers";
 import * as cardSearchQueries from "./query-helpers/card-search";
 import { expect, onTestFinished, test } from "vitest";
 import { catalogueStore, sha256, type CataloguePrintingImage } from "../../../src/catalogue/shared";
@@ -39,8 +40,9 @@ test("a 1001-entity reconciliation publishes atomically within bounded D1 statem
     expected_game_revision_id: "catrev_spine_000",
     idempotency_key: "bounded-cards-candidate",
   });
-  expect(publicReplay.response.status).toBe(200);
-  expect(publicReplay.document).toEqual(candidate);
+  expect(publicReplay.response.status).toBe(202);
+  expect(publicReplay.document).toMatchObject({ id: candidate.id, state: "accepted", action: "prepare" });
+  expect((await get(`/v1/game-candidates/${candidate.id}`)).document).toEqual(candidate);
   expect(new TextEncoder().encode(JSON.stringify(publicReplay.document)).byteLength).toBeLessThan(70_000);
   expect((await currentGameMembers(testEnv.CATALOGUE_DB)).results).toEqual([]);
   const published = await approveNativeCandidate(candidate, "bounded-cards-approval");

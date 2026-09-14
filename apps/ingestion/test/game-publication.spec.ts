@@ -26,7 +26,7 @@ test.each(["contention", "backup-wait expiry"])("whole-candidate approval and %s
     idempotency_key: "atomic-candidate",
   });
   const id = requiredString(created.document, "id");
-  let candidate = created.document;
+  let candidate = (await get(`/v1/game-candidates/${id}`)).document;
   const deadline = Date.now() + 15000;
   while (candidate.state === "preparing" && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 25));
@@ -155,7 +155,7 @@ test.each(["contention", "backup-wait expiry"])("whole-candidate approval and %s
     expected_game_revision_id: switched.document.resulting_revision_id,
     idempotency_key: "same-source-next",
   });
-  let second = next.document;
+  let second = (await get(`/v1/game-candidates/${next.document.id}`)).document;
   const secondDeadline = Date.now() + 15000;
   while (second.state === "preparing" && Date.now() < secondDeadline) {
     await new Promise((resolve) => setTimeout(resolve, 25));
@@ -279,6 +279,7 @@ test.each(["contention", "backup-wait expiry"])("whole-candidate approval and %s
       idempotency_key: "atomic-fusion-candidate",
     })
   ).document;
+  other = (await get(`/v1/game-candidates/${other.id}`)).document;
   const otherDeadline = Date.now() + 15000;
   while (other.state === "preparing" && Date.now() < otherDeadline) {
     await new Promise((resolve) => setTimeout(resolve, 25));

@@ -691,8 +691,8 @@ test("historical Gundam locators survive disappearance without retaining stale C
     generation: usConflict.generation,
     idempotency_key: "reject-absent-asia-card-authority",
   });
-  expect(usConflictAbandoned.response.status).toBe(200);
-  expect(usConflictAbandoned.document.state).toBe("abandoned");
+  expect(usConflictAbandoned.response.status).toBe(202);
+  expect((await get(`/v1/game-candidates/${usConflictAbandoned.document.id}`)).document.state).toBe("abandoned");
   const usPrintingConflictRun = await collect(
     "/reconciliation/gundam-printing-lifecycle-primary-disappearance-us-printing-conflict",
     "historical-authority-us-printing-conflict",
@@ -717,8 +717,10 @@ test("historical Gundam locators survive disappearance without retaining stale C
     generation: usPrintingConflict.generation,
     idempotency_key: "reject-current-us-printing-evolution",
   });
-  expect(usPrintingConflictAbandoned.response.status).toBe(200);
-  expect(usPrintingConflictAbandoned.document.state).toBe("abandoned");
+  expect(usPrintingConflictAbandoned.response.status).toBe(202);
+  expect((await get(`/v1/game-candidates/${usPrintingConflictAbandoned.document.id}`)).document.state).toBe(
+    "abandoned",
+  );
 });
 
 test("historical Gundam locators permit formatting-equivalent Asia evidence after US disappearance", async () => {
@@ -836,8 +838,10 @@ test("historical Gundam locators permit changed Asia facts after conflicting US 
     generation: reverseConflictAsia.generation,
     idempotency_key: "reject-current-asia-printing-evolution",
   });
-  expect(reverseConflictAsiaAbandoned.response.status).toBe(200);
-  expect(reverseConflictAsiaAbandoned.document.state).toBe("abandoned");
+  expect(reverseConflictAsiaAbandoned.response.status).toBe(202);
+  expect((await get(`/v1/game-candidates/${reverseConflictAsiaAbandoned.document.id}`)).document.state).toBe(
+    "abandoned",
+  );
 });
 
 test("Gundam EN-ASIA Printing facts become canonical when formatting-equivalent EN-US evidence arrived first", async () => {
@@ -1347,7 +1351,7 @@ async function prepareFailedNativeIdentity(runId: string, game: string, predeces
     expected_game_revision_id: predecessor,
     idempotency_key: key,
   });
-  expect(created.response.status, JSON.stringify(created.document)).toBe(201);
+  expect(created.response.status, JSON.stringify(created.document)).toBe(202);
   const candidate = await waitForNativeCandidate(String(created.document.id), "failed", 15_000);
   return candidate!;
 }
@@ -1362,7 +1366,7 @@ async function prepareIdentityEvidence(runId: string, game: string, state: strin
     expected_game_revision_id: predecessor,
     idempotency_key: `identity-${runId}`,
   });
-  expect(created.response.status, JSON.stringify(created.document)).toBe(201);
+  expect(created.response.status, JSON.stringify(created.document)).toBe(202);
   const header = await waitForNativeCandidate(String(created.document.id), state, 15_000);
   const records = await nativeCandidateRecords(
     String(header!.id),

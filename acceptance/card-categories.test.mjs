@@ -61,9 +61,12 @@ test("categories retain distinct identities, evidenced associations and applicab
   });
   await waitForHealth(`${ingestion.url}/health`, key, ingestion);
   const environment = { KEEPR_INGESTION_URL: ingestion.url, KEEPR_ADMINISTRATION_KEY: key };
-  const cli = async (args) => {
+  const cli = async (
+    args,
+    expectedCode = args[0] === "game-candidate" && ["prepare", "pause", "resume", "abandon"].includes(args[1]) ? 10 : 0,
+  ) => {
     const result = await runCli([...args, "--json"], environment);
-    assert.equal(result.code, 0, result.stdout + result.stderr);
+    assert.equal(result.code, expectedCode, result.stdout + result.stderr);
     return JSON.parse(result.stdout);
   };
   for (const area of ["card_facts", "printing_details"])
@@ -116,17 +119,60 @@ test("categories retain distinct identities, evidenced associations and applicab
       key,
       "--yes",
     ]);
-    return waitForAdministrationDocument(
+    const validate =
+      wireValidators[wireValidators.responseValidators["admin post /v1/game-candidates 202 application/json"]];
+    assert.equal(validate(result), true, JSON.stringify(validate.errors));
+    const candidate = await waitForAdministrationDocument(
       `/v1/game-candidates/${result.id}`,
       (d) => d.state === expected || (["failed", "paused"].includes(d.state) ? JSON.stringify(d) : false),
       environment,
       ingestion,
       { deadlineMs: 120000 },
     );
+    const shown = await cli(["game-candidate", "show", "--candidate-id", result.id], expected === "failed" ? 8 : 0);
+    assert.deepEqual(shown, candidate);
+    const statusValidator =
+      wireValidators[
+        wireValidators.responseValidators["admin get /v1/game-candidates/{candidate} 200 application/json"]
+      ];
+    assert.equal(statusValidator(shown), true, JSON.stringify(statusValidator.errors));
+    return candidate;
   };
   // The registered synthetic adapter supplies complete identity evidence; this
   // does not qualify the production Riot adapter or change its admission gate.
   const candidate = await prepare("reviewed");
+  const inspection = await cli([
+    "game-candidate",
+    "inspect",
+    "--candidate-id",
+    candidate.id,
+    "--manifest",
+    candidate.manifest_digest,
+  ]);
+  const validateInspection =
+    wireValidators[
+      wireValidators.responseValidators["admin get /v1/game-candidates/{candidate}/inspection 200 application/json"]
+    ];
+  assert.equal(validateInspection(inspection), true, JSON.stringify(validateInspection.errors));
+  assert.equal(inspection.approval_scope, "whole_candidate");
+  assert.equal(inspection.ready, true);
+  const replay = await cli([
+    "game-candidate",
+    "prepare",
+    "--run-id",
+    run.id,
+    "--game",
+    "riftbound",
+    "--expected-game-revision-id",
+    "catrev_spine_000",
+    "--idempotency-key",
+    "reviewed",
+    "--yes",
+  ]);
+  assert.equal(replay.state, "accepted");
+  assert.equal(replay.id, candidate.id);
+  assert.equal(replay.deadline, candidate.deadline);
+
   const inspected = await inspectNativeCollection(run.id, environment, { partitionKinds: ["cards", "printings"] });
   const inspectedCards = inspected.records.cards.map((record) => record.value ?? record);
   assert.equal(inspectedCards.length, 3);

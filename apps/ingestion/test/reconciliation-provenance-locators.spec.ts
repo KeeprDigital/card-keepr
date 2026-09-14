@@ -207,7 +207,7 @@ test("a known locator with contradictory retained material evidence fails the na
     expected_game_revision_id: revisionId,
     idempotency_key: "conflict-changed-prepare",
   });
-  expect(created.response.status).toBe(201);
+  expect(created.response.status).toBe(202);
   const conflict = await waitForNativeCandidate(String(created.document.id), "failed", 15_000);
   expect(conflict?.outcome).toMatchObject({ state: "failed" });
   // The operation envelope is a bounded code/detail summary. The exact
@@ -390,8 +390,8 @@ test("candidate inspection reports stable reconciliation matches rather than eve
     generation: next.generation,
     idempotency_key: "abandon-inspected-candidate",
   });
-  expect(abandoned.response.status).toBe(200);
-  expect(abandoned.document.state).toBe("abandoned");
+  expect(abandoned.response.status).toBe(202);
+  expect((await get(`/v1/game-candidates/${abandoned.document.id}`)).document.state).toBe("abandoned");
 });
 
 test("generic retry rejects an evidence-backed terminal run so reconciliation provenance cannot be reset", async () => {
@@ -694,7 +694,7 @@ async function prepareEvidence(runId: string, game = "one-piece", state = "seale
     expected_game_revision_id: predecessor,
     idempotency_key: `provenance-prepare-${runId}`,
   });
-  expect(created.response.status, JSON.stringify(created.document)).toBe(201);
+  expect(created.response.status, JSON.stringify(created.document)).toBe(202);
   const header = await waitForNativeCandidate(String(created.document.id), state, 15_000);
   return { header: header!, records: await nativeCandidateRecords(String(header!.id)) };
 }

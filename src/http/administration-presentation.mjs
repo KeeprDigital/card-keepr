@@ -10,8 +10,14 @@ export function administrationPresentation(document, status = 200) {
     contract: "card-keepr-cli-presentation@1",
     document,
     text: formatAdministrationResult(document),
-    exit_code: publicationExitCode(document) ?? (incomplete ? 10 : 0),
+    exit_code: gameCandidateExitCode(document) ?? publicationExitCode(document) ?? (incomplete ? 10 : 0),
   };
+}
+function gameCandidateExitCode(document) {
+  if (document.contract === "card-keepr-game-preparation-acceptance@1") return 10;
+  if (document.contract !== "card-keepr-game-candidate@1") return null;
+  if (document.state === "failed") return 8;
+  return ["preparing", "paused"].includes(document.state) ? 10 : 0;
 }
 function publicationExitCode(document) {
   if (document.contract === "card-keepr-publication-acceptance@1") return 10;
@@ -20,6 +26,11 @@ function publicationExitCode(document) {
   return document.state === "published" ? 0 : 10;
 }
 function formatAdministrationResult(document) {
+  if (document.contract === "card-keepr-game-preparation-acceptance@1")
+    return `Candidate ${document.id}: ${document.action} accepted; inspect ${document.links.status} for current status.`;
+  if (document.contract === "card-keepr-game-candidate@1")
+    return `Candidate ${document.id}: ${document.state}${document.failure_code ? ` (${document.failure_code})` : ""}; whole-candidate approval remains separate.`;
+
   if (document.contract === "card-keepr-evidence-acceptance@1")
     return `Collection ${document.id} accepted; resume explicitly, then inspect ${document.links.status} for current status.`;
   if (document.contract === "card-keepr-collection-dispatch@1")

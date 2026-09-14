@@ -686,7 +686,7 @@ async function expectProductEvidenceInvalid(runId: string, predecessor: string, 
     expected_game_revision_id: predecessor,
     idempotency_key: `product-invalid-${runId}`,
   });
-  expect(created.response.status, JSON.stringify(created.document)).toBe(201);
+  expect(created.response.status, JSON.stringify(created.document)).toBe(202);
   const candidate = await waitForNativeCandidate(String(created.document.id), "failed", 15_000);
   expect(candidate).toMatchObject({ state: "failed", failure_code: "printing_reconciliation_blocked" });
   expect(candidate?.outcome).toMatchObject({

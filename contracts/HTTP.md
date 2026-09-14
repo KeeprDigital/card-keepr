@@ -101,6 +101,19 @@ the explicit streaming boundary: it checks status, media and required headers
 without buffering bytes. Actual-response tests validate retained JSON against the
 registered schema and compare snapshot bytes and digest/length headers.
 
+## Game Candidate preparation and inspection
+
+All 15 Game Candidate operations use generated administration contracts owned by
+the reconciliation module. The [administration protocol](ADMINISTRATION.md#native-candidate-and-publication-commands)
+defines immutable receipts, current status, CLI behavior, pinned inspection and
+the separate whole-candidate approval requirement.
+
+Typed responses describe Card categories, applicability, associations and
+provenance. Recorded model context selects explicit current or retained historical
+fact/input shapes without rewriting immutable evidence. Source-defined values
+remain JSON. Candidate image inspection uses the shared streaming boundary to
+check declared media and headers without buffering bytes.
+
 ## Migrating a family
 
 1. Find the operation and potential callers in [the generated inventory](http-route-inventory.json).

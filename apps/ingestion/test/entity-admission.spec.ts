@@ -347,7 +347,7 @@ test.each([
       expect(failures).toBe(4);
       const paused = (await get(`/v1/game-candidates/${preparation.candidateId}`)).document;
       expect(paused).toMatchObject({ state: "paused", generation: 1 });
-      expect((await preparation.resume(1, "resume-admission-warnings")).status).toBe(200);
+      expect((await preparation.resume(1, "resume-admission-warnings")).status).toBe(202);
       resumed = true;
       await runReconciliationWorkflow(
         { ...testEnv, CATALOGUE_DB: database },

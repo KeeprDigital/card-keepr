@@ -132,7 +132,11 @@ test(
     const cli = async (args) => {
       const result = await runCli([...args, "--json"], environment);
       report.owner_actions.push({ command: args, exit_code: result.code });
-      assert.equal(result.code, 0, result.stdout + result.stderr + worker.getOutput());
+      assert.equal(
+        result.code,
+        args[0] === "game-candidate" && ["prepare", "pause", "resume", "abandon"].includes(args[1]) ? 10 : 0,
+        result.stdout + result.stderr + worker.getOutput(),
+      );
       return JSON.parse(result.stdout);
     };
     const reader = nativeExportReader(250);

@@ -9,10 +9,13 @@ candidate against its Game Catalogue Revision predecessor.
 The root of [administration.schema.json](schemas/administration.schema.json)
 decodes historical `card-keepr-administration@1` snapshots. Its run-owned state
 and approval definitions are retained for historical decoding, not current
-status or native approval. The named `CommandRequest` definitions describe
-current canonical inputs. Generation and sequence are non-negative safe integers
-after HTTP normalization; the shipped CLI sends these two fields as decimal
-strings, which the HTTP adapter converts to numbers.
+status or native approval. The named `CommandRequest` definitions describe the
+remaining unmigrated commands. Migrated HTTP inputs and responses come from the
+[generated administration specification](admin-openapi.json), as described by the
+[HTTP boundary](HTTP.md). Generation and sequence are non-negative safe integers;
+each protocol below specifies its wire representation. Candidate control and
+publication approval send JSON integer generations. Unmigrated publication resume
+and artifact preparation still accept the CLI's decimal-string generation and sequence.
 
 The repository CLI is the only initial owner interface. It talks to the
 ingestion Worker for catalogue operations, to GitHub for a production release
@@ -24,7 +27,7 @@ workflow authentication and release guards.
 ## Interaction rules
 
 Read-only commands never prompt. Native commands use the configured ingestion
-URL and administration key. `game-candidate prepare` and `abandon` require
+URL and administration key. `game-candidate prepare`, `pause`, `resume` and `abandon` require
 `--yes`; native artifact preparation and publication commands bind the explicit
 candidate or operation without a production-target confirmation option.
 
@@ -80,11 +83,13 @@ remote/platform failure, and `10` operation accepted but not yet terminal where
 the command's presentation defines that pending outcome. Publication approval
 exits `10` for its immutable acceptance; publication status exits `10` while
 pending or paused, `8` on failure and `0` when published. Published still requires
-separate Backup Attempt verification. Native candidate and artifact-preparation
-commands currently exit `0` for a successfully returned document, including a
-pending acknowledgement or a status document reporting `failed`. Callers must
-read `state` and `failure_code` and poll status; neither exit `0` nor HTTP `202`
-proves publication or backup completion.
+separate Backup Attempt verification. Candidate preparation/control receipts exit
+`10`; candidate status exits `10` while preparing or paused, `8` on failure, and
+`0` for sealed, published or abandoned state. Read-only candidate inspection exits
+`0` when its document is returned successfully. Artifact-preparation commands still
+exit `0` for a successfully returned document, including a pending acknowledgement
+or failed status. Callers must read `state` and `failure_code` and poll status;
+neither exit `0` nor HTTP `202` proves publication or backup completion.
 
 ## Commands
 
@@ -126,6 +131,8 @@ These transitions preserve the original candidate deadline.
 | `keepr game-candidate inspect`                      | GET `/v1/game-candidates/:candidate/inspection`                                  | candidate ID; optional `manifest` pin                                                           |
 | `keepr game-candidate partitions`, `partition`      | GET `/v1/game-candidates/:candidate/partitions[/:ordinal]`                       | candidate ID; optional `manifest`; listing accepts `after`                                      |
 | `keepr game-candidate evidence`                     | GET `/v1/game-candidates/:candidate/inspection/evidence/:kind`                   | candidate ID, evidence kind; optional `manifest`, `after`                                       |
+| `keepr game-candidate pause --yes`                  | POST `/v1/game-candidates/:candidate/pause`                                      | candidate ID; JSON integer `generation`, `idempotency_key`                                      |
+| `keepr game-candidate resume --yes`                 | POST `/v1/game-candidates/:candidate/resume`                                     | candidate ID; JSON integer `generation`, `idempotency_key`                                      |
 | `keepr game-candidate abandon --yes`                | POST `/v1/game-candidates/:candidate/abandon`                                    | candidate ID; `generation`, `idempotency_key`                                                   |
 | `keepr publication-preparation start`, `resume`     | POST `/v1/game-candidates/:candidate/publication-preparation/start` or `/resume` | candidate ID; `manifest_digest`, `generation`, `sequence`, `idempotency_key`                    |
 | `keepr publication-preparation status`, `artifacts` | GET `/v1/game-candidates/:candidate/publication-preparation[/artifacts]`         | candidate ID; artifacts listing accepts `after`                                                 |
@@ -135,23 +142,45 @@ These transitions preserve the original candidate deadline.
 
 CLI options use hyphens, with `--run-id` for `ingestion_run_id`, `--game` for
 `supported_game`, and `--operation-id` for a Publication Operation. Candidate
-pause and resume are available through POST `/v1/game-candidates/:candidate/pause`
-and `/resume` with `{generation, idempotency_key}`; there are no corresponding
-`game-candidate pause` or `game-candidate resume` CLI commands. Run-level
+control commands convert the decimal `--generation` option to a JSON integer.
+Read current status for the generation before a new control intent. Run-level
 `reconciliation pause/resume` targets the separate retained run preparation.
 
-Candidate creation returns HTTP `201`; an exact replay returns `200` and the
-current candidate header, re-dispatching unfinished preparation. A changed key
-reuse returns `409 idempotency_conflict`. A game slot, exact predecessor and
+Candidate prepare, pause, resume and abandon return HTTP `202` with an immutable
+`card-keepr-game-preparation-acceptance@1` receipt. It records the accepted action,
+candidate/preparation/collection identities, predecessor, original deadline,
+idempotency key and command generation. Its absolute `links.status` is also sent
+as `Location`, with `Retry-After: 2` and `Cache-Control: no-store`. Exact replay
+returns the same receipt even after the candidate progresses; its generation is
+the accepted command's generation. GET candidate status returns HTTP `200` with
+the current generation, state and outcome, also with `Cache-Control: no-store`.
+Pause/resume never renews the original seven-day deadline. A changed key reuse
+returns `409 idempotency_conflict`. A game slot, exact predecessor and
 retained game evidence govern admission. Other games may collect, prepare and
 receive approval concurrently; there is no global active-run prerequisite for
 native approval. Recovery and the SQL snapshot fence still block mutations.
 
-Inspection pins the immutable manifest and reports `ready`, `reason` and
+Fact, change and evidence pages require a sealed manifest. Their cursors bind that
+manifest and the candidate's exact predecessor; advancing the current game head
+changes readiness without rewriting retained pages. Progress and retained inputs
+remain inspectable before sealing. Inspection readiness reports `ready`, `reason` and
 `approval_scope: whole_candidate`. Follow every partition/evidence cursor and
 restore referenced large text before reviewing; see the
 [inspection runbook](../docs/runbooks/publication.md#prepare-and-inspect). A ready
-candidate and verified publication artifacts are separate prerequisites.
+candidate and verified publication artifacts are separate prerequisites. Intake
+admission and candidate sealing never substitute for whole-candidate approval.
+
+Partition responses identify `card_model` and `predecessor_card_model` from the
+recorded preparation definitions. Aggregate predecessors without a preparation
+definition use `unversioned`; their before-values can have either complete retained
+record shape. `categories` requires the current Card category,
+gameplay applicability and related-Card fields; `pre_categories` describes retained
+facts from before that definition. A null predecessor model means the Spine
+Revision. Historical before-values and old candidate facts retain their original
+shape and bytes, while current candidate facts and after-values remain strict.
+Normalized input partitions similarly identify their recorded `card_model`.
+Retained identity and admission evidence can contain historical observations or
+decisions. These representations do not authorize publishing an old candidate.
 
 Partition listings return at most 100 entries. Metadata partitions contain at
 most 500 records and 512 KiB. Each partition returns parallel `records` and
