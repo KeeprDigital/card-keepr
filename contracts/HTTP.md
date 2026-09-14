@@ -103,23 +103,16 @@ registered schema and compare snapshot bytes and digest/length headers.
 
 ## Game Candidate preparation and inspection
 
-All 15 Game Candidate operations use generated administration contracts. Prepare,
-pause, resume and abandon return HTTP 202 with an immutable
-`card-keepr-game-preparation-acceptance@1` receipt, absolute status link, Location,
-Retry-After and no-store headers. Exact replay returns the same receipt after
-preparation has progressed. Its generation identifies the accepted command;
-GET status reports the current generation and outcome. Pause/resume retains the
-original seven-day deadline. The CLI uses exit 10 for acceptance, preparing or
-paused state, exit 8 for failed preparation, and exit 0 for terminal inspection.
+All 15 Game Candidate operations use generated administration contracts owned by
+the reconciliation module. The [administration protocol](ADMINISTRATION.md#native-candidate-and-publication-commands)
+defines immutable receipts, current status, CLI behavior, pinned inspection and
+the separate whole-candidate approval requirement.
 
-Facts, changes and evidence require a sealed manifest. Page cursors bind that
-manifest and inspection retains the exact game predecessor. A later predecessor
-change affects readiness, without rewriting retained pages. Progress and retained
-inputs remain inspectable before sealing. Responses describe Card categories,
-applicability, associations and provenance explicitly; source-defined values remain
-JSON. Candidate image inspection streams verified bytes with declared media and
-headers. Intake admission and candidate sealing do not approve publication:
-whole-candidate approval remains a separate owner action.
+Typed responses describe Card categories, applicability, associations and
+provenance. Recorded model context selects explicit current or retained historical
+fact/input shapes without rewriting immutable evidence. Source-defined values
+remain JSON. Candidate image inspection uses the shared streaming boundary to
+check declared media and headers without buffering bytes.
 
 ## Migrating a family
 

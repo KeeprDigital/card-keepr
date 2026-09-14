@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import * as httpValidators from "../test/support/http-response-validators.mjs";
 import { readWorkerConfig } from "../cli/lib/config.mjs";
 import {
   applyMigrations,
@@ -14,11 +15,7 @@ import {
   waitForHealth,
   waitForAdministrationDocument,
 } from "./helpers/acceptance-runtime.mjs";
-import {
-  nativeCheckpointTransport,
-  inspectNativeCollection,
-  publishNativeCollection,
-} from "./helpers/native-catalogue-runtime.mjs";
+import { nativeCheckpointTransport, publishNativeCollection } from "./helpers/native-catalogue-runtime.mjs";
 import { isNativeCheckpointRequest } from "./helpers/native-checkpoint-hosts.mjs";
 import { nativeExportReader } from "./helpers/native-export-reader.mjs";
 import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs";
@@ -113,6 +110,95 @@ test("populated category migration preserves history and permits sequential refr
     );
     return JSON.parse(result.stdout);
   };
+  const inspectPartitions = async (candidate) => {
+    const records = {},
+      changes = [];
+    let after;
+    do {
+      const page = await cli([
+        "game-candidate",
+        "partitions",
+        "--candidate-id",
+        candidate.id,
+        "--manifest",
+        candidate.manifest_digest,
+        ...(after ? ["--after", after] : []),
+      ]);
+      assert.equal(page.candidate.id, candidate.id);
+      assert.equal(page.candidate.manifest_digest, candidate.manifest_digest);
+      for (const partition of page.partitions) {
+        const content = await cli([
+          "game-candidate",
+          "partition",
+          "--candidate-id",
+          candidate.id,
+          "--manifest",
+          candidate.manifest_digest,
+          "--ordinal",
+          String(partition.ordinal),
+        ]);
+        const validate =
+          httpValidators[
+            httpValidators.responseValidators[
+              "admin get /v1/game-candidates/{candidate}/partitions/{ordinal} 200 application/json"
+            ]
+          ];
+        assert.equal(validate(content), true, JSON.stringify(validate.errors));
+        assert.equal(content.manifest_digest, candidate.manifest_digest);
+        assert.equal(content.expected_game_revision_id, candidate.expected_game_revision_id);
+        assert.equal(content.card_model, candidate.id === fixture.pending.id ? "pre_categories" : "categories");
+        assert.equal(content.predecessor_card_model, "pre_categories");
+        if (
+          content.card_model === "categories" &&
+          ["cards", "printings"].includes(content.kind) &&
+          content.records.length
+        ) {
+          const incomplete = structuredClone(content);
+          delete incomplete.records[0].gameplay_applicability;
+          assert.equal(validate(incomplete), false, "Current candidate facts must retain their required model fields.");
+        }
+        if (content.kind === "inspection") changes.push(...content.records);
+        else (records[content.kind] ??= []).push(...content.records);
+      }
+      after = page.next_cursor;
+    } while (after);
+    return { records, changes };
+  };
+  const retained = await inspectPartitions(fixture.pending);
+  assert.deepEqual(retained.records.cards, fixture.records.riftbound.cards);
+  assert.deepEqual(retained.records.printings, fixture.records.riftbound.printings);
+  const retainedDocument = async (path, route) => {
+    const response = await fetch(`${ingestion.url}${path}`, { headers: { authorization: `Bearer ${key}` } });
+    assert.equal(response.status, 200, `${path}: ${await response.clone().text()}`);
+    const document = await response.json();
+    const validate = httpValidators[httpValidators.responseValidators[`admin get ${route} 200 application/json`]];
+    assert.equal(validate(document), true, JSON.stringify(validate.errors));
+    return document;
+  };
+  let inputAfter;
+  do {
+    const page = await retainedDocument(
+      `/v1/game-candidates/${fixture.pending.id}/inputs${inputAfter ? `?after=${encodeURIComponent(inputAfter)}` : ""}`,
+      "/v1/game-candidates/{candidate}/inputs",
+    );
+    for (const partition of page.partitions)
+      await retainedDocument(
+        `/v1/game-candidates/${fixture.pending.id}/inputs/${partition.ordinal}`,
+        "/v1/game-candidates/{candidate}/inputs/{ordinal}",
+      );
+    inputAfter = page.next_cursor;
+  } while (inputAfter);
+  for (const kind of ["identity", "admission", "correction", "curated"]) {
+    let after;
+    do {
+      const query = new URLSearchParams({ manifest: fixture.pending.manifest_digest, ...(after ? { after } : {}) });
+      const page = await retainedDocument(
+        `/v1/game-candidates/${fixture.pending.id}/inspection/evidence/${kind}?${query}`,
+        "/v1/game-candidates/{candidate}/inspection/evidence/{kind}",
+      );
+      after = page.next_cursor;
+    } while (after);
+  }
   const request = (path, options = {}) =>
     fetch(`${api.url}${path}`, { ...options, headers: { authorization: `Bearer ${key}`, ...options.headers } });
   const get = async (path) => {
@@ -293,7 +379,21 @@ test("populated category migration preserves history and permits sequential refr
       ingestion,
       { deadlineMs: 120000 },
     );
-    const inspected = await inspectNativeCollection(run.id, environment, { partitionKinds: ["cards", "printings"] });
+    const inspected = await inspectPartitions(candidate);
+    for (const kind of ["cards", "printings"]) {
+      const changes = inspected.changes.filter((change) => change.entity_class === kind);
+      const historical = changes.filter((change) => change.before !== null).map((change) => change.before);
+      assert.deepEqual(
+        historical.sort((a, b) => a.id.localeCompare(b.id)),
+        [...fixture.records[game][kind]].sort((a, b) => a.id.localeCompare(b.id)),
+      );
+      assert.ok(historical.every((record) => !Object.hasOwn(record, "gameplay_applicability")));
+      assert.ok(
+        changes
+          .filter((change) => change.after !== null)
+          .every((change) => change.after.gameplay_applicability === "applicable"),
+      );
+    }
     if (game === "riftbound") {
       const gameplay = inspected.records.cards.find((card) => card.category === "gameplay" && card.name === token.name);
       assert.ok(gameplay, "A gameplay Card may share the retained token's publisher identity.");

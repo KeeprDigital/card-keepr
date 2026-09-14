@@ -10,6 +10,7 @@ import { publicUrl } from "../../http/public-base";
 import type { RouteContext } from "../../http/routes";
 import type { CatalogueStore } from "../shared";
 import { createGameReconciliation, changeGameReconciliation } from "./game-reconciliation";
+import { candidateCardModel } from "./card-model-definition";
 import {
   inspectGameCandidate,
   inspectGameCandidateReadiness,
@@ -201,6 +202,7 @@ export const gameCandidateRoutes = [
         ...result,
         ingestion_run_id: candidate.ingestion_run_id,
         preparation_id: candidate.preparation_id,
+        card_model: await candidateCardModel(c.env.env.CATALOGUE_DB, candidate.id),
       }),
       200,
       { "Cache-Control": "no-store" },

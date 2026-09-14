@@ -12,12 +12,17 @@ import { candidateCardModelStatement } from "./game-candidate-repository";
 
 /** Pending work cannot reuse a receipt produced under an earlier definition. */
 export async function assertCurrentCardModel(db: CatalogueStore, candidateId: string) {
-  if (!(await candidateCardModelStatement(db, candidateId).first()))
+  if ((await candidateCardModel(db, candidateId)) !== "categories")
     throw new AdministrationProblem(
       409,
       "reconciliation_definition_changed",
       "This candidate predates Card categories. Abandon it, collect/reconcile fresh evidence and approve the whole new candidate.",
     );
+}
+
+/** Inspection describes the pinned definition without rewriting retained records. */
+export async function candidateCardModel(db: CatalogueStore, candidateId: string) {
+  return (await candidateCardModelStatement(db, candidateId).first()) ? "categories" : "pre_categories";
 }
 
 /** Checked during the existing bounded sealing scan, after curated/identity work. */

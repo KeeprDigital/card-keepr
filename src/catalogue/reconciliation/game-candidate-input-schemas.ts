@@ -6,6 +6,8 @@ import {
   imageRecord,
   observedCard,
   observedPrinting,
+  historicalObservedCard,
+  historicalObservedPrinting,
   officialIdentity,
   sourceValue,
   textParts,
@@ -84,6 +86,12 @@ const erratumObservation = z.strictObject({
   appliesToParallelPrintings: z.boolean(),
   sourceLocator: text,
 });
+const historicalCardObservation = cardObservation.omit({ cardRelationships: true }).extend({
+  observedCardAndPrinting: z.strictObject({
+    card: z.union([historicalObservedCard, z.null()]),
+    printing: z.union([historicalObservedPrinting, z.null()]),
+  }),
+});
 const inputSchemas = {
   $metadata: z.strictObject({
     values: z.strictObject({
@@ -131,17 +139,26 @@ const inputSchemas = {
 };
 export const candidateInputSchema = z
   .union(
-    Object.entries(inputSchemas).map(([kind, schema]) =>
-      z.strictObject({
-        contract: z.literal("card-keepr-reconciliation-input-partition@1"),
-        ingestion_run_id: identifier,
-        preparation_id: identifier,
-        ordinal: count,
-        kind: z.literal(kind),
-        sha256: digest,
-        records: z.array(schema),
-        text_parts: textParts,
-      }),
+    (["categories", "pre_categories"] as const).flatMap((model) =>
+      Object.entries({
+        ...inputSchemas,
+        observations: z.union([
+          model === "categories" ? cardObservation : historicalCardObservation,
+          erratumObservation,
+        ]),
+      }).map(([kind, schema]) =>
+        z.strictObject({
+          contract: z.literal("card-keepr-reconciliation-input-partition@1"),
+          ingestion_run_id: identifier,
+          preparation_id: identifier,
+          card_model: z.literal(model),
+          ordinal: count,
+          kind: z.literal(kind),
+          sha256: digest,
+          records: z.array(schema),
+          text_parts: textParts,
+        }),
+      ),
     ),
   )
   .openapi("GameCandidateInputPartition");

@@ -137,36 +137,24 @@ const cardFields = {
     )
     .max(8),
 };
-export const cardRecord = z
-  .union([
-    z.strictObject({
-      ...cardFields,
-      category: z.enum(["gameplay", "token"]),
-      gameplay_applicability: z.literal("applicable"),
-      game_data: profileData("card"),
-    }),
-    z.strictObject({
-      ...cardFields,
-      category: z.literal("art"),
-      gameplay_applicability: z.literal("inapplicable"),
-      game_data: artData,
-    }),
-  ])
-  .openapi("CandidateCard");
-export const observedCard = z.union([
-  z.strictObject({
-    ...Object.fromEntries(Object.entries(cardFields).filter(([name]) => name !== "id")),
-    category: z.enum(["gameplay", "token"]),
-    gameplay_applicability: z.literal("applicable"),
-    game_data: profileData("card"),
-  }),
-  z.strictObject({
-    ...Object.fromEntries(Object.entries(cardFields).filter(([name]) => name !== "id")),
-    category: z.literal("art"),
-    gameplay_applicability: z.literal("inapplicable"),
-    game_data: artData,
-  }),
-]);
+const gameplayCard = z.strictObject({
+  ...cardFields,
+  category: z.enum(["gameplay", "token"]),
+  gameplay_applicability: z.literal("applicable"),
+  game_data: profileData("card"),
+});
+const artCard = z.strictObject({
+  ...cardFields,
+  category: z.literal("art"),
+  gameplay_applicability: z.literal("inapplicable"),
+  game_data: artData,
+});
+export const cardRecord = z.union([gameplayCard, artCard]).openapi("CandidateCard");
+export const observedCard = z.union([gameplayCard.omit({ id: true }), artCard.omit({ id: true })]);
+export const historicalCard = gameplayCard
+  .omit({ category: true, gameplay_applicability: true, related_cards: true })
+  .openapi("RetainedPreCategoryCard");
+export const historicalObservedCard = historicalCard.omit({ id: true });
 const printingFields = {
   ...curated,
   id: identifier,
@@ -187,6 +175,10 @@ const printingFields = {
     .optional(),
 };
 export const printingRecord = z.strictObject(printingFields).openapi("CandidatePrinting");
+export const historicalPrinting = printingRecord
+  .omit({ gameplay_applicability: true })
+  .openapi("RetainedPreCategoryPrinting");
+export const historicalObservedPrinting = historicalPrinting.omit({ id: true, card_id: true });
 export const observedPrinting = printingRecord.omit({ id: true, card_id: true });
 export const imageRecord = z
   .strictObject({
@@ -372,42 +364,84 @@ export const inspectionSummary = z.strictObject({
   record_count: count,
   content_partitions: count,
 });
-const textReference = z.strictObject({
-  candidate_id: identifier.nullable(),
-  preparation_id: identifier.nullable(),
-  parts: z.array(textPart),
-});
-const inspectionRecord = z.union(
-  Object.entries(candidateFactSchemas).map(([kind, schema]) =>
-    z.strictObject({
-      game,
-      entity_class: z.literal(kind),
-      entity_id: text,
-      change: z.enum(["added", "removed", "carry_forward", "changed", "evidence_only"]),
-      expected_game_revision_id: identifier,
-      before: z.union([schema, z.null()]),
-      after: z.union([schema, z.null()]),
-      before_text: textReference,
-      after_text: textReference,
-    }),
-  ),
-);
-export const candidatePartitionSchema = z
-  .union(
-    Object.entries({
-      ...candidateFactSchemas,
-      inspection: inspectionRecord,
-      inspection_summary: inspectionSummary,
-    }).map(([kind, schema]) =>
-      z.strictObject({
-        candidate_id: identifier,
-        manifest_digest: digest,
-        expected_game_revision_id: identifier,
-        kind: z.literal(kind),
-        sha256: digest,
-        records: z.array(schema),
-        text_parts: textParts,
-      }),
+const textReference = z
+  .strictObject({
+    candidate_id: identifier.nullable(),
+    preparation_id: identifier.nullable(),
+    parts: z.array(textPart),
+  })
+  .openapi("CandidateInspectionTextReference");
+const historicalFactSchemas = { ...candidateFactSchemas, cards: historicalCard, printings: historicalPrinting };
+const cardModels = ["categories", "pre_categories"] as const;
+const factSchemas = (model: (typeof cardModels)[number]) =>
+  model === "categories" ? candidateFactSchemas : historicalFactSchemas;
+const cardModelSchema = z.enum(cardModels);
+const predecessorModelSchema = cardModelSchema.nullable();
+const partition = (
+  kind: string,
+  record: z.ZodType,
+  model: z.ZodType<(typeof cardModels)[number]> = cardModelSchema,
+  predecessorModel: z.ZodType<(typeof cardModels)[number] | null> = predecessorModelSchema,
+) =>
+  z.strictObject({
+    candidate_id: identifier,
+    manifest_digest: digest,
+    expected_game_revision_id: identifier,
+    card_model: model,
+    predecessor_card_model: predecessorModel,
+    kind: z.literal(kind),
+    sha256: digest,
+    records: z.array(record),
+    text_parts: textParts,
+  });
+const change = (kind: string, after: z.ZodType, before: z.ZodType) =>
+  z.strictObject({
+    game,
+    entity_class: z.literal(kind),
+    entity_id: text,
+    change: z.enum(["added", "removed", "carry_forward", "changed", "evidence_only"]),
+    expected_game_revision_id: identifier,
+    before,
+    after: z.union([after, z.null()]),
+    before_text: textReference,
+    after_text: textReference,
+  });
+// These facts did not change with Card categories. Share their definitions
+// across model contexts instead of expanding them in each before/after branch.
+const unchangedFacts = Object.entries(candidateFactSchemas)
+  .filter(([kind]) => kind !== "cards" && kind !== "printings")
+  .map(([kind, schema]) => [kind, schema.openapi(`CandidateFact_${kind}`)] as const);
+const unchangedChanges = (hasPredecessor: boolean) =>
+  unchangedFacts.map(([kind, schema]) =>
+    change(kind, schema, hasPredecessor ? z.union([schema, z.null()]) : z.null()).openapi(
+      `CandidateChange_${kind}_${hasPredecessor ? "predecessor" : "spine"}`,
     ),
-  )
+  );
+const changesWithPredecessor = unchangedChanges(true);
+const changesFromSpine = unchangedChanges(false);
+export const candidatePartitionSchema = z
+  .union([
+    ...unchangedFacts.map(([kind, schema]) => partition(kind, schema)),
+    partition("inspection_summary", inspectionSummary),
+    ...cardModels.flatMap((model) => [
+      ...(["cards", "printings"] as const).map((kind) => partition(kind, factSchemas(model)[kind], z.literal(model))),
+      ...[null, ...cardModels].map((predecessor) =>
+        partition(
+          "inspection",
+          z.union([
+            ...(["cards", "printings"] as const).map((kind) =>
+              change(
+                kind,
+                factSchemas(model)[kind],
+                predecessor === null ? z.null() : z.union([factSchemas(predecessor)[kind], z.null()]),
+              ),
+            ),
+            ...(predecessor === null ? changesFromSpine : changesWithPredecessor),
+          ]),
+          z.literal(model),
+          z.literal(predecessor),
+        ),
+      ),
+    ]),
+  ])
   .openapi("GameCandidatePartition");

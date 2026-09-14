@@ -4,7 +4,11 @@ import {
   cardRecord,
   observedCard,
   observedPrinting,
+  historicalObservedCard,
+  historicalObservedPrinting,
   printingRecord,
+  historicalCard,
+  historicalPrinting,
   candidateWarning,
   curatedEvidence,
   curatedTarget,
@@ -36,10 +40,13 @@ const curatedProposal = z.strictObject({
   reviewed_source_digest: digest,
   supersedes_revision_id: identifier.nullable(),
 });
-const admission = z.union([
+const admissionDecision = (
+  card: typeof cardRecord | typeof historicalCard,
+  printing: typeof printingRecord | typeof historicalPrinting,
+) =>
   z.strictObject({
-    card: cardRecord,
-    printing: z.union([printingRecord, z.null()]),
+    card,
+    printing: z.union([printing, z.null()]),
     linked: z.boolean(),
     warnings: z.array(candidateWarning),
     exception: z
@@ -48,7 +55,10 @@ const admission = z.union([
     policy_digest: digest,
     publisher_confirmed_fields: z.array(z.string()),
     new_card: z.boolean().optional(),
-  }),
+  });
+const admission = z.union([
+  admissionDecision(cardRecord, printingRecord),
+  admissionDecision(historicalCard, historicalPrinting),
   z.strictObject({ content: z.record(z.string(), sourceValue), evidence: z.record(z.string(), sourceValue) }),
   z.strictObject({}),
 ]);
@@ -64,6 +74,12 @@ const mappingEvidence = z.union([
   z.strictObject({
     card: z.union([observedCard, z.null()]),
     printing: z.union([observedPrinting, z.null()]),
+    compatibility: compatibility.nullable(),
+    publisher_confirmation: z.strictObject({ fields: z.array(z.string()) }).nullable(),
+  }),
+  z.strictObject({
+    card: z.union([historicalObservedCard, z.null()]),
+    printing: z.union([historicalObservedPrinting, z.null()]),
     compatibility: compatibility.nullable(),
     publisher_confirmation: z.strictObject({ fields: z.array(z.string()) }).nullable(),
   }),

@@ -156,10 +156,10 @@ specification alone does not complete this direction. The
 [Hono implementation](../contracts/HTTP.md) routes both Workers through Hono.
 The complete catalogue-read interface, including published Game Profile discovery
 and API utilities, uses executable Zod OpenAPI definitions. Source and collection
-administration and asynchronous publication are also registered. Other
-administration families continue to migrate; generated inventory names the
-remaining operations. Complete administration migration and documentation hosting
-remain accepted direction;
+administration, asynchronous publication, and per-game candidate preparation and
+inspection are also registered. Other administration families continue to migrate;
+generated inventory names the remaining operations. Complete administration
+migration and documentation hosting remain accepted direction;
 retained-document validation and domain transitions stay independent of Zod.
 
 There are no current Catalogue Consumers to constrain this pre-Go-Live HTTP

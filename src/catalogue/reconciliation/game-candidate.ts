@@ -24,6 +24,7 @@ import {
   gameCandidatesForPreparationStatement,
   gameCandidatesForCollectionStatement,
   gameCandidateStatement,
+  predecessorGameCandidateStatement,
   inspectionGameHeadStatement,
   gameCandidateInspectionSummaryStatement,
   gameCandidateInspectionCountsStatement,
@@ -35,7 +36,7 @@ import {
   sealGameCandidateStatement,
 } from "./game-candidate-repository";
 import { sourceAdapterRegistrations } from "../adapters";
-import { assertCurrentCardModel, validateCardModelRecord } from "./card-model-definition";
+import { assertCurrentCardModel, candidateCardModel, validateCardModelRecord } from "./card-model-definition";
 import { newestReconciliationCheckpointStatement } from "./reconciliation-checkpoint-repository";
 
 export type GameCandidate = {
@@ -422,10 +423,25 @@ export async function inspectGameCandidatePartition(
     throw new AdministrationProblem(422, "invalid_cursor", "Use a retained partition ordinal.");
   const partition = await verifiedCandidatePartition(database, candidateId, Number(ordinal));
   const envelopes = partition.records;
+  const predecessor = await predecessorGameCandidateStatement(
+    database,
+    candidate.expected_game_revision_id,
+    candidate.supported_game,
+    candidate.preparation_id,
+  ).first<{ id: string }>();
+  const card_model = await candidateCardModel(database, candidate.id);
+  const predecessor_card_model =
+    candidate.expected_game_revision_id === "catrev_spine_000"
+      ? null
+      : predecessor
+        ? await candidateCardModel(database, predecessor.id)
+        : "pre_categories";
   return {
     candidate_id: candidate.id,
     manifest_digest: candidate.manifest_digest,
     expected_game_revision_id: candidate.expected_game_revision_id,
+    card_model,
+    predecessor_card_model,
     kind: partition.kind,
     sha256: partition.sha256,
     records: envelopes.map((record) => record.value),

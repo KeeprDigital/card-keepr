@@ -18,7 +18,11 @@ keepr game-candidate evidence --candidate-id CANDIDATE --kind identity --manifes
 ```
 
 Prepare explicitly only when another candidate has not already been dispatched for
-that game. Read the IDs and generation from status. The sealed manifest pins the
+that game. Follow the returned candidate ID with `game-candidate show`; the
+preparation receipt acknowledges the command and does not report current state.
+Read the generation from status before a new control intent. The
+[administration protocol](../../contracts/ADMINISTRATION.md#native-candidate-and-publication-commands)
+defines receipt/status responses and CLI exit codes. The sealed manifest pins the
 source evidence, owner decision cutoffs, game predecessor and original seven-day
 deadline. Follow each returned opaque `next_cursor` as `--after`; evidence cursors
 also bind their class (`identity`, `admission`, `correction`, `curated`).
@@ -47,13 +51,16 @@ evidence and completeness checks.
 
 ## Pause, resume or abandon preparation
 
-Native candidate pause/resume are authenticated POSTs to
-`/v1/game-candidates/:candidate/pause` and `/resume`, with inspected `generation`
-and a fresh `idempotency_key`; they have no matching CLI commands. For retained
-run-level reconciliation, use `reconciliation status`, `pause`, `resume` and
-`abandon` with its run ID and generation.
+Use the inspected candidate generation and a fresh idempotency key for each new
+intent. Read `game-candidate show` again after a control acknowledgement before
+choosing the next generation. For retained run-level reconciliation, use
+`reconciliation status`, `pause`, `resume` and `abandon` with its run ID and generation.
 
 ```sh
+keepr game-candidate pause --candidate-id CANDIDATE --generation GENERATION \
+  --idempotency-key PAUSE_INTENT --yes --json
+keepr game-candidate resume --candidate-id CANDIDATE --generation GENERATION \
+  --idempotency-key RESUME_INTENT --yes --json
 keepr game-candidate abandon --candidate-id CANDIDATE --generation GENERATION \
   --idempotency-key ABANDON_INTENT --yes --json
 ```

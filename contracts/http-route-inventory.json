@@ -648,6 +648,7 @@
     "slice": "Game Candidates",
     "named_cli": null,
     "callers": [
+      "acceptance/card-model-migration.test.mjs",
       "apps/ingestion/test/game-candidate-http.spec.ts",
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
       "apps/ingestion/test/game-reconciliation-operations.spec.ts",
@@ -663,6 +664,7 @@
     "slice": "Game Candidates",
     "named_cli": null,
     "callers": [
+      "acceptance/card-model-migration.test.mjs",
       "apps/ingestion/test/game-candidate-http.spec.ts",
       "apps/ingestion/test/game-reconciliation-operations.spec.ts"
     ]
@@ -696,6 +698,7 @@
     "slice": "Game Candidates",
     "named_cli": "gameCandidateEvidence",
     "callers": [
+      "acceptance/card-model-migration.test.mjs",
       "apps/ingestion/test/game-candidate-http.spec.ts",
       "cli/keepr.mjs"
     ]
