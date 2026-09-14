@@ -161,9 +161,9 @@ async function proveNativeComposition(t, proof) {
     KEEPR_ADMINISTRATION_KEY: adminKey,
     KEEPR_NATIVE_REQUEST_INTERVAL_MS: requestInterval,
   };
-  const cli = async (args) => {
+  const cli = async (args, expectedCode = 0) => {
     const result = await runCli([...args, "--json"], environment);
-    assert.equal(result.code, 0, result.stdout + result.stderr);
+    assert.equal(result.code, expectedCode, result.stdout + result.stderr);
     return JSON.parse(result.stdout);
   };
   const get = async (path) => {
@@ -243,28 +243,32 @@ async function proveNativeComposition(t, proof) {
     (await get(`/v1/game-candidates/${candidate.id}/publication-preparation`)).root_digest,
     status.root_digest,
   );
-  const approval = await cli([
-    "publication",
-    "approve",
-    "--candidate-id",
-    candidate.id,
-    "--manifest-digest",
-    candidate.manifest_digest,
-    "--expected-game-revision-id",
-    candidate.expected_game_revision_id,
-    "--generation",
-    String(candidate.generation),
-    "--idempotency-key",
-    "native-publication",
-  ]);
+  const approval = await cli(
+    [
+      "publication",
+      "approve",
+      "--candidate-id",
+      candidate.id,
+      "--manifest-digest",
+      candidate.manifest_digest,
+      "--expected-game-revision-id",
+      candidate.expected_game_revision_id,
+      "--generation",
+      String(candidate.generation),
+      "--idempotency-key",
+      "native-publication",
+    ],
+    10,
+  );
   let publication;
   const publicationDeadline = Date.now() + 30000;
   while (Date.now() < publicationDeadline) {
-    publication = await cli(["publication", "status", "--operation-id", approval.id]);
+    publication = await get(`/v1/publications/${approval.id}`);
     if (publication.state === "published" || publication.state === "failed") break;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   assert.equal(publication.state, "published", JSON.stringify(publication) + ingestion.getOutput());
+  assert.deepEqual(await cli(["publication", "status", "--operation-id", approval.id]), publication);
   const initialGameRevision = publication.resulting_revision_id;
   await Promise.race([
     firstExport,
@@ -313,20 +317,23 @@ async function proveNativeComposition(t, proof) {
   }
   assert.equal(
     (
-      await cli([
-        "publication",
-        "approve",
-        "--candidate-id",
-        candidate.id,
-        "--manifest-digest",
-        candidate.manifest_digest,
-        "--expected-game-revision-id",
-        candidate.expected_game_revision_id,
-        "--generation",
-        String(candidate.generation),
-        "--idempotency-key",
-        "native-publication",
-      ])
+      await cli(
+        [
+          "publication",
+          "approve",
+          "--candidate-id",
+          candidate.id,
+          "--manifest-digest",
+          candidate.manifest_digest,
+          "--expected-game-revision-id",
+          candidate.expected_game_revision_id,
+          "--generation",
+          String(candidate.generation),
+          "--idempotency-key",
+          "native-publication",
+        ],
+        10,
+      )
     ).id,
     approval.id,
   );
@@ -461,20 +468,23 @@ async function proveNativeComposition(t, proof) {
     assert.equal(result.state, "verified", JSON.stringify(result));
   };
   const approve = async (candidate, key) =>
-    cli([
-      "publication",
-      "approve",
-      "--candidate-id",
-      candidate.id,
-      "--manifest-digest",
-      candidate.manifest_digest,
-      "--expected-game-revision-id",
-      candidate.expected_game_revision_id,
-      "--generation",
-      String(candidate.generation),
-      "--idempotency-key",
-      key,
-    ]);
+    cli(
+      [
+        "publication",
+        "approve",
+        "--candidate-id",
+        candidate.id,
+        "--manifest-digest",
+        candidate.manifest_digest,
+        "--expected-game-revision-id",
+        candidate.expected_game_revision_id,
+        "--generation",
+        String(candidate.generation),
+        "--idempotency-key",
+        key,
+      ],
+      10,
+    );
   const awaitPublication = async (id, state) => {
     const deadline = Date.now() + 30000;
     let result;
@@ -694,8 +704,11 @@ async function proveNativeComposition(t, proof) {
   assert.equal((await consumer(`/v1/cards/${admittedCardId}`)).body.data.name, "Recovery admitted Digimon");
   assert.equal((await consumer("/v1/catalogue-exports")).body.data.length, 3);
   if (proof === "fresh baseline") {
-    // A fourth native publication supplies an actually archived cursor while
-    // retaining the current revision and its two verified predecessors.
+    // An actual publisher Erratum changes the fourth publication. Recollecting
+    // unchanged content correctly retains the third revision and archives none.
+    const fourthPlan = JSON.parse(await readFile(onePiecePlan, "utf8"));
+    fourthPlan.plans[0].requests[0].headers["user-agent"] = "card-keepr-one-piece-complete-errata-v1";
+    await writeFile(onePiecePlan, JSON.stringify(fourthPlan));
     const fourthRun = await cli([
       "source",
       "collect",
@@ -710,6 +723,7 @@ async function proveNativeComposition(t, proof) {
     await prepare(fourth, "native-fresh-fourth-artifacts");
     const fourthApproval = await approve(fourth, "native-fresh-fourth-approval");
     const fourthPublication = await awaitPublication(fourthApproval.id, "published");
+    assert.notEqual(fourthPublication.resulting_revision_id, publication.resulting_revision_id);
     assert.equal(typeof fourthPublication.backup_attempt_id, "string", JSON.stringify(fourthPublication));
     const deadline = Date.now() + 30000;
     let fourthBackup;
@@ -726,6 +740,7 @@ async function proveNativeComposition(t, proof) {
       configPath,
       environment,
       sourceFile: cloudflare.sourceFile,
+      archivedRevisionId: initialGameRevision,
       consumer,
     });
     proofCompleted = true;

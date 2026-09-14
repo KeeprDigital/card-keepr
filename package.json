@@ -30,13 +30,14 @@
     "format": "node scripts/format.mjs",
     "format:check": "node scripts/format.mjs --check",
     "typecheck": "tsc --project apps/api/tsconfig.json && tsc --project apps/api/test/tsconfig.json && tsc --project apps/ingestion/tsconfig.json && tsc --project apps/ingestion/test/tsconfig.json && tsc --project test/domain/tsconfig.json && tsc --project tsconfig.tooling.json",
-    "check:generated": "node scripts/worker-types.mjs --check && node scripts/document-validators.mjs --check",
+    "check:generated": "node scripts/worker-types.mjs --check && node scripts/document-validators.mjs --check && node scripts/http-contracts.mjs --check",
     "check:imports": "node scripts/catalogue-import-cycles.mjs && node scripts/catalogue-import-boundary.mjs",
     "generate:worker-types": "node scripts/worker-types.mjs",
     "generate:validators": "node scripts/document-validators.mjs",
     "build": "pnpm run build:api && pnpm run build:ingestion",
     "build:api": "WRANGLER_LOG_PATH=.wrangler/logs wrangler deploy --dry-run --config apps/api/wrangler.jsonc",
-    "build:ingestion": "WRANGLER_LOG_PATH=.wrangler/logs wrangler deploy --dry-run --config apps/ingestion/wrangler.jsonc"
+    "build:ingestion": "WRANGLER_LOG_PATH=.wrangler/logs wrangler deploy --dry-run --config apps/ingestion/wrangler.jsonc",
+    "generate:http": "node scripts/http-contracts.mjs"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.1.6",
@@ -66,11 +67,14 @@
     "wrangler": "^4.130.0"
   },
   "dependencies": {
+    "@hono/zod-openapi": "^1.6.3",
     "entities": "8.1.0",
+    "hono": "^4.13.7",
     "jsonc-parser": "^3.3.1",
     "libsodium-wrappers": "^0.8.4",
     "pako": "3.0.1",
-    "parse5": "8.0.1"
+    "parse5": "8.0.1",
+    "zod": "^4.6.4"
   },
   "packageManager": "pnpm@12.3.4+sha512.961aa41fb077da3a04a441d9f8e15ebc0c96da8ef710b2eb67bf9ee7cb0610eabd48f1fd85f51cffe73846785fa0f87c56a3a872a1d893f8446741b5cce45457"
 }

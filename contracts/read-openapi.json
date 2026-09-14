@@ -1,0 +1,3163 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Card Keepr catalogue read API",
+    "version": "1.0.0",
+    "description": "Generated pilot contracts. Unmigrated operations are explicitly inventoried; this document is not yet the complete Worker contract."
+  },
+  "servers": [
+    {
+      "url": "https://card.keepr.digital/api"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "CardCollection": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "card"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "game": {
+                  "type": "string",
+                  "enum": [
+                    "one-piece",
+                    "fusion-world",
+                    "digimon",
+                    "gundam",
+                    "riftbound"
+                  ]
+                },
+                "official_identity": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "card_number"
+                          ]
+                        },
+                        "value": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "publisher_name"
+                          ]
+                        },
+                        "value": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "functional_designation"
+                          ]
+                        },
+                        "value": {
+                          "type": "string",
+                          "enum": [
+                            "DON!!"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "unknown"
+                          ]
+                        },
+                        "value": {
+                          "type": "null"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "game_data": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "profile": {
+                          "type": "string",
+                          "enum": [
+                            "one-piece@1"
+                          ]
+                        },
+                        "attributes": {
+                          "type": "object",
+                          "properties": {
+                            "card_type": {
+                              "type": "string",
+                              "enum": [
+                                "leader",
+                                "character",
+                                "event",
+                                "stage",
+                                "don"
+                              ]
+                            },
+                            "colours": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "red",
+                                  "green",
+                                  "blue",
+                                  "purple",
+                                  "black",
+                                  "yellow",
+                                  "white",
+                                  "colourless"
+                                ]
+                              },
+                              "minItems": 0,
+                              "maxItems": 9007199254740991
+                            },
+                            "cost": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "life": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "battle_attributes": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 0
+                              },
+                              "minItems": 0,
+                              "maxItems": 9007199254740991
+                            },
+                            "power": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "counter": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "traits": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 0
+                              },
+                              "minItems": 0,
+                              "maxItems": 9007199254740991
+                            },
+                            "block_icons": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 0
+                              },
+                              "minItems": 0,
+                              "maxItems": 9007199254740991
+                            },
+                            "effect_text": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "minLength": 0
+                            },
+                            "trigger_text": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "minLength": 0
+                            }
+                          },
+                          "required": [
+                            "card_type",
+                            "colours",
+                            "cost",
+                            "life",
+                            "battle_attributes",
+                            "power",
+                            "counter",
+                            "traits",
+                            "block_icons",
+                            "effect_text",
+                            "trigger_text"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "profile",
+                        "attributes"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "profile": {
+                          "type": "string",
+                          "enum": [
+                            "fusion-world@1"
+                          ]
+                        },
+                        "attributes": {
+                          "type": "object",
+                          "properties": {
+                            "card_type": {
+                              "type": "string",
+                              "enum": [
+                                "leader",
+                                "battle",
+                                "extra",
+                                "energy_marker"
+                              ]
+                            },
+                            "colours": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "red",
+                                  "green",
+                                  "blue",
+                                  "purple",
+                                  "black",
+                                  "yellow",
+                                  "white",
+                                  "colourless"
+                                ]
+                              },
+                              "minItems": 0,
+                              "maxItems": 9007199254740991
+                            },
+                            "cost": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "specified_cost": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "colour": {
+                                    "type": "string",
+                                    "enum": [
+                                      "red",
+                                      "blue",
+                                      "green",
+                                      "yellow",
+                                      "black"
+                                    ]
+                                  },
+                                  "count": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  }
+                                },
+                                "required": [
+                                  "colour",
+                                  "count"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "minItems": 0,
+                              "maxItems": 9007199254740991
+                            },
+                            "power": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "combo_power": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "traits": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 0
+                              },
+                              "minItems": 0,
+                              "maxItems": 9007199254740991
+                            },
+                            "skills": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "ordinary",
+                                      "front",
+                                      "back"
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string",
+                                    "minLength": 0
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "text"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "minItems": 0,
+                              "maxItems": 9007199254740991
+                            },
+                            "leader_faces": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "role": {
+                                    "type": "string",
+                                    "enum": [
+                                      "front",
+                                      "back"
+                                    ]
+                                  },
+                                  "name": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "power": {
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ],
+                                    "minimum": 0
+                                  },
+                                  "traits": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 0
+                                    },
+                                    "minItems": 0,
+                                    "maxItems": 9007199254740991
+                                  },
+                                  "skills": {
+                                    "type": "string",
+                                    "minLength": 0
+                                  }
+                                },
+                                "required": [
+                                  "role",
+                                  "name",
+                                  "traits",
+                                  "skills"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "minItems": 2,
+                              "maxItems": 2
+                            }
+                          },
+                          "required": [
+                            "card_type",
+                            "colours",
+                            "cost",
+                            "specified_cost",
+                            "power",
+                            "combo_power",
+                            "traits",
+                            "skills"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "profile",
+                        "attributes"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "profile": {
+                          "type": "string",
+                          "enum": [
+                            "digimon@1"
+                          ]
+                        },
+                        "attributes": {
+                          "type": "object",
+                          "properties": {
+                            "card_type": {
+                              "type": "string",
+                              "enum": [
+                                "digi_egg",
+                                "digimon",
+                                "tamer",
+                                "option",
+                                "digimon_option"
+                              ]
+                            },
+                            "colours": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "red",
+                                  "green",
+                                  "blue",
+                                  "purple",
+                                  "black",
+                                  "yellow",
+                                  "white",
+                                  "colourless"
+                                ]
+                              },
+                              "minItems": 0,
+                              "maxItems": 9007199254740991
+                            },
+                            "level": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "play_cost": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "use_cost": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "dp": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "form": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "minLength": 0
+                            },
+                            "attribute": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "minLength": 0
+                            },
+                            "traits": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 0
+                              },
+                              "minItems": 0,
+                              "maxItems": 9007199254740991
+                            },
+                            "digivolution_requirements": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "index": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  },
+                                  "from_level": {
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ],
+                                    "minimum": 0
+                                  },
+                                  "colours": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "enum": [
+                                        "red",
+                                        "green",
+                                        "blue",
+                                        "purple",
+                                        "black",
+                                        "yellow",
+                                        "white",
+                                        "colourless"
+                                      ]
+                                    },
+                                    "minItems": 0,
+                                    "maxItems": 9007199254740991
+                                  },
+                                  "cost": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "raw_condition": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "minLength": 0
+                                  }
+                                },
+                                "required": [
+                                  "cost"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "minItems": 0,
+                              "maxItems": 9007199254740991
+                            },
+                            "text_sections": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "effect",
+                                      "inherited_effect",
+                                      "security_effect",
+                                      "rule",
+                                      "special_digivolution_condition",
+                                      "dual_effect",
+                                      "dual_rule",
+                                      "link_condition",
+                                      "link_effect"
+                                    ]
+                                  },
+                                  "text": {
+                                    "type": "string",
+                                    "minLength": 0
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "text"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "minItems": 0,
+                              "maxItems": 9007199254740991
+                            },
+                            "dual_colours": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "red",
+                                  "green",
+                                  "blue",
+                                  "purple",
+                                  "black",
+                                  "yellow",
+                                  "white",
+                                  "colourless"
+                                ]
+                              },
+                              "minItems": 0,
+                              "maxItems": 9007199254740991
+                            },
+                            "dual_cost": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "link_dp": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "card_type",
+                            "colours",
+                            "level",
+                            "play_cost",
+                            "use_cost",
+                            "dp",
+                            "form",
+                            "attribute",
+                            "traits",
+                            "digivolution_requirements",
+                            "text_sections"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "profile",
+                        "attributes"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "profile": {
+                          "type": "string",
+                          "enum": [
+                            "gundam@1"
+                          ]
+                        },
+                        "attributes": {
+                          "type": "object",
+                          "properties": {
+                            "card_type": {
+                              "type": "string",
+                              "enum": [
+                                "unit",
+                                "pilot",
+                                "command",
+                                "base",
+                                "resource",
+                                "ex_base",
+                                "ex_resource",
+                                "unit_token"
+                              ]
+                            },
+                            "colours": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "red",
+                                  "green",
+                                  "blue",
+                                  "purple",
+                                  "black",
+                                  "yellow",
+                                  "white",
+                                  "colourless"
+                                ]
+                              },
+                              "minItems": 0,
+                              "maxItems": 9007199254740991
+                            },
+                            "level": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "cost": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "block_icon": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "minLength": 0
+                            },
+                            "effect_text": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "minLength": 0
+                            },
+                            "zone": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "minLength": 0
+                            },
+                            "traits": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 0
+                              },
+                              "minItems": 0,
+                              "maxItems": 9007199254740991
+                            },
+                            "link_condition": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "minLength": 0
+                            },
+                            "ap": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "hp": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "series_titles": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 0
+                              },
+                              "minItems": 0,
+                              "maxItems": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "card_type",
+                            "colours",
+                            "level",
+                            "cost",
+                            "block_icon",
+                            "effect_text",
+                            "zone",
+                            "traits",
+                            "link_condition",
+                            "ap",
+                            "hp",
+                            "series_titles"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "profile",
+                        "attributes"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "profile": {
+                          "type": "string",
+                          "enum": [
+                            "riftbound@1"
+                          ]
+                        },
+                        "attributes": {
+                          "type": "object",
+                          "properties": {
+                            "card_types": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "spell",
+                                  "battlefield",
+                                  "unit",
+                                  "gear",
+                                  "legend",
+                                  "rune"
+                                ]
+                              },
+                              "minItems": 0,
+                              "maxItems": 9007199254740991
+                            },
+                            "supertypes": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "champion",
+                                  "signature",
+                                  "token"
+                                ]
+                              },
+                              "minItems": 0,
+                              "maxItems": 9007199254740991
+                            },
+                            "domains": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "fury",
+                                  "calm",
+                                  "mind",
+                                  "body",
+                                  "chaos",
+                                  "order",
+                                  "colorless"
+                                ]
+                              },
+                              "minItems": 0,
+                              "maxItems": 9007199254740991
+                            },
+                            "energy": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "power": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "might": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "might_bonus": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "tags": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 0
+                              },
+                              "minItems": 0,
+                              "maxItems": 9007199254740991
+                            },
+                            "ability_text": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "minLength": 0
+                            },
+                            "effect_text": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "minLength": 0
+                            }
+                          },
+                          "required": [
+                            "card_types",
+                            "supertypes",
+                            "domains",
+                            "energy",
+                            "power",
+                            "might",
+                            "might_bonus",
+                            "tags",
+                            "ability_text",
+                            "effect_text"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "profile",
+                        "attributes"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "lifecycle": {
+                  "type": "object",
+                  "properties": {
+                    "first_revision_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "last_observed_revision_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "withdrawn": {
+                      "type": "boolean"
+                    },
+                    "withdrawal": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "revision_id": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "revision_id"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "first_revision_id",
+                    "last_observed_revision_id",
+                    "withdrawn"
+                  ],
+                  "additionalProperties": false
+                },
+                "links": {
+                  "type": "object",
+                  "properties": {
+                    "self": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  },
+                  "required": [
+                    "self"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "type",
+                "id",
+                "game",
+                "official_identity",
+                "name",
+                "game_data",
+                "lifecycle",
+                "links"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "catalogue_revision_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "published_at": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "catalogue_revision_id",
+              "published_at"
+            ],
+            "additionalProperties": false
+          },
+          "page": {
+            "type": "object",
+            "properties": {
+              "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              "next_cursor": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1
+              }
+            },
+            "required": [
+              "limit",
+              "next_cursor"
+            ],
+            "additionalProperties": false
+          },
+          "links": {
+            "type": "object",
+            "properties": {
+              "self": {
+                "type": "string",
+                "format": "uri"
+              }
+            },
+            "required": [
+              "self"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "data",
+          "meta",
+          "page",
+          "links"
+        ],
+        "additionalProperties": false
+      },
+      "Problem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "invalid_params": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "name",
+                "reason"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "links": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code",
+          "detail",
+          "request_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/v1/cards": {
+      "get": {
+        "operationId": "searchCards",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Supported Game; normalized with NFKC and trimmed before profile validation."
+            },
+            "required": false,
+            "description": "Supported Game; normalized with NFKC and trimmed before profile validation.",
+            "name": "game",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "required": false,
+            "name": "card_number",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "required": false,
+            "name": "card_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "required": false,
+            "name": "product_id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "EN-OCEANIA",
+                "EN-ASIA",
+                "EN-US",
+                "unknown"
+              ]
+            },
+            "required": false,
+            "name": "release_region",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "required": false,
+            "name": "rarity",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Pin an available Catalogue Revision. When after is supplied, revision must match the cursor's pinned composition."
+            },
+            "required": false,
+            "description": "Pin an available Catalogue Revision. When after is supplied, revision must match the cursor's pinned composition.",
+            "name": "revision",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(?:[1-9]|[1-9][0-9]|100)$"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 16384
+            },
+            "required": false,
+            "name": "after",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.ability_text",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.ap",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.attribute",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.battle_attributes",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.block_icon",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.block_icons",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.card_type",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.card_types",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.colours",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.combo_power",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.cost",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.counter",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.digivolution_requirements.colours",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.digivolution_requirements.cost",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.digivolution_requirements.from_level",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.digivolution_requirements.index",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.digivolution_requirements.raw_condition",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.domains",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.dp",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.dual_colours",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.dual_cost",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.effect_text",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.energy",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.form",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.hp",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.leader_faces.name",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.leader_faces.power",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.leader_faces.role",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.leader_faces.skills",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.leader_faces.traits",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.level",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.life",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.link_condition",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.link_dp",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.might",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.might_bonus",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.play_cost",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.power",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.series_titles",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.skills.kind",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.skills.text",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.specified_cost.colour",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.specified_cost.count",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.supertypes",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.tags",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.text_sections.kind",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.text_sections.text",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.traits",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.trigger_text",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.use_cost",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.zone",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "if-none-match",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Published Card page, pinned to one Catalogue Revision.",
+            "headers": {
+              "ETag": {
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Catalogue-Revision": {
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardCollection"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged validated query; no body.",
+            "headers": {
+              "ETag": {
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Catalogue-Revision": {
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/printing-images/{image}/content": {
+      "get": {
+        "operationId": "getPrintingImageContent",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "image",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Pin the Printing Image to an available Catalogue Revision."
+            },
+            "required": false,
+            "description": "Pin the Printing Image to an available Catalogue Revision.",
+            "name": "revision",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "range",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "if-range",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "if-none-match",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Retained Printing Image bytes. HEAD returns metadata only and ignores conditional/range headers.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "image/avif": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/gif": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "One satisfiable byte range.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "image/avif": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/gif": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged; no body.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "Unsatisfiable range.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "operationId": "headPrintingImageContent",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "image",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Pin the Printing Image to an available Catalogue Revision."
+            },
+            "required": false,
+            "description": "Pin the Printing Image to an available Catalogue Revision.",
+            "name": "revision",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "range",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "if-range",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "if-none-match",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Retained Printing Image bytes. HEAD returns metadata only and ignores conditional/range headers.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {},
+  "x-unmigrated-operations": [
+    {
+      "method": "GET",
+      "path": "/v1/catalogue",
+      "family": "read"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/cards/{card}",
+      "family": "read"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/printings",
+      "family": "read"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/printings/{printing}",
+      "family": "read"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/products",
+      "family": "read"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/products/{product}",
+      "family": "read"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/catalogue-exports/{revision}/components/{component}",
+      "family": "read"
+    },
+    {
+      "method": "HEAD",
+      "path": "/v1/catalogue-exports/{revision}/components/{component}",
+      "family": "read"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/catalogue-exports",
+      "family": "read"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/catalogue-exports/{revision}",
+      "family": "read"
+    }
+  ]
+}

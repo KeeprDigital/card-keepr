@@ -1,3 +1,4 @@
+import { Hono } from "hono";
 import { catalogueRoutes } from "../../../src/catalogue/read";
 import { catalogueEnvironment } from "../../../src/catalogue/shared";
 import { authenticateBearer } from "../../../src/http/authentication";
@@ -7,97 +8,109 @@ import { withOperationalRequestLog } from "../../../src/http/operational-log";
 import { problemResponse } from "../../../src/http/problem";
 import { mountedRequest, type PublicBase, publicBase, routePath } from "../../../src/http/public-base";
 import { rateLimitFailure } from "../../../src/http/rate-limit";
-import { routeSegments, routeTable } from "../../../src/http/routes";
+import { httpDispatch } from "../../../src/http/openapi";
+import { routeSegments } from "../../../src/http/routes";
 import { apiCapabilities } from "../../../src/runtime-capabilities.mjs";
 import { apiProblemResponse } from "./problem";
 
 const routes = [...catalogueRoutes];
-const dispatch = routeTable(routes);
+const dispatch = httpDispatch(routes);
 const logOptions = { routeSegments: routeSegments(routes, ["/health", "/healthz"]) };
 
+const apiHttp = new Hono<{ Bindings: { env: Env; requestId: string; base: PublicBase } }>();
+apiHttp.onError((error, c) => apiProblemResponse(error, c.env.requestId));
+apiHttp.use("*", async (c, next) => {
+  const { env, requestId } = c.env;
+  const request = c.req.raw;
+  const preflight = allowedPreflightResponse(request, env.CORS_ALLOWED_ORIGINS);
+  if (preflight !== null) return preflight;
+  if (request.method === "OPTIONS") {
+    return problemResponse({
+      requestId,
+      status: 403,
+      code: "forbidden_origin",
+      title: "Forbidden preflight",
+      detail: "The browser preflight does not match the allowed origin, method, or headers.",
+      headers: { vary: "Origin" },
+    });
+  }
+  if (!hasAllowedOrigin(request, env.CORS_ALLOWED_ORIGINS)) {
+    return problemResponse({
+      requestId,
+      status: 403,
+      code: "forbidden_origin",
+      title: "Forbidden origin",
+      detail: "The browser origin is not allowed for this environment.",
+      headers: { vary: "Origin" },
+    });
+  }
+  await next();
+});
+apiHttp.use("*", async (c, next) => {
+  await next();
+  c.res = withCorsHeaders(c.req.raw, c.res);
+});
+apiHttp.use("*", async (c, next) => {
+  const { env, requestId, base } = c.env;
+  const request = c.req.raw;
+  const url = new URL(request.url);
+  if (url.pathname.startsWith("/v1/")) {
+    const rateLimit = isPrintingImageContent(url.pathname) ? env.PRINTING_IMAGE_RATE_LIMIT : env.CATALOGUE_RATE_LIMIT;
+    const rateLimited = await rateLimitFailure(request, rateLimit, requestId);
+    if (rateLimited !== null) {
+      return rateLimited;
+    }
+  }
+
+  const authenticationFailure = await authenticateBearer(
+    request,
+    [env.API_BEARER_KEY, env.API_BEARER_KEY_REPLACEMENT],
+    requestId,
+    {
+      missing: "authentication_required",
+      invalid: "invalid_api_key",
+    },
+  );
+  if (authenticationFailure !== null) {
+    return authenticationFailure;
+  }
+
+  if (request.method === "GET" && url.pathname === "/health") {
+    return readinessResponse("api", apiCapabilities, {
+      database: env.CATALOGUE_DB,
+      buckets: {
+        PRINTING_IMAGES: env.PRINTING_IMAGES,
+        CATALOGUE_EXPORTS: env.CATALOGUE_EXPORTS,
+      },
+      publicBase: base,
+      request,
+      version: env.CF_VERSION_METADATA,
+    });
+  }
+
+  await next();
+});
+apiHttp.all("*", async (c) => {
+  const { env, requestId, base } = c.env;
+  const request = c.req.raw;
+  const url = new URL(request.url);
+  return dispatch(request.method, url.pathname, {
+    request,
+    env: catalogueEnvironment(env),
+    requestId,
+    base,
+  });
+});
 async function handleApiRequest(request: Request, env: Env, requestId: string, base: PublicBase): Promise<Response> {
   try {
-    const preflight = allowedPreflightResponse(request, env.CORS_ALLOWED_ORIGINS);
-    if (preflight !== null) return preflight;
-    if (request.method === "OPTIONS") {
-      return problemResponse({
-        requestId,
-        status: 403,
-        code: "forbidden_origin",
-        title: "Forbidden preflight",
-        detail: "The browser preflight does not match the allowed origin, method, or headers.",
-        headers: { vary: "Origin" },
-      });
-    }
-    if (!hasAllowedOrigin(request, env.CORS_ALLOWED_ORIGINS)) {
-      return problemResponse({
-        requestId,
-        status: 403,
-        code: "forbidden_origin",
-        title: "Forbidden origin",
-        detail: "The browser origin is not allowed for this environment.",
-        headers: { vary: "Origin" },
-      });
-    }
-
-    const url = new URL(request.url);
-    if (url.pathname.startsWith("/v1/")) {
-      const rateLimit = isPrintingImageContent(url.pathname) ? env.PRINTING_IMAGE_RATE_LIMIT : env.CATALOGUE_RATE_LIMIT;
-      const rateLimited = await rateLimitFailure(request, rateLimit, requestId);
-      if (rateLimited !== null) {
-        return withCorsHeaders(request, rateLimited);
-      }
-    }
-
-    const authenticationFailure = await authenticateBearer(
-      request,
-      [env.API_BEARER_KEY, env.API_BEARER_KEY_REPLACEMENT],
-      requestId,
-      {
-        missing: "authentication_required",
-        invalid: "invalid_api_key",
-      },
-    );
-    if (authenticationFailure !== null) {
-      return withCorsHeaders(request, authenticationFailure);
-    }
-
-    if (request.method === "GET" && url.pathname === "/health") {
-      return withCorsHeaders(
-        request,
-        await readinessResponse("api", apiCapabilities, {
-          database: env.CATALOGUE_DB,
-          buckets: {
-            PRINTING_IMAGES: env.PRINTING_IMAGES,
-            CATALOGUE_EXPORTS: env.CATALOGUE_EXPORTS,
-          },
-          publicBase: base,
-          request,
-          version: env.CF_VERSION_METADATA,
-        }),
-      );
-    }
-
-    const response = await dispatch(request.method, url.pathname, {
-      request,
-      env: catalogueEnvironment(env),
-      requestId,
-      base,
-    });
-    if (response !== null) return withCorsHeaders(request, response);
-
-    return withCorsHeaders(
-      request,
-      problemResponse({
-        requestId,
-        status: 404,
-        code: "not_found",
-        title: "Not found",
-        detail: "The requested resource does not exist.",
-      }),
-    );
+    return await apiHttp.fetch(request, { env, requestId, base });
   } catch (error) {
-    return withCorsHeaders(request, await apiProblemResponse(error, requestId));
+    // Hono onError handles Error instances; preserve the protected boundary for
+    // foreign thrown values as well (including undefined).
+    const response = await apiProblemResponse(error, requestId);
+    return request.method !== "OPTIONS" && hasAllowedOrigin(request, env.CORS_ALLOWED_ORIGINS)
+      ? withCorsHeaders(request, response)
+      : response;
   }
 }
 

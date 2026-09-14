@@ -71,9 +71,9 @@ test("one owner CLI start verifies native artifacts without exposing any unfinis
   workers.push(api);
   await waitForHealth(`${api.url}/health`, apiKey, api);
   const environment = { KEEPR_INGESTION_URL: ingestion.url, KEEPR_ADMINISTRATION_KEY: adminKey };
-  const cli = async (args) => {
+  const cli = async (args, expectedCode = 0) => {
     const result = await runCli([...args, "--json"], environment);
-    assert.equal(result.code, 0, result.stdout + result.stderr);
+    assert.equal(result.code, expectedCode, result.stdout + result.stderr);
     return JSON.parse(result.stdout);
   };
   const get = async (path) => {
@@ -145,33 +145,54 @@ test("one owner CLI start verifies native artifacts without exposing any unfinis
     (await get(`/v1/game-candidates/${candidate.id}/publication-preparation`)).root_digest,
     status.root_digest,
   );
-  const approval = await cli([
-    "publication",
-    "approve",
-    "--candidate-id",
-    candidate.id,
-    "--manifest-digest",
-    candidate.manifest_digest,
-    "--expected-game-revision-id",
-    candidate.expected_game_revision_id,
-    "--generation",
-    String(candidate.generation),
-    "--idempotency-key",
-    "native-publication",
-  ]);
+  const approval = await cli(
+    [
+      "publication",
+      "approve",
+      "--candidate-id",
+      candidate.id,
+      "--manifest-digest",
+      candidate.manifest_digest,
+      "--expected-game-revision-id",
+      candidate.expected_game_revision_id,
+      "--generation",
+      String(candidate.generation),
+      "--idempotency-key",
+      "native-publication",
+    ],
+    10,
+  );
   let publication;
   const publicationDeadline = Date.now() + 30000;
   while (Date.now() < publicationDeadline) {
-    publication = await cli(["publication", "status", "--operation-id", approval.id]);
+    publication = await get(`/v1/publications/${approval.id}`);
     if (publication.state === "published" || publication.state === "failed") break;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   assert.equal(publication.state, "published", JSON.stringify(publication) + ingestion.getOutput());
-  const visible = await consumer("/v1/cards?game=digimon&limit=1");
+  assert.deepEqual(await cli(["publication", "status", "--operation-id", approval.id]), publication);
+  const visiblePath = `/v1/cards?game=digimon&limit=1&revision=${publication.resulting_revision_id}`;
+  const visible = await consumer(visiblePath);
   assert.equal(visible.status, 200, JSON.stringify(visible));
   assert.equal(visible.body.meta.catalogue_revision_id, publication.resulting_revision_id);
   assert.equal(visible.body.data.length, 1);
   assert.equal(visible.body.data[0].type, "card");
+  const readContract = JSON.parse(await readFile(resolve("contracts/read-openapi.json"), "utf8"));
+  const wireAjv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(wireAjv);
+  const validateCards = wireAjv.compile({
+    components: readContract.components,
+    $ref: "#/components/schemas/CardCollection",
+  });
+  assert.equal(validateCards(visible.body), true, wireAjv.errorsText(validateCards.errors));
+  const pinned = await fetch(`${api.url}${visiblePath}`, { headers: { authorization: `Bearer ${apiKey}` } });
+  const unchangedCards = await fetch(pinned.url, {
+    headers: { authorization: `Bearer ${apiKey}`, "if-none-match": pinned.headers.get("etag") },
+  });
+  assert.equal(unchangedCards.status, 304);
+  assert.equal(unchangedCards.headers.get("x-catalogue-revision"), publication.resulting_revision_id);
+  assert.equal((await unchangedCards.arrayBuffer()).byteLength, 0);
+  await pinned.body.cancel();
   const detail = await consumer(`/v1/cards/${cards.records[0].id}?include=printings`);
   assert.equal(detail.status, 200, JSON.stringify(detail));
   assert.equal(detail.body.data.name, cards.records[0].name);
@@ -191,10 +212,14 @@ test("one owner CLI start verifies native artifacts without exposing any unfinis
   );
   if (images) {
     const page = await get(`/v1/game-candidates/${candidate.id}/partitions/${images.ordinal}`);
-    const image = await fetch(`${api.url}/v1/printing-images/${page.records[0].id}/content`, {
-      headers: { authorization: `Bearer ${apiKey}` },
-    });
+    const image = await fetch(
+      `${api.url}/v1/printing-images/${page.records[0].id}/content?revision=${publication.resulting_revision_id}`,
+      {
+        headers: { authorization: `Bearer ${apiKey}` },
+      },
+    );
     assert.equal(image.status, 200);
+    assert.equal(image.headers.get("x-catalogue-revision"), publication.resulting_revision_id);
     const bytes = Buffer.from(await image.arrayBuffer());
     assert.equal(bytes.byteLength, page.records[0].content_byte_length);
     const range = await fetch(image.url, { headers: { authorization: `Bearer ${apiKey}`, range: "bytes=0-7" } });
@@ -204,6 +229,11 @@ test("one owner CLI start verifies native artifacts without exposing any unfinis
     assert.equal(head.status, 200);
     assert.equal(head.headers.get("etag"), image.headers.get("etag"));
     assert.equal((await head.arrayBuffer()).byteLength, 0);
+    const unchangedImage = await fetch(image.url, {
+      headers: { authorization: `Bearer ${apiKey}`, "if-none-match": image.headers.get("etag") },
+    });
+    assert.equal(unchangedImage.status, 304);
+    assert.equal((await unchangedImage.arrayBuffer()).byteLength, 0);
     const invalid = await fetch(image.url, {
       headers: { authorization: `Bearer ${apiKey}`, range: `bytes=${bytes.length}-` },
     });
@@ -212,20 +242,23 @@ test("one owner CLI start verifies native artifacts without exposing any unfinis
   }
   assert.equal(
     (
-      await cli([
-        "publication",
-        "approve",
-        "--candidate-id",
-        candidate.id,
-        "--manifest-digest",
-        candidate.manifest_digest,
-        "--expected-game-revision-id",
-        candidate.expected_game_revision_id,
-        "--generation",
-        String(candidate.generation),
-        "--idempotency-key",
-        "native-publication",
-      ])
+      await cli(
+        [
+          "publication",
+          "approve",
+          "--candidate-id",
+          candidate.id,
+          "--manifest-digest",
+          candidate.manifest_digest,
+          "--expected-game-revision-id",
+          candidate.expected_game_revision_id,
+          "--generation",
+          String(candidate.generation),
+          "--idempotency-key",
+          "native-publication",
+        ],
+        10,
+      )
     ).id,
     approval.id,
   );
@@ -243,6 +276,7 @@ test("one owner CLI start verifies native artifacts without exposing any unfinis
       `/v1/cards?game=digimon&limit=1&after=${encodeURIComponent(visible.body.page.next_cursor)}&revision=catrev_spine_000`,
     );
     assert.equal(override.status, 400);
+    assert.equal(override.body.code, "invalid_cursor");
   }
   assert.equal((await consumer("/v1/cards?game=digimon&attribute.not_defined=1")).status, 400);
   const exportPath = `/v1/catalogue-exports/${publication.resulting_revision_id}`;

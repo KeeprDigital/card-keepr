@@ -68,17 +68,15 @@ test("release preparation resolves confirmation without mutation and returns ser
   expect(await reused.json()).toMatchObject({ code: "idempotency_key_reused" });
 });
 
-test("administration presentation is negotiated without changing the JSON document", async () => {
+test("administration returns one ordinary JSON representation independent of CLI Accept", async () => {
   const url = "http://127.0.0.1:8788/v1/status";
   const headers = { authorization: "Bearer vitest-administration-key", accept: "application/vnd.card-keepr.cli+json" };
   const response = await worker.fetch(new Request(url, { headers }), testEnv);
   expect(response.status).toBe(200);
-  expect(response.headers.get("vary")).toBe("Accept");
-  const presentation = await response.json<Record<string, unknown>>();
-  expect(presentation.contract).toBe("card-keepr-cli-presentation@1");
-  expect(presentation.document).toMatchObject({ contract: "card-keepr-administration-status@1" });
-  expect(presentation.exit_code).toBe(0);
-  expect(typeof presentation.text).toBe("string");
+  expect(response.headers.get("vary")).toBeNull();
+  const document = await response.json<Record<string, unknown>>();
+  expect(document.contract).toBe("card-keepr-administration-status@1");
+  expect(document).not.toHaveProperty("exit_code");
 });
 
 test("another operation's idempotency record is rejected before interpreting its request", async () => {

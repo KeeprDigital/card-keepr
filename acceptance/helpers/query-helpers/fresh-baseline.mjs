@@ -92,3 +92,7 @@ export function assertBaselineIntegrity(database) {
   if (integrity.length !== 1 || integrity[0].integrity_check !== "ok" || foreignKeys.length !== 0)
     throw new Error("native_fresh_baseline_integrity_failed");
 }
+
+export function queryRevisionState(database) {
+  return database.prepare("SELECT state FROM catalogue_query_revisions WHERE catalogue_revision_id=?");
+}

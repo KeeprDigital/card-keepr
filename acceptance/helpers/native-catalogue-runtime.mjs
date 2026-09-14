@@ -25,9 +25,9 @@ async function get(path, environment) {
   assert.equal(response.status, 200, await response.clone().text());
   return response.json();
 }
-async function cli(args, environment) {
+async function cli(args, environment, expectedCode = 0) {
   const response = await runCli([...args, "--json"], environment);
-  assert.equal(response.code, 0, `${response.stdout}\n${response.stderr}`);
+  assert.equal(response.code, expectedCode, `${response.stdout}\n${response.stderr}`);
   return JSON.parse(response.stdout);
 }
 
@@ -188,7 +188,10 @@ export async function publishNativeCollection(runId, idempotencyKey, environment
         key,
       ],
       environment,
+      10,
     );
+    assert.equal(approved.contract, "card-keepr-publication-acceptance@1");
+    assert.equal(approved.state, "approved");
     publication = await waitForAdministrationDocument(
       `/v1/publications/${approved.id}`,
       (document) =>

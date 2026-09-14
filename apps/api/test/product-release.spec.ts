@@ -1,3 +1,5 @@
+import contract from "../../../contracts/read-openapi.json";
+import { assertHttpResponse } from "../../../test/support/http-contract";
 import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import Ajv2020 from "ajv/dist/2020.js";
@@ -384,6 +386,7 @@ test("Product search normalizes compatibility-form official facts during publica
 
 test("authenticated Printing Image content is immutable, conditional, and range-capable", async () => {
   const content = await api("/v1/printing-images/printing_image_st15_front/content");
+  await assertHttpResponse(contract, "/v1/printing-images/{image}/content", "get", content);
   expect(content.status).toBe(200);
   expect(content.headers.get("content-type")).toBe("image/webp");
   expect(content.headers.get("content-length")).toBe("18");
@@ -393,6 +396,7 @@ test("authenticated Printing Image content is immutable, conditional, and range-
   expect(new TextDecoder().decode(await content.arrayBuffer())).toBe("fusion-front-image");
 
   const head = await api("/v1/printing-images/printing_image_st15_front/content", {}, "HEAD");
+  await assertHttpResponse(contract, "/v1/printing-images/{image}/content", "head", head);
   expect(head.status).toBe(200);
   expect(head.headers.get("content-length")).toBe("18");
   expect(await head.text()).toBe("");
@@ -406,6 +410,7 @@ test("authenticated Printing Image content is immutable, conditional, and range-
   ];
   for (const headers of headRequestHeaders) {
     const metadata = await api("/v1/printing-images/printing_image_st15_front/content", headers, "HEAD");
+    await assertHttpResponse(contract, "/v1/printing-images/{image}/content", "head", metadata);
     expect(metadata.status).toBe(200);
     expect(metadata.headers.get("content-type")).toBe("image/webp");
     expect(metadata.headers.get("content-length")).toBe("18");
@@ -414,6 +419,7 @@ test("authenticated Printing Image content is immutable, conditional, and range-
   }
 
   const partial = await api("/v1/printing-images/printing_image_st15_front/content", { range: "bytes=7-11" });
+  await assertHttpResponse(contract, "/v1/printing-images/{image}/content", "get", partial);
   expect(partial.status).toBe(206);
   expect(partial.headers.get("content-range")).toBe("bytes 7-11/18");
   expect(new TextDecoder().decode(await partial.arrayBuffer())).toBe("front");
@@ -421,6 +427,7 @@ test("authenticated Printing Image content is immutable, conditional, and range-
   const notModified = await api("/v1/printing-images/printing_image_st15_front/content", {
     "if-none-match": '"46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773"',
   });
+  await assertHttpResponse(contract, "/v1/printing-images/{image}/content", "get", notModified);
   expect(notModified.status).toBe(304);
 
   const back = await api("/v1/printing-images/printing_image_st15_back/content");
@@ -428,11 +435,11 @@ test("authenticated Printing Image content is immutable, conditional, and range-
   expect(new TextDecoder().decode(await back.arrayBuffer())).toBe("fusion-back-image");
 
   const unsatisfiable = await api("/v1/printing-images/printing_image_st15_front/content", { range: "bytes=99-100" });
+  await assertHttpResponse(contract, "/v1/printing-images/{image}/content", "get", unsatisfiable);
   expect(unsatisfiable.status).toBe(416);
   expect(unsatisfiable.headers.get("content-range")).toBe("bytes */18");
   expect(unsatisfiable.headers.get("content-type") ?? "").toMatch(/^application\/problem\+json/u);
   const rangeProblem = await unsatisfiable.json();
-  expectSchema("Problem", rangeProblem);
   expect(rangeProblem).toMatchObject({
     status: 416,
     code: "range_not_satisfiable",
@@ -469,12 +476,12 @@ test("Printing Image content is served from the revision projection, not the rec
   expect(new TextDecoder().decode(await content.arrayBuffer())).toBe("projected-image");
 });
 
-test("Printing Image content rejects unknown identities before private content is returned", async () => {
+test("Printing Image content enforces identity, credentials and browser permissions", async () => {
   const path = "/v1/printing-images/printing_image_unknown/content";
   const unknown = await api(path);
   expect(unknown.status).toBe(404);
   const unknownProblem = await unknown.json();
-  expectSchema("Problem", unknownProblem);
+  await assertHttpResponse(contract, "/v1/printing-images/{image}/content", "get", unknown, unknownProblem);
   expect(unknownProblem).toMatchObject({ code: "not_found" });
 
   const unauthorized = await api("/v1/printing-images/printing_image_st15_front/content", {
@@ -482,16 +489,27 @@ test("Printing Image content rejects unknown identities before private content i
   });
   expect(unauthorized.status).toBe(401);
   const authenticationProblem = await unauthorized.json();
-  expectSchema("Problem", authenticationProblem);
+  await assertHttpResponse(contract, "/v1/printing-images/{image}/content", "get", unauthorized, authenticationProblem);
   expect(authenticationProblem).toMatchObject({ code: "invalid_api_key" });
 
   const invalidOrigin = await api("/v1/printing-images/printing_image_st15_front/content", {
     origin: "https://catalogue.example.invalid",
   });
   expect(invalidOrigin.status).toBe(403);
+  expect(invalidOrigin.headers.get("access-control-allow-origin")).toBeNull();
   const originProblem = await invalidOrigin.json();
-  expectSchema("Problem", originProblem);
+  await assertHttpResponse(contract, "/v1/printing-images/{image}/content", "get", invalidOrigin, originProblem);
   expect(originProblem).toMatchObject({ code: "forbidden_origin" });
+  const rejectedPreflight = await api(
+    "/v1/printing-images/printing_image_st15_front/content",
+    {
+      origin: testEnv.CORS_ALLOWED_ORIGINS.split(",")[0]!.trim(),
+      "access-control-request-method": "POST",
+    },
+    "OPTIONS",
+  );
+  expect(rejectedPreflight.status).toBe(403);
+  expect(rejectedPreflight.headers.get("access-control-allow-origin")).toBeNull();
 });
 
 test("Product conditional reads return 304 for matching revision ETags", async () => {

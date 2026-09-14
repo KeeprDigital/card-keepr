@@ -63,7 +63,8 @@ The CLI parses input, reads secrets from environment/descriptors and makes HTTP
 requests. Ingestion owns target resolution, confirmation, canonical release plans
 and digests. The CLI forwards the server-issued dispatch bytes unchanged.
 `cli/lib/http-client.mjs` is the shared transport: HTTPS except loopback, no URL
-credentials or redirects. JSON/problem decoding and exit codes are shared.
+credentials or redirects. JSON/problem decoding and exit codes are shared. CLI display is derived locally
+from ordinary machine JSON; the Worker does not negotiate a CLI envelope.
 The [administration contract](../contracts/ADMINISTRATION.md) owns wire behavior.
 
 Pre-worker release tools retain named SQL and independent provider verification;

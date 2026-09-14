@@ -353,8 +353,11 @@ test("native publication: the CLI publishes separated Product catalogue data con
   assert.ok(onePiecePrinting);
   // Public filtering consumes the actual publication's Printing and profile
   // projections, including carried-forward Cards from every Supported Game.
-  const validateCardQuery = ajv.getSchema(`${apiSchema.$id}#/$defs/CardCollectionQuery`);
-  const validateCardCollection = ajv.getSchema(`${apiSchema.$id}#/$defs/CardCollection`);
+  const readContract = JSON.parse(await readFile(resolve(root, "contracts/read-openapi.json"), "utf8"));
+  const validateCardCollection = ajv.compile({
+    components: readContract.components,
+    $ref: "#/components/schemas/CardCollection",
+  });
   for (const [game, identity, attribute] of [
     ["one-piece", "OP99-001", "cost"],
     ["digimon", "BT99-001", "level"],
@@ -372,7 +375,6 @@ test("native publication: the CLI publishes separated Product catalogue data con
         ? { product_id: establishedOnePiece.id, rarity: onePiecePrinting.rarity.normalized }
         : {}),
     };
-    assert.equal(validateCardQuery(query), true, ajv.errorsText(validateCardQuery.errors));
     const filteredResponse = await fetch(`${api.url}/v1/cards?${new URLSearchParams(query)}`, { headers });
     assert.equal(filteredResponse.status, 200, await filteredResponse.clone().text());
     const filtered = await filteredResponse.json();
@@ -383,7 +385,9 @@ test("native publication: the CLI publishes separated Product catalogue data con
     );
     assert.equal(filtered.meta.catalogue_revision_id, revisionId);
   }
-  assert.equal(validateCardQuery({ "attribute.cost": "3" }), false);
+  const missingGame = await fetch(`${api.url}/v1/cards?attribute.cost=3`, { headers });
+  assert.equal(missingGame.status, 400);
+  assert.equal((await missingGame.json()).code, "invalid_parameter");
   const invalidAttribute = await fetch(`${api.url}/v1/cards?game=one-piece&attribute.level=3`, { headers });
   assert.equal(invalidAttribute.status, 400);
   assert.equal((await invalidAttribute.json()).code, "invalid_parameter");

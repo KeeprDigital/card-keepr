@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect } from "vitest";
 import { catalogueRoutes } from "../../../src/catalogue/read";
 import { canonicalJson, catalogueStore, sha256, sha256Text } from "../../../src/catalogue/shared";
 import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
-import { routeTable } from "../../../src/http/routes";
+import { httpDispatch } from "../../../src/http/openapi";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 import * as catalogueExportQueries from "./query-helpers/catalogue-export";
@@ -235,7 +235,7 @@ export async function request(
   const status = rpcResponse.status;
   const document = (await rpcResponse.json()) as Record<string, unknown>;
   return {
-    response: new Response(null, { status }),
+    response: new Response(null, { status, headers: rpcResponse.headers }),
     document,
   };
 }
@@ -325,7 +325,7 @@ export async function exportManifest(revisionId: string): Promise<ExportFixtureM
   return "components" in manifest ? manifest : nativeExportManifestPage(revisionId, null);
 }
 
-const dispatchExportRead = routeTable(catalogueRoutes);
+const dispatchExportRead = httpDispatch(catalogueRoutes);
 async function exportRead(path: string) {
   const request = new Request(`https://card-keepr.invalid${path}`);
   const response = await dispatchExportRead("GET", new URL(request.url).pathname, {

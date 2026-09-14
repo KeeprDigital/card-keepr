@@ -1,3 +1,5 @@
+import { httpRoute } from "../../http/openapi";
+import { cardsRoute, cardCollectionSchema, imageRoute } from "./http-contract";
 import { ReadProblem } from "./collection-endpoint";
 import { compositionExportResponse, compositionExportComponentResponse } from "./composition-export";
 import { compositionEntityResponse, compositionImageResponse } from "./composition-read";
@@ -25,15 +27,25 @@ export const catalogueRoutes = [
   route<Context>("GET", "/v1/catalogue", async ({ env, base, request }) =>
     catalogueResponse(await currentCatalogueStatus(env.CATALOGUE_DB), base, request),
   ),
-  route<Context>("GET", "/v1/cards", async ({ env, request, base }) =>
-    nativeOrLegacy(
+  httpRoute<Context>()(cardsRoute, async (c) => {
+    const { env, base } = c.env;
+    const query = c.req.valid("query");
+    const url = new URL(c.req.url);
+    url.search = new URLSearchParams(
+      Object.entries(query).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+    ).toString();
+    const request = new Request(url, c.req.raw);
+    const response = await nativeOrLegacy(
       () =>
         compositionEntityResponse(env.CATALOGUE_DB, request, base, "cards", undefined, (revision) =>
           cardCollectionResponse(env.CATALOGUE_DB, request, base, revision),
         ),
       () => cardCollectionResponse(env.CATALOGUE_DB, request, base),
-    ),
-  ),
+    );
+    if (!response) throw new Error("Card search returned no representation.");
+    if (response.status === 304) return c.body(null, 304, Object.fromEntries(response.headers));
+    return c.json(cardCollectionSchema.parse(await response.json()), 200, Object.fromEntries(response.headers));
+  }),
   route<Context>("GET", "/v1/cards/:card", async ({ env, request, base }, params) =>
     nativeOrLegacy(
       () => compositionEntityResponse(env.CATALOGUE_DB, request, base, "cards", params.card!),
@@ -52,13 +64,17 @@ export const catalogueRoutes = [
       () => currentPrintingResponse(env.CATALOGUE_DB, params.printing!, request, base),
     ),
   ),
-  ...["GET", "HEAD"].map((method) =>
-    route<Context>(method, "/v1/printing-images/:image/content", async ({ env, request }, params) =>
-      nativeOrLegacy(
-        () => compositionImageResponse(env.CATALOGUE_DB, env.PRINTING_IMAGES, request, params.image!),
-        () => printingImageContentResponse(request, env.CATALOGUE_DB, env.PRINTING_IMAGES, params.image!),
-      ),
-    ),
+  ...(["get", "head"] as const).map((method) =>
+    httpRoute<Context>()(imageRoute(method), async (c) => {
+      const { env, request } = c.env;
+      const { image } = c.req.valid("param");
+      return (
+        (await nativeOrLegacy(
+          () => compositionImageResponse(env.CATALOGUE_DB, env.PRINTING_IMAGES, request, image),
+          () => printingImageContentResponse(request, env.CATALOGUE_DB, env.PRINTING_IMAGES, image),
+        )) ?? c.notFound()
+      );
+    }),
   ),
   route<Context>("GET", "/v1/products", async ({ env, request, base }) =>
     nativeOrLegacy(

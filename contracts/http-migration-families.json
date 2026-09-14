@@ -1,0 +1,702 @@
+[
+  {
+    "family": "ingestion",
+    "method": "POST",
+    "path": "/v1/publications/:publication/export-preparation/advance",
+    "slice": "Publication and preparation",
+    "cli": null
+  },
+  {
+    "family": "ingestion",
+    "method": "POST",
+    "path": "/v1/production-releases",
+    "slice": "Maintenance and runtime operations",
+    "cli": "release production"
+  },
+  {
+    "family": "ingestion",
+    "method": "POST",
+    "path": "/v1/catalogue-search-materialization/repair",
+    "slice": "Maintenance and runtime operations",
+    "cli": "repairCatalogueSearch"
+  },
+  {
+    "family": "ingestion",
+    "method": "GET",
+    "path": "/v1/status",
+    "slice": "Maintenance and runtime operations",
+    "cli": "status"
+  },
+  {
+    "family": "ingestion",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/:run/candidate",
+    "slice": "Retained runs",
+    "cli": "inspectCandidate"
+  },
+  {
+    "family": "ingestion",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/:run/approval",
+    "slice": "Retained runs",
+    "cli": null
+  },
+  {
+    "family": "ingestion",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/:run/rejection",
+    "slice": "Retained runs",
+    "cli": "rejectRun"
+  },
+  {
+    "family": "ingestion",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/:run/retry",
+    "slice": "Retained runs",
+    "cli": "retryRun"
+  },
+  {
+    "family": "ingestion",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/:run/publication-cleanup",
+    "slice": "Retained runs",
+    "cli": "cleanupRun"
+  },
+  {
+    "family": "ingestion",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/:run",
+    "slice": "Retained runs",
+    "cli": "showRun"
+  },
+  {
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/source-observation-sets/:observationSet/records",
+    "slice": "Sources and collection",
+    "cli": null
+  },
+  {
+    "family": "source-evidence",
+    "method": "GET",
+    "path": "/v1/evidence-cleanups/:cleanup/objects",
+    "slice": "Maintenance and runtime operations",
+    "cli": "evidenceCleanupObjects"
+  },
+  {
+    "family": "source-evidence",
+    "method": "GET",
+    "path": "/v1/evidence-cleanups/:cleanup",
+    "slice": "Maintenance and runtime operations",
+    "cli": "evidenceCleanupStatus"
+  },
+  {
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/evidence-cleanups/:cleanup/advance",
+    "slice": "Maintenance and runtime operations",
+    "cli": null
+  },
+  {
+    "family": "source-evidence",
+    "method": "GET",
+    "path": "/v1/source-lineages/:lineage/lifecycle",
+    "slice": "Sources and collection",
+    "cli": "sourceLifecycle"
+  },
+  {
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/source-lineages/:lineage/lifecycle",
+    "slice": "Sources and collection",
+    "cli": "decideSourceLifecycle"
+  },
+  {
+    "family": "source-evidence",
+    "method": "GET",
+    "path": "/v1/source-authorities",
+    "slice": "Sources and collection",
+    "cli": "sourceAuthorities"
+  },
+  {
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/source-authorities",
+    "slice": "Sources and collection",
+    "cli": "selectSourceAuthority"
+  },
+  {
+    "family": "source-evidence",
+    "method": "GET",
+    "path": "/v1/source-registry",
+    "slice": "Sources and collection",
+    "cli": "sourceRegistry"
+  },
+  {
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/evidence",
+    "slice": "Sources and collection",
+    "cli": "source collect"
+  },
+  {
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/:run/collection/resume",
+    "slice": "Sources and collection",
+    "cli": "resumeEvidenceCollection"
+  },
+  {
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/:run/collection/pause",
+    "slice": "Sources and collection",
+    "cli": "pauseEvidenceCollection"
+  },
+  {
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/:run/collection/termination",
+    "slice": "Sources and collection",
+    "cli": "terminateEvidenceCollection"
+  },
+  {
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/:run/capacity/extension",
+    "slice": "Sources and collection",
+    "cli": "source capacity extend"
+  },
+  {
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/:run/collection/retry",
+    "slice": "Sources and collection",
+    "cli": "retryEvidenceCollection"
+  },
+  {
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/source-snapshots/:snapshot/observations",
+    "slice": "Sources and collection",
+    "cli": "reparseSourceSnapshot"
+  },
+  {
+    "family": "source-evidence",
+    "method": "GET",
+    "path": "/v1/source-snapshots/:snapshot/content",
+    "slice": "Sources and collection",
+    "cli": null
+  },
+  {
+    "family": "source-evidence",
+    "method": "GET",
+    "path": "/v1/source-observation-sets/:observationSet/content",
+    "slice": "Sources and collection",
+    "cli": null
+  },
+  {
+    "family": "source-evidence",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/:run/evidence",
+    "slice": "Sources and collection",
+    "cli": "showSourceEvidence"
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/reconciliation-operations/:preparation/evidence-cleanup",
+    "slice": "Maintenance and runtime operations",
+    "cli": "stagingCleanupStart"
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/:run/evidence-cleanup",
+    "slice": "Maintenance and runtime operations",
+    "cli": "evidenceCleanupStart"
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/evidence-cleanups/:cleanup/retry",
+    "slice": "Maintenance and runtime operations",
+    "cli": "evidenceCleanupRetry"
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/publications/:publication/resume",
+    "slice": "Publication and preparation",
+    "cli": "publicationOperationResume"
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/publications/:publication/advance",
+    "slice": "Publication and preparation",
+    "cli": null
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/publications/:publication",
+    "slice": "Publication and preparation",
+    "cli": "publicationStatus"
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/publications",
+    "slice": "Publication and preparation",
+    "cli": null
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/publications/start",
+    "slice": "Publication and preparation",
+    "cli": "publicationStart"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/:candidate/publication-preparation/query",
+    "slice": "Publication and preparation",
+    "cli": null
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/publication-compositions",
+    "slice": "Publication and preparation",
+    "cli": null
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/:candidate/publication-preparation",
+    "slice": "Publication and preparation",
+    "cli": "publicationPreparation"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/:candidate/publication-preparation/artifacts",
+    "slice": "Publication and preparation",
+    "cli": "publicationArtifacts"
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/game-candidates/:candidate/publication-preparation",
+    "slice": "Publication and preparation",
+    "cli": null
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/game-candidates/:candidate/publication-preparation/start",
+    "slice": "Publication and preparation",
+    "cli": "publicationPrepare"
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/game-candidates/:candidate/publication-preparation/resume",
+    "slice": "Publication and preparation",
+    "cli": "publicationResume"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/:candidate/partitions/:ordinal/images/:record",
+    "slice": "Game Candidates",
+    "cli": null
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/:candidate/inspection/evidence/:kind",
+    "slice": "Game Candidates",
+    "cli": "gameCandidateEvidence"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/:candidate/inspection",
+    "slice": "Game Candidates",
+    "cli": "gameCandidateInspection"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/:candidate/progress",
+    "slice": "Game Candidates",
+    "cli": null
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/:run/game-candidates",
+    "slice": "Game Candidates",
+    "cli": "collectionGameCandidates"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/:candidate/text/:digest/:ordinal",
+    "slice": "Game Candidates",
+    "cli": null
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/:candidate/inputs",
+    "slice": "Game Candidates",
+    "cli": null
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/:candidate/inputs/:ordinal",
+    "slice": "Game Candidates",
+    "cli": null
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/game-candidates",
+    "slice": "Game Candidates",
+    "cli": "gameCandidatePrepare"
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/game-candidates/:candidate/pause",
+    "slice": "Game Candidates",
+    "cli": null
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/game-candidates/:candidate/resume",
+    "slice": "Game Candidates",
+    "cli": null
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/game-candidates/:candidate/abandon",
+    "slice": "Game Candidates",
+    "cli": "gameCandidateAbandon"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/:run/reconciliation/text/:digest/:ordinal",
+    "slice": "Retained runs",
+    "cli": "reconciliationText"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/:candidate",
+    "slice": "Game Candidates",
+    "cli": "gameCandidate"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/:candidate/partitions",
+    "slice": "Game Candidates",
+    "cli": "gameCandidatePartitions"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/:candidate/partitions/:ordinal",
+    "slice": "Game Candidates",
+    "cli": "gameCandidatePartition"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/:run/reconciliation/inputs",
+    "slice": "Retained runs",
+    "cli": "reconciliationInputs"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/:run/reconciliation/inputs/:ordinal",
+    "slice": "Retained runs",
+    "cli": "reconciliationInput"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/:run/reconciliation/partitions/:ordinal",
+    "slice": "Retained runs",
+    "cli": "reconciliationPartition"
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/:run/reconciliation/pause",
+    "slice": "Retained runs",
+    "cli": "reconciliation-pause"
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/:run/reconciliation/resume",
+    "slice": "Retained runs",
+    "cli": "reconciliation-resume"
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/:run/reconciliation/abandon",
+    "slice": "Retained runs",
+    "cli": "reconciliation-abandon"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/:run/reconciliation/partitions",
+    "slice": "Retained runs",
+    "cli": "reconciliationPartitions"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/:run/reconciliation",
+    "slice": "Retained runs",
+    "cli": "reconciliationStatus"
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/identity-corrections/validate",
+    "slice": "Identity and admission",
+    "cli": "identity-correction validate"
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/identity-corrections",
+    "slice": "Identity and admission",
+    "cli": "identity-correction create"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/identity-corrections/:correction",
+    "slice": "Identity and admission",
+    "cli": "identity-correction inspect"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/identity-corrections",
+    "slice": "Identity and admission",
+    "cli": "identity-correction list"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/entity-proposals",
+    "slice": "Identity and admission",
+    "cli": "entity-proposal list"
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/entity-proposals",
+    "slice": "Identity and admission",
+    "cli": "entity-proposal create"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/entity-proposals/:proposal",
+    "slice": "Identity and admission",
+    "cli": "entity-proposal inspect"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/entity-proposals/:proposal/evidence",
+    "slice": "Identity and admission",
+    "cli": null
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/entity-proposals/:proposal/decisions",
+    "slice": "Identity and admission",
+    "cli": "entity-proposal admit/link/reject/reconsider"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/reconciliation/identity-reviews",
+    "slice": "Identity and admission",
+    "cli": "identityReviews"
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/reconciliation/identity-reviews/:review/resolve",
+    "slice": "Identity and admission",
+    "cli": "identityResolve"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/reconciliation/identities/:identity",
+    "slice": "Identity and admission",
+    "cli": "identityInspect"
+  },
+  {
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/:run/reconciliation",
+    "slice": "Retained runs",
+    "cli": "reconcileRun"
+  },
+  {
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/reconciliation/printings/:printing",
+    "slice": "Identity and admission",
+    "cli": null
+  },
+  {
+    "family": "curated",
+    "method": "POST",
+    "path": "/admin/v1/curated-revisions/validate",
+    "slice": "Curated Revisions",
+    "cli": "curated-revision validate"
+  },
+  {
+    "family": "curated",
+    "method": "GET",
+    "path": "/admin/v1/curated-revisions",
+    "slice": "Curated Revisions",
+    "cli": "curated-revision list"
+  },
+  {
+    "family": "curated",
+    "method": "POST",
+    "path": "/admin/v1/curated-revisions",
+    "slice": "Curated Revisions",
+    "cli": "curated-revision create"
+  },
+  {
+    "family": "curated",
+    "method": "POST",
+    "path": "/admin/v1/curated-revisions/:revision/reaffirm",
+    "slice": "Curated Revisions",
+    "cli": "curated-revision reaffirm"
+  },
+  {
+    "family": "curated",
+    "method": "POST",
+    "path": "/admin/v1/curated-revisions/:revision/supersede",
+    "slice": "Curated Revisions",
+    "cli": "curated-revision supersede"
+  },
+  {
+    "family": "curated",
+    "method": "POST",
+    "path": "/admin/v1/curated-revisions/:revision/retire",
+    "slice": "Curated Revisions",
+    "cli": "curated-revision retire"
+  },
+  {
+    "family": "curated",
+    "method": "GET",
+    "path": "/admin/v1/curated-revisions/:revision",
+    "slice": "Curated Revisions",
+    "cli": "curated-revision show"
+  },
+  {
+    "family": "export",
+    "method": "POST",
+    "path": "/v1/catalogue-export-deletion-plans",
+    "slice": "Maintenance and runtime operations",
+    "cli": "catalogue-export deletion plan"
+  },
+  {
+    "family": "export",
+    "method": "POST",
+    "path": "/v1/catalogue-export-deletions",
+    "slice": "Maintenance and runtime operations",
+    "cli": "catalogue-export deletion start"
+  },
+  {
+    "family": "export",
+    "method": "POST",
+    "path": "/v1/catalogue-export-deletions/:deletion/retry",
+    "slice": "Maintenance and runtime operations",
+    "cli": "catalogue-export deletion retry"
+  },
+  {
+    "family": "export",
+    "method": "GET",
+    "path": "/v1/catalogue-export-deletions/:deletion",
+    "slice": "Maintenance and runtime operations",
+    "cli": "catalogue-export deletion status"
+  },
+  {
+    "family": "backup-recovery",
+    "method": "GET",
+    "path": "/v1/backups/:attempt",
+    "slice": "Backup and recovery",
+    "cli": "backup status --attempt-id"
+  },
+  {
+    "family": "backup-recovery",
+    "method": "GET",
+    "path": "/v1/catalogue-revisions/:revision/backups",
+    "slice": "Backup and recovery",
+    "cli": "backup status --catalogue-revision"
+  },
+  {
+    "family": "backup-recovery",
+    "method": "POST",
+    "path": "/v1/backups",
+    "slice": "Backup and recovery",
+    "cli": "createBackup"
+  },
+  {
+    "family": "backup-recovery",
+    "method": "GET",
+    "path": "/v1/recoveries/:recovery",
+    "slice": "Backup and recovery",
+    "cli": "inspectRecovery"
+  },
+  {
+    "family": "backup-recovery",
+    "method": "POST",
+    "path": "/v1/recoveries",
+    "slice": "Backup and recovery",
+    "cli": "beginRecovery"
+  },
+  {
+    "family": "backup-recovery",
+    "method": "POST",
+    "path": "/v1/recoveries/:recovery/verification",
+    "slice": "Backup and recovery",
+    "cli": "verifyRecovery"
+  },
+  {
+    "family": "backup-recovery",
+    "method": "POST",
+    "path": "/v1/recoveries/:recovery/acceptance",
+    "slice": "Backup and recovery",
+    "cli": "acceptRecovery"
+  }
+]

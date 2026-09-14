@@ -43,6 +43,7 @@ export default defineConfig([
       "acceptance/fixtures/**",
       "**/worker-configuration.d.ts",
       "src/catalogue/shared/document-validators.mjs",
+      "test/support/http-response-validators.mjs",
       "pnpm-lock.yaml",
       "coverage/**",
       "test-results/**",

@@ -1,0 +1,1548 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Card Keepr administration API",
+    "version": "1.0.0",
+    "description": "Generated pilot contracts. Unmigrated operations are explicitly inventoried; this document is not yet the complete Worker contract."
+  },
+  "servers": [
+    {
+      "url": "https://card.keepr.digital/ingest"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "PublicationStatus": {
+        "type": "object",
+        "properties": {
+          "contract": {
+            "type": "string",
+            "enum": [
+              "card-keepr-game-publication@1"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "candidate_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "preparation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ingestion_run_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "supported_game": {
+            "type": "string",
+            "minLength": 1
+          },
+          "manifest_digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "expected_game_revision_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "candidate_generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "deadline": {
+            "type": "string",
+            "minLength": 1
+          },
+          "approved_at": {
+            "type": "string",
+            "minLength": 1
+          },
+          "inspection_receipt": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "waiting_artifacts",
+              "waiting_backup",
+              "retry_paused",
+              "published",
+              "failed"
+            ]
+          },
+          "failure_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "resulting_revision_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "backup_attempt_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "published_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "approval_scope": {
+            "type": "string",
+            "enum": [
+              "whole_candidate"
+            ]
+          }
+        },
+        "required": [
+          "contract",
+          "id",
+          "candidate_id",
+          "preparation_id",
+          "ingestion_run_id",
+          "supported_game",
+          "manifest_digest",
+          "expected_game_revision_id",
+          "candidate_generation",
+          "deadline",
+          "approved_at",
+          "inspection_receipt",
+          "generation",
+          "state",
+          "failure_code",
+          "resulting_revision_id",
+          "backup_attempt_id",
+          "published_at",
+          "approval_scope"
+        ],
+        "additionalProperties": false
+      },
+      "Problem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "invalid_params": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "name",
+                "reason"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "links": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code",
+          "detail",
+          "request_id"
+        ],
+        "additionalProperties": false
+      },
+      "PublicationAcceptance": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "candidate_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "preparation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ingestion_run_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "supported_game": {
+            "type": "string",
+            "minLength": 1
+          },
+          "manifest_digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "expected_game_revision_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "candidate_generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "deadline": {
+            "type": "string",
+            "minLength": 1
+          },
+          "approved_at": {
+            "type": "string",
+            "minLength": 1
+          },
+          "inspection_receipt": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "approved"
+            ]
+          },
+          "failure_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "resulting_revision_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "backup_attempt_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "published_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "approval_scope": {
+            "type": "string",
+            "enum": [
+              "whole_candidate"
+            ]
+          },
+          "contract": {
+            "type": "string",
+            "enum": [
+              "card-keepr-publication-acceptance@1"
+            ]
+          },
+          "links": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "format": "uri"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "candidate_id",
+          "preparation_id",
+          "ingestion_run_id",
+          "supported_game",
+          "manifest_digest",
+          "expected_game_revision_id",
+          "candidate_generation",
+          "deadline",
+          "approved_at",
+          "inspection_receipt",
+          "generation",
+          "state",
+          "failure_code",
+          "resulting_revision_id",
+          "backup_attempt_id",
+          "published_at",
+          "approval_scope",
+          "contract",
+          "links"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/v1/publications/{publication}": {
+      "get": {
+        "operationId": "getPublication",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "publication",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current publication state. Published is distinct from its Backup Attempt's verification.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/publications/start": {
+      "post": {
+        "operationId": "startPublication",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "candidate_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "manifest_digest": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "expected_game_revision_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "generation": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "idempotency_key": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "candidate_id",
+                  "manifest_digest",
+                  "expected_game_revision_id",
+                  "generation",
+                  "idempotency_key"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Immutable original approval acknowledgement, including on exact replay. Poll status for current work; acceptance does not establish publication or verified backup.",
+            "headers": {
+              "Location": {
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicationAcceptance"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {},
+  "x-unmigrated-operations": [
+    {
+      "method": "POST",
+      "path": "/v1/publications/{publication}/export-preparation/advance",
+      "family": "ingestion"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/production-releases",
+      "family": "ingestion"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/catalogue-search-materialization/repair",
+      "family": "ingestion"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/status",
+      "family": "ingestion"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/ingestion-runs/{run}/candidate",
+      "family": "ingestion"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/ingestion-runs/{run}/approval",
+      "family": "ingestion"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/ingestion-runs/{run}/rejection",
+      "family": "ingestion"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/ingestion-runs/{run}/retry",
+      "family": "ingestion"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/ingestion-runs/{run}/publication-cleanup",
+      "family": "ingestion"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/ingestion-runs/{run}",
+      "family": "ingestion"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/source-observation-sets/{observationSet}/records",
+      "family": "source-evidence"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/evidence-cleanups/{cleanup}/objects",
+      "family": "source-evidence"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/evidence-cleanups/{cleanup}",
+      "family": "source-evidence"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/evidence-cleanups/{cleanup}/advance",
+      "family": "source-evidence"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/source-lineages/{lineage}/lifecycle",
+      "family": "source-evidence"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/source-lineages/{lineage}/lifecycle",
+      "family": "source-evidence"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/source-authorities",
+      "family": "source-evidence"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/source-authorities",
+      "family": "source-evidence"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/source-registry",
+      "family": "source-evidence"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/ingestion-runs/evidence",
+      "family": "source-evidence"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/ingestion-runs/{run}/collection/resume",
+      "family": "source-evidence"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/ingestion-runs/{run}/collection/pause",
+      "family": "source-evidence"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/ingestion-runs/{run}/collection/termination",
+      "family": "source-evidence"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/ingestion-runs/{run}/capacity/extension",
+      "family": "source-evidence"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/ingestion-runs/{run}/collection/retry",
+      "family": "source-evidence"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/source-snapshots/{snapshot}/observations",
+      "family": "source-evidence"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/source-snapshots/{snapshot}/content",
+      "family": "source-evidence"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/source-observation-sets/{observationSet}/content",
+      "family": "source-evidence"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/ingestion-runs/{run}/evidence",
+      "family": "source-evidence"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/reconciliation-operations/{preparation}/evidence-cleanup",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/ingestion-runs/{run}/evidence-cleanup",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/evidence-cleanups/{cleanup}/retry",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/publications/{publication}/resume",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/publications/{publication}/advance",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/publications",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/game-candidates/{candidate}/publication-preparation/query",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/publication-compositions",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/game-candidates/{candidate}/publication-preparation",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/game-candidates/{candidate}/publication-preparation/artifacts",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/game-candidates/{candidate}/publication-preparation",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/game-candidates/{candidate}/publication-preparation/start",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/game-candidates/{candidate}/publication-preparation/resume",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/game-candidates/{candidate}/partitions/{ordinal}/images/{record}",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/game-candidates/{candidate}/inspection/evidence/{kind}",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/game-candidates/{candidate}/inspection",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/game-candidates/{candidate}/progress",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/ingestion-runs/{run}/game-candidates",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/game-candidates/{candidate}/text/{digest}/{ordinal}",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/game-candidates/{candidate}/inputs",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/game-candidates/{candidate}/inputs/{ordinal}",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/game-candidates",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/game-candidates/{candidate}/pause",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/game-candidates/{candidate}/resume",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/game-candidates/{candidate}/abandon",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/ingestion-runs/{run}/reconciliation/text/{digest}/{ordinal}",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/game-candidates/{candidate}",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/game-candidates/{candidate}/partitions",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/game-candidates/{candidate}/partitions/{ordinal}",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/ingestion-runs/{run}/reconciliation/inputs",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/ingestion-runs/{run}/reconciliation/inputs/{ordinal}",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/ingestion-runs/{run}/reconciliation/partitions/{ordinal}",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/ingestion-runs/{run}/reconciliation/pause",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/ingestion-runs/{run}/reconciliation/resume",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/ingestion-runs/{run}/reconciliation/abandon",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/ingestion-runs/{run}/reconciliation/partitions",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/ingestion-runs/{run}/reconciliation",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/identity-corrections/validate",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/identity-corrections",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/identity-corrections/{correction}",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/identity-corrections",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/entity-proposals",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/entity-proposals",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/entity-proposals/{proposal}",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/entity-proposals/{proposal}/evidence",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/entity-proposals/{proposal}/decisions",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/reconciliation/identity-reviews",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/reconciliation/identity-reviews/{review}/resolve",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/reconciliation/identities/{identity}",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/ingestion-runs/{run}/reconciliation",
+      "family": "reconciliation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/reconciliation/printings/{printing}",
+      "family": "reconciliation"
+    },
+    {
+      "method": "POST",
+      "path": "/admin/v1/curated-revisions/validate",
+      "family": "curated"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/v1/curated-revisions",
+      "family": "curated"
+    },
+    {
+      "method": "POST",
+      "path": "/admin/v1/curated-revisions",
+      "family": "curated"
+    },
+    {
+      "method": "POST",
+      "path": "/admin/v1/curated-revisions/{revision}/reaffirm",
+      "family": "curated"
+    },
+    {
+      "method": "POST",
+      "path": "/admin/v1/curated-revisions/{revision}/supersede",
+      "family": "curated"
+    },
+    {
+      "method": "POST",
+      "path": "/admin/v1/curated-revisions/{revision}/retire",
+      "family": "curated"
+    },
+    {
+      "method": "GET",
+      "path": "/admin/v1/curated-revisions/{revision}",
+      "family": "curated"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/catalogue-export-deletion-plans",
+      "family": "export"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/catalogue-export-deletions",
+      "family": "export"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/catalogue-export-deletions/{deletion}/retry",
+      "family": "export"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/catalogue-export-deletions/{deletion}",
+      "family": "export"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/backups/{attempt}",
+      "family": "backup-recovery"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/catalogue-revisions/{revision}/backups",
+      "family": "backup-recovery"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/backups",
+      "family": "backup-recovery"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/recoveries/{recovery}",
+      "family": "backup-recovery"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/recoveries",
+      "family": "backup-recovery"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/recoveries/{recovery}/verification",
+      "family": "backup-recovery"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/recoveries/{recovery}/acceptance",
+      "family": "backup-recovery"
+    }
+  ]
+}

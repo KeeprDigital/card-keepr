@@ -1,0 +1,2286 @@
+[
+  {
+    "worker": "admin",
+    "family": "curated",
+    "method": "GET",
+    "path": "/admin/v1/curated-revisions",
+    "contract": "legacy",
+    "slice": "Curated Revisions",
+    "named_cli": "curated-revision list",
+    "callers": [
+      "acceptance/curated-revisions-cli.test.mjs",
+      "acceptance/native-request-pacing.test.mjs",
+      "apps/ingestion/test/curated-revisions.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/game-reconciliation-resources.spec.ts",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-lookup.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/runtime-game-preparation-dispatch.spec.ts",
+      "cli/curated-revisions.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "curated",
+    "method": "POST",
+    "path": "/admin/v1/curated-revisions",
+    "contract": "legacy",
+    "slice": "Curated Revisions",
+    "named_cli": "curated-revision create",
+    "callers": [
+      "acceptance/curated-revisions-cli.test.mjs",
+      "acceptance/native-request-pacing.test.mjs",
+      "apps/ingestion/test/curated-revisions.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/game-reconciliation-resources.spec.ts",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-lookup.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/runtime-game-preparation-dispatch.spec.ts",
+      "cli/curated-revisions.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "curated",
+    "method": "GET",
+    "path": "/admin/v1/curated-revisions/{revision}",
+    "contract": "legacy",
+    "slice": "Curated Revisions",
+    "named_cli": "curated-revision show",
+    "callers": [
+      "acceptance/helpers/cli-http.mjs",
+      "apps/ingestion/test/curated-revisions.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "cli/curated-revisions.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "curated",
+    "method": "POST",
+    "path": "/admin/v1/curated-revisions/{revision}/reaffirm",
+    "contract": "legacy",
+    "slice": "Curated Revisions",
+    "named_cli": "curated-revision reaffirm",
+    "callers": [
+      "apps/ingestion/test/curated-revisions.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
+      "cli/curated-revisions.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "curated",
+    "method": "POST",
+    "path": "/admin/v1/curated-revisions/{revision}/retire",
+    "contract": "legacy",
+    "slice": "Curated Revisions",
+    "named_cli": "curated-revision retire",
+    "callers": [
+      "apps/ingestion/test/curated-revisions.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
+      "cli/curated-revisions.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "curated",
+    "method": "POST",
+    "path": "/admin/v1/curated-revisions/{revision}/supersede",
+    "contract": "legacy",
+    "slice": "Curated Revisions",
+    "named_cli": "curated-revision supersede",
+    "callers": [
+      "apps/ingestion/test/curated-revisions.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
+      "cli/curated-revisions.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "curated",
+    "method": "POST",
+    "path": "/admin/v1/curated-revisions/validate",
+    "contract": "legacy",
+    "slice": "Curated Revisions",
+    "named_cli": "curated-revision validate",
+    "callers": [
+      "acceptance/curated-revisions-cli.test.mjs",
+      "acceptance/helpers/cli-http.mjs",
+      "apps/ingestion/test/curated-revisions.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "cli/curated-revisions.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "method": "GET",
+    "path": "/health",
+    "contract": "platform",
+    "treatment": "authenticated-readiness",
+    "callers": [
+      "acceptance/bounded-capacity-pilot.test.mjs",
+      "acceptance/catalogue-publication.test.mjs",
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/curated-revision-source-changes.test.mjs",
+      "acceptance/dev-deployment.test.mjs",
+      "acceptance/digimon-catalogue.test.mjs",
+      "acceptance/entity-admission.test.mjs",
+      "acceptance/errata-authority-runtime.test.mjs",
+      "acceptance/errata-runtime.test.mjs",
+      "acceptance/fixtures/native-combined-card-keepr-runtime.ts",
+      "acceptance/fresh-baseline-owner.test.mjs",
+      "acceptance/fusion-world-catalogue.test.mjs",
+      "acceptance/gundam-catalogue.test.mjs",
+      "acceptance/identity-corrections-cli.test.mjs",
+      "acceptance/mixed-game-recovery.test.mjs",
+      "acceptance/official-source-adapter-cli-failures.test.mjs",
+      "acceptance/one-piece-catalogue.test.mjs",
+      "acceptance/one-piece-two-source.test.mjs",
+      "acceptance/operational-diagnostics-leak.test.mjs",
+      "acceptance/product-catalogue.test.mjs",
+      "acceptance/production-release-smoke.test.mjs",
+      "acceptance/publication-preparation.test.mjs",
+      "acceptance/riftbound-bounded-intake.test.mjs",
+      "acceptance/riftbound-catalogue.test.mjs",
+      "acceptance/runtime-health.test.mjs",
+      "acceptance/shared-game-profiles.test.mjs",
+      "acceptance/source-evidence-cli.test.mjs",
+      "apps/api/test/bearer-authentication.spec.ts",
+      "apps/api/test/health.spec.ts",
+      "apps/api/test/public-mount.spec.ts",
+      "apps/api/test/runtime.spec.ts",
+      "apps/ingestion/test/lifecycle.spec.ts",
+      "apps/ingestion/test/runtime-diagnostics.spec.ts",
+      "apps/ingestion/test/runtime-health.spec.ts",
+      "apps/ingestion/test/runtime-public-mount.spec.ts",
+      "cli/keepr.mjs",
+      "scripts/http-contracts.mjs",
+      "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "method": "GET",
+    "path": "/healthz",
+    "contract": "platform",
+    "treatment": "unauthenticated-liveness",
+    "callers": [
+      "acceptance/operational-diagnostics-leak.test.mjs",
+      "acceptance/production-release-smoke.test.mjs",
+      "acceptance/runtime-health.test.mjs",
+      "apps/api/test/health.spec.ts",
+      "apps/api/test/runtime.spec.ts",
+      "apps/ingestion/test/runtime-health.spec.ts",
+      "scripts/http-contracts.mjs",
+      "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "method": "HEAD",
+    "path": "/healthz",
+    "contract": "platform",
+    "treatment": "unauthenticated-liveness",
+    "callers": [
+      "acceptance/operational-diagnostics-leak.test.mjs",
+      "acceptance/production-release-smoke.test.mjs",
+      "acceptance/runtime-health.test.mjs",
+      "apps/api/test/health.spec.ts",
+      "apps/api/test/runtime.spec.ts",
+      "apps/ingestion/test/runtime-health.spec.ts",
+      "scripts/http-contracts.mjs",
+      "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "backup-recovery",
+    "method": "POST",
+    "path": "/v1/backups",
+    "contract": "legacy",
+    "slice": "Backup and recovery",
+    "named_cli": "createBackup",
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/helpers/native-backup-retry.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/ingestion-cli.test.mjs",
+      "acceptance/native-backup-retry.test.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/backup-recovery.spec.ts",
+      "apps/ingestion/test/composed-recovery.spec.ts",
+      "apps/ingestion/test/reconciliation-scale-and-recovery.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "backup-recovery",
+    "method": "GET",
+    "path": "/v1/backups/{attempt}",
+    "contract": "legacy",
+    "slice": "Backup and recovery",
+    "named_cli": "backup status --attempt-id",
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/helpers/native-catalogue-runtime.mjs",
+      "acceptance/riftbound-catalogue.test.mjs",
+      "apps/ingestion/test/composed-recovery.spec.ts",
+      "apps/ingestion/test/historical-publication-fixture.ts",
+      "apps/ingestion/test/native-no-change-helpers.ts",
+      "apps/ingestion/test/native-no-change-publication.spec.ts",
+      "apps/ingestion/test/native-publication-helpers.ts",
+      "apps/ingestion/test/publication-caller-retirement.spec.ts",
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "export",
+    "method": "POST",
+    "path": "/v1/catalogue-export-deletion-plans",
+    "contract": "legacy",
+    "slice": "Maintenance and runtime operations",
+    "named_cli": "catalogue-export deletion plan",
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/ingestion-cli.test.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/lifecycle.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "export",
+    "method": "POST",
+    "path": "/v1/catalogue-export-deletions",
+    "contract": "legacy",
+    "slice": "Maintenance and runtime operations",
+    "named_cli": "catalogue-export deletion start",
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/ingestion-cli.test.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/lifecycle.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "export",
+    "method": "GET",
+    "path": "/v1/catalogue-export-deletions/{deletion}",
+    "contract": "legacy",
+    "slice": "Maintenance and runtime operations",
+    "named_cli": "catalogue-export deletion status",
+    "callers": [
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "export",
+    "method": "POST",
+    "path": "/v1/catalogue-export-deletions/{deletion}/retry",
+    "contract": "legacy",
+    "slice": "Maintenance and runtime operations",
+    "named_cli": "catalogue-export deletion retry",
+    "callers": [
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "backup-recovery",
+    "method": "GET",
+    "path": "/v1/catalogue-revisions/{revision}/backups",
+    "contract": "legacy",
+    "slice": "Backup and recovery",
+    "named_cli": "backup status --catalogue-revision",
+    "callers": [
+      "apps/ingestion/test/reconciliation-scale-and-recovery.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "ingestion",
+    "method": "POST",
+    "path": "/v1/catalogue-search-materialization/repair",
+    "contract": "legacy",
+    "slice": "Maintenance and runtime operations",
+    "named_cli": "repairCatalogueSearch",
+    "callers": [
+      "acceptance/fixtures/combined-card-keepr-runtime.ts",
+      "acceptance/ingestion-cli.test.mjs",
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "apps/ingestion/test/reconciliation-export-and-repair.spec.ts",
+      "apps/ingestion/test/reconciliation-workflow-binding.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "method": "POST",
+    "path": "/v1/dev-deployments",
+    "contract": "platform",
+    "treatment": "dev-only signed workflow identity",
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/dev-deployment.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "scripts/http-contracts.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/entity-proposals",
+    "contract": "legacy",
+    "slice": "Identity and admission",
+    "named_cli": "entity-proposal list",
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/entity-admission.spec.ts",
+      "apps/ingestion/test/game-reconciliation-fences.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/identity-corrections.spec.ts",
+      "apps/ingestion/test/native-no-change-publication.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/reviewed-printing-matches.spec.ts",
+      "apps/ingestion/test/riftbound-admission.spec.ts",
+      "apps/ingestion/test/source-refresh-publication.spec.ts",
+      "cli/entity-proposals.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/entity-proposals",
+    "contract": "legacy",
+    "slice": "Identity and admission",
+    "named_cli": "entity-proposal create",
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/entity-admission.spec.ts",
+      "apps/ingestion/test/game-reconciliation-fences.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/identity-corrections.spec.ts",
+      "apps/ingestion/test/native-no-change-publication.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/reviewed-printing-matches.spec.ts",
+      "apps/ingestion/test/riftbound-admission.spec.ts",
+      "apps/ingestion/test/source-refresh-publication.spec.ts",
+      "cli/entity-proposals.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/entity-proposals/{proposal}",
+    "contract": "legacy",
+    "slice": "Identity and admission",
+    "named_cli": "entity-proposal inspect",
+    "callers": [
+      "apps/ingestion/test/entity-admission.spec.ts",
+      "apps/ingestion/test/game-reconciliation-fences.spec.ts",
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/entity-proposals/{proposal}/decisions",
+    "contract": "legacy",
+    "slice": "Identity and admission",
+    "named_cli": "entity-proposal admit/link/reject/reconsider",
+    "callers": [
+      "apps/ingestion/test/entity-admission.spec.ts",
+      "apps/ingestion/test/game-reconciliation-fences.spec.ts",
+      "apps/ingestion/test/identity-corrections.spec.ts",
+      "apps/ingestion/test/native-no-change-publication.spec.ts",
+      "apps/ingestion/test/reviewed-printing-matches.spec.ts",
+      "apps/ingestion/test/riftbound-admission.spec.ts",
+      "apps/ingestion/test/source-refresh-publication.spec.ts"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/entity-proposals/{proposal}/evidence",
+    "contract": "legacy",
+    "slice": "Identity and admission",
+    "named_cli": null,
+    "callers": []
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "GET",
+    "path": "/v1/evidence-cleanups/{cleanup}",
+    "contract": "legacy",
+    "slice": "Maintenance and runtime operations",
+    "named_cli": "evidenceCleanupStatus",
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "apps/ingestion/test/evidence-cleanup.spec.ts",
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/evidence-cleanups/{cleanup}/advance",
+    "contract": "legacy",
+    "slice": "Maintenance and runtime operations",
+    "named_cli": null,
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "apps/ingestion/test/evidence-cleanup.spec.ts"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "GET",
+    "path": "/v1/evidence-cleanups/{cleanup}/objects",
+    "contract": "legacy",
+    "slice": "Maintenance and runtime operations",
+    "named_cli": "evidenceCleanupObjects",
+    "callers": [
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/evidence-cleanups/{cleanup}/retry",
+    "contract": "legacy",
+    "slice": "Maintenance and runtime operations",
+    "named_cli": "evidenceCleanupRetry",
+    "callers": [
+      "apps/ingestion/test/evidence-cleanup.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/game-candidates",
+    "contract": "legacy",
+    "slice": "Game Candidates",
+    "named_cli": "gameCandidatePrepare",
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/fixtures/reconciliation-capacity-probe.ts",
+      "acceptance/fresh-baseline-owner.test.mjs",
+      "acceptance/game-candidate-cli.test.mjs",
+      "acceptance/helpers/errata-runtime.mjs",
+      "acceptance/helpers/native-catalogue-runtime.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/mixed-game-recovery.test.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/composed-recovery.spec.ts",
+      "apps/ingestion/test/errata-rules-text.spec.ts",
+      "apps/ingestion/test/game-candidate-integrity.spec.ts",
+      "apps/ingestion/test/game-publication-workflow.spec.ts",
+      "apps/ingestion/test/game-publication.spec.ts",
+      "apps/ingestion/test/game-reconciliation-fences.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/game-reconciliation-resources.spec.ts",
+      "apps/ingestion/test/game-reconciliation-scale.stress.spec.ts",
+      "apps/ingestion/test/native-errata-locators.spec.ts",
+      "apps/ingestion/test/native-preparation-fixture.ts",
+      "apps/ingestion/test/native-printing-images-assertions.ts",
+      "apps/ingestion/test/native-publication-helpers.ts",
+      "apps/ingestion/test/publication-preparation.spec.ts",
+      "apps/ingestion/test/reconciliation-card-identity.spec.ts",
+      "apps/ingestion/test/reconciliation-collection-notification.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-lookup.spec.ts",
+      "apps/ingestion/test/reconciliation-product-identity.spec.ts",
+      "apps/ingestion/test/reconciliation-product-release.spec.ts",
+      "apps/ingestion/test/reconciliation-provenance-locators.spec.ts",
+      "apps/ingestion/test/reconciliation-scale.stress.spec.ts",
+      "apps/ingestion/test/reviewed-printing-matches.spec.ts",
+      "apps/ingestion/test/runtime-game-preparation-dispatch.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/{candidate}",
+    "contract": "legacy",
+    "slice": "Game Candidates",
+    "named_cli": "gameCandidate",
+    "callers": [
+      "acceptance/bounded-capacity-pilot.test.mjs",
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/fixtures/reconciliation-capacity-probe.ts",
+      "acceptance/helpers/native-catalogue-runtime.mjs",
+      "acceptance/identity-corrections-cli.test.mjs",
+      "acceptance/publication-preparation.test.mjs",
+      "acceptance/riftbound-bounded-intake.test.mjs",
+      "acceptance/riftbound-catalogue.test.mjs",
+      "apps/ingestion/test/composed-recovery.spec.ts",
+      "apps/ingestion/test/entity-admission.spec.ts",
+      "apps/ingestion/test/game-candidate-integrity.spec.ts",
+      "apps/ingestion/test/game-publication-workflow.spec.ts",
+      "apps/ingestion/test/game-publication.spec.ts",
+      "apps/ingestion/test/game-reconciliation-fences.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/game-reconciliation-resources.spec.ts",
+      "apps/ingestion/test/game-reconciliation-scale.stress.spec.ts",
+      "apps/ingestion/test/identity-corrections.spec.ts",
+      "apps/ingestion/test/native-candidate-helpers.ts",
+      "apps/ingestion/test/native-errata-locators.spec.ts",
+      "apps/ingestion/test/native-printing-images-assertions.ts",
+      "apps/ingestion/test/publication-caller-retirement.spec.ts",
+      "apps/ingestion/test/publication-preparation.spec.ts",
+      "apps/ingestion/test/reconciliation-collection-notification.spec.ts",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-lookup.spec.ts",
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "apps/ingestion/test/reconciliation-input-cursor.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/reconciliation-scale.stress.spec.ts",
+      "apps/ingestion/test/reviewed-printing-matches.spec.ts",
+      "apps/ingestion/test/runtime-game-preparation-dispatch.spec.ts",
+      "apps/ingestion/test/runtime-workflow-collection.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/game-candidates/{candidate}/abandon",
+    "contract": "legacy",
+    "slice": "Game Candidates",
+    "named_cli": "gameCandidateAbandon",
+    "callers": [
+      "apps/ingestion/test/errata-rules-text.spec.ts",
+      "apps/ingestion/test/game-reconciliation-fences.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/native-no-change-publication.spec.ts",
+      "apps/ingestion/test/publication-preparation.spec.ts",
+      "apps/ingestion/test/reconciliation-card-identity.spec.ts",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/reconciliation-export-and-repair.spec.ts",
+      "apps/ingestion/test/reconciliation-provenance-locators.spec.ts",
+      "apps/ingestion/test/runtime-adapter-reparse.spec.ts",
+      "apps/ingestion/test/source-refresh-publication.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/{candidate}/inputs",
+    "contract": "legacy",
+    "slice": "Game Candidates",
+    "named_cli": null,
+    "callers": [
+      "apps/ingestion/test/game-reconciliation-fences.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/{candidate}/inputs/{ordinal}",
+    "contract": "legacy",
+    "slice": "Game Candidates",
+    "named_cli": null,
+    "callers": [
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/{candidate}/inspection",
+    "contract": "legacy",
+    "slice": "Game Candidates",
+    "named_cli": "gameCandidateInspection",
+    "callers": [
+      "acceptance/helpers/native-catalogue-runtime.mjs",
+      "apps/ingestion/test/game-candidate-integrity.spec.ts",
+      "apps/ingestion/test/game-reconciliation-fences.spec.ts",
+      "apps/ingestion/test/native-publication-helpers.ts",
+      "apps/ingestion/test/publication-preparation.spec.ts",
+      "apps/ingestion/test/reconciliation-export-and-repair.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/{candidate}/inspection/evidence/{kind}",
+    "contract": "legacy",
+    "slice": "Game Candidates",
+    "named_cli": "gameCandidateEvidence",
+    "callers": [
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/{candidate}/partitions",
+    "contract": "legacy",
+    "slice": "Game Candidates",
+    "named_cli": "gameCandidatePartitions",
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/helpers/errata-runtime.mjs",
+      "acceptance/publication-preparation.test.mjs",
+      "apps/ingestion/test/game-candidate-integrity.spec.ts",
+      "apps/ingestion/test/game-reconciliation-fences.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/game-reconciliation-resources.spec.ts",
+      "apps/ingestion/test/identity-corrections.spec.ts",
+      "apps/ingestion/test/publication-preparation.spec.ts",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/reconciliation-evidence-volume.stress.spec.ts",
+      "apps/ingestion/test/reconciliation-input-cursor.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/reconciliation-scale.stress.spec.ts",
+      "apps/ingestion/test/reviewed-printing-matches.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/{candidate}/partitions/{ordinal}",
+    "contract": "legacy",
+    "slice": "Game Candidates",
+    "named_cli": "gameCandidatePartition",
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/helpers/errata-runtime.mjs",
+      "acceptance/helpers/native-catalogue-runtime.mjs",
+      "acceptance/publication-preparation.test.mjs",
+      "apps/ingestion/test/game-candidate-integrity.spec.ts",
+      "apps/ingestion/test/game-reconciliation-fences.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/game-reconciliation-resources.spec.ts",
+      "apps/ingestion/test/identity-corrections.spec.ts",
+      "apps/ingestion/test/native-candidate-helpers.ts",
+      "apps/ingestion/test/native-printing-images-assertions.ts",
+      "apps/ingestion/test/reconciliation-evidence-volume.stress.spec.ts",
+      "apps/ingestion/test/reconciliation-input-cursor.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/reviewed-printing-matches.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/{candidate}/partitions/{ordinal}/images/{record}",
+    "contract": "legacy",
+    "slice": "Game Candidates",
+    "named_cli": null,
+    "callers": []
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/game-candidates/{candidate}/pause",
+    "contract": "legacy",
+    "slice": "Game Candidates",
+    "named_cli": null,
+    "callers": [
+      "apps/ingestion/test/game-reconciliation-fences.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/{candidate}/progress",
+    "contract": "legacy",
+    "slice": "Game Candidates",
+    "named_cli": null,
+    "callers": [
+      "apps/ingestion/test/game-reconciliation-fences.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/{candidate}/publication-preparation",
+    "contract": "legacy",
+    "slice": "Publication and preparation",
+    "named_cli": "publicationPreparation",
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/helpers/native-catalogue-runtime.mjs",
+      "acceptance/publication-preparation.test.mjs",
+      "apps/ingestion/test/composed-recovery.spec.ts",
+      "apps/ingestion/test/errata-rules-text.spec.ts",
+      "apps/ingestion/test/game-publication-workflow.spec.ts",
+      "apps/ingestion/test/game-publication.spec.ts",
+      "apps/ingestion/test/game-reconciliation-fences.spec.ts",
+      "apps/ingestion/test/native-errata-locators.spec.ts",
+      "apps/ingestion/test/native-no-change-helpers.ts",
+      "apps/ingestion/test/native-publication-helpers.ts",
+      "apps/ingestion/test/publication-preparation.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/reconciliation-scale-and-recovery.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/game-candidates/{candidate}/publication-preparation",
+    "contract": "legacy",
+    "slice": "Publication and preparation",
+    "named_cli": null,
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/helpers/native-catalogue-runtime.mjs",
+      "acceptance/publication-preparation.test.mjs",
+      "apps/ingestion/test/composed-recovery.spec.ts",
+      "apps/ingestion/test/errata-rules-text.spec.ts",
+      "apps/ingestion/test/game-publication-workflow.spec.ts",
+      "apps/ingestion/test/game-publication.spec.ts",
+      "apps/ingestion/test/game-reconciliation-fences.spec.ts",
+      "apps/ingestion/test/native-errata-locators.spec.ts",
+      "apps/ingestion/test/native-no-change-helpers.ts",
+      "apps/ingestion/test/native-publication-helpers.ts",
+      "apps/ingestion/test/publication-preparation.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/reconciliation-scale-and-recovery.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/{candidate}/publication-preparation/artifacts",
+    "contract": "legacy",
+    "slice": "Publication and preparation",
+    "named_cli": "publicationArtifacts",
+    "callers": [
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/{candidate}/publication-preparation/query",
+    "contract": "legacy",
+    "slice": "Publication and preparation",
+    "named_cli": null,
+    "callers": []
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/game-candidates/{candidate}/publication-preparation/resume",
+    "contract": "legacy",
+    "slice": "Publication and preparation",
+    "named_cli": "publicationResume",
+    "callers": [
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/game-candidates/{candidate}/publication-preparation/start",
+    "contract": "legacy",
+    "slice": "Publication and preparation",
+    "named_cli": "publicationPrepare",
+    "callers": [
+      "apps/ingestion/test/publication-caller-retirement.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/game-candidates/{candidate}/resume",
+    "contract": "legacy",
+    "slice": "Game Candidates",
+    "named_cli": null,
+    "callers": [
+      "apps/ingestion/test/game-reconciliation-fences.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/native-preparation-fixture.ts",
+      "apps/ingestion/test/reconciliation-curated-lookup.spec.ts"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/game-candidates/{candidate}/text/{digest}/{ordinal}",
+    "contract": "legacy",
+    "slice": "Game Candidates",
+    "named_cli": null,
+    "callers": [
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/identity-corrections",
+    "contract": "legacy",
+    "slice": "Identity and admission",
+    "named_cli": "identity-correction list",
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/game-candidate-integrity.spec.ts",
+      "apps/ingestion/test/identity-corrections.spec.ts",
+      "apps/ingestion/test/native-no-change-publication.spec.ts",
+      "cli/identity-corrections.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/identity-corrections",
+    "contract": "legacy",
+    "slice": "Identity and admission",
+    "named_cli": "identity-correction create",
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/game-candidate-integrity.spec.ts",
+      "apps/ingestion/test/identity-corrections.spec.ts",
+      "apps/ingestion/test/native-no-change-publication.spec.ts",
+      "cli/identity-corrections.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/identity-corrections/{correction}",
+    "contract": "legacy",
+    "slice": "Identity and admission",
+    "named_cli": "identity-correction inspect",
+    "callers": [
+      "apps/ingestion/test/identity-corrections.spec.ts",
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/identity-corrections/validate",
+    "contract": "legacy",
+    "slice": "Identity and admission",
+    "named_cli": "identity-correction validate",
+    "callers": [
+      "apps/ingestion/test/game-candidate-integrity.spec.ts",
+      "apps/ingestion/test/identity-corrections.spec.ts",
+      "apps/ingestion/test/native-no-change-publication.spec.ts",
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "ingestion",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/{run}",
+    "contract": "legacy",
+    "slice": "Retained runs",
+    "named_cli": "showRun",
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/helpers/cli-http.mjs",
+      "acceptance/operational-diagnostics-leak.test.mjs",
+      "apps/ingestion/test/errata-rules-text.spec.ts",
+      "apps/ingestion/test/game-candidate-integrity.spec.ts",
+      "apps/ingestion/test/game-reconciliation-fences.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/lifecycle.spec.ts",
+      "apps/ingestion/test/native-candidate-helpers.ts",
+      "apps/ingestion/test/publication-caller-retirement.spec.ts",
+      "apps/ingestion/test/published-run-rebuild.spec.ts",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "apps/ingestion/test/reconciliation-helpers.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/reconciliation-provenance-locators.spec.ts",
+      "apps/ingestion/test/reconciliation-workflow-binding.spec.ts",
+      "apps/ingestion/test/runtime-diagnostics.spec.ts",
+      "apps/ingestion/test/runtime-workflow-collection.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "ingestion",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/{run}/approval",
+    "contract": "legacy",
+    "slice": "Retained runs",
+    "named_cli": null,
+    "callers": [
+      "apps/ingestion/test/historical-publication-fixture.ts",
+      "apps/ingestion/test/lifecycle.spec.ts",
+      "apps/ingestion/test/publication-caller-retirement.spec.ts",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/reconciliation-scale-and-recovery.spec.ts",
+      "apps/ingestion/test/reconciliation-workflow-binding.spec.ts",
+      "apps/ingestion/test/runtime-capacity-pause.spec.ts",
+      "apps/ingestion/test/runtime-collection-termination.spec.ts"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "ingestion",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/{run}/candidate",
+    "contract": "legacy",
+    "slice": "Retained runs",
+    "named_cli": "inspectCandidate",
+    "callers": [
+      "apps/ingestion/test/curated-revisions.spec.ts",
+      "apps/ingestion/test/historical-publication-fixture.ts",
+      "apps/ingestion/test/published-run-rebuild.spec.ts",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/runtime-capacity-pause.spec.ts",
+      "apps/ingestion/test/runtime-diagnostics.spec.ts",
+      "apps/ingestion/test/runtime-workflow-collection.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/{run}/capacity/extension",
+    "contract": "legacy",
+    "slice": "Sources and collection",
+    "named_cli": "source capacity extend",
+    "callers": [
+      "apps/ingestion/test/runtime-capacity-extension.spec.ts",
+      "apps/ingestion/test/runtime-capacity-resume.spec.ts",
+      "apps/ingestion/test/runtime-capacity-resume.stress.spec.ts",
+      "apps/ingestion/test/runtime-collection-termination.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/{run}/collection/pause",
+    "contract": "legacy",
+    "slice": "Sources and collection",
+    "named_cli": "pauseEvidenceCollection",
+    "callers": [
+      "apps/ingestion/test/runtime-collection-resume.spec.ts",
+      "apps/ingestion/test/runtime-owner-pause.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/{run}/collection/resume",
+    "contract": "legacy",
+    "slice": "Sources and collection",
+    "named_cli": "resumeEvidenceCollection",
+    "callers": [
+      "acceptance/operational-diagnostics-leak.test.mjs",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/runtime-adapter-reparse.spec.ts",
+      "apps/ingestion/test/runtime-capacity-resume.spec.ts",
+      "apps/ingestion/test/runtime-capacity-resume.stress.spec.ts",
+      "apps/ingestion/test/runtime-capture-failures.spec.ts",
+      "apps/ingestion/test/runtime-collection-batch-replay.spec.ts",
+      "apps/ingestion/test/runtime-collection-completion.stress.spec.ts",
+      "apps/ingestion/test/runtime-collection-inspection.spec.ts",
+      "apps/ingestion/test/runtime-collection-resume.spec.ts",
+      "apps/ingestion/test/runtime-collection-termination.spec.ts",
+      "apps/ingestion/test/runtime-discovery-scale.stress.spec.ts",
+      "apps/ingestion/test/runtime-game-preparation-dispatch.spec.ts",
+      "apps/ingestion/test/runtime-helpers.ts",
+      "apps/ingestion/test/runtime-image-failures.spec.ts",
+      "apps/ingestion/test/runtime-owner-pause.spec.ts",
+      "apps/ingestion/test/runtime-retry-pause.spec.ts",
+      "apps/ingestion/test/runtime-synthetic-transport.spec.ts",
+      "apps/ingestion/test/runtime-workflow-collection.spec.ts",
+      "apps/ingestion/test/runtime-workflow-recovery.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/{run}/collection/retry",
+    "contract": "legacy",
+    "slice": "Sources and collection",
+    "named_cli": "retryEvidenceCollection",
+    "callers": [
+      "apps/ingestion/test/reconciliation-provenance-locators.spec.ts",
+      "apps/ingestion/test/reconciliation-scale-and-recovery.spec.ts",
+      "apps/ingestion/test/runtime-capacity-pause.spec.ts",
+      "apps/ingestion/test/runtime-diagnostics.spec.ts",
+      "apps/ingestion/test/runtime-workflow-collection.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/{run}/collection/termination",
+    "contract": "legacy",
+    "slice": "Sources and collection",
+    "named_cli": "terminateEvidenceCollection",
+    "callers": [
+      "acceptance/operational-diagnostics-leak.test.mjs",
+      "apps/ingestion/test/runtime-collection-termination.spec.ts",
+      "apps/ingestion/test/runtime-owner-pause.spec.ts",
+      "apps/ingestion/test/runtime-workflow-collection.spec.ts",
+      "apps/ingestion/test/runtime-workflow-recovery.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/{run}/evidence",
+    "contract": "legacy",
+    "slice": "Sources and collection",
+    "named_cli": "showSourceEvidence",
+    "callers": [
+      "acceptance/digimon-catalogue.test.mjs",
+      "acceptance/helpers/acceptance-runtime.mjs",
+      "acceptance/helpers/errata-runtime.mjs",
+      "acceptance/helpers/native-catalogue-runtime.mjs",
+      "acceptance/mixed-game-recovery.test.mjs",
+      "acceptance/one-piece-two-source.test.mjs",
+      "acceptance/riftbound-catalogue.test.mjs",
+      "acceptance/shared-game-profiles.test.mjs",
+      "acceptance/source-evidence-cli.test.mjs",
+      "apps/ingestion/test/game-reconciliation-fences.spec.ts",
+      "apps/ingestion/test/native-semantic-receipts.spec.ts",
+      "apps/ingestion/test/publication-caller-retirement.spec.ts",
+      "apps/ingestion/test/reconciliation-provenance-locators.spec.ts",
+      "apps/ingestion/test/runtime-game-preparation-dispatch.spec.ts",
+      "apps/ingestion/test/runtime-helpers.ts",
+      "apps/ingestion/test/runtime-workflow-collection.spec.ts",
+      "apps/ingestion/test/source-refresh-publication.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/{run}/evidence-cleanup",
+    "contract": "legacy",
+    "slice": "Maintenance and runtime operations",
+    "named_cli": "evidenceCleanupStart",
+    "callers": [
+      "apps/ingestion/test/evidence-cleanup.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/{run}/game-candidates",
+    "contract": "legacy",
+    "slice": "Game Candidates",
+    "named_cli": "collectionGameCandidates",
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/helpers/errata-runtime.mjs",
+      "acceptance/helpers/native-catalogue-runtime.mjs",
+      "acceptance/mixed-game-recovery.test.mjs",
+      "acceptance/one-piece-two-source.test.mjs",
+      "acceptance/publication-preparation.test.mjs",
+      "acceptance/riftbound-bounded-intake.test.mjs",
+      "acceptance/riftbound-catalogue.test.mjs",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/runtime-workflow-collection.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "ingestion",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/{run}/publication-cleanup",
+    "contract": "legacy",
+    "slice": "Retained runs",
+    "named_cli": "cleanupRun",
+    "callers": [
+      "apps/ingestion/test/lifecycle.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/{run}/reconciliation",
+    "contract": "legacy",
+    "slice": "Retained runs",
+    "named_cli": "reconciliationStatus",
+    "callers": [
+      "apps/ingestion/test/entity-admission.spec.ts",
+      "apps/ingestion/test/errata-rules-text.spec.ts",
+      "apps/ingestion/test/game-candidate-integrity.spec.ts",
+      "apps/ingestion/test/identity-corrections.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
+      "apps/ingestion/test/reconciliation-evidence-volume.stress.spec.ts",
+      "apps/ingestion/test/reconciliation-helpers.ts",
+      "apps/ingestion/test/reconciliation-input-cursor.spec.ts",
+      "apps/ingestion/test/reconciliation-prior-state-cursor.spec.ts",
+      "apps/ingestion/test/reconciliation-product-cursor.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/reconciliation-shards.spec.ts",
+      "apps/ingestion/test/reconciliation-workflow-binding.spec.ts",
+      "apps/ingestion/test/runtime-capacity-pause.spec.ts",
+      "apps/ingestion/test/runtime-collection-termination.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/{run}/reconciliation",
+    "contract": "legacy",
+    "slice": "Retained runs",
+    "named_cli": "reconcileRun",
+    "callers": [
+      "apps/ingestion/test/entity-admission.spec.ts",
+      "apps/ingestion/test/errata-rules-text.spec.ts",
+      "apps/ingestion/test/game-candidate-integrity.spec.ts",
+      "apps/ingestion/test/identity-corrections.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
+      "apps/ingestion/test/reconciliation-evidence-volume.stress.spec.ts",
+      "apps/ingestion/test/reconciliation-helpers.ts",
+      "apps/ingestion/test/reconciliation-input-cursor.spec.ts",
+      "apps/ingestion/test/reconciliation-prior-state-cursor.spec.ts",
+      "apps/ingestion/test/reconciliation-product-cursor.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/reconciliation-shards.spec.ts",
+      "apps/ingestion/test/reconciliation-workflow-binding.spec.ts",
+      "apps/ingestion/test/runtime-capacity-pause.spec.ts",
+      "apps/ingestion/test/runtime-collection-termination.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/{run}/reconciliation/abandon",
+    "contract": "legacy",
+    "slice": "Retained runs",
+    "named_cli": "reconciliation-abandon",
+    "callers": [
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/{run}/reconciliation/inputs",
+    "contract": "legacy",
+    "slice": "Retained runs",
+    "named_cli": "reconciliationInputs",
+    "callers": [
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/{run}/reconciliation/inputs/{ordinal}",
+    "contract": "legacy",
+    "slice": "Retained runs",
+    "named_cli": "reconciliationInput",
+    "callers": [
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/{run}/reconciliation/partitions",
+    "contract": "legacy",
+    "slice": "Retained runs",
+    "named_cli": "reconciliationPartitions",
+    "callers": [
+      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
+      "apps/ingestion/test/reconciliation-input-cursor.spec.ts",
+      "apps/ingestion/test/reconciliation-prior-state-cursor.spec.ts",
+      "apps/ingestion/test/reconciliation-product-cursor.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/{run}/reconciliation/partitions/{ordinal}",
+    "contract": "legacy",
+    "slice": "Retained runs",
+    "named_cli": "reconciliationPartition",
+    "callers": [
+      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
+      "apps/ingestion/test/reconciliation-input-cursor.spec.ts",
+      "apps/ingestion/test/reconciliation-prior-state-cursor.spec.ts",
+      "apps/ingestion/test/reconciliation-product-cursor.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/{run}/reconciliation/pause",
+    "contract": "legacy",
+    "slice": "Retained runs",
+    "named_cli": "reconciliation-pause",
+    "callers": [
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/{run}/reconciliation/resume",
+    "contract": "legacy",
+    "slice": "Retained runs",
+    "named_cli": "reconciliation-resume",
+    "callers": [
+      "apps/ingestion/test/reconciliation-input-cursor.spec.ts",
+      "apps/ingestion/test/reconciliation-prior-state-cursor.spec.ts",
+      "apps/ingestion/test/reconciliation-product-cursor.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/{run}/reconciliation/text/{digest}/{ordinal}",
+    "contract": "legacy",
+    "slice": "Retained runs",
+    "named_cli": "reconciliationText",
+    "callers": [
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "ingestion",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/{run}/rejection",
+    "contract": "legacy",
+    "slice": "Retained runs",
+    "named_cli": "rejectRun",
+    "callers": [
+      "apps/ingestion/test/curated-revisions.spec.ts",
+      "apps/ingestion/test/errata-rules-text.spec.ts",
+      "apps/ingestion/test/game-candidate-integrity.spec.ts",
+      "apps/ingestion/test/lifecycle.spec.ts",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/reconciliation-provenance-locators.spec.ts",
+      "apps/ingestion/test/reconciliation-scale-and-recovery.spec.ts",
+      "apps/ingestion/test/reconciliation-workflow-binding.spec.ts",
+      "apps/ingestion/test/runtime-capacity-pause.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "ingestion",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/{run}/retry",
+    "contract": "legacy",
+    "slice": "Retained runs",
+    "named_cli": "retryRun",
+    "callers": [
+      "apps/ingestion/test/curated-revisions.spec.ts",
+      "apps/ingestion/test/errata-rules-text.spec.ts",
+      "apps/ingestion/test/game-candidate-integrity.spec.ts",
+      "apps/ingestion/test/lifecycle.spec.ts",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/reconciliation-provenance-locators.spec.ts",
+      "apps/ingestion/test/runtime-capacity-pause.spec.ts",
+      "apps/ingestion/test/runtime-collection-termination.spec.ts",
+      "apps/ingestion/test/runtime-diagnostics.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/ingestion-runs/evidence",
+    "contract": "legacy",
+    "slice": "Sources and collection",
+    "named_cli": "source collect",
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/fixtures/native-retained-evidence-harness.ts",
+      "acceptance/fixtures/retained-evidence-base-harness.ts",
+      "acceptance/helpers/cli-http.mjs",
+      "acceptance/operational-diagnostics-leak.test.mjs",
+      "apps/ingestion/test/capacity-pause-helpers.ts",
+      "apps/ingestion/test/errata-rules-text.spec.ts",
+      "apps/ingestion/test/game-candidate-integrity.spec.ts",
+      "apps/ingestion/test/game-reconciliation-fences.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/lifecycle.spec.ts",
+      "apps/ingestion/test/native-candidate-helpers.ts",
+      "apps/ingestion/test/one-piece-two-source.spec.ts",
+      "apps/ingestion/test/publication-caller-retirement.spec.ts",
+      "apps/ingestion/test/published-run-rebuild.spec.ts",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "apps/ingestion/test/reconciliation-helpers.ts",
+      "apps/ingestion/test/reconciliation-product-release.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/reconciliation-provenance-locators.spec.ts",
+      "apps/ingestion/test/reconciliation-scale-and-recovery.spec.ts",
+      "apps/ingestion/test/reconciliation-workflow-binding.spec.ts",
+      "apps/ingestion/test/runtime-adapter-reparse.spec.ts",
+      "apps/ingestion/test/runtime-capacity-pause.spec.ts",
+      "apps/ingestion/test/runtime-capture-failures.spec.ts",
+      "apps/ingestion/test/runtime-diagnostics.spec.ts",
+      "apps/ingestion/test/runtime-discovery-scale.stress.spec.ts",
+      "apps/ingestion/test/runtime-synthetic-transport.spec.ts",
+      "apps/ingestion/test/runtime-workflow-collection.spec.ts",
+      "apps/ingestion/test/source-authority.spec.ts",
+      "apps/ingestion/test/source-refresh.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "ingestion",
+    "method": "POST",
+    "path": "/v1/production-releases",
+    "contract": "legacy",
+    "slice": "Maintenance and runtime operations",
+    "named_cli": "release production",
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/production-release-cli.test.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/production-release-bootstrap.spec.ts",
+      "apps/ingestion/test/production-release-preparation.spec.ts",
+      "cli/production-release.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/publication-compositions",
+    "contract": "legacy",
+    "slice": "Publication and preparation",
+    "named_cli": null,
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/game-publication.spec.ts",
+      "apps/ingestion/test/publication-preparation.spec.ts"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/publications",
+    "contract": "legacy",
+    "slice": "Publication and preparation",
+    "named_cli": null,
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/errata-runtime.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/native-capacity-metrics.test.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/composed-recovery.spec.ts",
+      "apps/ingestion/test/errata-rules-text.spec.ts",
+      "apps/ingestion/test/game-publication-workflow.spec.ts",
+      "apps/ingestion/test/game-publication.spec.ts",
+      "apps/ingestion/test/native-errata-locators.spec.ts",
+      "apps/ingestion/test/native-no-change-helpers.ts",
+      "apps/ingestion/test/native-no-change-publication.spec.ts",
+      "apps/ingestion/test/native-printing-images-assertions.ts",
+      "apps/ingestion/test/publication-caller-retirement.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/reconciliation-scale-and-recovery.spec.ts"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/publications/{publication}",
+    "contract": "generated",
+    "slice": "Publication and preparation",
+    "named_cli": "publicationStatus",
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/errata-runtime.test.mjs",
+      "acceptance/helpers/native-catalogue-runtime.mjs",
+      "acceptance/publication-preparation.test.mjs",
+      "acceptance/riftbound-catalogue.test.mjs",
+      "apps/ingestion/test/composed-recovery.spec.ts",
+      "apps/ingestion/test/game-publication-workflow.spec.ts",
+      "apps/ingestion/test/game-publication.spec.ts",
+      "apps/ingestion/test/hono-contract.spec.ts",
+      "apps/ingestion/test/native-publication-helpers.ts",
+      "apps/ingestion/test/publication-caller-retirement.spec.ts",
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/publications/{publication}/advance",
+    "contract": "legacy",
+    "slice": "Publication and preparation",
+    "named_cli": null,
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "apps/ingestion/test/composed-recovery.spec.ts",
+      "apps/ingestion/test/game-publication-workflow.spec.ts",
+      "apps/ingestion/test/game-publication.spec.ts",
+      "apps/ingestion/test/native-errata-locators.spec.ts",
+      "apps/ingestion/test/native-no-change-publication.spec.ts",
+      "apps/ingestion/test/native-printing-images-assertions.ts",
+      "apps/ingestion/test/publication-caller-retirement.spec.ts"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "ingestion",
+    "method": "POST",
+    "path": "/v1/publications/{publication}/export-preparation/advance",
+    "contract": "legacy",
+    "slice": "Publication and preparation",
+    "named_cli": null,
+    "callers": [
+      "apps/ingestion/test/composed-recovery.spec.ts",
+      "apps/ingestion/test/game-publication-workflow.spec.ts",
+      "apps/ingestion/test/game-publication.spec.ts",
+      "apps/ingestion/test/native-errata-locators.spec.ts",
+      "apps/ingestion/test/publication-caller-retirement.spec.ts"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/publications/{publication}/resume",
+    "contract": "legacy",
+    "slice": "Publication and preparation",
+    "named_cli": "publicationOperationResume",
+    "callers": [
+      "apps/ingestion/test/game-publication.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/publications/start",
+    "contract": "generated",
+    "slice": "Publication and preparation",
+    "named_cli": "publicationStart",
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/errata-runtime.test.mjs",
+      "acceptance/helpers/native-catalogue-runtime.mjs",
+      "acceptance/publication-preparation.test.mjs",
+      "acceptance/riftbound-catalogue.test.mjs",
+      "apps/ingestion/test/composed-recovery.spec.ts",
+      "apps/ingestion/test/game-publication-workflow.spec.ts",
+      "apps/ingestion/test/game-publication.spec.ts",
+      "apps/ingestion/test/hono-contract.spec.ts",
+      "apps/ingestion/test/native-publication-helpers.ts",
+      "apps/ingestion/test/publication-caller-retirement.spec.ts",
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/reconciliation-operations/{preparation}/evidence-cleanup",
+    "contract": "legacy",
+    "slice": "Maintenance and runtime operations",
+    "named_cli": "stagingCleanupStart",
+    "callers": [
+      "apps/ingestion/test/evidence-cleanup.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/reconciliation/identities/{identity}",
+    "contract": "legacy",
+    "slice": "Identity and admission",
+    "named_cli": "identityInspect",
+    "callers": [
+      "apps/ingestion/test/entity-admission.spec.ts",
+      "apps/ingestion/test/game-candidate-integrity.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/identity-corrections.spec.ts",
+      "apps/ingestion/test/reconciliation-card-identity.spec.ts",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/runtime-workflow-collection.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/reconciliation/identity-reviews",
+    "contract": "legacy",
+    "slice": "Identity and admission",
+    "named_cli": "identityReviews",
+    "callers": [
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/reconciliation-card-identity.spec.ts",
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "POST",
+    "path": "/v1/reconciliation/identity-reviews/{review}/resolve",
+    "contract": "legacy",
+    "slice": "Identity and admission",
+    "named_cli": "identityResolve",
+    "callers": [
+      "apps/ingestion/test/reconciliation-card-identity.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "reconciliation",
+    "method": "GET",
+    "path": "/v1/reconciliation/printings/{printing}",
+    "contract": "legacy",
+    "slice": "Identity and admission",
+    "named_cli": null,
+    "callers": [
+      "apps/ingestion/test/errata-rules-text.spec.ts",
+      "apps/ingestion/test/reconciliation-card-identity.spec.ts",
+      "apps/ingestion/test/reconciliation-export-and-repair.spec.ts",
+      "apps/ingestion/test/reconciliation-prior-state-cursor.spec.ts",
+      "apps/ingestion/test/reconciliation-provenance-locators.spec.ts",
+      "apps/ingestion/test/reconciliation-workflow-binding.spec.ts",
+      "apps/ingestion/test/source-refresh-publication.spec.ts"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "backup-recovery",
+    "method": "POST",
+    "path": "/v1/recoveries",
+    "contract": "legacy",
+    "slice": "Backup and recovery",
+    "named_cli": "beginRecovery",
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/ingestion-cli.test.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "backup-recovery",
+    "method": "GET",
+    "path": "/v1/recoveries/{recovery}",
+    "contract": "legacy",
+    "slice": "Backup and recovery",
+    "named_cli": "inspectRecovery",
+    "callers": [
+      "acceptance/helpers/cli-http.mjs",
+      "acceptance/ingestion-cli.test.mjs",
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "backup-recovery",
+    "method": "POST",
+    "path": "/v1/recoveries/{recovery}/acceptance",
+    "contract": "legacy",
+    "slice": "Backup and recovery",
+    "named_cli": "acceptRecovery",
+    "callers": [
+      "acceptance/ingestion-cli.test.mjs",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "backup-recovery",
+    "method": "POST",
+    "path": "/v1/recoveries/{recovery}/verification",
+    "contract": "legacy",
+    "slice": "Backup and recovery",
+    "named_cli": "verifyRecovery",
+    "callers": [
+      "acceptance/ingestion-cli.test.mjs",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "GET",
+    "path": "/v1/source-authorities",
+    "contract": "legacy",
+    "slice": "Sources and collection",
+    "named_cli": "sourceAuthorities",
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/entity-admission.spec.ts",
+      "apps/ingestion/test/game-reconciliation-fences.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/reconciliation-card-identity.spec.ts",
+      "apps/ingestion/test/reviewed-printing-matches.spec.ts",
+      "apps/ingestion/test/source-authority.spec.ts",
+      "apps/ingestion/test/source-refresh.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/source-authorities",
+    "contract": "legacy",
+    "slice": "Sources and collection",
+    "named_cli": "selectSourceAuthority",
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/entity-admission.spec.ts",
+      "apps/ingestion/test/game-reconciliation-fences.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/reconciliation-card-identity.spec.ts",
+      "apps/ingestion/test/reviewed-printing-matches.spec.ts",
+      "apps/ingestion/test/source-authority.spec.ts",
+      "apps/ingestion/test/source-refresh.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "GET",
+    "path": "/v1/source-lineages/{lineage}/lifecycle",
+    "contract": "legacy",
+    "slice": "Sources and collection",
+    "named_cli": "sourceLifecycle",
+    "callers": [
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/source-lineages/{lineage}/lifecycle",
+    "contract": "legacy",
+    "slice": "Sources and collection",
+    "named_cli": "decideSourceLifecycle",
+    "callers": [
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "GET",
+    "path": "/v1/source-observation-sets/{observationSet}/content",
+    "contract": "legacy",
+    "slice": "Sources and collection",
+    "named_cli": null,
+    "callers": [
+      "acceptance/digimon-catalogue.test.mjs",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/runtime-workflow-collection.spec.ts"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/source-observation-sets/{observationSet}/records",
+    "contract": "legacy",
+    "slice": "Sources and collection",
+    "named_cli": null,
+    "callers": []
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "GET",
+    "path": "/v1/source-registry",
+    "contract": "legacy",
+    "slice": "Sources and collection",
+    "named_cli": "sourceRegistry",
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/source-authority.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "GET",
+    "path": "/v1/source-snapshots/{snapshot}/content",
+    "contract": "legacy",
+    "slice": "Sources and collection",
+    "named_cli": null,
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/runtime-workflow-collection.spec.ts"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "POST",
+    "path": "/v1/source-snapshots/{snapshot}/observations",
+    "contract": "legacy",
+    "slice": "Sources and collection",
+    "named_cli": "reparseSourceSnapshot",
+    "callers": [
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/runtime-adapter-reparse.spec.ts",
+      "apps/ingestion/test/runtime-storage-recovery.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "ingestion",
+    "method": "GET",
+    "path": "/v1/status",
+    "contract": "legacy",
+    "slice": "Maintenance and runtime operations",
+    "named_cli": "status",
+    "callers": [
+      "acceptance/cli-transport.test.mjs",
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/curated-revisions-cli.test.mjs",
+      "acceptance/environment-cli.test.mjs",
+      "acceptance/fixtures/combined-card-keepr-runtime.ts",
+      "acceptance/helpers/cli-http.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/ingestion-cli.test.mjs",
+      "acceptance/native-request-pacing.test.mjs",
+      "acceptance/operational-diagnostics-leak.test.mjs",
+      "acceptance/production-release-cli.test.mjs",
+      "acceptance/riftbound-catalogue.test.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/lifecycle.spec.ts",
+      "apps/ingestion/test/production-release-bootstrap.spec.ts",
+      "apps/ingestion/test/production-release-preparation.spec.ts",
+      "apps/ingestion/test/protected-failures.spec.ts",
+      "apps/ingestion/test/published-run-rebuild.spec.ts",
+      "apps/ingestion/test/reconciliation-product-identity.spec.ts",
+      "apps/ingestion/test/reconciliation-provenance-locators.spec.ts",
+      "apps/ingestion/test/reconciliation-scale-and-recovery.spec.ts",
+      "apps/ingestion/test/reconciliation-workflow-binding.spec.ts",
+      "apps/ingestion/test/runtime-diagnostics.spec.ts",
+      "apps/ingestion/test/runtime-health.spec.ts",
+      "apps/ingestion/test/runtime-public-mount.spec.ts",
+      "cli/curated-revisions.mjs",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "read",
+    "method": "OPTIONS",
+    "path": "/*",
+    "contract": "platform",
+    "treatment": "consumer-CORS-preflight"
+  },
+  {
+    "worker": "read",
+    "method": "GET",
+    "path": "/health",
+    "contract": "platform",
+    "treatment": "authenticated-readiness",
+    "callers": [
+      "acceptance/bounded-capacity-pilot.test.mjs",
+      "acceptance/catalogue-publication.test.mjs",
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/curated-revision-source-changes.test.mjs",
+      "acceptance/dev-deployment.test.mjs",
+      "acceptance/digimon-catalogue.test.mjs",
+      "acceptance/entity-admission.test.mjs",
+      "acceptance/errata-authority-runtime.test.mjs",
+      "acceptance/errata-runtime.test.mjs",
+      "acceptance/fixtures/native-combined-card-keepr-runtime.ts",
+      "acceptance/fresh-baseline-owner.test.mjs",
+      "acceptance/fusion-world-catalogue.test.mjs",
+      "acceptance/gundam-catalogue.test.mjs",
+      "acceptance/identity-corrections-cli.test.mjs",
+      "acceptance/mixed-game-recovery.test.mjs",
+      "acceptance/official-source-adapter-cli-failures.test.mjs",
+      "acceptance/one-piece-catalogue.test.mjs",
+      "acceptance/one-piece-two-source.test.mjs",
+      "acceptance/operational-diagnostics-leak.test.mjs",
+      "acceptance/product-catalogue.test.mjs",
+      "acceptance/production-release-smoke.test.mjs",
+      "acceptance/publication-preparation.test.mjs",
+      "acceptance/riftbound-bounded-intake.test.mjs",
+      "acceptance/riftbound-catalogue.test.mjs",
+      "acceptance/runtime-health.test.mjs",
+      "acceptance/shared-game-profiles.test.mjs",
+      "acceptance/source-evidence-cli.test.mjs",
+      "apps/api/test/bearer-authentication.spec.ts",
+      "apps/api/test/health.spec.ts",
+      "apps/api/test/public-mount.spec.ts",
+      "apps/api/test/runtime.spec.ts",
+      "apps/ingestion/test/lifecycle.spec.ts",
+      "apps/ingestion/test/runtime-diagnostics.spec.ts",
+      "apps/ingestion/test/runtime-health.spec.ts",
+      "apps/ingestion/test/runtime-public-mount.spec.ts",
+      "cli/keepr.mjs",
+      "scripts/http-contracts.mjs",
+      "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "read",
+    "method": "GET",
+    "path": "/healthz",
+    "contract": "platform",
+    "treatment": "unauthenticated-liveness",
+    "callers": [
+      "acceptance/operational-diagnostics-leak.test.mjs",
+      "acceptance/production-release-smoke.test.mjs",
+      "acceptance/runtime-health.test.mjs",
+      "apps/api/test/health.spec.ts",
+      "apps/api/test/runtime.spec.ts",
+      "apps/ingestion/test/runtime-health.spec.ts",
+      "scripts/http-contracts.mjs",
+      "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "read",
+    "method": "HEAD",
+    "path": "/healthz",
+    "contract": "platform",
+    "treatment": "unauthenticated-liveness",
+    "callers": [
+      "acceptance/operational-diagnostics-leak.test.mjs",
+      "acceptance/production-release-smoke.test.mjs",
+      "acceptance/runtime-health.test.mjs",
+      "apps/api/test/health.spec.ts",
+      "apps/api/test/runtime.spec.ts",
+      "apps/ingestion/test/runtime-health.spec.ts",
+      "scripts/http-contracts.mjs",
+      "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/cards",
+    "contract": "generated",
+    "slice": "Catalogue reads",
+    "named_cli": "cards search",
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/digimon-catalogue.test.mjs",
+      "acceptance/errata-runtime.test.mjs",
+      "acceptance/fusion-world-catalogue.test.mjs",
+      "acceptance/gundam-catalogue.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/ingestion-cli.test.mjs",
+      "acceptance/one-piece-two-source.test.mjs",
+      "acceptance/product-catalogue.test.mjs",
+      "acceptance/production-release-smoke.test.mjs",
+      "acceptance/publication-preparation.test.mjs",
+      "acceptance/shared-game-profiles.test.mjs",
+      "apps/api/test/card-attribute-backfill.spec.ts",
+      "apps/api/test/card-content.spec.ts",
+      "apps/api/test/card-filters.spec.ts",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/api/test/hono-contract.spec.ts",
+      "apps/api/test/product-release.spec.ts",
+      "apps/api/test/public-mount.spec.ts",
+      "apps/api/test/runtime.spec.ts",
+      "apps/api/test/short-card-search.spec.ts",
+      "apps/ingestion/test/game-publication.spec.ts",
+      "apps/ingestion/test/native-no-change-helpers.ts",
+      "apps/ingestion/test/reconciliation-scale.stress.spec.ts",
+      "scripts/http-contracts.mjs",
+      "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/cards/{card}",
+    "contract": "legacy",
+    "slice": "Catalogue reads",
+    "named_cli": null,
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/digimon-catalogue.test.mjs",
+      "acceptance/entity-admission.test.mjs",
+      "acceptance/errata-runtime.test.mjs",
+      "acceptance/gundam-catalogue.test.mjs",
+      "acceptance/identity-corrections-cli.test.mjs",
+      "acceptance/mixed-game-recovery.test.mjs",
+      "acceptance/one-piece-catalogue.test.mjs",
+      "acceptance/one-piece-two-source.test.mjs",
+      "acceptance/publication-preparation.test.mjs",
+      "acceptance/riftbound-catalogue.test.mjs",
+      "acceptance/shared-game-profiles.test.mjs",
+      "apps/api/test/api-fixtures.ts",
+      "apps/api/test/product-release.spec.ts",
+      "apps/api/test/public-mount.spec.ts",
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/catalogue",
+    "contract": "legacy",
+    "slice": "Catalogue reads",
+    "named_cli": null,
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/dev-deployment.test.mjs",
+      "acceptance/fresh-baseline-owner.test.mjs",
+      "acceptance/fusion-world-catalogue.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/operational-diagnostics-leak.test.mjs",
+      "acceptance/product-catalogue.test.mjs",
+      "acceptance/production-release-smoke.test.mjs",
+      "acceptance/runtime-health.test.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/api/test/health.spec.ts",
+      "apps/api/test/product-release.spec.ts",
+      "apps/api/test/protected-failures.spec.ts",
+      "apps/api/test/public-mount.spec.ts",
+      "apps/api/test/runtime.spec.ts",
+      "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/catalogue-exports",
+    "contract": "legacy",
+    "slice": "Catalogue reads",
+    "named_cli": null,
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/publication-preparation.test.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/api/test/public-mount.spec.ts",
+      "apps/api/test/runtime.spec.ts"
+    ]
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/catalogue-exports/{revision}",
+    "contract": "legacy",
+    "slice": "Catalogue reads",
+    "named_cli": null,
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/digimon-catalogue.test.mjs",
+      "acceptance/errata-runtime.test.mjs",
+      "acceptance/gundam-catalogue.test.mjs",
+      "acceptance/helpers/native-catalogue-runtime.mjs",
+      "acceptance/mixed-game-recovery.test.mjs",
+      "acceptance/one-piece-two-source.test.mjs",
+      "acceptance/publication-preparation.test.mjs",
+      "apps/api/test/public-mount.spec.ts",
+      "apps/api/test/runtime.spec.ts",
+      "apps/ingestion/test/game-publication.spec.ts",
+      "apps/ingestion/test/native-printing-images-assertions.ts",
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "apps/ingestion/test/reconciliation-helpers.ts",
+      "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/catalogue-exports/{revision}/components/{component}",
+    "contract": "legacy",
+    "slice": "Catalogue reads",
+    "named_cli": null,
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/fixtures/catalogue-runtime-harness.mjs",
+      "apps/ingestion/test/reconciliation-helpers.ts",
+      "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "HEAD",
+    "path": "/v1/catalogue-exports/{revision}/components/{component}",
+    "contract": "legacy",
+    "slice": "Catalogue reads",
+    "named_cli": null,
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/fixtures/catalogue-runtime-harness.mjs",
+      "apps/ingestion/test/reconciliation-helpers.ts",
+      "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/printing-images/{image}/content",
+    "contract": "generated",
+    "slice": "Catalogue reads",
+    "named_cli": null,
+    "callers": [
+      "acceptance/bounded-capacity-pilot.test.mjs",
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/publication-preparation.test.mjs",
+      "apps/api/test/product-release.spec.ts",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "HEAD",
+    "path": "/v1/printing-images/{image}/content",
+    "contract": "generated",
+    "slice": "Catalogue reads",
+    "named_cli": null,
+    "callers": [
+      "acceptance/bounded-capacity-pilot.test.mjs",
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/publication-preparation.test.mjs",
+      "apps/api/test/product-release.spec.ts",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/printings",
+    "contract": "legacy",
+    "slice": "Catalogue reads",
+    "named_cli": null,
+    "callers": [
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/fusion-world-catalogue.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/production-release-smoke.test.mjs",
+      "acceptance/publication-preparation.test.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/api/test/printing-query-backfill.spec.ts",
+      "apps/api/test/printing-query.spec.ts",
+      "apps/api/test/product-release.spec.ts",
+      "apps/api/test/public-mount.spec.ts",
+      "apps/api/test/runtime.spec.ts",
+      "apps/ingestion/test/reconciliation-product-release.spec.ts",
+      "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/printings/{printing}",
+    "contract": "legacy",
+    "slice": "Catalogue reads",
+    "named_cli": null,
+    "callers": [
+      "acceptance/bounded-capacity-pilot.test.mjs",
+      "acceptance/composed-recovery.test.mjs",
+      "acceptance/errata-runtime.test.mjs",
+      "acceptance/gundam-catalogue.test.mjs",
+      "acceptance/identity-corrections-cli.test.mjs",
+      "acceptance/one-piece-catalogue.test.mjs",
+      "acceptance/one-piece-two-source.test.mjs",
+      "acceptance/product-catalogue.test.mjs",
+      "acceptance/riftbound-catalogue.test.mjs",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/products",
+    "contract": "legacy",
+    "slice": "Catalogue reads",
+    "named_cli": null,
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/fusion-world-catalogue.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/api/test/product-release.spec.ts",
+      "apps/api/test/public-mount.spec.ts"
+    ]
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/products/{product}",
+    "contract": "legacy",
+    "slice": "Catalogue reads",
+    "named_cli": null,
+    "callers": [
+      "acceptance/product-catalogue.test.mjs",
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "apps/ingestion/test/reconciliation-product-identity.spec.ts",
+      "apps/ingestion/test/reconciliation-product-release.spec.ts"
+    ]
+  }
+]

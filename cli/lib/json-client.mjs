@@ -1,3 +1,4 @@
+import { administrationPresentation } from "../../src/http/administration-presentation.mjs";
 import { exitCodeForStatus, runtimeUrl } from "../command-support.mjs";
 import { request } from "./http-client.mjs";
 
@@ -29,7 +30,7 @@ export async function requestDocument(
       method,
       headers: {
         authorization: `Bearer ${key}`,
-        ...(present ? { accept: "application/vnd.card-keepr.cli+json" } : {}),
+        accept: "application/json",
         ...(body === undefined ? {} : { "content-type": "application/json" }),
         ...(environment.KEEPR_TEST_NOW === undefined ? {} : { "x-keepr-test-now": environment.KEEPR_TEST_NOW }),
       },
@@ -57,21 +58,16 @@ export async function requestDocument(
       },
       exitCodeForStatus(response.status),
     );
-  if (
-    present &&
-    (document?.contract !== "card-keepr-cli-presentation@1" ||
-      typeof document.text !== "string" ||
-      ![0, 10].includes(document.exit_code))
-  )
+  if (document === null || typeof document !== "object" || Array.isArray(document))
     return failure(
-      { code: `invalid_${contract}_contract`, detail: `${label} runtime returned invalid presentation`, runtime },
+      { code: `invalid_${contract}_contract`, detail: `${label} runtime returned a non-object document`, runtime },
       8,
     );
   return {
     error: null,
     exitCode: 0,
     responseStatus: response.status,
-    presentation: present ? document : null,
-    document: present ? document.document : document,
+    presentation: present ? administrationPresentation(document, response.status) : null,
+    document,
   };
 }

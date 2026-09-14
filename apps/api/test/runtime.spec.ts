@@ -3,6 +3,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { expect, test, vi } from "vitest";
 import apiSchema from "../../../contracts/schemas/api.schema.json";
+import readContract from "../../../contracts/read-openapi.json";
 import exportManifestSchemaV5 from "../../../contracts/schemas/catalogue-export-manifest-v5.schema.json";
 import exportRecordSchemaV5 from "../../../contracts/schemas/catalogue-export-record-v5.schema.json";
 import {
@@ -24,6 +25,7 @@ import * as catalogueExportQueries from "../../ingestion/test/query-helpers/cata
 import { inspectCardCollectionQuery } from "../../ingestion/test/query-helpers/collection-query-plans";
 import * as ingestionQueries from "../../ingestion/test/query-helpers/ingestion";
 import * as publishedCatalogueQueries from "../../ingestion/test/query-helpers/published-catalogue";
+import { assertHttpResponse } from "../../../test/support/http-contract";
 import apiWorker from "../src/index";
 import { seedNativeExportReadFacts } from "./query-helpers/native-exports";
 import {
@@ -1228,7 +1230,16 @@ test("authenticated Card search validates raw and normalized q at 1 through 500 
     ],
   });
   let sequence = 40;
-  for (const query of [token(1), token(128), token(129), token(500), "ﬀ".repeat(250), "---", '"quoted"']) {
+  for (const query of [
+    token(1),
+    token(128),
+    token(129),
+    token(500),
+    "🂡".repeat(500),
+    "ﬀ".repeat(250),
+    "---",
+    '"quoted"',
+  ]) {
     const response = await exports.default.fetch(
       new Request(`https://card-keepr.invalid/v1/cards?q=${encodeURIComponent(query)}`, {
         headers: apiHeaders(`203.0.113.${sequence++}`),
@@ -1238,6 +1249,7 @@ test("authenticated Card search validates raw and normalized q at 1 through 500 
   }
   for (const [query, reason] of [
     [token(501), "q must contain at most 500 characters."],
+    ["🂡".repeat(501), "q must contain at most 500 characters."],
     ["ﬀ".repeat(251), "q must contain at most 500 characters."],
   ] as const) {
     const response = await exports.default.fetch(
@@ -1410,11 +1422,6 @@ test("Card cursors reject route, ordering, and structural misuse", async () => {
       },
     }),
   ];
-  const ajv = new Ajv2020({ allErrors: true, strict: false });
-  addFormats(ajv);
-  ajv.addSchema(apiSchema);
-  const validateProblem = ajv.getSchema(`${apiSchema.$id}#/$defs/Problem`)!;
-
   for (const [index, cursor] of cursors.entries()) {
     const response = await exports.default.fetch(
       new Request(
@@ -1424,7 +1431,7 @@ test("Card cursors reject route, ordering, and structural misuse", async () => {
     );
     expect(response.status).toBe(400);
     const problem = await response.json();
-    expect(validateProblem(problem), JSON.stringify(validateProblem.errors)).toBe(true);
+    await assertHttpResponse(readContract, "/v1/cards", "get", response, problem);
     expect(problem).toMatchObject({
       code: "invalid_cursor",
     });
@@ -1796,12 +1803,7 @@ test("Card cursors continue on an available pinned revision and conflict only af
       page: { next_cursor: string };
     }
   >();
-  const ajv = new Ajv2020({ allErrors: true, strict: false });
-  addFormats(ajv);
-  ajv.addSchema(apiSchema);
-  const validateCollection = ajv.getSchema(`${apiSchema.$id}#/$defs/CardCollection`)!;
-  const validateProblem = ajv.getSchema(`${apiSchema.$id}#/$defs/Problem`)!;
-  expect(validateCollection(firstPageDocument), JSON.stringify(validateCollection.errors)).toBe(true);
+  await assertHttpResponse(readContract, "/v1/cards", "get", firstPage, firstPageDocument);
   expect(firstPageDocument.page.next_cursor).toEqual(expect.any(String));
 
   await seedApiRevision({
@@ -1849,7 +1851,7 @@ test("Card cursors continue on an available pinned revision and conflict only af
   );
   expect(unavailable.status).toBe(409);
   const problem = await unavailable.json();
-  expect(validateProblem(problem), JSON.stringify(validateProblem.errors)).toBe(true);
+  await assertHttpResponse(readContract, "/v1/cards", "get", unavailable, problem);
   expect(problem).toMatchObject({
     code: "cursor_revision_unavailable",
     links: { collection: `${apiPublicBase}/v1/cards` },

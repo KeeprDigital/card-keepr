@@ -45,6 +45,7 @@ const commandRoutes = {
   },
   publicationStatus: { path: "/v1/publications/{operation-id}" },
   publicationStart: {
+    integers: ["generation"],
     path: "/v1/publications/start",
     fields: {
       candidate_id: "candidate-id",

@@ -83,15 +83,14 @@ test("Card browsing documents and validates collection, detail, and problem repr
     readFile(resolve(root, "contracts/openapi.json"), "utf8").then(JSON.parse),
     readFile(resolve(root, "contracts/schemas/api.schema.json"), "utf8").then(JSON.parse),
   ]);
-  assert.deepEqual(openapi.paths["/cards"].get.responses["200"].content["application/json"].schema, {
-    $ref: "./schemas/api.schema.json#/$defs/CardCollection",
+  const generated = JSON.parse(await readFile(resolve(root, "contracts/read-openapi.json"), "utf8"));
+  assert.deepEqual(generated.paths["/v1/cards"].get.responses["200"].content["application/json"].schema, {
+    $ref: "#/components/schemas/CardCollection",
   });
-  assert.deepEqual(openapi.paths["/cards"].get.responses["400"], {
-    $ref: "#/components/responses/InvalidRequest",
-  });
-  assert.deepEqual(openapi.paths["/cards"].get.responses["409"], {
-    $ref: "#/components/responses/CursorUnavailable",
-  });
+  for (const status of [400, 409])
+    assert.deepEqual(generated.paths["/v1/cards"].get.responses[status].content["application/problem+json"].schema, {
+      $ref: "#/components/schemas/Problem",
+    });
   assert.deepEqual(openapi.paths["/cards/{card_id}"].get.responses["200"].content["application/json"].schema, {
     $ref: "./schemas/api.schema.json#/$defs/CardDocument",
   });
@@ -99,22 +98,40 @@ test("Card browsing documents and validates collection, detail, and problem repr
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
   ajv.addSchema(schema);
-  const validateCollection = ajv.getSchema(`${schema.$id}#/$defs/CardCollection`);
+  const validateCollection = ajv.compile({
+    components: generated.components,
+    $ref: "#/components/schemas/CardCollection",
+  });
   const validateDetail = ajv.getSchema(`${schema.$id}#/$defs/CardDocument`);
-  const validateProblem = ajv.getSchema(`${schema.$id}#/$defs/Problem`);
+  const validateProblem = ajv.compile({ components: generated.components, $ref: "#/components/schemas/Problem" });
   const card = {
     type: "card",
     id: "card_test",
     game: "one-piece",
     official_identity: { kind: "card_number", value: "OP01-001" },
     name: "Test Card",
-    game_data: { profile: "one-piece@1", attributes: {} },
+    game_data: {
+      profile: "one-piece@1",
+      attributes: {
+        card_type: "leader",
+        colours: ["red"],
+        cost: null,
+        life: 5,
+        battle_attributes: [],
+        power: 5000,
+        counter: null,
+        traits: [],
+        block_icons: [],
+        effect_text: "Test Card",
+        trigger_text: null,
+      },
+    },
     lifecycle: {
       first_revision_id: "catrev_test",
       last_observed_revision_id: "catrev_test",
       withdrawn: false,
     },
-    links: { self: "/v1/cards/card_test" },
+    links: { self: "https://card-keepr.invalid/v1/cards/card_test" },
   };
   const meta = {
     catalogue_revision_id: "catrev_test",
@@ -125,7 +142,7 @@ test("Card browsing documents and validates collection, detail, and problem repr
       data: [card],
       meta,
       page: { limit: 50, next_cursor: null },
-      links: { self: "/v1/cards" },
+      links: { self: "https://card-keepr.invalid/v1/cards" },
     }),
     true,
     JSON.stringify(validateCollection.errors),
