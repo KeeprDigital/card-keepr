@@ -125,6 +125,12 @@ test.each(["gameplay", "token"] as const)(
       replay.document,
     );
     expect(replay.document.history).toEqual([expect.objectContaining({ decision })]);
+    await expect(
+      assertHttpResponse(contract, "/v1/entity-proposals/{proposal}/decisions", "post", replay.response, {
+        ...replay.document,
+        history: [{ ...(replay.document.history as Record<string, unknown>[])[0], decision: null }],
+      }),
+    ).rejects.toThrow("response matches generated schema");
     const reconsidered = await post(`/v1/entity-proposals/${proposal}/decisions`, {
       action: "reconsider",
       expected_generation: "1",

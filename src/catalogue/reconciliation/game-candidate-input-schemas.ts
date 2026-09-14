@@ -30,7 +30,10 @@ const observationIdentity = {
 const cardObservation = z.strictObject({
   ...observationIdentity,
   kind: z.literal("card_printing"),
-  observedCardAndPrinting: z.strictObject({ card: observedCard.nullable(), printing: observedPrinting.nullable() }),
+  observedCardAndPrinting: z.strictObject({
+    card: z.union([observedCard, z.null()]),
+    printing: z.union([observedPrinting, z.null()]),
+  }),
   locator: text,
   variantKey: text,
   artworkFingerprint: text,

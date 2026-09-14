@@ -312,6 +312,10 @@ shared retained schemas without rewriting bytes. A split retains every replaceme
 and never chooses which one represents a consumer-owned copy. Follow the
 [owner decision procedure](../docs/runbooks/sources.md).
 
+Early unversioned admission decisions can lack policy and publisher-confirmation
+annotations. Their complete historical Card shape remains inspectable; current
+decisions retain their required category, applicability and policy fields.
+
 ## Historical run operations
 
 New POST `/v1/ingestion-runs/:run/approval` intents return HTTP `410`

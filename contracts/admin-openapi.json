@@ -17832,7 +17832,213 @@
                       ]
                     },
                     "decision": {
-                      "$ref": "#/components/schemas/RetainedAdmissionDecision"
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "card": {
+                              "$ref": "#/components/schemas/CandidateCard"
+                            },
+                            "printing": {
+                              "anyOf": [
+                                {
+                                  "$ref": "#/components/schemas/CandidatePrinting"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "linked": {
+                              "type": "boolean"
+                            },
+                            "warnings": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/CandidateWarning"
+                              }
+                            },
+                            "exception": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "scope": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "source_evidence",
+                                      "identity"
+                                    ]
+                                  }
+                                },
+                                "attestation": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "scope",
+                                "attestation"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "policy_digest": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            "publisher_confirmed_fields": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "new_card": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "card",
+                            "printing",
+                            "linked",
+                            "warnings",
+                            "exception",
+                            "policy_digest",
+                            "publisher_confirmed_fields"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "card": {
+                              "$ref": "#/components/schemas/RetainedPreCategoryCard"
+                            },
+                            "printing": {
+                              "anyOf": [
+                                {
+                                  "$ref": "#/components/schemas/RetainedPreCategoryPrinting"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "linked": {
+                              "type": "boolean"
+                            },
+                            "warnings": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/CandidateWarning"
+                              }
+                            },
+                            "exception": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "scope": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "source_evidence",
+                                      "identity"
+                                    ]
+                                  }
+                                },
+                                "attestation": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "scope",
+                                "attestation"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "policy_digest": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            "publisher_confirmed_fields": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "new_card": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "card",
+                            "printing",
+                            "linked",
+                            "warnings",
+                            "exception",
+                            "policy_digest",
+                            "publisher_confirmed_fields"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "$ref": "#/components/schemas/RetainedUnversionedAdmissionDecision"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "content": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "anyOf": [
+                                  {
+                                    "$ref": "#/components/schemas/CandidateNonNullSourceValue"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "evidence": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "anyOf": [
+                                  {
+                                    "$ref": "#/components/schemas/CandidateNonNullSourceValue"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "content",
+                            "evidence"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {},
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "rationale": {
                       "type": [
@@ -22959,215 +23165,6 @@
         ],
         "additionalProperties": false
       },
-      "RetainedAdmissionDecision": {
-        "anyOf": [
-          {
-            "type": "object",
-            "properties": {
-              "card": {
-                "$ref": "#/components/schemas/CandidateCard"
-              },
-              "printing": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/CandidatePrinting"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "linked": {
-                "type": "boolean"
-              },
-              "warnings": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/CandidateWarning"
-                }
-              },
-              "exception": {
-                "type": [
-                  "object",
-                  "null"
-                ],
-                "properties": {
-                  "scope": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "source_evidence",
-                        "identity"
-                      ]
-                    }
-                  },
-                  "attestation": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  }
-                },
-                "required": [
-                  "scope",
-                  "attestation"
-                ],
-                "additionalProperties": false
-              },
-              "policy_digest": {
-                "type": "string",
-                "pattern": "^[a-f0-9]{64}$"
-              },
-              "publisher_confirmed_fields": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "new_card": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "card",
-              "printing",
-              "linked",
-              "warnings",
-              "exception",
-              "policy_digest",
-              "publisher_confirmed_fields"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "card": {
-                "$ref": "#/components/schemas/RetainedPreCategoryCard"
-              },
-              "printing": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/RetainedPreCategoryPrinting"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "linked": {
-                "type": "boolean"
-              },
-              "warnings": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/CandidateWarning"
-                }
-              },
-              "exception": {
-                "type": [
-                  "object",
-                  "null"
-                ],
-                "properties": {
-                  "scope": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "source_evidence",
-                        "identity"
-                      ]
-                    }
-                  },
-                  "attestation": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  }
-                },
-                "required": [
-                  "scope",
-                  "attestation"
-                ],
-                "additionalProperties": false
-              },
-              "policy_digest": {
-                "type": "string",
-                "pattern": "^[a-f0-9]{64}$"
-              },
-              "publisher_confirmed_fields": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "new_card": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "card",
-              "printing",
-              "linked",
-              "warnings",
-              "exception",
-              "policy_digest",
-              "publisher_confirmed_fields"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "$ref": "#/components/schemas/RetainedUnversionedAdmissionDecision"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "content": {
-                "type": "object",
-                "additionalProperties": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/CandidateNonNullSourceValue"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              },
-              "evidence": {
-                "type": "object",
-                "additionalProperties": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/CandidateNonNullSourceValue"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              }
-            },
-            "required": [
-              "content",
-              "evidence"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {},
-            "additionalProperties": false
-          },
-          {
-            "type": "null"
-          }
-        ]
-      },
       "CandidateWarning": {
         "type": "object",
         "properties": {
@@ -23634,18 +23631,1704 @@
                           "type": "object",
                           "properties": {
                             "card": {
-                              "$ref": "#/components/schemas/CandidateObservedCard"
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "curated_provenance": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "curated_revision_id": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "content_digest": {
+                                            "type": "string",
+                                            "pattern": "^[a-f0-9]{64}$"
+                                          },
+                                          "target": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "field"
+                                                    ]
+                                                  },
+                                                  "entity_type": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "card",
+                                                      "printing",
+                                                      "product",
+                                                      "release",
+                                                      "distribution_context",
+                                                      "erratum"
+                                                    ]
+                                                  },
+                                                  "entity_id": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "path": {
+                                                    "type": [
+                                                      "string",
+                                                      "null"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "entity_type",
+                                                  "entity_id",
+                                                  "path"
+                                                ],
+                                                "additionalProperties": false
+                                              },
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "relationship"
+                                                    ]
+                                                  },
+                                                  "relationship_kind": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "printing-product",
+                                                      "printing-distribution-context",
+                                                      "distribution-context-product",
+                                                      "product-card"
+                                                    ]
+                                                  },
+                                                  "from": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "type": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "card",
+                                                          "printing",
+                                                          "product",
+                                                          "distribution_context"
+                                                        ]
+                                                      },
+                                                      "id": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "type",
+                                                      "id"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  },
+                                                  "to": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "type": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "card",
+                                                          "printing",
+                                                          "product",
+                                                          "distribution_context"
+                                                        ]
+                                                      },
+                                                      "id": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "type",
+                                                      "id"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "relationship_kind",
+                                                  "from",
+                                                  "to"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            ]
+                                          },
+                                          "rationale": {
+                                            "type": [
+                                              "string",
+                                              "null"
+                                            ]
+                                          },
+                                          "evidence": {
+                                            "type": "array",
+                                            "items": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "source_observation"
+                                                      ]
+                                                    },
+                                                    "id": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind",
+                                                    "id"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "owner_reference"
+                                                      ]
+                                                    },
+                                                    "uri": {
+                                                      "type": [
+                                                        "string",
+                                                        "null"
+                                                      ]
+                                                    },
+                                                    "content_digest": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-f0-9]{64}$"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind",
+                                                    "uri",
+                                                    "content_digest"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "author": {
+                                            "type": [
+                                              "string",
+                                              "null"
+                                            ]
+                                          },
+                                          "reviewed_source_value": {
+                                            "anyOf": [
+                                              {
+                                                "$ref": "#/components/schemas/CandidateNonNullSourceValue"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "curated_revision_id",
+                                          "content_digest",
+                                          "target",
+                                          "rationale",
+                                          "evidence",
+                                          "author",
+                                          "reviewed_source_value"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    "game": {
+                                      "type": "string",
+                                      "enum": [
+                                        "riftbound",
+                                        "one-piece",
+                                        "fusion-world",
+                                        "digimon",
+                                        "gundam"
+                                      ]
+                                    },
+                                    "official_identity": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "card_number",
+                                                "publisher_name"
+                                              ]
+                                            },
+                                            "value": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "functional_designation"
+                                              ]
+                                            },
+                                            "value": {
+                                              "type": "string",
+                                              "enum": [
+                                                "DON!!"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "unknown"
+                                              ]
+                                            },
+                                            "value": {
+                                              "type": "null"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      ]
+                                    },
+                                    "name": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "effective_rules_text": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "related_cards": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "shared_artwork"
+                                            ]
+                                          },
+                                          "card_id": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "evidence": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "source_observation_id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "printing_id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "related_printing_id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "related_source_observation_id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "artwork_fingerprint": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "source_observation_id",
+                                                "printing_id",
+                                                "related_printing_id",
+                                                "related_source_observation_id",
+                                                "artwork_fingerprint"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "card_id",
+                                          "evidence"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      "maxItems": 8
+                                    },
+                                    "category": {
+                                      "type": "string",
+                                      "enum": [
+                                        "gameplay",
+                                        "token"
+                                      ]
+                                    },
+                                    "gameplay_applicability": {
+                                      "type": "string",
+                                      "enum": [
+                                        "applicable"
+                                      ]
+                                    },
+                                    "game_data": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
+                                                "riftbound@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {
+                                                "card_types": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "spell",
+                                                      "battlefield",
+                                                      "unit",
+                                                      "gear",
+                                                      "legend",
+                                                      "rune"
+                                                    ]
+                                                  }
+                                                },
+                                                "supertypes": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "champion",
+                                                      "signature",
+                                                      "token"
+                                                    ]
+                                                  }
+                                                },
+                                                "domains": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "fury",
+                                                      "calm",
+                                                      "mind",
+                                                      "body",
+                                                      "chaos",
+                                                      "order",
+                                                      "colorless"
+                                                    ]
+                                                  }
+                                                },
+                                                "energy": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "power": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "might": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "might_bonus": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "tags": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": [
+                                                      "string",
+                                                      "null"
+                                                    ]
+                                                  }
+                                                },
+                                                "ability_text": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "effect_text": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "card_types",
+                                                "supertypes",
+                                                "domains",
+                                                "energy",
+                                                "power",
+                                                "might",
+                                                "might_bonus",
+                                                "tags",
+                                                "ability_text",
+                                                "effect_text"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
+                                                "one-piece@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {
+                                                "card_type": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "leader",
+                                                    "character",
+                                                    "event",
+                                                    "stage",
+                                                    "don"
+                                                  ]
+                                                },
+                                                "colours": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "red",
+                                                      "green",
+                                                      "blue",
+                                                      "purple",
+                                                      "black",
+                                                      "yellow",
+                                                      "white",
+                                                      "colourless"
+                                                    ]
+                                                  }
+                                                },
+                                                "cost": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "life": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "battle_attributes": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": [
+                                                      "string",
+                                                      "null"
+                                                    ]
+                                                  }
+                                                },
+                                                "power": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "counter": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "traits": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": [
+                                                      "string",
+                                                      "null"
+                                                    ]
+                                                  }
+                                                },
+                                                "block_icons": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": [
+                                                      "string",
+                                                      "null"
+                                                    ]
+                                                  }
+                                                },
+                                                "effect_text": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "trigger_text": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "card_type",
+                                                "colours",
+                                                "cost",
+                                                "life",
+                                                "battle_attributes",
+                                                "power",
+                                                "counter",
+                                                "traits",
+                                                "block_icons",
+                                                "effect_text",
+                                                "trigger_text"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
+                                                "fusion-world@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {
+                                                "card_type": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "leader",
+                                                    "battle",
+                                                    "extra",
+                                                    "energy_marker"
+                                                  ]
+                                                },
+                                                "colours": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "red",
+                                                      "green",
+                                                      "blue",
+                                                      "purple",
+                                                      "black",
+                                                      "yellow",
+                                                      "white",
+                                                      "colourless"
+                                                    ]
+                                                  }
+                                                },
+                                                "cost": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "specified_cost": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "colour": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "red",
+                                                          "blue",
+                                                          "green",
+                                                          "yellow",
+                                                          "black"
+                                                        ]
+                                                      },
+                                                      "count": {
+                                                        "type": "integer"
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "colour",
+                                                      "count"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                },
+                                                "power": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "combo_power": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "traits": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": [
+                                                      "string",
+                                                      "null"
+                                                    ]
+                                                  }
+                                                },
+                                                "skills": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "kind": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "ordinary",
+                                                          "front",
+                                                          "back"
+                                                        ]
+                                                      },
+                                                      "text": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "kind",
+                                                      "text"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                },
+                                                "leader_faces": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "role": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "front",
+                                                          "back"
+                                                        ]
+                                                      },
+                                                      "name": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "power": {
+                                                        "type": [
+                                                          "integer",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "traits": {
+                                                        "type": "array",
+                                                        "items": {
+                                                          "type": [
+                                                            "string",
+                                                            "null"
+                                                          ]
+                                                        }
+                                                      },
+                                                      "skills": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "role",
+                                                      "name",
+                                                      "traits",
+                                                      "skills"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "card_type",
+                                                "colours",
+                                                "cost",
+                                                "specified_cost",
+                                                "power",
+                                                "combo_power",
+                                                "traits",
+                                                "skills"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
+                                                "digimon@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {
+                                                "card_type": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "digi_egg",
+                                                    "digimon",
+                                                    "tamer",
+                                                    "option",
+                                                    "digimon_option"
+                                                  ]
+                                                },
+                                                "colours": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "red",
+                                                      "green",
+                                                      "blue",
+                                                      "purple",
+                                                      "black",
+                                                      "yellow",
+                                                      "white",
+                                                      "colourless"
+                                                    ]
+                                                  }
+                                                },
+                                                "level": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "play_cost": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "use_cost": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "dp": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "form": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "attribute": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "traits": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": [
+                                                      "string",
+                                                      "null"
+                                                    ]
+                                                  }
+                                                },
+                                                "digivolution_requirements": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "index": {
+                                                        "type": "integer"
+                                                      },
+                                                      "from_level": {
+                                                        "type": [
+                                                          "integer",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "colours": {
+                                                        "type": "array",
+                                                        "items": {
+                                                          "type": "string",
+                                                          "enum": [
+                                                            "red",
+                                                            "green",
+                                                            "blue",
+                                                            "purple",
+                                                            "black",
+                                                            "yellow",
+                                                            "white",
+                                                            "colourless"
+                                                          ]
+                                                        }
+                                                      },
+                                                      "cost": {
+                                                        "type": "integer"
+                                                      },
+                                                      "raw_condition": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "cost"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                },
+                                                "text_sections": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "kind": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "effect",
+                                                          "inherited_effect",
+                                                          "security_effect",
+                                                          "rule",
+                                                          "special_digivolution_condition",
+                                                          "dual_effect",
+                                                          "dual_rule",
+                                                          "link_condition",
+                                                          "link_effect"
+                                                        ]
+                                                      },
+                                                      "text": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "kind",
+                                                      "text"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                },
+                                                "dual_colours": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "red",
+                                                      "green",
+                                                      "blue",
+                                                      "purple",
+                                                      "black",
+                                                      "yellow",
+                                                      "white",
+                                                      "colourless"
+                                                    ]
+                                                  }
+                                                },
+                                                "dual_cost": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "link_dp": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "card_type",
+                                                "colours",
+                                                "level",
+                                                "play_cost",
+                                                "use_cost",
+                                                "dp",
+                                                "form",
+                                                "attribute",
+                                                "traits",
+                                                "digivolution_requirements",
+                                                "text_sections"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
+                                                "gundam@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {
+                                                "card_type": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "unit",
+                                                    "pilot",
+                                                    "command",
+                                                    "base",
+                                                    "resource",
+                                                    "ex_base",
+                                                    "ex_resource",
+                                                    "unit_token"
+                                                  ]
+                                                },
+                                                "colours": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "red",
+                                                      "green",
+                                                      "blue",
+                                                      "purple",
+                                                      "black",
+                                                      "yellow",
+                                                      "white",
+                                                      "colourless"
+                                                    ]
+                                                  }
+                                                },
+                                                "level": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "cost": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "block_icon": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "effect_text": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "zone": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "traits": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": [
+                                                      "string",
+                                                      "null"
+                                                    ]
+                                                  }
+                                                },
+                                                "link_condition": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "ap": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "hp": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "series_titles": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": [
+                                                      "string",
+                                                      "null"
+                                                    ]
+                                                  }
+                                                }
+                                              },
+                                              "required": [
+                                                "card_type",
+                                                "colours",
+                                                "level",
+                                                "cost",
+                                                "block_icon",
+                                                "effect_text",
+                                                "zone",
+                                                "traits",
+                                                "link_condition",
+                                                "ap",
+                                                "hp",
+                                                "series_titles"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "game",
+                                    "official_identity",
+                                    "name",
+                                    "effective_rules_text",
+                                    "related_cards",
+                                    "category",
+                                    "gameplay_applicability",
+                                    "game_data"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "curated_provenance": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "curated_revision_id": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "content_digest": {
+                                            "type": "string",
+                                            "pattern": "^[a-f0-9]{64}$"
+                                          },
+                                          "target": {
+                                            "anyOf": [
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "field"
+                                                    ]
+                                                  },
+                                                  "entity_type": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "card",
+                                                      "printing",
+                                                      "product",
+                                                      "release",
+                                                      "distribution_context",
+                                                      "erratum"
+                                                    ]
+                                                  },
+                                                  "entity_id": {
+                                                    "type": "string",
+                                                    "minLength": 1
+                                                  },
+                                                  "path": {
+                                                    "type": [
+                                                      "string",
+                                                      "null"
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "entity_type",
+                                                  "entity_id",
+                                                  "path"
+                                                ],
+                                                "additionalProperties": false
+                                              },
+                                              {
+                                                "type": "object",
+                                                "properties": {
+                                                  "kind": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "relationship"
+                                                    ]
+                                                  },
+                                                  "relationship_kind": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                      "printing-product",
+                                                      "printing-distribution-context",
+                                                      "distribution-context-product",
+                                                      "product-card"
+                                                    ]
+                                                  },
+                                                  "from": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "type": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "card",
+                                                          "printing",
+                                                          "product",
+                                                          "distribution_context"
+                                                        ]
+                                                      },
+                                                      "id": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "type",
+                                                      "id"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  },
+                                                  "to": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "type": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "card",
+                                                          "printing",
+                                                          "product",
+                                                          "distribution_context"
+                                                        ]
+                                                      },
+                                                      "id": {
+                                                        "type": "string",
+                                                        "minLength": 1
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "type",
+                                                      "id"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                },
+                                                "required": [
+                                                  "kind",
+                                                  "relationship_kind",
+                                                  "from",
+                                                  "to"
+                                                ],
+                                                "additionalProperties": false
+                                              }
+                                            ]
+                                          },
+                                          "rationale": {
+                                            "type": [
+                                              "string",
+                                              "null"
+                                            ]
+                                          },
+                                          "evidence": {
+                                            "type": "array",
+                                            "items": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "source_observation"
+                                                      ]
+                                                    },
+                                                    "id": {
+                                                      "type": "string",
+                                                      "minLength": 1
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind",
+                                                    "id"
+                                                  ],
+                                                  "additionalProperties": false
+                                                },
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "owner_reference"
+                                                      ]
+                                                    },
+                                                    "uri": {
+                                                      "type": [
+                                                        "string",
+                                                        "null"
+                                                      ]
+                                                    },
+                                                    "content_digest": {
+                                                      "type": "string",
+                                                      "pattern": "^[a-f0-9]{64}$"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind",
+                                                    "uri",
+                                                    "content_digest"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "author": {
+                                            "type": [
+                                              "string",
+                                              "null"
+                                            ]
+                                          },
+                                          "reviewed_source_value": {
+                                            "anyOf": [
+                                              {
+                                                "$ref": "#/components/schemas/CandidateNonNullSourceValue"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "curated_revision_id",
+                                          "content_digest",
+                                          "target",
+                                          "rationale",
+                                          "evidence",
+                                          "author",
+                                          "reviewed_source_value"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    },
+                                    "game": {
+                                      "type": "string",
+                                      "enum": [
+                                        "riftbound",
+                                        "one-piece",
+                                        "fusion-world",
+                                        "digimon",
+                                        "gundam"
+                                      ]
+                                    },
+                                    "official_identity": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "card_number",
+                                                "publisher_name"
+                                              ]
+                                            },
+                                            "value": {
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "functional_designation"
+                                              ]
+                                            },
+                                            "value": {
+                                              "type": "string",
+                                              "enum": [
+                                                "DON!!"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "enum": [
+                                                "unknown"
+                                              ]
+                                            },
+                                            "value": {
+                                              "type": "null"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "value"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      ]
+                                    },
+                                    "name": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "effective_rules_text": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "related_cards": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": "string",
+                                            "enum": [
+                                              "shared_artwork"
+                                            ]
+                                          },
+                                          "card_id": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "evidence": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "source_observation_id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "printing_id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "related_printing_id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "related_source_observation_id": {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                "artwork_fingerprint": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "source_observation_id",
+                                                "printing_id",
+                                                "related_printing_id",
+                                                "related_source_observation_id",
+                                                "artwork_fingerprint"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "card_id",
+                                          "evidence"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      "maxItems": 8
+                                    },
+                                    "category": {
+                                      "type": "string",
+                                      "enum": [
+                                        "art"
+                                      ]
+                                    },
+                                    "gameplay_applicability": {
+                                      "type": "string",
+                                      "enum": [
+                                        "inapplicable"
+                                      ]
+                                    },
+                                    "game_data": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
+                                                "riftbound@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {},
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
+                                                "one-piece@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {},
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
+                                                "fusion-world@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {},
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
+                                                "digimon@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {},
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
+                                                "gundam@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {},
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "game",
+                                    "official_identity",
+                                    "name",
+                                    "effective_rules_text",
+                                    "related_cards",
+                                    "category",
+                                    "gameplay_applicability",
+                                    "game_data"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             },
                             "printing": {
-                              "allOf": [
+                              "anyOf": [
                                 {
                                   "$ref": "#/components/schemas/CandidateObservedPrinting"
                                 },
                                 {
-                                  "type": [
-                                    "object",
-                                    "null"
-                                  ]
+                                  "type": "null"
                                 }
                               ]
                             }
@@ -26426,6 +28109,734 @@
           }
         ]
       },
+      "GameCandidateTextChunk": {
+        "type": "object",
+        "properties": {
+          "contract": {
+            "type": "string",
+            "enum": [
+              "card-keepr-reconciliation-text-chunk@1"
+            ]
+          },
+          "ingestion_run_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,199}$"
+          },
+          "preparation_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,199}$"
+          },
+          "text_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "ordinal": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "content": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "contract",
+          "ingestion_run_id",
+          "preparation_id",
+          "text_sha256",
+          "ordinal",
+          "content",
+          "sha256"
+        ],
+        "additionalProperties": false
+      },
+      "PublicationPreparationAcceptance": {
+        "type": "object",
+        "properties": {
+          "contract": {
+            "type": "string",
+            "enum": [
+              "card-keepr-publication-preparation-acceptance@1"
+            ]
+          },
+          "candidate_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "manifest_digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "preparing",
+              "verified",
+              "retry_paused",
+              "failed"
+            ]
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "images",
+              "exports",
+              "projections",
+              "composition"
+            ]
+          },
+          "failures": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failure_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "artifact_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "root_digest": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "created_at": {
+            "type": "string",
+            "minLength": 1
+          },
+          "preparation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ingestion_run_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "supported_game": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expected_game_revision_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deadline": {
+            "type": "string",
+            "minLength": 1
+          },
+          "progress": {
+            "type": "object",
+            "properties": {
+              "partition": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "record": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "subrecord": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "text": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "chunk": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "chain": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "search_offset": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "search_ordinal": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "text_hash": {
+                "type": "object",
+                "properties": {
+                  "words": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    }
+                  },
+                  "pending": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 255
+                    },
+                    "maxItems": 63
+                  },
+                  "bytes": {
+                    "type": "string",
+                    "pattern": "^\\d+$"
+                  }
+                },
+                "required": [
+                  "words",
+                  "pending",
+                  "bytes"
+                ],
+                "additionalProperties": false
+              },
+              "text_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "level": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "after": {
+                "type": "integer",
+                "minimum": -1
+              },
+              "node": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "partition",
+              "record",
+              "text",
+              "chunk",
+              "chain",
+              "level",
+              "after",
+              "node"
+            ],
+            "additionalProperties": false
+          },
+          "links": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "format": "uri"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "contract",
+          "candidate_id",
+          "manifest_digest",
+          "generation",
+          "sequence",
+          "state",
+          "phase",
+          "failures",
+          "failure_code",
+          "artifact_count",
+          "root_digest",
+          "created_at",
+          "preparation_id",
+          "ingestion_run_id",
+          "supported_game",
+          "expected_game_revision_id",
+          "deadline",
+          "progress",
+          "links"
+        ],
+        "additionalProperties": false
+      },
+      "CanonicalIdentityInspection": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "card",
+              "printing"
+            ]
+          },
+          "allocation": {
+            "type": "string",
+            "enum": [
+              "opaque",
+              "previously_published"
+            ]
+          },
+          "mappings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "entity_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "entity_kind": {
+                  "type": "string",
+                  "enum": [
+                    "card",
+                    "printing"
+                  ]
+                },
+                "source_lineage": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "ingestion_run_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "source_snapshot_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "source_observation_set_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "source_observation_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "locator": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "variant_key": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "mapped_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "evidence": {
+                  "$ref": "#/components/schemas/RetainedIdentityMappingEvidence"
+                },
+                "preparation_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "publication_state": {
+                  "type": "string",
+                  "enum": [
+                    "preparing",
+                    "paused",
+                    "sealed",
+                    "failed",
+                    "abandoned",
+                    "rejected",
+                    "expired",
+                    "published"
+                  ]
+                }
+              },
+              "required": [
+                "entity_id",
+                "entity_kind",
+                "source_lineage",
+                "ingestion_run_id",
+                "source_snapshot_id",
+                "source_observation_set_id",
+                "source_observation_id",
+                "locator",
+                "variant_key",
+                "mapped_at",
+                "evidence"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "allocation",
+          "mappings",
+          "next_cursor"
+        ],
+        "additionalProperties": false
+      },
+      "IdentityReviewList": {
+        "type": "object",
+        "properties": {
+          "reviews": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "source_lineage": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "ingestion_run_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "source_observation_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "source_snapshot_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "preparation_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "candidate_printing_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "evidence": {
+                  "$ref": "#/components/schemas/RetainedIdentityReviewEvidence"
+                }
+              },
+              "required": [
+                "id",
+                "source_lineage",
+                "created_at",
+                "ingestion_run_id",
+                "source_observation_id",
+                "source_snapshot_id",
+                "candidate_printing_ids",
+                "evidence"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [
+          "reviews",
+          "next_cursor"
+        ],
+        "additionalProperties": false
+      },
+      "RetainedIdentityReviewEvidence": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "card": {
+                "$ref": "#/components/schemas/CandidateObservedCard"
+              },
+              "printing": {
+                "$ref": "#/components/schemas/CandidateObservedPrinting"
+              },
+              "locator": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "variant_key": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "compatibility": {
+                "type": "object",
+                "properties": {
+                  "card_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "source_lineage": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "artwork_fingerprint": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "printed_fields_digest": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "rarity_normalized": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "treatment": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "card_id",
+                  "source_lineage",
+                  "artwork_fingerprint",
+                  "printed_fields_digest",
+                  "rarity_normalized",
+                  "treatment"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "card",
+              "printing",
+              "locator",
+              "variant_key",
+              "compatibility"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "card": {
+                "$ref": "#/components/schemas/CandidateObservedCard"
+              },
+              "printing": {
+                "$ref": "#/components/schemas/CandidateObservedPrinting"
+              },
+              "locator": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "variant_key": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "artwork_fingerprint": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "printed_fields_digest": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "treatment": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "card",
+              "printing",
+              "locator",
+              "variant_key",
+              "artwork_fingerprint",
+              "printed_fields_digest",
+              "treatment"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "card": {
+                "$ref": "#/components/schemas/RetainedPreCategoryObservedCard"
+              },
+              "printing": {
+                "$ref": "#/components/schemas/RetainedPreCategoryObservedPrinting"
+              },
+              "locator": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "variant_key": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "compatibility": {
+                "type": "object",
+                "properties": {
+                  "card_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "source_lineage": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "artwork_fingerprint": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "printed_fields_digest": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "rarity_normalized": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "treatment": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "card_id",
+                  "source_lineage",
+                  "artwork_fingerprint",
+                  "printed_fields_digest",
+                  "rarity_normalized",
+                  "treatment"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "card",
+              "printing",
+              "locator",
+              "variant_key",
+              "compatibility"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "card": {
+                "$ref": "#/components/schemas/RetainedPreCategoryObservedCard"
+              },
+              "printing": {
+                "$ref": "#/components/schemas/RetainedPreCategoryObservedPrinting"
+              },
+              "locator": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "variant_key": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "artwork_fingerprint": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "printed_fields_digest": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "treatment": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "card",
+              "printing",
+              "locator",
+              "variant_key",
+              "artwork_fingerprint",
+              "printed_fields_digest",
+              "treatment"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
       "CandidateObservedCard": {
         "anyOf": [
           {
@@ -28112,737 +30523,6 @@
               "game_data"
             ],
             "additionalProperties": false
-          },
-          {
-            "type": "null"
-          }
-        ]
-      },
-      "GameCandidateTextChunk": {
-        "type": "object",
-        "properties": {
-          "contract": {
-            "type": "string",
-            "enum": [
-              "card-keepr-reconciliation-text-chunk@1"
-            ]
-          },
-          "ingestion_run_id": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,199}$"
-          },
-          "preparation_id": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,199}$"
-          },
-          "text_sha256": {
-            "type": "string",
-            "pattern": "^[a-f0-9]{64}$"
-          },
-          "ordinal": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "content": {
-            "type": "string"
-          },
-          "sha256": {
-            "type": "string",
-            "pattern": "^[a-f0-9]{64}$"
-          }
-        },
-        "required": [
-          "contract",
-          "ingestion_run_id",
-          "preparation_id",
-          "text_sha256",
-          "ordinal",
-          "content",
-          "sha256"
-        ],
-        "additionalProperties": false
-      },
-      "PublicationPreparationAcceptance": {
-        "type": "object",
-        "properties": {
-          "contract": {
-            "type": "string",
-            "enum": [
-              "card-keepr-publication-preparation-acceptance@1"
-            ]
-          },
-          "candidate_id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "manifest_digest": {
-            "type": "string",
-            "pattern": "^[a-f0-9]{64}$"
-          },
-          "generation": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "sequence": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "state": {
-            "type": "string",
-            "enum": [
-              "preparing",
-              "verified",
-              "retry_paused",
-              "failed"
-            ]
-          },
-          "phase": {
-            "type": "string",
-            "enum": [
-              "images",
-              "exports",
-              "projections",
-              "composition"
-            ]
-          },
-          "failures": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "failure_code": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "minLength": 1
-          },
-          "artifact_count": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "root_digest": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "pattern": "^[a-f0-9]{64}$"
-          },
-          "created_at": {
-            "type": "string",
-            "minLength": 1
-          },
-          "preparation_id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "ingestion_run_id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "supported_game": {
-            "type": "string",
-            "minLength": 1
-          },
-          "expected_game_revision_id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "deadline": {
-            "type": "string",
-            "minLength": 1
-          },
-          "progress": {
-            "type": "object",
-            "properties": {
-              "partition": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "record": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "subrecord": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "text": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "chunk": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "chain": {
-                "type": "string",
-                "pattern": "^[a-f0-9]{64}$"
-              },
-              "search_offset": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "search_ordinal": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "text_hash": {
-                "type": "object",
-                "properties": {
-                  "words": {
-                    "type": "array",
-                    "items": {
-                      "type": "integer"
-                    }
-                  },
-                  "pending": {
-                    "type": "array",
-                    "items": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 255
-                    },
-                    "maxItems": 63
-                  },
-                  "bytes": {
-                    "type": "string",
-                    "pattern": "^\\d+$"
-                  }
-                },
-                "required": [
-                  "words",
-                  "pending",
-                  "bytes"
-                ],
-                "additionalProperties": false
-              },
-              "text_bytes": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "level": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "after": {
-                "type": "integer",
-                "minimum": -1
-              },
-              "node": {
-                "type": "integer",
-                "minimum": 0
-              }
-            },
-            "required": [
-              "partition",
-              "record",
-              "text",
-              "chunk",
-              "chain",
-              "level",
-              "after",
-              "node"
-            ],
-            "additionalProperties": false
-          },
-          "links": {
-            "type": "object",
-            "properties": {
-              "status": {
-                "type": "string",
-                "format": "uri"
-              }
-            },
-            "required": [
-              "status"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "required": [
-          "contract",
-          "candidate_id",
-          "manifest_digest",
-          "generation",
-          "sequence",
-          "state",
-          "phase",
-          "failures",
-          "failure_code",
-          "artifact_count",
-          "root_digest",
-          "created_at",
-          "preparation_id",
-          "ingestion_run_id",
-          "supported_game",
-          "expected_game_revision_id",
-          "deadline",
-          "progress",
-          "links"
-        ],
-        "additionalProperties": false
-      },
-      "CanonicalIdentityInspection": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "card",
-              "printing"
-            ]
-          },
-          "allocation": {
-            "type": "string",
-            "enum": [
-              "opaque",
-              "previously_published"
-            ]
-          },
-          "mappings": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "entity_id": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "entity_kind": {
-                  "type": "string",
-                  "enum": [
-                    "card",
-                    "printing"
-                  ]
-                },
-                "source_lineage": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "ingestion_run_id": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "source_snapshot_id": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "source_observation_set_id": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "source_observation_id": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "locator": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "variant_key": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "mapped_at": {
-                  "type": "string",
-                  "format": "date-time"
-                },
-                "evidence": {
-                  "$ref": "#/components/schemas/RetainedIdentityMappingEvidence"
-                },
-                "preparation_id": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "publication_state": {
-                  "type": "string",
-                  "enum": [
-                    "preparing",
-                    "paused",
-                    "sealed",
-                    "failed",
-                    "abandoned",
-                    "rejected",
-                    "expired",
-                    "published"
-                  ]
-                }
-              },
-              "required": [
-                "entity_id",
-                "entity_kind",
-                "source_lineage",
-                "ingestion_run_id",
-                "source_snapshot_id",
-                "source_observation_set_id",
-                "source_observation_id",
-                "locator",
-                "variant_key",
-                "mapped_at",
-                "evidence"
-              ],
-              "additionalProperties": false
-            },
-            "maxItems": 100
-          },
-          "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "minLength": 1
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "allocation",
-          "mappings",
-          "next_cursor"
-        ],
-        "additionalProperties": false
-      },
-      "IdentityReviewList": {
-        "type": "object",
-        "properties": {
-          "reviews": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "source_lineage": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "created_at": {
-                  "type": "string",
-                  "format": "date-time"
-                },
-                "ingestion_run_id": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "source_observation_id": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "source_snapshot_id": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "preparation_id": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "candidate_printing_ids": {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "evidence": {
-                  "$ref": "#/components/schemas/RetainedIdentityReviewEvidence"
-                }
-              },
-              "required": [
-                "id",
-                "source_lineage",
-                "created_at",
-                "ingestion_run_id",
-                "source_observation_id",
-                "source_snapshot_id",
-                "candidate_printing_ids",
-                "evidence"
-              ],
-              "additionalProperties": false
-            },
-            "maxItems": 100
-          },
-          "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "minLength": 1
-          }
-        },
-        "required": [
-          "reviews",
-          "next_cursor"
-        ],
-        "additionalProperties": false
-      },
-      "RetainedIdentityReviewEvidence": {
-        "anyOf": [
-          {
-            "type": "object",
-            "properties": {
-              "card": {
-                "$ref": "#/components/schemas/CandidateObservedCard"
-              },
-              "printing": {
-                "$ref": "#/components/schemas/CandidateObservedPrinting"
-              },
-              "locator": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "variant_key": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "compatibility": {
-                "type": "object",
-                "properties": {
-                  "card_id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "source_lineage": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "artwork_fingerprint": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "printed_fields_digest": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "rarity_normalized": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "treatment": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  }
-                },
-                "required": [
-                  "card_id",
-                  "source_lineage",
-                  "artwork_fingerprint",
-                  "printed_fields_digest",
-                  "rarity_normalized",
-                  "treatment"
-                ],
-                "additionalProperties": false
-              }
-            },
-            "required": [
-              "card",
-              "printing",
-              "locator",
-              "variant_key",
-              "compatibility"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "card": {
-                "$ref": "#/components/schemas/CandidateObservedCard"
-              },
-              "printing": {
-                "$ref": "#/components/schemas/CandidateObservedPrinting"
-              },
-              "locator": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "variant_key": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "artwork_fingerprint": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "printed_fields_digest": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "treatment": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              }
-            },
-            "required": [
-              "card",
-              "printing",
-              "locator",
-              "variant_key",
-              "artwork_fingerprint",
-              "printed_fields_digest",
-              "treatment"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "card": {
-                "$ref": "#/components/schemas/RetainedPreCategoryObservedCard"
-              },
-              "printing": {
-                "$ref": "#/components/schemas/RetainedPreCategoryObservedPrinting"
-              },
-              "locator": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "variant_key": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "compatibility": {
-                "type": "object",
-                "properties": {
-                  "card_id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "source_lineage": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "artwork_fingerprint": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "printed_fields_digest": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "rarity_normalized": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "treatment": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  }
-                },
-                "required": [
-                  "card_id",
-                  "source_lineage",
-                  "artwork_fingerprint",
-                  "printed_fields_digest",
-                  "rarity_normalized",
-                  "treatment"
-                ],
-                "additionalProperties": false
-              }
-            },
-            "required": [
-              "card",
-              "printing",
-              "locator",
-              "variant_key",
-              "compatibility"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "card": {
-                "$ref": "#/components/schemas/RetainedPreCategoryObservedCard"
-              },
-              "printing": {
-                "$ref": "#/components/schemas/RetainedPreCategoryObservedPrinting"
-              },
-              "locator": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "variant_key": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "artwork_fingerprint": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "printed_fields_digest": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "treatment": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              }
-            },
-            "required": [
-              "card",
-              "printing",
-              "locator",
-              "variant_key",
-              "artwork_fingerprint",
-              "printed_fields_digest",
-              "treatment"
-            ],
-            "additionalProperties": false
           }
         ]
       },
@@ -30282,6 +31962,212 @@
           "history"
         ],
         "additionalProperties": false
+      },
+      "RetainedAdmissionDecision": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "card": {
+                "$ref": "#/components/schemas/CandidateCard"
+              },
+              "printing": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CandidatePrinting"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "linked": {
+                "type": "boolean"
+              },
+              "warnings": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CandidateWarning"
+                }
+              },
+              "exception": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "scope": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "source_evidence",
+                        "identity"
+                      ]
+                    }
+                  },
+                  "attestation": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "scope",
+                  "attestation"
+                ],
+                "additionalProperties": false
+              },
+              "policy_digest": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "publisher_confirmed_fields": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "new_card": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "card",
+              "printing",
+              "linked",
+              "warnings",
+              "exception",
+              "policy_digest",
+              "publisher_confirmed_fields"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "card": {
+                "$ref": "#/components/schemas/RetainedPreCategoryCard"
+              },
+              "printing": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RetainedPreCategoryPrinting"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "linked": {
+                "type": "boolean"
+              },
+              "warnings": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CandidateWarning"
+                }
+              },
+              "exception": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "scope": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "source_evidence",
+                        "identity"
+                      ]
+                    }
+                  },
+                  "attestation": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "scope",
+                  "attestation"
+                ],
+                "additionalProperties": false
+              },
+              "policy_digest": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "publisher_confirmed_fields": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "new_card": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "card",
+              "printing",
+              "linked",
+              "warnings",
+              "exception",
+              "policy_digest",
+              "publisher_confirmed_fields"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "$ref": "#/components/schemas/RetainedUnversionedAdmissionDecision"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "content": {
+                "type": "object",
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/CandidateNonNullSourceValue"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "evidence": {
+                "type": "object",
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/CandidateNonNullSourceValue"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            "required": [
+              "content",
+              "evidence"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
+        ]
       }
     },
     "parameters": {}

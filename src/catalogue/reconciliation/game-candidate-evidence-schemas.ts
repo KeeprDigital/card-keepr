@@ -121,7 +121,7 @@ const evidence = {
     source_lineage: identifier,
     generation: count,
     action: z.enum(["admit", "link", "reject", "reconsider"]).nullable(),
-    decision: admission.nullable(),
+    decision: z.union([admission, z.null()]),
     rationale: text.optional(),
   }),
   correction: z.strictObject({

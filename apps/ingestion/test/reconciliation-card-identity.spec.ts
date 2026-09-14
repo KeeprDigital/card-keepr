@@ -1172,6 +1172,12 @@ test("equal source-local artwork labels require owner evidence review across sou
   const review = requiredFirst(reviews.document, "reviews");
   expect(review).toMatchObject({ candidate_printing_ids: [printingId], source_lineage: "limitless-one-piece-en" });
   expect(review.evidence).toBeDefined();
+  await expect(
+    assertHttpResponse(contract, "/v1/reconciliation/identity-reviews", "get", reviews.response, {
+      ...reviews.document,
+      reviews: [{ ...review, evidence: { ...(review.evidence as Record<string, unknown>), card: null } }],
+    }),
+  ).rejects.toThrow("response matches generated schema");
   const repeatedRun = await collect("/reconciliation/canonical-tabular-ambiguous", "review-unresolved-retry", source);
   const repeated = await prepareFailedNativeIdentity(
     repeatedRun.id,

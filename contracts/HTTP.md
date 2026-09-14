@@ -39,6 +39,11 @@ handlers consume `c.req.valid(...)`. JSON responses parse the declared response
 schema before `c.json`, especially when presenters return stored or broadly typed
 JSON. Hono does not automatically validate outgoing JSON.
 
+Keep nullability at the use site with `z.union([namedSchema, z.null()])` when
+sharing a named component. Applying `.nullable()` to the named schema can change
+the generated component globally or leave a nullable reference non-null. Check
+both required and intentionally nullable positions against actual responses.
+
 The Card and Printing wire schemas project the Game Profile's declared primitives and
 filter paths into Zod. Profile semantic checks, retained-document validators and
 domain transitions remain independent of Zod. Card queries retain their existing
