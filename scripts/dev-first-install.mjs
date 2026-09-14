@@ -6,6 +6,7 @@ import { createServer } from "vite";
 import { devConfigurations } from "./dev-environment.mjs";
 import { verifyDevCommit } from "../src/http/dev-workflow-identity.mjs";
 import { environmentNames } from "../src/http/environment-target.mjs";
+import { restoreDevWorkerShells } from "./dev-worker-shell.mjs";
 
 /** D1's documented batch query API preserves the canonical repository transaction. */
 export function remoteDevDatabase(environment) {
@@ -83,15 +84,19 @@ export async function prepareFirstDevInstall(environment) {
       throw new Error("first_install_database_identity_mismatch");
   }
   const db = remoteDevDatabase(environment);
+  const retryOf = environment.DEV_FIRST_INSTALL_RETRY_OF;
   const empty = await db
     .prepare(
-      "SELECT migration_level FROM catalogue_schema_state WHERE singleton=1 AND NOT EXISTS (SELECT 1 FROM catalogue_revisions) AND NOT EXISTS (SELECT 1 FROM ingestion_runs) AND NOT EXISTS (SELECT 1 FROM administration_idempotency)",
+      "SELECT migration_level FROM catalogue_schema_state WHERE singleton=1 AND NOT EXISTS (SELECT 1 FROM catalogue_revisions) AND NOT EXISTS (SELECT 1 FROM ingestion_runs) AND (? = 1 OR NOT EXISTS (SELECT 1 FROM administration_idempotency))",
     )
+    .bind(retryOf === undefined ? 0 : 1)
     .first();
   if (!Number.isSafeInteger(empty?.migration_level)) throw new Error("first_install_requires_unused_dev_baseline");
   const vite = await createServer({ logLevel: "silent", server: { middlewareMode: true } });
   try {
-    const { prepareProductionRelease } = await vite.ssrLoadModule("/src/catalogue/ingestion/production-release.ts");
+    const { prepareProductionRelease, validatedPlan } = await vite.ssrLoadModule(
+      "/src/catalogue/ingestion/production-release.ts",
+    );
     const { catalogueStore, canonicalJson, sha256Text } = await vite.ssrLoadModule("/src/catalogue/shared/index.ts");
     const target = {
       cloudflare_account_id: environment.DEV_CLOUDFLARE_ACCOUNT_ID,
@@ -102,11 +107,85 @@ export async function prepareFirstDevInstall(environment) {
       ],
       r2_buckets: names.buckets,
     };
+    let suffix = "";
+    if (retryOf !== undefined) {
+      const refuse = () => {
+        throw new Error("first_install_retry_not_safe");
+      };
+      const idle = await db
+        .prepare(
+          "SELECT 1 AS idle FROM operation_state WHERE singleton=1 AND active_production_release_id IS NULL AND active_ingestion_run_id IS NULL AND active_recovery_id IS NULL AND recovery_health='healthy' AND recovery_restore_guard='clear' AND NOT EXISTS (SELECT 1 FROM production_releases)",
+        )
+        .first();
+      const rows = (
+        await db
+          .prepare(
+            "SELECT idempotency_key,operation,request_json,response_json,http_status,outcome FROM administration_idempotency ORDER BY created_at,idempotency_key LIMIT 101",
+          )
+          .all()
+      ).results;
+      if (!idle || typeof retryOf !== "string" || rows.length === 0 || rows.length > 100) refuse();
+      const groups = new Map();
+      try {
+        for (const row of rows) {
+          const plan = validatedPlan(JSON.parse(row.request_json), target);
+          if (
+            !plan.bootstrap ||
+            !plan.release_id.startsWith("dev-first-") ||
+            !plan.idempotency_key.startsWith("dev-first:") ||
+            canonicalJson(plan) !== row.request_json
+          )
+            refuse();
+          const group = groups.get(plan.release_id) ?? { plan, request: row.request_json, rows: [] };
+          if (group.request !== row.request_json) refuse();
+          group.rows.push({ ...row, response: JSON.parse(row.response_json) });
+          groups.set(plan.release_id, group);
+        }
+        for (const group of groups.values()) {
+          const digest = await sha256Text(group.request);
+          if (group.plan.production_target_digest !== (await sha256Text(canonicalJson(target)))) refuse();
+          const expected = [
+            ["prepare_production_release", group.plan.idempotency_key, 201, "success"],
+            ["claim_production_release", `release-dispatch:${digest}`, 201, "success"],
+            ["production_release_migration_started", `release-migration-started:${digest}`, 201, "success"],
+            ["production_release_migration_failed", `release-migration-failed:${digest}`, 500, "problem"],
+          ];
+          if (group.rows.length !== expected.length) refuse();
+          for (const [operation, key, status, outcome] of expected) {
+            const matches = group.rows.filter(
+              (row) =>
+                row.operation === operation &&
+                row.idempotency_key === key &&
+                row.http_status === status &&
+                row.outcome === outcome &&
+                row.response.release_id === group.plan.release_id &&
+                row.response.dispatch_digest === digest,
+            );
+            if (matches.length !== 1) refuse();
+          }
+          const prepared = group.rows.find((row) => row.operation === "prepare_production_release").response;
+          const failed = group.rows.find((row) => row.operation === "production_release_migration_failed").response;
+          if (
+            prepared.prepared_plan_json !== group.request ||
+            failed.state !== "failed" ||
+            failed.roll_forward_required !== true ||
+            failed.migration_started_key !== `release-migration-started:${digest}`
+          )
+            refuse();
+        }
+      } catch {
+        refuse();
+      }
+      const previous = groups.get(retryOf);
+      if (!previous || [...groups.keys()].at(-1) !== retryOf) refuse();
+      suffix = `-retry-${(await sha256Text(previous.request)).slice(0, 12)}`;
+      await restoreDevWorkerShells(environment);
+    }
     const prepared = await prepareProductionRelease(
       catalogueStore(db),
       {
-        release_id: `dev-first-${head}`,
-        idempotency_key: `dev-first:${head}`,
+        release_id: `dev-first-${head}${suffix}`,
+        idempotency_key: `dev-first:${head}${suffix}`,
         expected_head_sha: head,
         expected_actor: "github-actions[bot]",
         expected_current_revision_id: "catrev_spine_000",

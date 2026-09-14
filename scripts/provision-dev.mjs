@@ -7,6 +7,7 @@ import { devConfigurations } from "./dev-environment.mjs";
 import { verifyDevCommit } from "../src/http/dev-workflow-identity.mjs";
 import { environmentNames } from "../src/http/environment-target.mjs";
 import { verifyDevWorkflows } from "./dev-workflows.mjs";
+import { writeDevWorkerShell } from "./dev-worker-shell.mjs";
 
 /** Provision only new dev resources; never adopt, delete or reset an existing target. */
 export async function provisionDev(environment, evidence, apply = false) {
@@ -105,25 +106,7 @@ export async function provisionDev(environment, evidence, apply = false) {
   // bindings, and no usable application. Versions upload requires a script to
   // exist; only the guarded first-install executor activates the application.
   for (const [index, name] of names.workers.entries()) {
-    const form = new FormData();
-    form.set(
-      "metadata",
-      JSON.stringify({
-        main_module: "deny.mjs",
-        compatibility_date: "2026-07-29",
-        bindings: Object.entries(secrets[index]).map(([name, text]) => ({ name, text, type: "secret_text" })),
-      }),
-    );
-    form.set(
-      "deny.mjs",
-      new File(
-        ["export default { fetch() { return new Response('Dev installation pending', {status:503}); } };"],
-        "deny.mjs",
-        { type: "application/javascript+module" },
-      ),
-    );
-    await api(`/workers/scripts/${name}`, "PUT", form);
-    await api(`/workers/scripts/${name}/subdomain`, "POST", { enabled: false, previews_enabled: false });
+    await writeDevWorkerShell(environment, name, secretFiles[index]);
     plan.created.push({ kind: "worker-shell", name });
     await retain();
   }

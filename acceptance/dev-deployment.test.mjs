@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import childProcess from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +12,7 @@ import { createServer } from "vite";
 import { devAudience, requiredCiChecks } from "../src/http/dev-workflow-identity.mjs";
 import {
   activeReleaseIdentity,
+  countAdministrationOutcomes,
   countReleaseCompletionEvidence,
   countSuccessfulReleaseEvidence,
 } from "./helpers/query-helpers/production-release.mjs";
@@ -232,8 +235,40 @@ test("owner first install uses the canonical preparation transaction on an unuse
   const head = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
   const { database, env, checks } = await fixture(t, head);
   const githubFetch = globalThis.fetch;
+  const denySource = "export default { fetch() { return new Response('Dev installation pending', {status:503}); } };";
+  let shellSource = denySource;
+  let shellHasDataBinding = false;
+  let shellHasRoute = false;
   globalThis.fetch = async (url, options) => {
     if (new URL(url).hostname !== "api.cloudflare.com") return githubFetch(url, options);
+    const path = new URL(url).pathname;
+    if (path.endsWith("/zones"))
+      return Response.json({
+        success: true,
+        result: [{ id: "synthetic-zone", account: { id: env.CLOUDFLARE_ACCOUNT_ID } }],
+      });
+    if (path.endsWith("/workers/routes"))
+      return Response.json({ success: true, result: shellHasRoute ? [{ script: "card-keepr-api-dev" }] : [] });
+    if (path.includes("/workflows/")) return new Response(null, { status: 404 });
+    if (path.includes("/workers/scripts/")) {
+      if (path.endsWith("/subdomain"))
+        return Response.json({ success: true, result: { enabled: false, previews_enabled: false } });
+      if (path.endsWith("/settings"))
+        return Response.json({
+          success: true,
+          result: {
+            bindings: shellHasDataBinding
+              ? [{ name: "CATALOGUE_DB", type: "d1" }]
+              : (path.includes("-api-dev/")
+                  ? ["API_BEARER_KEY", "API_BEARER_KEY_REPLACEMENT"]
+                  : ["ADMINISTRATION_KEY", "ADMINISTRATION_KEY_REPLACEMENT", "D1_EXPORT_TOKEN", "D1_VERIFICATION_TOKEN"]
+                ).map((name) => ({ name, type: "secret_text" })),
+          },
+        });
+      const form = new FormData();
+      form.set("deny.mjs", shellSource);
+      return new Response(form);
+    }
     if (options.method !== "POST") {
       const id = String(url).split("/").at(-1);
       return Response.json({
@@ -246,17 +281,17 @@ test("owner first install uses the canonical preparation transaction on an unuse
       });
     }
     const { batch } = JSON.parse(options.body);
-    database.exec("BEGIN");
+    database.exec("SAVEPOINT dev_d1_batch");
     try {
       const result = batch.map(({ sql, params }) => {
         const statement = database.prepare(sql);
         const results = sqliteResults(statement, params);
         return { success: true, results, meta: {} };
       });
-      database.exec("COMMIT");
+      database.exec("RELEASE dev_d1_batch");
       return Response.json({ success: true, result });
     } catch (error) {
-      database.exec("ROLLBACK");
+      database.exec("ROLLBACK TO dev_d1_batch; RELEASE dev_d1_batch");
       throw error;
     }
   };
@@ -277,6 +312,69 @@ test("owner first install uses the canonical preparation transaction on an unuse
   assert.equal(JSON.parse(prepared.prepared_plan_json).expected_head_sha, head);
   assert.equal(prepared.environment, "dev");
   await assert.rejects(prepareFirstDevInstall(input), /first_install_requires_unused_dev_baseline/u);
+
+  const directory = await mkdtemp(join(tmpdir(), "keepr-dev-first-retry-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const dispatch = Object.fromEntries(
+    Object.entries(prepared.dispatch_inputs).map(([key, value]) => [key.toUpperCase(), value]),
+  );
+  const { validateDispatchAndWriteSql } = await import("../scripts/production-release.mjs");
+  await validateDispatchAndWriteSql(dispatch, directory);
+  const apply = async (...names) => {
+    for (const name of names) database.exec(await readFile(join(directory, `${name}.sql`), "utf8"));
+  };
+  const retry = {
+    ...input,
+    DEV_FIRST_INSTALL_RETRY_OF: prepared.release_id,
+    DEV_API_SECRETS_FILE: join(directory, "api.json"),
+    DEV_INGESTION_SECRETS_FILE: join(directory, "ingestion.json"),
+  };
+  for (const [app, names] of [
+    ["api", ["API_BEARER_KEY", "API_BEARER_KEY_REPLACEMENT"]],
+    ["ingestion", ["ADMINISTRATION_KEY", "ADMINISTRATION_KEY_REPLACEMENT", "D1_EXPORT_TOKEN", "D1_VERIFICATION_TOKEN"]],
+  ])
+    await writeFile(
+      join(directory, `${app}.json`),
+      JSON.stringify(Object.fromEntries(names.map((name) => [name, `synthetic-${name}-credential`]))),
+    );
+  database.exec("SAVEPOINT activated_attempt");
+  await apply("claim", "migration-started", "deploying", "failure-evidence", "cleanup");
+  await assert.rejects(prepareFirstDevInstall(retry), /first_install_(retry_not_safe|requires_unused_dev_baseline)/u);
+  database.exec("ROLLBACK TO activated_attempt; RELEASE activated_attempt");
+  await apply("claim", "migration-started", "failure-evidence", "cleanup");
+  await assert.rejects(
+    prepareFirstDevInstall({ ...retry, DEV_FIRST_INSTALL_RETRY_OF: "unrelated-release" }),
+    /first_install_(retry_not_safe|requires_unused_dev_baseline)/u,
+  );
+  const commands = [];
+  t.mock.method(childProcess, "execFileSync", (command, args) => {
+    if (command === "git") return head;
+    commands.push(args);
+    return "";
+  });
+  syncBuiltinESMExports();
+  t.after(() => {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  });
+  shellSource = "export default { fetch() { return new Response('Application'); } };";
+  await assert.rejects(prepareFirstDevInstall(retry), /first_install_retry_not_safe/u);
+  shellSource = denySource;
+  shellHasDataBinding = true;
+  await assert.rejects(prepareFirstDevInstall(retry), /first_install_retry_not_safe/u);
+  shellHasDataBinding = false;
+  shellHasRoute = true;
+  await assert.rejects(prepareFirstDevInstall(retry), /first_install_retry_not_safe/u);
+  shellHasRoute = false;
+  assert.equal(commands.length, 0, "unsafe targets cause no shell writes");
+  const retried = await prepareFirstDevInstall(retry);
+  assert.notEqual(retried.release_id, prepared.release_id);
+  assert.equal(commands.filter((args) => args[0] === "deploy").length, 2);
+  assert.equal(
+    countAdministrationOutcomes(database).get().count,
+    5,
+    "prior failure history is retained alongside a fresh canonical preparation",
+  );
 });
 
 test("a signed dev run cannot substitute another independently passing main commit", async (t) => {

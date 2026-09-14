@@ -6,6 +6,10 @@ export function countDispatchClaims(database) {
   );
 }
 
+export function countAdministrationOutcomes(database) {
+  return database.prepare("SELECT COUNT(*) AS count FROM administration_idempotency");
+}
+
 export function activeIngestionIdentity(database) {
   return database.prepare("SELECT active_ingestion_run_id FROM operation_state");
 }
