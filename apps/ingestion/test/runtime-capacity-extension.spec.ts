@@ -1,3 +1,5 @@
+import { assertHttpResponse } from "../../../test/support/http-contract";
+import contract from "../../../contracts/admin-openapi.json";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import { env, exports } from "cloudflare:workers";
@@ -35,6 +37,7 @@ test("extending capacity advances the generation atomically and replays idempote
     capacity_generation: 2,
   });
   expect(typeof document.extended_at).toBe("string");
+  await assertHttpResponse(contract, "/v1/ingestion-runs/{run}/capacity/extension", "post", extended, document);
 
   // The extension is one immutable record that advanced the generation.
   const stored = await sourceEvidenceQueries
@@ -56,6 +59,14 @@ test("extending capacity advances the generation atomically and replays idempote
   expect(
     await sourceEvidenceQueries.countIngestionRunCapacityPausesCount(env.CATALOGUE_DB).bind(runId).first("count"),
   ).toBe(1);
+
+  const status = await administrationRequest(`/v1/ingestion-runs/${runId}/evidence`, "GET");
+  expect(status.status).toBe(200);
+  expect(await status.clone().json()).toMatchObject({
+    state: "paused",
+    pause: { reason: "source_request_capacity_exhausted" },
+  });
+  await assertHttpResponse(contract, "/v1/ingestion-runs/{run}/evidence", "get", status);
 
   // Replaying the same extension returns the original result without
   // applying another extension.
@@ -185,7 +196,7 @@ test("every invalid capacity extension returns its explicit problem document", a
         idempotency_key: "capacity_extension_malformed_001",
       },
       422,
-      "request_capacity_invalid",
+      "invalid_parameter",
     ],
     [
       runId,
@@ -196,7 +207,7 @@ test("every invalid capacity extension returns its explicit problem document", a
         idempotency_key: "capacity_extension_malformed_002",
       },
       422,
-      "request_capacity_invalid",
+      "invalid_parameter",
     ],
     [
       runId,
@@ -207,13 +218,21 @@ test("every invalid capacity extension returns its explicit problem document", a
         idempotency_key: "capacity_extension_malformed_003",
       },
       422,
-      "capacity_generation_invalid",
+      "invalid_parameter",
     ],
   ];
   for (const [target, body, status, code] of problems) {
     const response = await administrationRequest(`/v1/ingestion-runs/${target}/capacity/extension`, "POST", body);
-    const problem = await response.json<{ code?: string }>();
+    const problem = await response.json<{ code?: string; invalid_params?: { name: string }[] }>();
     expect({ code: problem.code, status: response.status, body }).toEqual({ code, status, body });
+    await assertHttpResponse(contract, "/v1/ingestion-runs/{run}/capacity/extension", "post", response, problem);
+    if (code === "invalid_parameter") {
+      expect(problem.invalid_params).toEqual([
+        expect.objectContaining({
+          name: body.expected_capacity_generation === 0 ? "expected_capacity_generation" : "request_capacity",
+        }),
+      ]);
+    }
   }
 
   // Reusing an idempotency key for a different extension conflicts instead

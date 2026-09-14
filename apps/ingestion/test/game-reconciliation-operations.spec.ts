@@ -705,7 +705,7 @@ test("native supplemental admission retains collection evidence and preparation-
           release_region: "OCEANIA",
           area,
           source_lineage: "limitless-one-piece-en",
-          expected_generation: "0",
+          expected_generation: 0,
           rationale: "Synthetic native admission",
           idempotency_key: `native-admission-${area}`,
         })
@@ -801,7 +801,7 @@ test.each([
             release_region: "OCEANIA",
             area,
             source_lineage: "limitless-one-piece-en",
-            expected_generation: "0",
+            expected_generation: 0,
             rationale: "Synthetic native review",
             idempotency_key: `native-review-${area}`,
           })

@@ -61,6 +61,22 @@ inspection. Target resolution, confirmation and canonical release dispatch bytes
 remain server-owned. Unmigrated families retain their documented outcome semantics.
 There is no server-negotiated CLI representation.
 
+## Source and collection migration
+
+[#317](https://github.com/KeeprDigital/card-keepr/issues/317) migrates all 16
+source/collection operations, including the retained-record importer and content
+reads without named CLI descriptors. The source-evidence module owns their
+registrations. Authority/lifecycle generations are numeric on the wire and convert
+to the existing retained decision input format before domain work.
+
+Collection creation/retry returns an immutable initial receipt; the evidence read
+returns current status. Resume is a dispatch acknowledgement with observed Workflow
+status. The [administration contract](ADMINISTRATION.md#source-and-collection-http)
+defines these distinctions and the unchanged owner guards. Retained content uses
+the explicit streaming boundary: it checks status, media and required headers
+without buffering bytes. Actual-response tests validate retained JSON against the
+registered schema and compare snapshot bytes and digest/length headers.
+
 ## Migrating a family
 
 1. Find the operation and potential callers in [the generated inventory](http-route-inventory.json).

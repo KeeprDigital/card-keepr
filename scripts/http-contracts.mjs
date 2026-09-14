@@ -73,7 +73,7 @@ for (const [worker, families] of Object.entries(workerFamilies)) {
       title: `Card Keepr ${worker === "read" ? "catalogue read" : "administration"} API`,
       version: "1.0.0",
       description:
-        "Generated pilot contracts. Unmigrated operations are explicitly inventoried; this document is not yet the complete Worker contract.",
+        "Generated HTTP contracts. Unmigrated operations are explicitly inventoried; this document is not yet the complete Worker contract.",
     },
     servers,
   });

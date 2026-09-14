@@ -2407,7 +2407,7 @@ test("source lifecycle CLI sends the explicit compare-and-set retirement decisio
     path: "/v1/source-lineages/limitless-one-piece-en/lifecycle",
     body: {
       state: "retired",
-      expected_generation: "0",
+      expected_generation: 0,
       rationale: "Source stopped publishing",
       idempotency_key: "retire-source-cli",
     },

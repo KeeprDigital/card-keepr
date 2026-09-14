@@ -33,8 +33,10 @@ export async function assertHttpResponse(
     return;
   }
   const media = response.headers.get("content-type")?.split(";")[0];
-  expect(branch!.content?.[media!], `declared media ${media}`).toBeDefined();
-  if (!media?.includes("json")) return;
+  const representation = branch!.content?.[media!] ?? branch!.content?.["*/*"];
+  expect(representation, `declared media ${media}`).toBeDefined();
+  // A snapshot retains arbitrary source media, including JSON, as opaque bytes.
+  if (!media?.includes("json") || !branch!.content?.[media]) return;
   const worker = document.info.title.includes("administration") ? "admin" : "read";
   const name = validators.responseValidators[`${worker} ${method} ${path} ${response.status} ${media}`];
   const validate = validators[name as keyof typeof validators];

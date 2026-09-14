@@ -1079,7 +1079,7 @@ test("synthetic exact cross-source evidence retains one consumer Printing after 
       release_region: "OCEANIA",
       area,
       source_lineage: "limitless-one-piece-en",
-      expected_generation: "0",
+      expected_generation: 0,
       rationale: "Synthetic cross-source matching test",
       idempotency_key: `cross-${area}`,
     });
@@ -1138,7 +1138,7 @@ test("equal source-local artwork labels require owner evidence review across sou
           release_region: "OCEANIA",
           area,
           source_lineage: "limitless-one-piece-en",
-          expected_generation: "0",
+          expected_generation: 0,
           rationale: "Synthetic review test",
           idempotency_key: `review-${area}`,
         })
@@ -1260,7 +1260,7 @@ test("missing-number cross-source evidence reviews the existing Card and Printin
           release_region: "OCEANIA",
           area,
           source_lineage: "limitless-one-piece-en",
-          expected_generation: "0",
+          expected_generation: 0,
           rationale: "Synthetic missing-number mapping",
           idempotency_key: `unknown-cross-${area}`,
         })

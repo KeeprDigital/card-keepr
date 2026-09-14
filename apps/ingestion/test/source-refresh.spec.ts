@@ -155,7 +155,7 @@ test("a missing required capture after a full batch cannot publish or claim a su
 test("retiring a source is explicit, replayable and cannot retire a designated authority", async () => {
   const decision = {
     state: "retired",
-    expected_generation: "0",
+    expected_generation: 0,
     rationale: "Source stopped publishing",
     idempotency_key: "retire-limitless",
   };
@@ -187,7 +187,7 @@ test("retiring a source is explicit, replayable and cannot retire a designated a
     release_region: "OCEANIA",
     area: "card_facts",
     source_lineage: "limitless-one-piece-en",
-    expected_generation: "0",
+    expected_generation: 0,
     rationale: "Must not select retired source",
     idempotency_key: "retired-authority",
   });
@@ -195,7 +195,7 @@ test("retiring a source is explicit, replayable and cannot retire a designated a
   const restored = await administrationRequest("/v1/source-lineages/limitless-one-piece-en/lifecycle", "POST", {
     ...decision,
     state: "active",
-    expected_generation: "1",
+    expected_generation: 1,
     idempotency_key: "reactivate-limitless",
   });
   expect(restored.status).toBe(200);

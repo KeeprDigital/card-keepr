@@ -1,5 +1,6 @@
 import { sourceLineages } from "../adapters";
 import { AdministrationProblem, type CatalogueStore, canonicalJson } from "../shared";
+import { sameSourceDecisionIntent } from "./source-decision-intent";
 import { sourceAuthorities } from "./source-authority";
 import {
   type SourceLifecycleDecision,
@@ -90,7 +91,7 @@ function assertLineage(lineage: string) {
     throw new AdministrationProblem(422, "source_lineage_invalid", "Select a registered Source Lineage.");
 }
 function replayDecision(decision: SourceLifecycleDecision, requestJson: string) {
-  if (decision.request_json !== requestJson)
+  if (!sameSourceDecisionIntent(decision.request_json, requestJson))
     throw new AdministrationProblem(
       409,
       "idempotency_key_reused",

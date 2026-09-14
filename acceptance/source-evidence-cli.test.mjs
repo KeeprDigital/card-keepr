@@ -1,3 +1,5 @@
+import contract from "../contracts/admin-openapi.json" with { type: "json" };
+import * as responseValidators from "../test/support/http-response-validators.mjs";
 import { readWorkerConfig } from "../cli/lib/config.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -59,6 +61,63 @@ test("compatibility publication: the CLI audits real retained evidence through a
     KEEPR_ADMINISTRATION_KEY: administrationKey,
     KEEPR_INGESTION_URL: ingestion.url,
   };
+  const registry = await runCli(["source", "registry", "--json"], cliEnvironment);
+  assert.equal(registry.code, 0, registry.stderr);
+  validateSourceDocument("/v1/source-registry", "get", 200, JSON.parse(registry.stdout));
+  const designation = [
+    "source",
+    "designate",
+    "--game",
+    "riftbound",
+    "--locale",
+    "en",
+    "--release-region",
+    "US",
+    "--area",
+    "card_facts",
+    "--source-lineage",
+    "riftbound-en",
+    "--expected-generation",
+    "0",
+    "--rationale",
+    "Use the retained Riot evidence",
+    "--idempotency-key",
+    "cli-authority",
+    "--json",
+  ];
+  const designated = await runCli(designation, cliEnvironment);
+  assert.equal(designated.code, 0, designated.stderr || designated.stdout);
+  validateSourceDocument("/v1/source-authorities", "post", 200, JSON.parse(designated.stdout));
+  const designationReplay = await runCli(designation, cliEnvironment);
+  assert.equal(designationReplay.code, 0, designationReplay.stderr);
+  assert.deepEqual(JSON.parse(designationReplay.stdout), JSON.parse(designated.stdout));
+  const retired = await runCli(
+    [
+      "source",
+      "set-lifecycle",
+      "--lineage",
+      "limitless-one-piece-en",
+      "--state",
+      "retired",
+      "--expected-generation",
+      "0",
+      "--rationale",
+      "Retire this unused fixture source",
+      "--idempotency-key",
+      "cli-lifecycle",
+      "--json",
+    ],
+    cliEnvironment,
+  );
+  assert.equal(retired.code, 0, retired.stderr || retired.stdout);
+  validateSourceDocument("/v1/source-lineages/{lineage}/lifecycle", "post", 200, JSON.parse(retired.stdout));
+  const lifecycle = await runCli(
+    ["source", "lifecycle", "--lineage", "limitless-one-piece-en", "--json"],
+    cliEnvironment,
+  );
+  assert.equal(lifecycle.code, 0, lifecycle.stderr);
+  assert.equal(JSON.parse(lifecycle.stdout).state, "retired");
+  validateSourceDocument("/v1/source-lineages/{lineage}/lifecycle", "get", 200, JSON.parse(lifecycle.stdout));
   const rejected = await collectResumeAndShow(
     "cli_rejected_evidence_001",
     "redirect",
@@ -112,6 +171,7 @@ test("compatibility publication: the CLI audits real retained evidence through a
   assert.equal(terminated.code, 0, terminated.stderr);
   const terminationDocument = JSON.parse(terminated.stdout);
   assert.equal(terminationDocument.contract, "card-keepr-collection-termination@1");
+  validateSourceDocument("/v1/ingestion-runs/{run}/collection/termination", "post", 200, terminationDocument);
   assert.equal(terminationDocument.ingestion_run_id, abandoned.id);
   assert.equal(terminationDocument.failure_code, "ingestion_run_terminated");
   assert.equal(terminationDocument.pause_reason, "source_transport_retries_exhausted");
@@ -143,6 +203,12 @@ test("compatibility publication: the CLI audits real retained evidence through a
   const resumeRefused = await runCli(["source", "resume", "--run-id", abandoned.id, "--json"], cliEnvironment);
   assert.equal(resumeRefused.code, 7);
   assert.equal(JSON.parse(resumeRefused.stdout).code, "ingestion_run_not_collecting");
+  const refusedHttp = await fetch(`${ingestion.url}/v1/ingestion-runs/${abandoned.id}/collection/resume`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${administrationKey}` },
+  });
+  assert.equal(refusedHttp.status, 409);
+  validateSourceDocument("/v1/ingestion-runs/{run}/collection/resume", "post", 409, await refusedHttp.json());
   const terminatedHuman = await runCli(["source", "show", "--run-id", abandoned.id], cliEnvironment);
   assert.equal(terminatedHuman.code, 0, terminatedHuman.stderr);
   assert.match(terminatedHuman.stdout, /Terminated: ingestion_run_terminated/);
@@ -179,6 +245,12 @@ test("compatibility publication: the CLI audits real retained evidence through a
 
   const resumedAfterPause = await runCli(["source", "resume", "--run-id", paused.id, "--json"], cliEnvironment);
   assert.equal(resumedAfterPause.code, 0, resumedAfterPause.stderr);
+  validateSourceDocument(
+    "/v1/ingestion-runs/{run}/collection/resume",
+    "post",
+    202,
+    JSON.parse(resumedAfterPause.stdout),
+  );
   const successful = await waitForAdministrationDocument(
     `/v1/ingestion-runs/${encodeURIComponent(paused.id)}/evidence`,
     (document) =>
@@ -188,6 +260,7 @@ test("compatibility publication: the CLI audits real retained evidence through a
     ingestion,
     { deadlineMs: 30_000, description: "retained evidence and parent Workflow completion" },
   );
+  validateSourceDocument("/v1/ingestion-runs/{run}/evidence", "get", 200, successful);
   assert.equal(successful.state, "awaiting_approval");
   assert.equal(successful.workflow.status, "complete");
   assert.equal(successful.failure_code, null);
@@ -264,14 +337,34 @@ async function collectResumeAndShow(
     ["source", "collect", "--plan-file", planFile, "--idempotency-key", idempotencyKey, "--json"],
     environment,
   );
-  assert.equal(collected.code, 0, collected.stderr);
+  assert.equal(collected.code, 0, `${collected.stdout}\n${collected.stderr}\n${ingestion.getOutput()}`);
   const run = JSON.parse(collected.stdout);
+  assert.equal(run.contract, "card-keepr-evidence-acceptance@1");
+  validateSourceDocument("/v1/ingestion-runs/evidence", "post", 201, run);
   const resumed = await runCli(["source", "resume", "--run-id", run.id, "--json"], environment);
-  assert.equal(resumed.code, 0, resumed.stderr);
+  assert.equal(resumed.code, 0, `${resumed.stdout}\n${resumed.stderr}\n${ingestion.getOutput()}`);
 
-  return waitForRunState(run.id, expectedState, environment, ingestion, {
-    deadlineMs: 20_000,
+  const current = await waitForRunState(run.id, expectedState, environment, ingestion, { deadlineMs: 20_000 });
+  validateSourceDocument("/v1/ingestion-runs/{run}/evidence", "get", 200, current);
+  const intent = {
+    plans: [
+      { supported_game: "one-piece", source_lineage: "one-piece-en", adapter_version: "one-piece-en@6", requests },
+    ],
+    idempotency_key: idempotencyKey,
+  };
+  const replay = await fetch(`${environment.KEEPR_INGESTION_URL}/v1/ingestion-runs/evidence`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${environment.KEEPR_ADMINISTRATION_KEY}`, "content-type": "application/json" },
+    body: JSON.stringify(intent),
   });
+  assert.equal(replay.status, 201);
+  assert.equal(replay.headers.get("location"), run.links.status);
+  assert.equal(replay.headers.get("retry-after"), "1");
+  assert.equal(replay.headers.get("cache-control"), "no-store");
+  const replayed = await replay.json();
+  validateSourceDocument("/v1/ingestion-runs/evidence", "post", replay.status, replayed);
+  assert.deepEqual(replayed, run, "replay keeps the original receipt after lifecycle progress");
+  return current;
 }
 
 function exactOnePieceRequests() {
@@ -281,4 +374,16 @@ function exactOnePieceRequests() {
       url: "https://en.onepiece-cardgame.com/cardlist/?series=569116",
     },
   ];
+}
+
+function validateSourceDocument(path, method, status, document) {
+  const media = status >= 400 ? "application/problem+json" : "application/json";
+  assert.ok(
+    contract.paths[path]?.[method]?.responses[String(status)]?.content?.[media],
+    `${method} ${path} ${status} is declared`,
+  );
+  const name = responseValidators.responseValidators[`admin ${method} ${path} ${status} ${media}`];
+  const validate = responseValidators[name];
+  assert.equal(typeof validate, "function");
+  assert.equal(validate(document), true, `${method} ${path} ${status} matches the generated contract`);
 }

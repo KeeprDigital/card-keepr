@@ -3,7 +3,7 @@
   "info": {
     "title": "Card Keepr catalogue read API",
     "version": "1.0.0",
-    "description": "Generated pilot contracts. Unmigrated operations are explicitly inventoried; this document is not yet the complete Worker contract."
+    "description": "Generated HTTP contracts. Unmigrated operations are explicitly inventoried; this document is not yet the complete Worker contract."
   },
   "servers": [
     {

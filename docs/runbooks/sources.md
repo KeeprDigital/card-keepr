@@ -12,8 +12,13 @@ keepr source registry --json
 keepr source authorities --json
 keepr source collect --plan-file docs/examples/one-piece-two-source-plan.json \
   --idempotency-key CAPTURE_INTENT --json
+keepr source resume --run-id RUN --json
 keepr source show --run-id RUN --json
 ```
+
+Collection creation acknowledges the retained plan; resume dispatches its work.
+Inspect `source show` for current progress and completion. Exact creation retries
+return the original acceptance, even after the run advances.
 
 The [example plan](../examples/one-piece-two-source-plan.json) selects required
 Bandai P-001 catalogue/event corroboration and Limitless P-001 evidence. Its
@@ -60,7 +65,7 @@ accepted entities/history and blocks new collection/retry. It is not withdrawal.
 
 ## Paused or failed collection
 
-Inspect `collection.actions`, `pause_reason`, per-source capacity/generation,
+Inspect `actions`, `collection.pause_reason`, per-source capacity/generation,
 request and evidence counts, failed images, and Workflow Attempts. Counts are
 exact; detail lists may be truncated. A pause keeps retained evidence and the
 same run; collection must complete before reconciliation/publication.

@@ -7,6 +7,7 @@ import {
   installReconciliationSuite,
   post,
   reconcile,
+  requiredRecord,
   requiredString,
   testEnv,
 } from "./reconciliation-helpers";
@@ -1084,6 +1085,18 @@ test("a retained Printing Image read outage preserves preparation for owner resu
   });
   expect(started.response.status).toBe(201);
   const id = requiredString(started.document, "id");
+  const statusUrl = new URL(requiredString(requiredRecord(started.document.links, "links"), "status"));
+  expect(started.document).toMatchObject({
+    contract: "card-keepr-evidence-acceptance@1",
+    state: "collecting",
+    linked_run_id: null,
+    links: { status: statusUrl.href },
+  });
+  expect(statusUrl.pathname).toBe(`/v1/ingestion-runs/${id}/evidence`);
+  expect(started.response.headers.get("location")).toBe(statusUrl.href);
+  const status = await get(statusUrl.pathname);
+  expect(status.response.status).toBe(200);
+  expect(status.document.id).toBe(id);
   await collectFixtureEvidence(testEnv.CATALOGUE_DB, testEnv.EVIDENCE_OBJECTS, testEnv.OFFICIAL_SOURCE_TRANSPORT, id);
   await waitForRunState(id, "parsing");
   let unavailable = true;
@@ -1116,7 +1129,7 @@ test("a retained Printing Image read outage preserves preparation for owner resu
   } as unknown as import("cloudflare:workers").WorkflowStep;
   const payload = {
     ingestion_run_id: id,
-    expected_current_revision_id: requiredString(started.document, "expected_current_revision_id"),
+    expected_current_revision_id: requiredString(status.document, "expected_current_revision_id"),
     idempotency_key: "retained-image-outage",
     observed_at: new Date().toISOString(),
     generation: 0,

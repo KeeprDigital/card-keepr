@@ -27,6 +27,31 @@ export function httpRoute<C extends HttpContext>() {
   });
 }
 
+/** Retained JSON, like binary evidence, is an opaque stream. Check its declared
+ * status/media/headers without materializing it into Hono's c.json body type. */
+export function streamingHttpRoute<C extends HttpContext>() {
+  return <R extends RouteConfig>(
+    definition: R,
+    handler: (...args: Parameters<RouteHandler<R, { Bindings: C }>>) => Promise<Response>,
+  ): HttpRoute<C> => {
+    const checked = async (...args: Parameters<typeof handler>) => {
+      const response = await handler(...args);
+      const branch = definition.responses[response.status];
+      const media = response.headers.get("Content-Type")?.split(";")[0]?.trim();
+      if (!branch || !("content" in branch) || !media || !(branch.content?.[media] ?? branch.content?.["*/*"]))
+        throw new Error("Retained stream does not match its declared HTTP status and media.");
+      for (const [name, header] of Object.entries(branch.headers ?? {})) {
+        if ("required" in header && header.required && !response.headers.has(name))
+          throw new Error(`Retained stream is missing its declared ${name} header.`);
+      }
+      return response;
+    };
+    // Hono assumes application/json is built with c.json. The explicit stream
+    // boundary checks the wire envelope; actual-byte tests verify its schema.
+    return httpRoute<C>()(definition, checked as RouteHandler<R, { Bindings: C }>);
+  };
+}
+
 export function httpRouter<C extends HttpContext>(routes: readonly HttpRoute<C>[]) {
   const app = new OpenAPIHono<{ Bindings: C }>({
     strict: true,
