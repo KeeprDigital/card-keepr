@@ -35,8 +35,8 @@ credentials and URL overrides are not inherited. Curated Revision commands
 retain their separate stdin-secret interface. Omitting `--target` preserves
 the existing configured URLs and unscoped credentials.
 
-Commands that implement target confirmation (including release,
-recovery and maintenance):
+The production-target confirmation protocol used by `release production`,
+recovery and maintenance has these requirements:
 
 - require `--environment` to match the selected target, defaulting to `production`;
 - print the resolved Cloudflare account, Worker, D1, and R2 identities before
