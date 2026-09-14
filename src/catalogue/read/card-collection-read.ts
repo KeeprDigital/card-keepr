@@ -115,6 +115,7 @@ export async function cardCollectionResponse(
             game: filters.game,
             category: filters.category,
             card_number: filters.cardNumber,
+            card_id: filters.cardId ?? null,
             product_id: filters.productId,
             rarity: filters.rarity,
             ...Object.fromEntries(
@@ -176,6 +177,7 @@ function parseFilters(url: URL): CollectionFilters {
     "game",
     "category",
     "card_number",
+    "card_id",
     "product_id",
     "rarity",
     "limit",
@@ -213,7 +215,18 @@ function parseFilters(url: URL): CollectionFilters {
     if (value === null) throw invalidParameter(name, `${name} or its value is not defined by ${profile}.`);
     attributes[path] = value;
   }
-  return { q, game, category, cardNumber, productId, rarity, attributes, limit };
+  const cardId = collectionFilter(url, "card_id");
+  return {
+    ...(cardId === null ? {} : { cardId }),
+    q,
+    game,
+    category,
+    cardNumber,
+    productId,
+    rarity,
+    attributes,
+    limit,
+  };
 }
 
 function rowCursor(row: CardRow): CardCursor["after"] {

@@ -10,6 +10,7 @@ export type CardRow = {
 };
 
 export type CollectionFilters = {
+  cardId?: string;
   q: string | null;
   game: string | null;
   category: string | null;
@@ -76,7 +77,7 @@ export function cardCollectionPageQuery(
               cards.sort_identity_value,
               cards.sort_id
        FROM revision_card_query_documents AS cards
-       INDEXED BY revision_card_query_documents_by_order
+       ${filters.cardId ? "" : "INDEXED BY revision_card_query_documents_by_order"}
        WHERE ${conditions.join("\nAND ")}
        ORDER BY cards.sort_game,
                 cards.sort_identity_kind,
@@ -155,6 +156,10 @@ function addCardFilterPredicates(
   alias: string,
   filters: CollectionFilters,
 ): void {
+  if (filters.cardId !== undefined) {
+    conditions.push(`${alias}.card_id = ?`);
+    bindings.push(filters.cardId);
+  }
   if (filters.category !== null) {
     conditions.push(`${alias}.category = ?`);
     bindings.push(filters.category);

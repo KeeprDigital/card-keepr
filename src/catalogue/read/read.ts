@@ -326,7 +326,10 @@ export async function printingImageContentResponse(
   if (!isHead && ifNoneMatch(request, etag)) {
     return new Response(null, { status: 304, headers: baseHeaders });
   }
-  const range = isHead ? null : parseRange(request.headers.get("range"), row.content_byte_length);
+  const range =
+    isHead || (request.headers.has("if-range") && request.headers.get("if-range") !== etag)
+      ? null
+      : parseRange(request.headers.get("range"), row.content_byte_length);
   if (range === "unsatisfiable") {
     throw new ReadProblem(
       416,

@@ -569,7 +569,10 @@ export async function compositionImageResponse(
   const isHead = request.method === "HEAD";
   const conditional = isHead ? null : conditionalResponse(request, Object.fromEntries(headers));
   if (conditional) return conditional;
-  const range = isHead ? null : parseRange(request.headers.get("range"), size);
+  const range =
+    isHead || (request.headers.has("if-range") && request.headers.get("if-range") !== etag)
+      ? null
+      : parseRange(request.headers.get("range"), size);
   if (range === "unsatisfiable")
     throw new ReadProblem(
       416,

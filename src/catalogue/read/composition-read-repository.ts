@@ -99,7 +99,7 @@ export function composedCollectionStatement(
     );
     bindings.push(filters.category);
   } else equal("e.category", filters.category);
-  equal("e.card_id", filters.card_id);
+  equal(kind === "cards" ? "e.entity_id" : "e.card_id", filters.card_id);
   equal("e.identity_value", filters.card_number);
   if (after) {
     conditions.push(

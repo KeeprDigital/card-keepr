@@ -2332,6 +2332,7 @@
     "slice": "Catalogue reads",
     "named_cli": null,
     "callers": [
+      "acceptance/card-categories.test.mjs",
       "acceptance/card-model-migration.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/fixtures/catalogue-runtime-harness.mjs",
@@ -2349,6 +2350,7 @@
     "slice": "Catalogue reads",
     "named_cli": null,
     "callers": [
+      "acceptance/card-categories.test.mjs",
       "acceptance/card-model-migration.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/fixtures/catalogue-runtime-harness.mjs",
@@ -2384,6 +2386,7 @@
     "named_cli": null,
     "callers": [
       "acceptance/bounded-capacity-pilot.test.mjs",
+      "acceptance/card-categories.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/helpers/native-fresh-baseline.mjs",
       "acceptance/publication-preparation.test.mjs",
@@ -2402,6 +2405,7 @@
     "named_cli": null,
     "callers": [
       "acceptance/bounded-capacity-pilot.test.mjs",
+      "acceptance/card-categories.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/helpers/native-fresh-baseline.mjs",
       "acceptance/publication-preparation.test.mjs",

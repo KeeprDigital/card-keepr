@@ -108,6 +108,16 @@ test("Card search preserves an owner-admitted unknown official identity", async 
   const document = await response.json<{ data: { official_identity: unknown }[] }>();
   expect(document.data[0]!.official_identity).toEqual({ kind: "unknown", value: null });
   await assertHttpResponse(contract, "/v1/cards", "get", response, document);
+  for (const id of ["card_unknown_identity", "card_absent"]) {
+    const selected = await apiWorker.fetch(
+      new Request(`https://card-keepr.invalid/v1/cards?card_id=${id}`, { headers: apiHeaders("identifier-filter") }),
+      testEnv,
+    );
+    expect(selected.status).toBe(200);
+    const body = await selected.json<{ data: { id: string }[] }>();
+    expect(body.data.map((card) => card.id)).toEqual(id === "card_unknown_identity" ? [id] : []);
+    await assertHttpResponse(contract, "/v1/cards", "get", selected, body);
+  }
 });
 
 test.each([false, true])("Card search preserves the retained withdrawal marker %s", async (withdrawn) => {

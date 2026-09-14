@@ -442,6 +442,17 @@ test("authenticated Printing Image content is immutable, conditional, and range-
   expect(partial.headers.get("content-range")).toBe("bytes 7-11/18");
   expect(new TextDecoder().decode(await partial.arrayBuffer())).toBe("front");
 
+  for (const validator of [content.headers.get("etag")!, `W/${content.headers.get("etag")!}`, '"other-image"']) {
+    const response = await api("/v1/printing-images/printing_image_st15_front/content", {
+      range: "bytes=7-11",
+      "if-range": validator,
+    });
+    const matched = validator === content.headers.get("etag");
+    expect(response.status).toBe(matched ? 206 : 200);
+    await assertHttpResponse(contract, "/v1/printing-images/{image}/content", "get", response);
+    expect(new TextDecoder().decode(await response.arrayBuffer())).toBe(matched ? "front" : "fusion-front-image");
+  }
+
   const notModified = await api("/v1/printing-images/printing_image_st15_front/content", {
     "if-none-match": '"46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773"',
   });
@@ -1287,17 +1298,28 @@ function expectSchema(definition: string, value: unknown): void {
 test("a missing published Printing Image retains a protected missing-object diagnosis", async () => {
   const logs: string[] = [];
   vi.spyOn(console, "error").mockImplementation((value) => logs.push(String(value)));
-  await testEnv.PRINTING_IMAGES.delete(
-    "printing-images/46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773",
-  );
-  const response = await api("/v1/printing-images/printing_image_st15_front/content");
-  expect(response.status).toBe(500);
-  const problem = await response.json<{ request_id: string }>();
-  expect(problem).toMatchObject({ code: "internal_error", detail: "The request could not be completed." });
-  expect(logs.map((line) => JSON.parse(line)).find((event) => event.event === "request.failed")).toMatchObject({
-    request_id: problem.request_id,
-    causes: [{ classification: "missing_object", stack_reference: expect.any(String) }],
-  });
+  const key = "printing-images/46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773";
+  const original = await testEnv.PRINTING_IMAGES.get(key);
+  expect(original).not.toBeNull();
+  const bytes = await original!.arrayBuffer();
+  try {
+    await testEnv.PRINTING_IMAGES.delete(
+      "printing-images/46f3e4bfb8bc9956482a6491e9b968d82e6fd544da44f9f36d93b443b845f773",
+    );
+    const response = await api("/v1/printing-images/printing_image_st15_front/content");
+    expect(response.status).toBe(500);
+    const problem = await response.json<{ request_id: string }>();
+    expect(problem).toMatchObject({ code: "internal_error", detail: "The request could not be completed." });
+    expect(logs.map((line) => JSON.parse(line)).find((event) => event.event === "request.failed")).toMatchObject({
+      request_id: problem.request_id,
+      causes: [{ classification: "missing_object", stack_reference: expect.any(String) }],
+    });
+  } finally {
+    await testEnv.PRINTING_IMAGES.put(key, bytes, {
+      httpMetadata: original!.httpMetadata,
+      sha256: original!.checksums.sha256,
+    });
+  }
 });
 
 test("explicit missing revisions cannot fall back to current reads or conditional images", async () => {

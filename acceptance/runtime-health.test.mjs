@@ -18,7 +18,10 @@ const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);
 ajv.addSchema(exportManifestSchemaV5);
 const validateProblem = ajv.compile({ components: readContract.components, $ref: "#/components/schemas/Problem" });
-const validateCatalogue = ajv.compile({ components: readContract.components, $ref: "#/components/schemas/CatalogueDocument" });
+const validateCatalogue = ajv.compile({
+  components: readContract.components,
+  $ref: "#/components/schemas/CatalogueDocument",
+});
 // Reserved migration numbers can leave gaps; readiness reports the highest
 // applied migration number, not the number of checked-in files.
 const migrationLevel = Math.max(

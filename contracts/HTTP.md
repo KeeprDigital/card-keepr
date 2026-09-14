@@ -9,6 +9,27 @@ and CORS preflight. The [administration OpenAPI](admin-openapi.json) remains
 partial while its families migrate; `x-unmigrated-operations` inventories the
 remaining operations. Documentation hosting belongs to the later HTTP tickets.
 
+## Published discovery and reads
+
+Authenticated GET `/v1/games` lists only games in the current published composition.
+Each game carries its Game Profile identity, field types and explicit nullability,
+accepted filter names, and absolute collection links pinned to that revision.
+Unpublished source registrations do not appear. The shared Game Profile definitions
+own both these descriptors and the generated Card/Printing wire schemas.
+
+Card and Printing browsing includes gameplay, token and art categories by default.
+Card relationships identify evidenced associated Cards; a Printing's `card_id`
+identifies its parent. Collection cursors bind normalized filters to one exact
+composition. An unavailable cursor returns 409 with an absolute restart link;
+explicit unknown revisions return 404 instead of falling back to current data.
+Current-model and query-readiness checks precede conditional responses.
+
+The CLI accepts category and revision on Card search, for example:
+
+```sh
+keepr cards search --game riftbound --category art --revision REVISION --json
+```
+
 ## Authoring and boundaries
 
 Each registered operation uses `createRoute` from `@hono/zod-openapi` in its owning
