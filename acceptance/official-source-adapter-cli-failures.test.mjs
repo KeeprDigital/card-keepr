@@ -110,12 +110,12 @@ for (const failureCase of failureCases) {
       cliEnvironment,
     );
     if (failureCase.failure === "omission") {
-      assert.notEqual(collected.code, 0);
+      assert.equal(collected.code, 8);
       assert.deepEqual(JSON.parse(collected.stdout), {
         contract: "card-keepr-cli-problem@1",
         status: "error",
         code: "invalid_parameter",
-        detail: "requests must contain between 1 and 100 Official Source requests.",
+        detail: "The request does not match the wire contract.",
       });
       return;
     }

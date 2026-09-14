@@ -432,7 +432,20 @@ test("generic retry rejects an evidence-backed terminal run so reconciliation pr
     idempotency_key: "linked-retry-retains-evidence-plan",
   });
   expect(evidenceRetry.response.status).toBe(201);
+  const retryId = requiredString(evidenceRetry.document, "id");
+  const statusUrl = new URL(requiredString(requiredRecord(evidenceRetry.document.links, "links"), "status"));
   expect(evidenceRetry.document).toMatchObject({
+    contract: "card-keepr-evidence-acceptance@1",
+    state: "collecting",
+    linked_run_id: run.id,
+    links: { status: statusUrl.href },
+  });
+  expect(statusUrl.pathname).toBe(`/v1/ingestion-runs/${retryId}/evidence`);
+  expect(evidenceRetry.response.headers.get("location")).toBe(statusUrl.href);
+  const retryStatus = await get(statusUrl.pathname);
+  expect(retryStatus.response.status).toBe(200);
+  expect(retryStatus.document).toMatchObject({
+    id: retryId,
     state: "collecting",
     linked_run_id: run.id,
     source_lineage: "one-piece-en",
@@ -440,7 +453,6 @@ test("generic retry rejects an evidence-backed terminal run so reconciliation pr
     plan_origin: "production",
     expected_current_revision_id: currentRevision,
   });
-  const retryId = requiredString(evidenceRetry.document, "id");
   await collectFixtureEvidence(
     testEnv.CATALOGUE_DB,
     testEnv.EVIDENCE_OBJECTS,

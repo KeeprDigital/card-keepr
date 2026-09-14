@@ -1160,6 +1160,7 @@
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
       "apps/ingestion/test/native-semantic-receipts.spec.ts",
       "apps/ingestion/test/publication-caller-retirement.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
       "apps/ingestion/test/reconciliation-provenance-locators.spec.ts",
       "apps/ingestion/test/runtime-capacity-extension.spec.ts",
       "apps/ingestion/test/runtime-diagnostics.spec.ts",

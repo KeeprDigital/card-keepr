@@ -144,10 +144,11 @@ catalogue-read and administration HTTP interfaces, using the authoritative route
 and schema definitions used by the implementation. Automated checks must keep
 the contracts aligned as routes evolve. Hosting the current separately maintained
 specification alone does not complete this direction. The
-[Hono pilot](../contracts/HTTP.md) now routes both Workers through Hono and uses
-its Zod OpenAPI integration for Card search, Printing Image content and
-asynchronous publication route and wire-schema definitions. Generated contracts
-cover those migrated operations and explicitly inventory the remaining families.
+[Hono boundary](../contracts/HTTP.md) now routes both Workers through Hono and uses
+its Zod OpenAPI integration for Card search, Printing Image content, asynchronous
+publication, and source and collection administration route and wire-schema
+definitions. Generated contracts cover those migrated operations and explicitly
+inventory the remaining families.
 Complete interface migration and documentation hosting remain accepted direction;
 retained-document validation and domain transitions stay independent of Zod.
 
