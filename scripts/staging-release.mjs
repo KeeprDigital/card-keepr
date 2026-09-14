@@ -147,12 +147,13 @@ export async function runStagingRelease(
       await passed(activeCheck, { state: "succeeded", head_sha: intent.expected_head_sha, scenarios, ...result });
     }
     outcome.state = "succeeded";
-  } catch {
+  } catch (error) {
     outcome.failure_code = `${activeCheck.replaceAll("-", "_")}_failed`;
     const failure = {
       state: "failed",
       failure_code: outcome.failure_code,
       expected_head_sha: intent.expected_head_sha,
+      cause_code: failureCause(error),
     };
     const digest = await save(activeCheck, failure);
     Object.assign(
@@ -176,6 +177,12 @@ export async function runStagingRelease(
     state: "succeeded",
     evidence_directory: directory,
   };
+}
+
+// Preserve a bounded machine code without reflecting provider bodies, URLs or credentials.
+function failureCause(error) {
+  const code = error instanceof Error ? error.message.split(":")[0] : "";
+  return /^[a-z][a-z0-9_]{0,79}$/u.test(code) ? code : "staging_operation_failed";
 }
 
 async function workflowRequest(environment, url, body) {
