@@ -23,6 +23,9 @@ test("source authority accepts a JSON integer generation and retains the exact d
   const decision = await response.json();
   expect(decision).toMatchObject({ source_lineage: "riftbound-en", generation: 1 });
   await assertHttpResponse(contract, "/v1/source-authorities", "post", response, decision);
+  const authorities = await administrationRequest("/v1/source-authorities", "GET");
+  expect(await authorities.clone().json()).toMatchObject({ authorities: expect.arrayContaining([decision]) });
+  await assertHttpResponse(contract, "/v1/source-authorities", "get", authorities);
   const replay = await administrationRequest("/v1/source-authorities", "POST", intent);
   expect(await replay.json()).toEqual(decision);
   const invalid = await administrationRequest("/v1/source-authorities", "POST", {

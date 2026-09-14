@@ -60,6 +60,14 @@ test("extending capacity advances the generation atomically and replays idempote
     await sourceEvidenceQueries.countIngestionRunCapacityPausesCount(env.CATALOGUE_DB).bind(runId).first("count"),
   ).toBe(1);
 
+  const status = await administrationRequest(`/v1/ingestion-runs/${runId}/evidence`, "GET");
+  expect(status.status).toBe(200);
+  expect(await status.clone().json()).toMatchObject({
+    state: "paused",
+    pause: { reason: "source_request_capacity_exhausted" },
+  });
+  await assertHttpResponse(contract, "/v1/ingestion-runs/{run}/evidence", "get", status);
+
   // Replaying the same extension returns the original result without
   // applying another extension.
   const replayed = await administrationRequest(`/v1/ingestion-runs/${runId}/capacity/extension`, "POST", extensionBody);
