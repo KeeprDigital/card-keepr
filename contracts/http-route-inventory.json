@@ -245,6 +245,7 @@
       "apps/ingestion/test/native-publication-helpers.ts",
       "apps/ingestion/test/publication-caller-retirement.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "apps/ingestion/test/reconciliation-observed-erratum-recovery.spec.ts",
       "apps/ingestion/test/reconciliation-progress.spec.ts",
       "cli/keepr.mjs"
     ]
@@ -577,6 +578,7 @@
       "apps/ingestion/test/reconciliation-curated-lookup.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
       "apps/ingestion/test/reconciliation-input-cursor.spec.ts",
+      "apps/ingestion/test/reconciliation-observed-erratum-recovery.spec.ts",
       "apps/ingestion/test/reconciliation-progress.spec.ts",
       "apps/ingestion/test/reconciliation-scale.stress.spec.ts",
       "apps/ingestion/test/reviewed-printing-matches.spec.ts",
