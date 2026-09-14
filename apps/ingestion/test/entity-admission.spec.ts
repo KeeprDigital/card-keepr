@@ -689,6 +689,68 @@ test("owner cannot allocate a second numbered Card and can link evidence without
   expect(history[0]!.decision).toMatchObject({ card: { id }, linked: true });
 });
 
+test.each([{ content: null }, { evidence: null }, { content: null, evidence: null }])(
+  "explicit-null reconsideration retains intake and exact replay intent: %j",
+  async (unchangedIntake) => {
+    const intake = {
+      content: { card: { name: "Synthetic incomplete Card" } },
+      evidence: { attestation: "Synthetic personal inspection." },
+    };
+    const created = await post("/v1/entity-proposals", {
+      game: "one-piece",
+      source_lineage: "owner",
+      reference: "null-reconsideration",
+      ...intake,
+      idempotency_key: "null-intake-create",
+    });
+    expect(created.response.status).toBe(201);
+    const path = `/v1/entity-proposals/${created.document.id}/decisions`;
+    const request = {
+      action: "reconsider",
+      expected_generation: "0",
+      rationale: "Retain the prior intake while reviewing it again",
+      idempotency_key: "null-intake-reconsider",
+    };
+    const reconsidered = await post(path, { ...request, ...unchangedIntake });
+    expect(reconsidered.response.status, JSON.stringify(reconsidered.document)).toBe(200);
+    expect(reconsidered.document).toMatchObject({
+      ...intake,
+      generation: 1,
+      history: [expect.objectContaining({ action: "reconsider", decision: intake })],
+    });
+    const amended = await post(path, {
+      action: "reconsider",
+      expected_generation: "1",
+      rationale: "Retain new inspection evidence",
+      idempotency_key: "null-intake-amend",
+      content: { card: { name: "Synthetic amended Card" } },
+      evidence: { attestation: "Synthetic second inspection." },
+    });
+    expect(amended.response.status).toBe(200);
+    const replay = await post(path, { ...request, ...unchangedIntake });
+    expect(replay.response.status).toBe(200);
+    expect(replay.document).toEqual(amended.document);
+    await assertHttpResponse(
+      contract,
+      "/v1/entity-proposals/{proposal}/decisions",
+      "post",
+      replay.response,
+      replay.document,
+    );
+    const changedIntent = await post(path, request);
+    expect(changedIntent.response.status).toBe(409);
+    const rejectedIntake = await post(path, {
+      ...request,
+      ...unchangedIntake,
+      action: "reject",
+      expected_generation: "2",
+      idempotency_key: "null-intake-reject",
+    });
+    expect(rejectedIntake.response.status).toBe(422);
+    expect(rejectedIntake.document.code).toBe("admission_intake_requires_reconsideration");
+  },
+);
+
 test("owner appends corrected intake on reconsideration while retaining the original incomplete proposal", async () => {
   const created = await post("/v1/entity-proposals", {
     game: "one-piece",

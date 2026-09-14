@@ -52608,30 +52608,44 @@
                     "minLength": 1
                   },
                   "content": {
-                    "type": "object",
-                    "additionalProperties": {
-                      "anyOf": [
-                        {
-                          "$ref": "#/components/schemas/CandidateNonNullSourceValue"
-                        },
-                        {
-                          "type": "null"
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/components/schemas/CandidateNonNullSourceValue"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
-                      ]
-                    }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "evidence": {
-                    "type": "object",
-                    "additionalProperties": {
-                      "anyOf": [
-                        {
-                          "$ref": "#/components/schemas/CandidateNonNullSourceValue"
-                        },
-                        {
-                          "type": "null"
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/components/schemas/CandidateNonNullSourceValue"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
-                      ]
-                    }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [

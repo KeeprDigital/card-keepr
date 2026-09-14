@@ -296,7 +296,9 @@ Proposal and correction lists require `game`. Correction `after` and proposal
 retain that same representation for `expected_generation`, preserving stored
 intent bytes. Creating a proposal retains incomplete intake for review; admission
 still requires valid current Card/Printing structure. Reconsideration appends
-intake and never overwrites the initial intake or earlier decisions.
+intake and never overwrites the initial intake or earlier decisions. Omitted or
+explicitly null reconsideration content/evidence retains the previous intake;
+explicit nulls remain part of the exact replay intent.
 
 Proposal creation/decision replay returns current inspection while preserving the
 original immutable intake/decision; subsequent decisions can change its status and
