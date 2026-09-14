@@ -6,7 +6,7 @@ export function selectEnvironment(arguments_, environment) {
   if (!["dev", "staging", "production"].includes(target) || arguments_.lastIndexOf("--target") !== index)
     throw new Error("--target requires exactly one of dev, staging, production.");
   const prefix = `KEEPR_${target.toUpperCase()}_`;
-  const host = target === "production" ? "card.keepr.digital" : `${target}.card.keepr.digital`;
+  const host = target === "production" ? "card.keepr.digital" : `card-${target}.keepr.digital`;
   const selected = { ...environment, KEEPR_TARGET: target };
   for (const key of ["API_KEY", "ADMINISTRATION_KEY"]) selected[`KEEPR_${key}`] = environment[`${prefix}${key}`];
   selected.KEEPR_API_URL = `https://${host}/api`;

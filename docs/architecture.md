@@ -150,5 +150,8 @@ selected the existing production account for dev and staging and accepted its
 account-wide deployment permissions. Each environment must retain separate data,
 resource namespaces, credentials and routes; application checks enforce target
 selection within that shared authority. [Account decision](https://github.com/KeeprDigital/card-keepr/issues/236).
+The owner selected `card-dev.keepr.digital` and `card-staging.keepr.digital` so
+both environments fit the existing `*.keepr.digital` certificate coverage.
+Production retains `card.keepr.digital`.
 The [dev procedure](runbooks/isolated-dev.md) requires a guarded first installation
 and real automatic-deployment evidence before the rollout is established.

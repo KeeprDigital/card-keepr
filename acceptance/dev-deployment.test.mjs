@@ -35,7 +35,7 @@ async function fixture(t, sha = "a".repeat(40)) {
   const now = Math.floor(Date.now() / 1000);
   const claims = {
     iss: "https://token.actions.githubusercontent.com",
-    aud: devAudience,
+    aud: "https://card-dev.keepr.digital/ingest/v1/dev-deployments",
     sub: "repo:KeeprDigital/card-keepr:environment:dev",
     repository: "KeeprDigital/card-keepr",
     repository_id: "1313489088",
@@ -210,6 +210,7 @@ test("dev preparation rejects signed identity substitution, stale tokens and fai
   const { call, env, checks } = await fixture(t);
   for (const overrides of [
     { aud: "production" },
+    { aud: "https://dev.card.keepr.digital/ingest/v1/dev-deployments" },
     { repository_id: "1" },
     { ref: "refs/heads/other" },
     { environment: "staging" },
@@ -378,7 +379,7 @@ for (const [scenario, expectedError] of [
       const url = new URL(input);
       requests.push(url.pathname);
       if (url.hostname === "api.github.com") return githubFetch(input, init);
-      if (url.hostname === "dev.card.keepr.digital") {
+      if (url.hostname === "card-dev.keepr.digital") {
         const runtime = url.pathname.includes("/ingest/") ? "ingestion" : "api";
         if (
           url.pathname.endsWith("/health") &&

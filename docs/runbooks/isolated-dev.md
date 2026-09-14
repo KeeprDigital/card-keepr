@@ -107,9 +107,13 @@ The config compiler owns the exact target inventory:
 | Service binding                   | `OFFICIAL_SOURCE_TRANSPORT` → `card-keepr-ingestion-dev` / `OfficialSourceTransport`                                                    |
 | Rate limits                       | API 2001, image 2002, administration 2003, API liveness 2004, ingestion liveness 2005                                                   |
 
-Routes are `dev.card.keepr.digital/api[/…]` and `/ingest[/…]`. Configure a proxied
+Routes are `card-dev.keepr.digital/api[/…]` and `/ingest[/…]`. Configure a proxied
 DNS placeholder for that hostname in `keepr.digital`; do not change production
-DNS. R2 public access stays disabled. Workers.dev and preview URLs stay disabled.
+DNS. Verify active HTTPS certificate coverage before the first installation.
+The dev and staging hosts (`card-dev.keepr.digital` and
+`card-staging.keepr.digital`) fit the zone's existing `*.keepr.digital` Universal
+SSL certificate; deeper subdomains would require additional certificate coverage.
+R2 public access stays disabled. Workers.dev and preview URLs stay disabled.
 
 The config compiler requires real distinct UUIDs and rejects production D1 IDs.
 Generated `apps/*/wrangler.dev.json` files are ignored and rebuilt from the exact
