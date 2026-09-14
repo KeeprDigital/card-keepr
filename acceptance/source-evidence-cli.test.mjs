@@ -337,7 +337,7 @@ async function collectResumeAndShow(
     ["source", "collect", "--plan-file", planFile, "--idempotency-key", idempotencyKey, "--json"],
     environment,
   );
-  assert.equal(collected.code, 0, collected.stderr);
+  assert.equal(collected.code, 0, `${collected.stdout}\n${collected.stderr}\n${ingestion.getOutput()}`);
   const run = JSON.parse(collected.stdout);
   assert.equal(run.contract, "card-keepr-evidence-acceptance@1");
   validateSourceDocument("/v1/ingestion-runs/evidence", "post", 201, run);
