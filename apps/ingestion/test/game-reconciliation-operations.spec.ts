@@ -892,7 +892,7 @@ test("an owner can abandon an expired sealed candidate and create a fresh prepar
   const created = await post("/v1/game-candidates", intent);
   expect(created.response.status).toBe(202);
   const id = requiredString(created.document, "id");
-  let sealed = created.document;
+  let sealed = (await get(`/v1/game-candidates/${id}`)).document;
   const until = Date.now() + 15000;
   while (sealed.state === "preparing" && Date.now() < until) {
     await new Promise((resolve) => setTimeout(resolve, 25));

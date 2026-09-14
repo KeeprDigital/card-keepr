@@ -257,7 +257,7 @@ test("concurrent exact native intents create one operation and replay its origin
   });
   const delayed = await request(database);
   const results = [winner!, delayed];
-  expect(results.map((result) => result.status).sort()).toEqual([200, 201]);
+  expect(results.map((result) => result.status)).toEqual([202, 202]);
   expect(results[0]!.document).toEqual(results[1]!.document);
   expect((await request()).document).toEqual(results[0]!.document);
 });

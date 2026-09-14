@@ -13,7 +13,7 @@ async function sealedCandidate(fixture = "base") {
     idempotency_key: "publication-preparation-candidate",
   });
   const id = requiredString(created.document, "id");
-  let candidate = created.document;
+  let candidate = (await get(`/v1/game-candidates/${id}`)).document;
   const deadline = Date.now() + 15000;
   while (candidate.state === "preparing" && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 25));
