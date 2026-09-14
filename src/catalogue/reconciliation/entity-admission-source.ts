@@ -83,6 +83,7 @@ export async function assessSourceAdmission(
   observation: SourceObservation,
   at: string,
   requirements: {
+    cardDesignKey?: string;
     printingAdmission: "owner_review" | "source_qualification" | "unqualified";
     qualifiesPrintingIdentity?: SourceAdapterRegistration["qualifiesPrintingIdentity"];
   } = {
@@ -107,6 +108,7 @@ export async function assessSourceAdmission(
   if (!proposal) {
     const content = canonicalJson(observation.observedCardAndPrinting);
     const evidence = canonicalJson({
+      ...(requirements.cardDesignKey === undefined ? {} : { card_design_key: requirements.cardDesignKey }),
       source_snapshot_id: observation.sourceSnapshotId,
       source_observation_set_id: observation.sourceObservationSetId,
       source_observation_id: observation.sourceObservationId,
@@ -149,6 +151,7 @@ export async function assessSourceAdmission(
           card: CatalogueCard;
           printing: CataloguePrinting | null;
           policy_digest?: string;
+          card_design_key?: string;
           exception?: unknown;
         })
       : null;
@@ -161,6 +164,7 @@ export async function assessSourceAdmission(
   const rejected = latest?.action === "reject";
   const exception = decision?.exception as { scope?: string[] } | null | undefined;
   const identityExceptionConflict =
+    (admitted && decision?.card_design_key !== undefined && decision.card_design_key !== observation.cardDesignKey) ||
     (admitted &&
       (decision!.card.category !== observation.observedCardAndPrinting.card.category ||
         decision!.card.game_data.profile !== observation.observedCardAndPrinting.card.game_data.profile)) ||
@@ -183,7 +187,16 @@ export async function assessSourceAdmission(
         (observation.demonstrablyNovel &&
           observation.noveltyProofComplete &&
           (requirements.qualifiesPrintingIdentity?.(observation) ?? observation.artworkIdentityExplicit))));
-  return { proposal, latest, policy, permitted, rejected, decision, identityExceptionConflict };
+  return {
+    proposal,
+    latest,
+    policy,
+    permitted,
+    rejected,
+    decision,
+    identityExceptionConflict,
+    cardDesignKey: requirements.cardDesignKey,
+  };
 }
 export async function completeSourceAdmission(
   database: CatalogueStore,
@@ -196,6 +209,7 @@ export async function completeSourceAdmission(
   if (admission.latest?.action === "admit" || admission.latest?.action === "link") return;
   const generation = (admission.latest?.generation ?? 0) + 1;
   const decision = {
+    ...(admission.cardDesignKey === undefined ? {} : { card_design_key: admission.cardDesignKey }),
     card,
     printing,
     linked: false,

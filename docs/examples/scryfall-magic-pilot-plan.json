@@ -1,0 +1,45 @@
+{
+  "plans": [
+    {
+      "supported_game": "magic",
+      "source_lineage": "scryfall-magic-en",
+      "adapter_version": "scryfall-magic-en@1",
+      "subset": "representative-english-paper",
+      "participation": "required",
+      "requests": [
+        {
+          "id": "scryfall-magic-en:6904ea20-e504-47da-95a0-08739fdde260",
+          "url": "https://api.scryfall.com/cards/6904ea20-e504-47da-95a0-08739fdde260",
+          "headers": {
+            "accept": "application/json",
+            "user-agent": "Card-Keepr/0.1 (+https://github.com/KeeprDigital/card-keepr)"
+          }
+        },
+        {
+          "id": "scryfall-magic-en:8de2ff37-fdb7-4f77-9d48-e99afac9a79e",
+          "url": "https://api.scryfall.com/cards/8de2ff37-fdb7-4f77-9d48-e99afac9a79e",
+          "headers": {
+            "accept": "application/json",
+            "user-agent": "Card-Keepr/0.1 (+https://github.com/KeeprDigital/card-keepr)"
+          }
+        },
+        {
+          "id": "scryfall-magic-en:7f57005c-414d-4c83-9b4f-cd26e547d54d",
+          "url": "https://api.scryfall.com/cards/7f57005c-414d-4c83-9b4f-cd26e547d54d",
+          "headers": {
+            "accept": "application/json",
+            "user-agent": "Card-Keepr/0.1 (+https://github.com/KeeprDigital/card-keepr)"
+          }
+        },
+        {
+          "id": "scryfall-magic-en:a33fda72-e61d-478f-bc33-ff1a23b5f45b",
+          "url": "https://api.scryfall.com/cards/a33fda72-e61d-478f-bc33-ff1a23b5f45b",
+          "headers": {
+            "accept": "application/json",
+            "user-agent": "Card-Keepr/0.1 (+https://github.com/KeeprDigital/card-keepr)"
+          }
+        }
+      ]
+    }
+  ]
+}

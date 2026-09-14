@@ -2,13 +2,7 @@ import { AdministrationProblem, type CatalogueStore, sha256Text } from "../share
 import * as repository from "./curated-native-target-repository";
 
 type EntityKind =
-  | "card"
-  | "printing"
-  | "product"
-  | "distribution_context"
-  | "erratum"
-  | "release"
-  | "product_relationship";
+  "card" | "printing" | "product" | "distribution_context" | "erratum" | "release" | "product_relationship";
 const collections = {
   card: "cards",
   printing: "printings",
@@ -110,7 +104,9 @@ export async function nativeCuratedTarget(
       !Array.isArray(productGames) ||
       productGames.length > 5 ||
       new Set(productGames).size !== productGames.length ||
-      productGames.some((value) => !["one-piece", "digimon", "fusion-world", "gundam", "riftbound"].includes(value))
+      productGames.some(
+        (value) => !["one-piece", "digimon", "fusion-world", "gundam", "riftbound", "magic"].includes(value),
+      )
     )
       throw unavailable();
     // Each game's reduction inherits the preceding draft, including its contexts and relationships.

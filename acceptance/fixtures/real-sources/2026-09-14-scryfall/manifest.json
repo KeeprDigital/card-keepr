@@ -1,0 +1,335 @@
+{
+  "classification": "retained-real-independent-source-responses",
+  "captures": [
+    {
+      "id": "delver",
+      "url": "https://api.scryfall.com/cards/6904ea20-e504-47da-95a0-08739fdde260",
+      "finalUrl": "https://api.scryfall.com/cards/6904ea20-e504-47da-95a0-08739fdde260",
+      "capturedAt": "2026-09-14T12:21:53.930518+00:00",
+      "status": 200,
+      "body": "raw/delver.json",
+      "headers": "raw/delver.headers",
+      "bytes": 7516,
+      "sha256": "5d96d69c4531d1b6f2c0155f6d696f8b3d5a5c44ed570d739d0b98a16776bf6e",
+      "headersSha256": "aeedb48885b6c9e353efe47efc2e16c7bdcd6f5500eec969f72a275b34d89665",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Research/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "application/json"
+    },
+    {
+      "id": "art-chillerpillar",
+      "url": "https://api.scryfall.com/cards/amh1/1/en",
+      "finalUrl": "https://api.scryfall.com/cards/amh1/1/en",
+      "capturedAt": "2026-09-14T12:21:54.551081+00:00",
+      "status": 200,
+      "body": "raw/art-chillerpillar.json",
+      "headers": "raw/art-chillerpillar.headers",
+      "bytes": 6237,
+      "sha256": "e90acf2d45f15aad8dce23415d81702f99ceb6dfb823e761f9a6b91df94d0eb4",
+      "headersSha256": "a1fb6a05a343b512f6147d1250da591c70a22a7a69541121a86b28958556b938",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Research/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "application/json"
+    },
+    {
+      "id": "token",
+      "url": "https://api.scryfall.com/cards/tmh1/1/en",
+      "finalUrl": "https://api.scryfall.com/cards/tmh1/1/en",
+      "capturedAt": "2026-09-14T12:21:55.932997+00:00",
+      "status": 200,
+      "body": "raw/token.json",
+      "headers": "raw/token.headers",
+      "bytes": 5395,
+      "sha256": "c690fc507c22b92e5d147b4342649e30fea3aa6ea7c7b6b7d62ecf18db044817",
+      "headersSha256": "fb1c5a8b8dfca1fe9fec7b72de8c76bb2f1932d5ea95d5524827f6f4c08295e5",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Research/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "application/json"
+    },
+    {
+      "id": "bulk-metadata",
+      "url": "https://api.scryfall.com/bulk-data",
+      "finalUrl": "https://api.scryfall.com/bulk-data",
+      "capturedAt": "2026-09-14T12:21:56.417729+00:00",
+      "status": 200,
+      "body": "raw/bulk-metadata.json",
+      "headers": "raw/bulk-metadata.headers",
+      "bytes": 3472,
+      "sha256": "1f9e01f0cfab1dc2e669ce290c1318c447b48218f15ebc162bc2d3a884d9d145",
+      "headersSha256": "b8d0b805d3d4c5f4db1110a437750615ebc74dfa07f91cd0741c41755a85a765",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Research/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "application/json"
+    },
+    {
+      "id": "chillerpillar",
+      "url": "https://api.scryfall.com/cards/named?exact=Chillerpillar&set=mh1",
+      "finalUrl": "https://api.scryfall.com/cards/named?exact=Chillerpillar&set=mh1",
+      "capturedAt": "2026-09-14T12:22:26.303409+00:00",
+      "status": 200,
+      "body": "raw/chillerpillar.json",
+      "headers": "raw/chillerpillar.headers",
+      "bytes": 5194,
+      "sha256": "722974db8a66f434342bdfad1b08978d08f9402e847056f0fbaae81baf90212e",
+      "headersSha256": "5d3da6f17f9c1181cea5531a90b766215ef8896f7bfbd156f10af2b0eccf513e",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Research/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "application/json"
+    },
+    {
+      "id": "docs-api",
+      "url": "https://scryfall.com/docs/api",
+      "finalUrl": "https://scryfall.com/docs/api",
+      "capturedAt": "2026-09-14T12:22:26.807261+00:00",
+      "status": 200,
+      "body": "raw/docs-api.html",
+      "headers": "raw/docs-api.headers",
+      "bytes": 68249,
+      "sha256": "c0a82abc27cca6393c9891b685262217474b157c0b9982f0bed6844e53d80b89",
+      "headersSha256": "5353c3615d17f52da97a4a613b5fc9ba02f9f55894172702eca4b0352101859e",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Research/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "text/html",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "text/html"
+    },
+    {
+      "id": "docs-cards",
+      "url": "https://scryfall.com/docs/api/cards",
+      "finalUrl": "https://scryfall.com/docs/api/cards",
+      "capturedAt": "2026-09-14T12:22:27.080429+00:00",
+      "status": 200,
+      "body": "raw/docs-cards.html",
+      "headers": "raw/docs-cards.headers",
+      "bytes": 117639,
+      "sha256": "09feb6411f2fff464e4fbf37f62f42dd5d45ca4c42b5a5b0eebc41e4eb92efb1",
+      "headersSha256": "b725fc6d2cdba474cbadbac813900f8553d4b4227e4142939e22eece5d76f2fb",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Research/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "text/html",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "text/html"
+    },
+    {
+      "id": "docs-bulk",
+      "url": "https://scryfall.com/docs/api/bulk-data",
+      "finalUrl": "https://scryfall.com/docs/api/bulk-data",
+      "capturedAt": "2026-09-14T12:22:27.554120+00:00",
+      "status": 200,
+      "body": "raw/docs-bulk.html",
+      "headers": "raw/docs-bulk.headers",
+      "bytes": 73514,
+      "sha256": "00873584865b80adb0c507ffa1f8c446e847772053a2d7ceb28e36380d5a01ea",
+      "headersSha256": "0f4a7963bbc8d88b6073504cbb8d459be7dadcf8a3108aa64e37c12205e20f36",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Research/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "text/html",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "text/html"
+    },
+    {
+      "id": "docs-layouts",
+      "url": "https://scryfall.com/docs/api/layouts",
+      "finalUrl": "https://scryfall.com/docs/api/layouts",
+      "capturedAt": "2026-09-14T12:22:28.050029+00:00",
+      "status": 200,
+      "body": "raw/docs-layouts.html",
+      "headers": "raw/docs-layouts.headers",
+      "bytes": 75666,
+      "sha256": "e6af2f432d535ea74b41c2891b0f8e05d0fb89dd537ae33b986b1d65dc246434",
+      "headersSha256": "3719695e86e0a6f0a8978f42750ef29de29bd3222328f816d07bc8ce60c6a50f",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Research/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "text/html",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "text/html"
+    },
+    {
+      "id": "docs-rate-limits",
+      "url": "https://scryfall.com/docs/api/rate-limits",
+      "finalUrl": "https://scryfall.com/docs/api/rate-limits",
+      "capturedAt": "2026-09-14T12:23:21.199896+00:00",
+      "status": 200,
+      "body": "raw/docs-rate-limits.html",
+      "headers": "raw/docs-rate-limits.headers",
+      "bytes": 66656,
+      "sha256": "7ec4cf15b8bd253e26c068d636cbb314a06459f891055951eea1a38bcee7137c",
+      "headersSha256": "4bb512c1431c05c56d55c5eb975dc10c9e4daeb03450195aec24495f8adce0dc",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Research/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "text/html",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "text/html"
+    },
+    {
+      "id": "docs-images",
+      "url": "https://scryfall.com/docs/api/images",
+      "finalUrl": "https://scryfall.com/docs/api/images",
+      "capturedAt": "2026-09-14T12:23:21.826852+00:00",
+      "status": 200,
+      "body": "raw/docs-images.html",
+      "headers": "raw/docs-images.headers",
+      "bytes": 70721,
+      "sha256": "3b31889d12796f44baf9ce3dd0cf434be87e38fe36f21cd23c21974be85c9382",
+      "headersSha256": "ab0ca84ab3ea7e443c1b6fe7e332bd14b654ac790da380c0b408d8f146a2484b",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Research/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "text/html",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "text/html"
+    },
+    {
+      "id": "docs-manifest",
+      "url": "https://scryfall.com/docs/api/cards/manifest",
+      "finalUrl": "https://scryfall.com/docs/api/cards/manifest",
+      "capturedAt": "2026-09-14T12:23:22.308087+00:00",
+      "status": 200,
+      "body": "raw/docs-manifest.html",
+      "headers": "raw/docs-manifest.headers",
+      "bytes": 68890,
+      "sha256": "8f3048a00a8d5415178f949d3a6bc84dc20824f9f5f2a64bce685b5742261a6b",
+      "headersSha256": "d6b36f9d3b7ff8d0d63810e2537fde1224f2f34b5df76fcfd6daebb013f975a5",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Research/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "text/html",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "text/html"
+    },
+    {
+      "id": "delver-front",
+      "url": "https://cards.scryfall.io/normal/front/6/9/6904ea20-e504-47da-95a0-08739fdde260.jpg?1783908173",
+      "finalUrl": "https://cards.scryfall.io/normal/front/6/9/6904ea20-e504-47da-95a0-08739fdde260.jpg?1783908173",
+      "startedAt": "2026-09-14T13:10:39.004815+00:00",
+      "completedAt": "2026-09-14T13:10:39.958023+00:00",
+      "status": 200,
+      "body": "raw/delver-front.jpg",
+      "headers": "raw/delver-front.headers",
+      "bytes": 85067,
+      "sha256": "4f7745b7f8dacfca466ad9a0561b4afd67b3e57ca84686342356c5e707294134",
+      "headersSha256": "f994a57a0a9a50e952dc6cb7bf4f47f40867353328b2cd8aa5ab17b9de439ece",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "image/jpeg",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "image/jpeg"
+    },
+    {
+      "id": "delver-back",
+      "url": "https://cards.scryfall.io/normal/back/6/9/6904ea20-e504-47da-95a0-08739fdde260.jpg?1783908173",
+      "finalUrl": "https://cards.scryfall.io/normal/back/6/9/6904ea20-e504-47da-95a0-08739fdde260.jpg?1783908173",
+      "startedAt": "2026-09-14T13:10:39.958904+00:00",
+      "completedAt": "2026-09-14T13:10:40.865351+00:00",
+      "status": 200,
+      "body": "raw/delver-back.jpg",
+      "headers": "raw/delver-back.headers",
+      "bytes": 82846,
+      "sha256": "8d762cd46cf5cde36df4f19ebdf4933afea8e4293e3693004a9bc226adb0693a",
+      "headersSha256": "0a3003d69d8c4839d93ed15afb43f888784f9b8ed676eff4a050fc8ee8961f1a",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "image/jpeg",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "image/jpeg"
+    },
+    {
+      "id": "art-chillerpillar-front",
+      "url": "https://cards.scryfall.io/normal/front/8/d/8de2ff37-fdb7-4f77-9d48-e99afac9a79e.jpg?1783933230",
+      "finalUrl": "https://cards.scryfall.io/normal/front/8/d/8de2ff37-fdb7-4f77-9d48-e99afac9a79e.jpg?1783933230",
+      "startedAt": "2026-09-14T13:10:40.867394+00:00",
+      "completedAt": "2026-09-14T13:10:41.767184+00:00",
+      "status": 200,
+      "body": "raw/art-chillerpillar-front.jpg",
+      "headers": "raw/art-chillerpillar-front.headers",
+      "bytes": 52036,
+      "sha256": "41ca688ca882128b65f5c1689595c6f487e7d4074e697fdae266e882806b20d8",
+      "headersSha256": "12762ca6c9ba0b9068ac1e94f2a7a0be2729b066b4ab41e335a3a012853edbe2",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "image/jpeg",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "image/jpeg"
+    },
+    {
+      "id": "art-chillerpillar-back",
+      "url": "https://cards.scryfall.io/normal/back/8/d/8de2ff37-fdb7-4f77-9d48-e99afac9a79e.jpg?1783933230",
+      "finalUrl": "https://cards.scryfall.io/normal/back/8/d/8de2ff37-fdb7-4f77-9d48-e99afac9a79e.jpg?1783933230",
+      "startedAt": "2026-09-14T13:10:41.768997+00:00",
+      "completedAt": "2026-09-14T13:10:42.489755+00:00",
+      "status": 200,
+      "body": "raw/art-chillerpillar-back.jpg",
+      "headers": "raw/art-chillerpillar-back.headers",
+      "bytes": 21243,
+      "sha256": "784a07c9627f0ac8d38e834a2f1dc871b50cd7b892964e6ad63341bf14cf36fa",
+      "headersSha256": "af11cb1960c9ef9a88aa81d5c7cdee76c012df02ee6c192d8a2215d9c01feb4e",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "image/jpeg",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "image/jpeg"
+    },
+    {
+      "id": "chillerpillar-front",
+      "url": "https://cards.scryfall.io/normal/front/7/f/7f57005c-414d-4c83-9b4f-cd26e547d54d.jpg?1783933149",
+      "finalUrl": "https://cards.scryfall.io/normal/front/7/f/7f57005c-414d-4c83-9b4f-cd26e547d54d.jpg?1783933149",
+      "startedAt": "2026-09-14T13:10:42.492303+00:00",
+      "completedAt": "2026-09-14T13:10:43.402649+00:00",
+      "status": 200,
+      "body": "raw/chillerpillar-front.jpg",
+      "headers": "raw/chillerpillar-front.headers",
+      "bytes": 86688,
+      "sha256": "f9dd4c3c6c9defb85021f8d33e9ff30a93627aef7eca10b8998e31aa7af614eb",
+      "headersSha256": "d08bc9d0b58d509c4ca981b1182dcd20b1f3fb13438ac6fdd6918d3a28a81a4a",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "image/jpeg",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "image/jpeg"
+    },
+    {
+      "id": "token-front",
+      "url": "https://cards.scryfall.io/normal/front/a/3/a33fda72-e61d-478f-bc33-ff1a23b5f45b.jpg?1783933234",
+      "finalUrl": "https://cards.scryfall.io/normal/front/a/3/a33fda72-e61d-478f-bc33-ff1a23b5f45b.jpg?1783933234",
+      "startedAt": "2026-09-14T13:10:43.405273+00:00",
+      "completedAt": "2026-09-14T13:10:44.333572+00:00",
+      "status": 200,
+      "body": "raw/token-front.jpg",
+      "headers": "raw/token-front.headers",
+      "bytes": 81107,
+      "sha256": "dd912585364e1dbf08a27497af3023df709b58709b43b8fe200f39a409d41a38",
+      "headersSha256": "522bcba091a058756c82b54c3e49a73171189b9adbf126c8ca8d78c7351b03ad",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "image/jpeg",
+        "Accept-Encoding": "identity"
+      },
+      "contentType": "image/jpeg"
+    }
+  ]
+}

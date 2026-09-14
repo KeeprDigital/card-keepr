@@ -72,7 +72,7 @@ export function isCatalogueSourceCheck(value: unknown): value is CatalogueSource
 }
 
 function supportedGame(value: string): SupportedGame {
-  if (!["one-piece", "fusion-world", "digimon", "gundam", "riftbound"].includes(value)) {
+  if (!["one-piece", "fusion-world", "digimon", "gundam", "riftbound", "magic"].includes(value)) {
     throw new Error("Stored Source freshness has an unsupported game.");
   }
   return value as SupportedGame;

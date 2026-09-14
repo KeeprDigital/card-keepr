@@ -1,0 +1,31 @@
+Date: Mon, 14 Sep 2026 12:21:54 GMT
+Content-Type: application/json; charset=utf-8
+Transfer-Encoding: chunked
+Connection: close
+access-control-allow-headers: Accept, Accept-Charset, Accept-Language, Authorization, Cache-Control, Content-Language, Content-Type, DNT, Host, If-Modified-Since, Keep-Alive, Origin, Referer, User-Agent, X-Requested-With
+access-control-allow-methods: GET, POST, DELETE, OPTIONS
+access-control-allow-origin: *
+access-control-max-age: 300
+Cache-Control: public, max-age=57600
+content-disposition: inline
+content-transfer-encoding: binary
+etag: W/"5d96d69c4531d1b6f2c0155f6d696f8b"
+nel: {"report_to":"heroku-nel","response_headers":["Via"],"max_age":3600,"success_fraction":0.01,"failure_fraction":0.1}
+referrer-policy: strict-origin-when-cross-origin
+report-to: {"group":"heroku-nel","endpoints":[{"url":"https://nel.heroku.com/reports?s=zbvNbz2X8AhGmy66wCdTeIfnto4LayGpUzPXKZAdeyw%3D\u0026sid=929419e7-33ea-4e2f-85f0-7d8b7cd5cbd6\u0026ts=1789386511"}],"max_age":3600}
+reporting-endpoints: heroku-nel="https://nel.heroku.com/reports?s=zbvNbz2X8AhGmy66wCdTeIfnto4LayGpUzPXKZAdeyw%3D&sid=929419e7-33ea-4e2f-85f0-7d8b7cd5cbd6&ts=1789386511"
+Server: cloudflare
+strict-transport-security: max-age=31536000; includeSubDomains; preload
+vary: Accept-Encoding
+via: 2.0 heroku-router
+x-action-cache: MISS
+x-content-type-options: nosniff
+x-download-options: noopen
+x-frame-options: DENY
+x-permitted-cross-domain-policies: none
+x-robots-tag: none
+x-scryfall-card: https://scryfall.com/card/inr/60/delver-of-secrets-insectile-aberration?utm_source=api
+x-scryfall-card-image: https://cards.scryfall.io/large/front/6/9/6904ea20-e504-47da-95a0-08739fdde260.jpg?1783908173
+x-xss-protection: 1; mode=block
+cf-cache-status: HIT
+CF-RAY: a3af5aa55cc5daf4-MEL

@@ -120,12 +120,14 @@ export function triggers(db) {
   return db.prepare("SELECT name,sql FROM sqlite_schema WHERE type='trigger' ORDER BY name");
 }
 
-export function seedRiftboundCheckpoint(db) {
-  return db.prepare(
-    "INSERT INTO reconciliation_checkpoints VALUES ('preparation_0','product_reduction:riftbound',0,'{}',?)",
-  );
+export function seedGameCheckpoint(db) {
+  return db.prepare("INSERT INTO reconciliation_checkpoints VALUES ('preparation_0',?,0,'{}',?)");
 }
 
-export function setRiftboundPrintingGame(db) {
-  return db.prepare("UPDATE revision_printing_query SET supported_game='riftbound' WHERE printing_id='printing_0'");
+export function setPrintingGame(db) {
+  return db.prepare("UPDATE revision_printing_query SET supported_game=? WHERE printing_id='printing_0'");
+}
+
+export function indexesAndViews(db) {
+  return db.prepare("SELECT type,name,sql FROM sqlite_schema WHERE type IN ('index','view') ORDER BY type,name");
 }

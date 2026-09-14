@@ -1,3 +1,4 @@
+import { designIdentityAdapters } from "./design-identity";
 import { capacitySourceAdapter } from "./capacity";
 import {
   registerSourceAdapters,
@@ -197,6 +198,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
       parse: parseCardSourceDocument,
     })),
     capacitySourceAdapter,
+    ...designIdentityAdapters,
     {
       adapterVersion: "fixture-unqualified-one-piece-json@1",
       sourceLineage: "one-piece-en",

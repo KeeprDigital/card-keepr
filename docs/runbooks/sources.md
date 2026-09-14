@@ -53,8 +53,12 @@ outages can carry accepted facts forward with warnings; required capture failure
 identity uncertainty and contradictory evidence still block the refresh.
 
 Riot starts with all three areas for its registered English/US scope. An existing
-explicit owner designation remains selected. Magic's Scryfall and Pokémon's
-TCGdex/official correction choices await their exact source registrations.
+explicit owner designation remains selected. Scryfall starts with all three in
+its English/unknown-region Magic scope; Pokémon's TCGdex/official correction choices
+await their exact registrations. The [Scryfall pilot plan](../examples/scryfall-magic-pilot-plan.json)
+selects four issued English paper records and their declared finishes/faces.
+Its [retained evidence and limitations](../../acceptance/fixtures/real-sources/2026-09-14-scryfall/README.md)
+define acquisition bounds, qualification and the remaining full-import scope.
 
 `source show` reports coverage, request counts, successful check time and actual
 content capture time. A partial check never advances successful freshness. A

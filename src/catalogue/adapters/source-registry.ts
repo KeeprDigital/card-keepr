@@ -3,6 +3,7 @@ import { exportedGameProfileSchema, registeredGameProfiles, type SupportedGame }
 export const publishers = [
   { id: "bandai", name: "Bandai" },
   { id: "riot-games", name: "Riot Games" },
+  { id: "wizards-of-the-coast", name: "Wizards of the Coast" },
 ];
 export const sources = [
   { id: "riot-riftbound", publisher_id: "riot-games", name: "Riot Riftbound" },
@@ -12,15 +13,17 @@ export const sources = [
     name: `Bandai ${game}`,
   })),
   { id: "limitless-one-piece", publisher_id: null, name: "Limitless One Piece" },
+  { id: "scryfall", publisher_id: null, name: "Scryfall" },
 ];
 export type SourceLineageRegistration = Readonly<{
   id: string;
   source_id: string;
   game: SupportedGame;
   locale: "en";
-  release_region: "OCEANIA" | "ASIA" | "US";
+  release_region: "OCEANIA" | "ASIA" | "US" | "unknown";
 }>;
 export const sourceLineages: readonly SourceLineageRegistration[] = [
+  { id: "scryfall-magic-en", source_id: "scryfall", game: "magic", locale: "en", release_region: "unknown" },
   { id: "riftbound-en", source_id: "riot-riftbound", game: "riftbound", locale: "en", release_region: "US" },
   { id: "one-piece-en", source_id: "bandai-one-piece", game: "one-piece", locale: "en", release_region: "OCEANIA" },
   {
@@ -47,7 +50,7 @@ export function gameProfileRegistrations() {
     return {
       id,
       game,
-      publisher_id: game === "riftbound" ? "riot-games" : "bandai",
+      publisher_id: game === "magic" ? "wizards-of-the-coast" : game === "riftbound" ? "riot-games" : "bandai",
       schema: exportedGameProfileSchema(id),
     };
   });

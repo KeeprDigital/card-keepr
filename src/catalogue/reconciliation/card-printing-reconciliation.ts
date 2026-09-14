@@ -494,6 +494,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   const checkedCardScopes: CheckedCardScope[] = [];
   const printingAdmissionPolicies = new Map<string, "owner_review" | "source_qualification" | "unqualified">();
   const printingIdentityQualifications = new Map<string, SourceAdapterRegistration["qualifiesPrintingIdentity"]>();
+  const cardDesignQualifications = new Map<string, SourceAdapterRegistration["qualifiesCardDesignIdentity"]>();
   let errataOnlyEvidence = true;
   const evidencePlanSnapshot: unknown[] = [];
   for await (const plan of retained.evidencePlans) {
@@ -504,6 +505,10 @@ export async function reconcileRetainedCardPrintingEvidence(
     printingIdentityQualifications.set(
       plan.sourceLineage,
       requiredSourceAdapter(plan.adapterVersion).qualifiesPrintingIdentity,
+    );
+    cardDesignQualifications.set(
+      plan.sourceLineage,
+      requiredSourceAdapter(plan.adapterVersion).qualifiesCardDesignIdentity,
     );
     if ((plan.subset ?? "complete") === "complete") completeLineages.add(plan.sourceLineage);
     if (plan.reconciliationCapability !== "errata") {
@@ -756,7 +761,13 @@ export async function reconcileRetainedCardPrintingEvidence(
             });
             break observationUnit;
           }
+          const cardDesignKey =
+            printingAdmissionPolicies.get(observation.sourceLineage) === "source_qualification" &&
+            cardDesignQualifications.get(observation.sourceLineage)?.(observation) === true
+              ? observation.cardDesignKey
+              : undefined;
           const admission = await assessSourceAdmission(database, runId, observation, observedAt, {
+            cardDesignKey,
             qualifiesPrintingIdentity: printingIdentityQualifications.get(observation.sourceLineage),
             printingAdmission: printingAdmissionPolicies.get(observation.sourceLineage) ?? "unqualified",
           });
@@ -767,7 +778,7 @@ export async function reconcileRetainedCardPrintingEvidence(
               locator: observation.locator,
               matched_printing_ids: admission.decision?.printing ? [admission.decision.printing.id] : [],
               detail:
-                "New source evidence contradicts the identity established by an owner admission exception. Resolve the identity conflict before publication.",
+                "New source evidence contradicts a retained Card design identity or owner admission. Resolve the identity conflict before publication.",
             });
             break observationUnit;
           }
@@ -805,7 +816,8 @@ export async function reconcileRetainedCardPrintingEvidence(
             existing === null &&
             localOfficialCards.length === 0;
           const exactUnnumberedCards =
-            sourceCard.official_identity.kind === "unknown" || canConfirmPublisherNumber
+            cardDesignKey === undefined &&
+            (sourceCard.official_identity.kind === "unknown" || canConfirmPublisherNumber)
               ? await cards.sameFacts(sourceCard, canConfirmPublisherNumber)
               : [];
           let unnumberedCard: (typeof exactUnnumberedCards)[number] | undefined;
@@ -945,7 +957,7 @@ export async function reconcileRetainedCardPrintingEvidence(
                 database,
                 proposedCard,
                 proposedCard.official_identity.kind === "unknown"
-                  ? [observation.sourceLineage, observation.locator ?? observation.sourceObservationId]
+                  ? [observation.sourceLineage, cardDesignKey ?? observation.locator ?? observation.sourceObservationId]
                   : [],
               ),
               runId,
@@ -1519,6 +1531,7 @@ export async function reconcileRetainedCardPrintingEvidence(
               locator: observation.locator,
               variantKey: observation.variantKey,
               evidenceJson: canonicalJson({
+                ...(cardDesignKey === undefined ? {} : { card_design_key: cardDesignKey }),
                 card: observation.observedCardAndPrinting.card,
                 printing: proposedPrinting,
                 compatibility,
