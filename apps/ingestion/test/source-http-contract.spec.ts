@@ -179,3 +179,32 @@ test("source commands reject noncanonical wire bodies and preserve authenticatio
   expect(unauthorized.status).toBe(401);
   await assertHttpResponse(contract, "/v1/source-registry", "get", unauthorized);
 });
+
+test("resume accepts an empty network stream and validates nonempty streamed JSON", async () => {
+  const { exports } = await import("cloudflare:workers");
+  for (const [chunks, type, status, code] of [
+    [[], undefined, 404, "ingestion_evidence_not_found"],
+    [["{", "}"], "application/json", 404, "ingestion_evidence_not_found"],
+    [["{"], "application/json", 400, "invalid_json"],
+    [["{}"], "text/plain", 415, "unsupported_media_type"],
+  ] as const) {
+    const response = await exports.default.fetch(
+      new Request("https://card-keepr.invalid/v1/ingestion-runs/absent/collection/resume", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer vitest-administration-key",
+          ...(type === undefined ? {} : { "content-type": type }),
+        },
+        body: new ReadableStream({
+          start(controller) {
+            for (const chunk of chunks) controller.enqueue(new TextEncoder().encode(chunk));
+            controller.close();
+          },
+        }),
+      }),
+    );
+    expect(response.status).toBe(status);
+    expect(await response.clone().json()).toMatchObject({ code });
+    await assertHttpResponse(contract, "/v1/ingestion-runs/{run}/collection/resume", "post", response);
+  }
+});

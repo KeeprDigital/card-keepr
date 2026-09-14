@@ -316,8 +316,35 @@ export const extendCapacityRoute = createRoute({
     ...problemResponses,
   },
 });
-const optionalEmptyJson: typeof boundedJson = async (c, next) =>
-  c.req.raw.body === null ? next() : boundedJson(c, next);
+const optionalEmptyJson: typeof boundedJson = async (c, next) => {
+  const reader = c.req.raw.body?.getReader();
+  if (!reader) return next();
+  // A bodyless network POST can expose an empty stream instead of null.
+  // Inspect one nonempty chunk, then preserve it for the bounded JSON reader.
+  let first = await reader.read();
+  while (!first.done && first.value.byteLength === 0) first = await reader.read();
+  if (first.done) {
+    reader.releaseLock();
+    const headers = new Headers(c.req.raw.headers);
+    headers.delete("content-type");
+    c.req.raw = new Request(c.req.raw, { headers, body: null });
+    return next();
+  }
+  const initial = first.value;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(initial);
+    },
+    async pull(controller) {
+      const chunk = await reader.read();
+      if (chunk.done) controller.close();
+      else controller.enqueue(chunk.value);
+    },
+    cancel: (reason) => reader.cancel(reason),
+  });
+  c.req.raw = new Request(c.req.raw, { body });
+  return boundedJson(c, next);
+};
 export const resumeEvidenceRoute = createRoute({
   method: "post",
   path: "/v1/ingestion-runs/{run}/collection/resume",
