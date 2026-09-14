@@ -26,12 +26,7 @@ test("dev status uses only its scoped credential and canonical dev route", async
   });
   globalThis.fetch = async (url, options) => {
     observed.push({ url: String(url), token: new Headers(options.headers).get("authorization") });
-    return Response.json({
-      contract: "card-keepr-cli-presentation@1",
-      text: "Dev status",
-      exit_code: 0,
-      document: { state: "dev" },
-    });
+    return Response.json({ state: "dev" });
   };
   process.stdout.write = () => true;
   const result = await main(["status", "--target", "dev", "--json"], {

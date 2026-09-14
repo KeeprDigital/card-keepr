@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import { catalogueRoutes } from "../../../src/catalogue/read";
-import { routeTable } from "../../../src/http/routes";
+import { httpDispatch } from "../../../src/http/openapi";
 import { apiProblemResponse } from "../../api/src/problem";
 import { cloudflareD1BackupProvider, createVerifiedCatalogueBackup } from "../../../src/catalogue/backup-recovery";
 import { catalogueStore } from "../../../src/catalogue/shared";
@@ -91,7 +91,7 @@ export async function assertVerifiedBackup(id: string) {
 export async function readNativeCards(revision: string) {
   const request = new Request(`https://catalogue.example/v1/cards?game=one-piece&revision=${revision}`);
   try {
-    return (await routeTable(catalogueRoutes)("GET", "/v1/cards", {
+    return (await httpDispatch(catalogueRoutes)("GET", "/v1/cards", {
       request,
       env: { ...testEnv, CATALOGUE_DB: catalogueStore(testEnv.CATALOGUE_DB) },
       requestId: "native-retention-proof",

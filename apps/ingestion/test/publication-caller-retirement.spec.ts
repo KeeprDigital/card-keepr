@@ -92,7 +92,15 @@ test("native owner operations bind exact approval pins and replay the same publi
     idempotency_key: "retired-callers-native-approval",
   });
   expect(replay.response.status).toBe(202);
-  expect(replay.document).toEqual(acknowledgements[0]!.document);
+  expect(replay.document).toEqual({
+    ...acknowledgements[0]!.document,
+    contract: "card-keepr-publication-acceptance@1",
+    links: { status: replay.response.headers.get("location") },
+  });
+  expect(replay.document.links).toMatchObject({
+    status: expect.stringContaining(`/v1/publications/${result.document.id}`),
+  });
+  expect((await post("/v1/publications", intent)).document).toEqual(acknowledgements[0]!.document);
   expect(replay.document).toMatchObject({ id: result.document.id, state: "approved", candidate_id: candidate.id });
   expect((await get(`/v1/publications/${result.document.id}`)).document).toEqual(result.document);
   const changed = await post("/v1/publications/start", {

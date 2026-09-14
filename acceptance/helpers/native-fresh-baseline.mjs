@@ -32,8 +32,15 @@ export async function proveNativePopulatedHandoff({
   configPath,
   environment,
   sourceFile,
+  archivedRevisionId,
   consumer,
 }) {
+  const archiveInspection = new DatabaseSync(await sourceFile(), { readOnly: true });
+  try {
+    assert.equal(queries.queryRevisionState(archiveInspection).get(archivedRevisionId)?.state, "archived");
+  } finally {
+    archiveInspection.close();
+  }
   const templatePath = join(directory, "fresh-template.sqlite");
   const template = new DatabaseSync(templatePath);
   for (const file of (await readdir("migrations")).filter((name) => name.endsWith(".sql")).sort())
@@ -53,6 +60,7 @@ export async function proveNativePopulatedHandoff({
   assert.equal(status.release_preflight.retention_ready, true, JSON.stringify(status.release_preflight));
   assert.ok(status.release_preflight.smoke_targets, JSON.stringify(status.release_preflight));
   const targets = status.release_preflight.smoke_targets;
+  assert.equal(targets.stale_revision_id, archivedRevisionId);
   for (const revision of targets.revisions) {
     for (const [kind, cursor, id, query] of [
       ["cards", revision.card_cursor, revision.card_id, ""],

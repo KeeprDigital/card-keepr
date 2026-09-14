@@ -1,5 +1,5 @@
 import { safeDiagnosticCount, safeDiagnosticReference, safeMachineCode } from "./diagnostic-display.mjs";
-/** Human administration output is derived by the Worker from its public document. */
+/** Pure client presentation of ordinary administration documents. */
 export function administrationPresentation(document, status = 200) {
   const incomplete =
     (document.contract === "card-keepr-reconciliation-workflow@1" && document.status !== "complete") ||
@@ -10,10 +10,21 @@ export function administrationPresentation(document, status = 200) {
     contract: "card-keepr-cli-presentation@1",
     document,
     text: formatAdministrationResult(document),
-    exit_code: incomplete ? 10 : 0,
+    exit_code: publicationExitCode(document) ?? (incomplete ? 10 : 0),
   };
 }
+function publicationExitCode(document) {
+  if (document.contract === "card-keepr-publication-acceptance@1") return 10;
+  if (document.contract !== "card-keepr-game-publication@1") return null;
+  if (document.state === "failed") return 8;
+  return document.state === "published" ? 0 : 10;
+}
 function formatAdministrationResult(document) {
+  if (document.contract === "card-keepr-publication-acceptance@1")
+    return `Publication ${document.id} accepted; inspect ${document.links.status} for current status.`;
+  if (document.contract === "card-keepr-game-publication@1")
+    return `Publication ${document.id}: ${document.state}${document.failure_code ? ` (${document.failure_code})` : ""}${document.state === "published" ? "; inspect the Backup Attempt for verification" : ""}`;
+
   if (document.contract === "card-keepr-administration-status@1") {
     return formatStatus(document);
   }

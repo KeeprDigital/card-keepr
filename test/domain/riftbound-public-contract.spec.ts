@@ -90,7 +90,11 @@ test("active API and administration schema definitions include Riftbound but sta
         ajv.getSchema(`${schema.$id}#/$defs/OfficialIdentity`)!({ kind: "publisher_name", value: "Kinkou Monk" }),
       ).toBe(true);
       expect(ajv.getSchema(`${schema.$id}#/$defs/GameData`)!({ profile: "riftbound@1", attributes: {} })).toBe(true);
-      expect(ajv.getSchema(`${schema.$id}#/$defs/CardCollectionQuery`)!({ game: "riftbound" })).toBe(true);
+      const readContract = JSON.parse(readFileSync("contracts/read-openapi.json", "utf8"));
+      const gameQuery = readContract.paths["/v1/cards"].get.parameters.find(
+        (parameter: { in: string; name: string }) => parameter.in === "query" && parameter.name === "game",
+      );
+      expect(ajv.compile(gameQuery.schema)("riftbound")).toBe(true);
     }
   }
 });

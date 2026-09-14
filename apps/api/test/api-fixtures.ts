@@ -33,7 +33,7 @@ export function apiHeaders(ip: string): Record<string, string> {
 
 export type ApiCardFixture = Record<string, unknown> & {
   id: string;
-  official_identity: { kind: string; value: string };
+  official_identity: { kind: string; value: string | null };
   name: string;
   effective_rules_text: unknown;
 };

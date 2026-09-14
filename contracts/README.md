@@ -4,11 +4,12 @@ These files define the maintained API, Catalogue Export and owner administration
 interfaces. Production export validation and the existing contract tests consume
 them directly. They are included in normal JSON lint and changed-file formatting.
 
-| Contract               | Source                                                                                                                                                        |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Authenticated read API | [OpenAPI](openapi.json) and [response schemas](schemas/api.schema.json)                                                                                       |
-| Catalogue Export       | [Manifest](schemas/catalogue-export-manifest-v5.schema.json), [records](schemas/catalogue-export-record-v5.schema.json) and [serialization](SERIALIZATION.md) |
-| Owner administration   | [Administration contract](ADMINISTRATION.md) and [request schemas](schemas/administration.schema.json)                                                        |
+| Contract             | Source                                                                                                                                                                        |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Generated HTTP pilot | [Read OpenAPI](read-openapi.json), [administration OpenAPI](admin-openapi.json), [migration bridge](HTTP.md) and [complete route/caller inventory](http-route-inventory.json) |
+| Unmigrated read API  | [Legacy OpenAPI](openapi.json) and [response schemas](schemas/api.schema.json)                                                                                                |
+| Catalogue Export     | [Manifest](schemas/catalogue-export-manifest-v5.schema.json), [records](schemas/catalogue-export-record-v5.schema.json) and [serialization](SERIALIZATION.md)                 |
+| Owner administration | [Administration contract](ADMINISTRATION.md) and [request schemas](schemas/administration.schema.json)                                                                        |
 
 Update the relevant schema alongside its implementation and existing behavioral
 tests. Keep schema identities and relative references consistent. Before Go-Live,

@@ -3,7 +3,7 @@ import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters
 import { catalogueRoutes } from "../../../src/catalogue/read";
 import { readSourceObservation } from "../../../src/catalogue/reconciliation/reconciliation-source-observation";
 import { canonicalJson, catalogueStore, sha256 } from "../../../src/catalogue/shared";
-import { routeTable } from "../../../src/http/routes";
+import { httpDispatch } from "../../../src/http/openapi";
 import { nativeCandidateRecords, waitForDispatchedNativeCandidates } from "./native-candidate-helpers";
 import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import { currentGameMembers } from "./query-helpers/atomic-publication";
@@ -25,7 +25,7 @@ installReconciliationSuite();
 
 async function readPublished(path: string) {
   const request = new Request(`https://card-keepr.invalid${path}`);
-  const response = await routeTable(catalogueRoutes)("GET", new URL(request.url).pathname, {
+  const response = await httpDispatch(catalogueRoutes)("GET", new URL(request.url).pathname, {
     request,
     env: { ...testEnv, CATALOGUE_DB: catalogueStore(testEnv.CATALOGUE_DB) },
     requestId: "completeness-published-read",
@@ -496,7 +496,10 @@ test("complete image evidence publishes an unidentified artwork once without col
   const secondRecords = await nativeCandidateRecords(requiredString(second, "id"));
   expect(secondRecords.printings).toHaveLength(2);
   expect(secondRecords.printings?.map(({ id }) => id)).toContain(firstPrintingId);
-  const secondPrintingId = requiredString(secondRecords.printings!.find(({ id }) => id !== firstPrintingId)!, "id");
+  const secondPrintingId = requiredString(
+    secondRecords.printings!.find(({ id }) => id !== firstPrintingId)!,
+    "id",
+  );
   expect((await approveNativeCandidate(second, "artwork-alternate")).response.status).toBe(200);
 
   const third = await collectVariant("alternate-two");

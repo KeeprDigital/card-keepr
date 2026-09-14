@@ -111,6 +111,11 @@ for its artifacts and the current composition's verified backup checkpoint.
 Other games may prepare and approve while that checkpoint is pending. The original
 deadline still applies, and applicability dates do not recalculate approved facts.
 
+The CLI returns pending exit code 10 for approval and for pending or paused
+publication status. Automation must continue to inspect status after that result.
+The [administration contract](../../contracts/ADMINISTRATION.md) defines terminal
+exit codes; publication completion still requires separate backup inspection.
+
 The final transaction verifies approval/readiness, same-game predecessor, deadline,
 generation and global recovery state; atomically switches the game/composition,
 retains query visibility and reserves the composition's backup. A stale same-game

@@ -1,3 +1,5 @@
+import contract from "../../../contracts/read-openapi.json";
+import { assertHttpResponse } from "../../../test/support/http-contract";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as publishedCatalogueQueries from "../../ingestion/test/query-helpers/published-catalogue";
 import { exports } from "cloudflare:workers";
@@ -47,6 +49,7 @@ test("Card Game Profile attributes compose typed scalar and array membership fil
   ]) {
     const response = await api(query);
     expect(response.status).toBe(200);
+    await assertHttpResponse(contract, "/v1/cards", "get", response);
     const body = await response.json<{ data: { id: string }[] }>();
     expect(body.data.map(({ id }) => id)).toEqual(["card_captain"]);
   }
@@ -81,7 +84,9 @@ test("Card attribute names and values fail closed against the selected Game Prof
 test("Card filter cursors bind every active filter and keep values pinned after publication", async () => {
   await seedCards();
   const query = "game=one-piece&rarity=rare&attribute.colours=red&limit=1";
-  const first = await (await api(query)).json<{
+  const first = await (
+    await api(query)
+  ).json<{
     data: { id: string }[];
     page: { next_cursor: string };
     meta: { catalogue_revision_id: string };
@@ -102,7 +107,9 @@ test("Card filter cursors bind every active filter and keep values pinned after 
     runId: "run_filters_new",
     cards: [apiCard({ id: "card_new", cardNumber: "OP99-001", name: "New" })],
   });
-  const next = await (await api(`${query}&after=${first.page.next_cursor}`)).json<{
+  const next = await (
+    await api(`${query}&after=${first.page.next_cursor}`)
+  ).json<{
     data: { id: string }[];
     page: { next_cursor: string | null };
     meta: { catalogue_revision_id: string };

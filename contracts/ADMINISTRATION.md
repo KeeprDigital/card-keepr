@@ -59,9 +59,12 @@ does not provision staging or introduce a staging deployment trigger.
 
 Exit codes are `0` success, `2` usage, `3` confirmation declined, `4`
 authentication, `5` authorization, `6` not found, `7` conflict or stale
-precondition, `8` contract validation, `9` remote/platform failure, and `10`
-operation accepted but not yet terminal where the command's presentation defines
-that pending outcome. Native candidate, artifact-preparation and publication
+precondition, `8` contract validation or terminal publication failure, `9`
+remote/platform failure, and `10` operation accepted but not yet terminal where
+the command's presentation defines that pending outcome. Publication approval
+exits `10` for its immutable acceptance; publication status exits `10` while
+pending or paused, `8` on failure and `0` when published. Published still requires
+separate Backup Attempt verification. Native candidate and artifact-preparation
 commands currently exit `0` for a successfully returned document, including a
 pending acknowledgement or a status document reporting `failed`. Callers must
 read `state` and `failure_code` and poll status; neither exit `0` nor HTTP `202`
@@ -161,13 +164,16 @@ route sets `resume: true`. The unsuffixed POST route advances one bounded unit
 and returns `200`; it accepts the same fields and optional boolean `resume`.
 
 Approval returns HTTP `202` only after retaining an immutable acknowledgement
-with contract `card-keepr-game-publication@1`, `approval_scope: whole_candidate`,
+with contract `card-keepr-publication-acceptance@1`, `approval_scope: whole_candidate`,
 `id`, `candidate_id`, manifest, predecessor, `candidate_generation`, operation
 `generation`, deadline and `state: approved`. Exact replay returns that original
 acknowledgement even after publication. It does not return the latest status.
-GET status returns HTTP `200` with current state, `failure_code`,
+The `/start` receipt includes an absolute `links.status`, also sent as `Location`,
+and `Retry-After: 2`. Its request requires a JSON integer `generation` (the CLI
+converts its decimal option once). GET status returns HTTP `200` with contract
+`card-keepr-game-publication@1`, current state, `failure_code`,
 `resulting_revision_id` and `backup_attempt_id`. POST `/v1/publications` retains
-the same approval without dispatch; the owner CLI uses `/start` to dispatch.
+the same approval without dispatch, using `card-keepr-game-publication@1`; the owner CLI uses `/start` to dispatch.
 
 Publication progresses through `approved`, `waiting_artifacts` or
 `waiting_backup` to `published`, or ends in `failed`/pauses in `retry_paused`.

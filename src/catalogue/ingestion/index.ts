@@ -22,3 +22,5 @@ export { rejectRun, retryPublicationCleanup, retryRun, showRun } from "./run-lif
 export type { ApproveRunRequest, RejectRunRequest, RetryPublicationCleanupRequest, RetryRunRequest } from "./run-types";
 
 export { handleDevDeployment } from "./dev-deployment";
+
+export { administrationRoutes, administrationRouteFamilies } from "./http-routes";
