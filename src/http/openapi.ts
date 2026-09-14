@@ -110,7 +110,7 @@ export const problemSchema = z
     code: identifier,
     detail: identifier,
     request_id: identifier,
-    invalid_params: z.array(z.strictObject({ name: identifier, reason: identifier })).optional(),
+    invalid_params: z.array(z.strictObject({ name: z.string(), reason: identifier })).optional(),
     links: z.record(z.string(), z.string()).optional(),
   })
   .openapi("Problem");

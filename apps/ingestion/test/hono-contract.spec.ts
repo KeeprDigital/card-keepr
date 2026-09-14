@@ -67,6 +67,20 @@ test("publication wire validation rejects malformed, oversized and noncanonical 
   }
 });
 
+test("publication wire errors preserve an empty unrecognized JSON property name", async () => {
+  const invalid = await post("/v1/publications/start", {
+    candidate_id: "missing",
+    manifest_digest: "a".repeat(64),
+    expected_game_revision_id: "catrev_spine_000",
+    generation: 0,
+    idempotency_key: "empty-property",
+    "": 1,
+  });
+  expect(invalid.response.status).toBe(422);
+  expect(invalid.document).toMatchObject({ invalid_params: [{ name: "" }] });
+  await assertHttpResponse(contract, "/v1/publications/start", "post", invalid.response, invalid.document);
+});
+
 test("literal publication start cannot be invoked by a status read or unsupported verb", async () => {
   for (const method of ["GET", "HEAD", "PUT", "DELETE"]) {
     const response = await worker.fetch(
