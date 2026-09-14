@@ -1,4 +1,4 @@
-import { sources, sourceLineages } from "../adapters";
+import { sources, sourceLineages, type SourceAdapterRegistration } from "../adapters";
 import type { sourceAuthorities } from "../source-evidence";
 import {
   canonicalJson,
@@ -82,15 +82,19 @@ export async function assessSourceAdmission(
   run: string,
   observation: SourceObservation,
   at: string,
-  requirements: { printingAdmission: "owner_review" | "source_qualification" } = {
-    printingAdmission: "source_qualification",
+  requirements: {
+    printingAdmission: "owner_review" | "source_qualification" | "unqualified";
+    qualifiesPrintingIdentity?: SourceAdapterRegistration["qualifiesPrintingIdentity"];
+  } = {
+    printingAdmission: "unqualified",
   },
 ) {
   if (!observation.observedCardAndPrinting.card) return null;
   const supplemental = supplementalLineage(observation.sourceLineage);
   const ownerReviewRequired =
-    requirements.printingAdmission === "owner_review" && observation.observedCardAndPrinting.printing !== null;
-  if (!supplemental && !ownerReviewRequired) return null;
+    requirements.printingAdmission === "unqualified" ||
+    (requirements.printingAdmission === "owner_review" && observation.observedCardAndPrinting.printing !== null);
+  if (!supplemental && !ownerReviewRequired && !requirements.qualifiesPrintingIdentity) return null;
   const reference = canonicalJson([
     observation.locator ?? observation.observedCardAndPrinting.card.official_identity,
     observation.variantKey,
@@ -167,13 +171,18 @@ export async function assessSourceAdmission(
       canonicalJson(decision!.card.official_identity) !==
         canonicalJson(observation.observedCardAndPrinting.card.official_identity));
   const permitted =
-    (admitted && (!ownerReviewRequired || (latest?.actor === "owner" && decision?.printing != null))) ||
+    (admitted &&
+      (!ownerReviewRequired ||
+        (latest?.actor === "owner" &&
+          (observation.observedCardAndPrinting.printing === null || decision?.printing != null)))) ||
     (!admitted &&
       !ownerReviewRequired &&
       !rejected &&
       policy.automatic &&
       (observation.observedCardAndPrinting.printing === null ||
-        (observation.demonstrablyNovel && observation.noveltyProofComplete && observation.artworkIdentityExplicit)));
+        (observation.demonstrablyNovel &&
+          observation.noveltyProofComplete &&
+          (requirements.qualifiesPrintingIdentity?.(observation) ?? observation.artworkIdentityExplicit))));
   return { proposal, latest, policy, permitted, rejected, decision, identityExceptionConflict };
 }
 export async function completeSourceAdmission(
@@ -201,8 +210,7 @@ export async function completeSourceAdmission(
     generation,
     action: "admit",
     actor: "automation",
-    rationale:
-      "Designated supplemental authority satisfied the game/source admission rules and unambiguous identity checks.",
+    rationale: "Designated Source Authority satisfied the game/source admission rules and unambiguous identity checks.",
     decision_json: canonicalJson(decision),
     idempotency_key: key,
     request_json: canonicalJson(decision),

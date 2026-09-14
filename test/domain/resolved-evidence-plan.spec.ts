@@ -13,7 +13,7 @@ for (const game of ["one-piece", "riftbound"] as const)
     });
     expect(() => canonicalJson(plan)).not.toThrow();
     expect(plan).not.toHaveProperty("cardIdentities");
-    expect(plan.printingAdmission).toBe(game === "riftbound" ? "owner_review" : "source_qualification");
+    expect(plan.printingAdmission).toBe("source_qualification");
   });
 
 test("named evidence metadata retains its exact identity scope and admission policy", () => {

@@ -20,35 +20,44 @@ export type AuthoritySelectionRequest = {
 };
 // Deliberate initial designations, independent of ownership and source naming.
 // Adding another publisher source does not change this policy.
-const initialAuthorityLineages = ["one-piece-en", "fusion-world-en", "digimon-en", "gundam-en-asia", "gundam-en-us"];
 const areas = ["card_facts", "printing_details", "corrected_card_content"] as const;
+// Each entry applies only to its registered lineage's exact game/locale/region.
+// Future Scryfall scopes select all three areas; TCGdex selects facts/details
+// and the selected official Pokémon correction scopes select corrected content.
+// Those entries belong with their later source registrations, not inferred scopes.
+const initialAuthorityAreas: Readonly<Record<string, readonly (typeof areas)[number][]>> = {
+  "one-piece-en": areas,
+  "fusion-world-en": areas,
+  "digimon-en": areas,
+  "gundam-en-asia": areas,
+  "gundam-en-us": areas,
+  "riftbound-en": areas,
+};
 export async function sourceAuthorities(database: CatalogueStore, runId?: string) {
   const decisions = (await authorityDecisionsStatement(database, runId).all<AuthorityDecision>()).results;
-  const authorities = sourceLineages
-    .filter(({ id }) => initialAuthorityLineages.includes(id))
-    .flatMap((lineage) =>
-      areas.map((area) => {
-        const selected = decisions.find(
-          (decision) =>
-            decision.game === lineage.game &&
-            decision.locale === lineage.locale &&
-            decision.release_region === lineage.release_region &&
-            decision.area === area,
-        );
-        return selected
-          ? publicDecision(selected)
-          : {
-              game: lineage.game,
-              locale: lineage.locale,
-              release_region: lineage.release_region,
-              area,
-              source_lineage: lineage.id,
-              generation: 0,
-              rationale: "Initial publisher source designation",
-              decided_at: null,
-            };
-      }),
-    );
+  const authorities = sourceLineages.flatMap((lineage) =>
+    (initialAuthorityAreas[lineage.id] ?? []).map((area) => {
+      const selected = decisions.find(
+        (decision) =>
+          decision.game === lineage.game &&
+          decision.locale === lineage.locale &&
+          decision.release_region === lineage.release_region &&
+          decision.area === area,
+      );
+      return selected
+        ? publicDecision(selected)
+        : {
+            game: lineage.game,
+            locale: lineage.locale,
+            release_region: lineage.release_region,
+            area,
+            source_lineage: lineage.id,
+            generation: 0,
+            rationale: "Initial publisher source designation",
+            decided_at: null,
+          };
+    }),
+  );
   // New publisher scopes have no implicit authority. Once the owner selects
   // one, expose that exact decision alongside the existing initial scopes.
   for (const decision of decisions) {

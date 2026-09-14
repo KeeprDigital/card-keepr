@@ -16,6 +16,7 @@ import {
 // contracts remain unchanged; the measurement must record any capacity pause.
 export const capacitySourceAdapter = {
   adapterVersion: "fixture-one-piece-capacity@1",
+  printingAdmission: "source_qualification",
   sourceLineage: "one-piece-en",
   supportedGame: "one-piece",
   gameProfileVersion: "one-piece@1",

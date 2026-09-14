@@ -733,7 +733,7 @@ export function resolvedReconciliationEvidencePlan(plan: ReturnType<typeof parse
     subset: plan.coverage?.subset ?? "complete",
     printingAdmission:
       sourceAdapterForCoverage(requiredSourceAdapter(plan.adapter_version), plan.coverage?.subset).printingAdmission ??
-      "source_qualification",
+      ("unqualified" as const),
     reconciliationCapability: sourceAdapterForCoverage(
       requiredSourceAdapter(plan.adapter_version),
       plan.coverage?.subset,

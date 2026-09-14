@@ -9,7 +9,7 @@ import { catalogueStateTableExists } from "./query-helpers/schema.mjs";
  * binding identity. This also supports in-process persistence keyed by statePath.
  * Call only after both source runtimes have stopped and checkpoint verification passed.
  */
-export async function verifiedBackupApiState(statePath, directory) {
+export async function verifiedBackupApiState(statePath, directory, targetDatabaseFile) {
   const imports = (await readdir(directory))
     .filter((name) => /^restore-[0-9]+\.sqlite$/u.test(name))
     .sort((a, b) => Number(a.match(/[0-9]+/u)[0]) - Number(b.match(/[0-9]+/u)[0]));
@@ -18,6 +18,7 @@ export async function verifiedBackupApiState(statePath, directory) {
   for (const name of await readdir(databaseDirectory, { recursive: true })) {
     if (!name.endsWith(".sqlite")) continue;
     const path = join(databaseDirectory, name);
+    if (targetDatabaseFile !== undefined && path !== targetDatabaseFile) continue;
     const database = new DatabaseSync(path, { readOnly: true });
     const catalogue = catalogueStateTableExists(database).get();
     database.close();

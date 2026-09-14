@@ -34,6 +34,16 @@ export type ExtractedSourceRequest = {
   headers: Record<string, string>;
 };
 
+export type SourcePrintingIdentityEvidence = Readonly<{
+  observedCardAndPrinting: {
+    card: { game: string; name: string; official_identity: { kind: string; value: string | null } } | null;
+    printing: { game_data: { profile: string; attributes: Record<string, unknown> } | null } | null;
+  };
+  locator: string | null;
+  variantKey: string | null;
+  artworkFingerprint: string | null;
+}>;
+
 export type SourceAdapterRegistration = Readonly<{
   adapterVersion: string;
   sourceLineage: string;
@@ -48,6 +58,8 @@ export type SourceAdapterRegistration = Readonly<{
   reconciliationCapability: "catalogue" | "errata" | "unavailable";
   /** Whether source-qualified Printing evidence is sufficient or an owner decision is mandatory. */
   printingAdmission?: "owner_review" | "source_qualification";
+  /** Proven source-specific identity rule; retained physical evidence is checked separately. */
+  qualifiesPrintingIdentity?: (evidence: SourcePrintingIdentityEvidence) => boolean;
   reconciliationAreas?: readonly ("catalogue" | "errata")[];
   inheritDiscoveryRequestHeaders?: boolean;
   listingReconciliation?: ListingReconciliationTraits;

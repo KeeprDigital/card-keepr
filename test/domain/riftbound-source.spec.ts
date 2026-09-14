@@ -3,10 +3,31 @@ import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { sourceAdapterForCoverage, requiredSourceAdapter } from "../../src/catalogue/adapters/source-adapters";
 import { canonicalJson } from "../../src/catalogue/shared";
+import { parseReconciliationObservation } from "../../src/catalogue/reconciliation/reconciliation-observation";
+import type { SourceAdapterRegistration } from "../../src/catalogue/adapters";
 import { riftboundSourceAdapterRegistration } from "../../src/catalogue/adapters/riftbound-source-adapter";
 import { AdapterParseFailure } from "../../src/catalogue/adapters/adapter-parse-failure";
 
 const fixture = new URL("../../acceptance/fixtures/real-sources/2026-09-08-riftbound/raw/", import.meta.url);
+
+test("retained Riot Printing codes establish ordinary and alternate identity without inventing physical facts", () => {
+  const adapter: SourceAdapterRegistration = riftboundSourceAdapterRegistration;
+  const values = riftboundSourceAdapterRegistration.parseBytes(readFileSync(new URL("cards-0.json", fixture)), {
+    url: "https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards?locale=en_US&from=0&limit=200",
+    mediaType: "application/json",
+  });
+  for (const locator of ["ogn-001-298", "ogn-066-298", "ogn-066a-298"]) {
+    const value = values.find((value) => "card" in value && value.identity_evidence.locator === locator)!;
+    const observed = parseReconciliationObservation(locator, value);
+    if (observed.kind !== "card_printing") throw new Error("Expected retained Card and Printing");
+    expect(adapter.qualifiesPrintingIdentity?.(observed) ?? false).toBe(true);
+    expect(observed.observedCardAndPrinting.printing).toMatchObject({
+      printed_rules_text: null,
+      game_data: { attributes: { finish: null, reverse_face: null } },
+    });
+    expect(observed.artworkIdentityExplicit).toBe(false);
+  }
+});
 
 test("malformed Riot bytes and image URLs remain source-contract failures", () => {
   const context = {
@@ -47,6 +68,18 @@ test("Riot English pagination retains every returned record and literal token an
   expect(byLocator.get("unl-205-219")?.printing.game_data.attributes.reverse_face).toBeNull();
   expect(byLocator.get("ogn-141-298")?.printing.printed_rules_text).toBeNull();
   expect(byLocator.get("ogn-141-298")?.card.effective_rules_text).toContain("buff up to two other friendly units");
+  for (const locator of [
+    "ogn-001-298",
+    "ogn-066-298",
+    "ogn-066a-298",
+    "ogn-141-298",
+    "sfd-227-star-221",
+    "unl-205-219",
+  ]) {
+    const observed = parseReconciliationObservation(locator, byLocator.get(locator)!);
+    if (observed.kind !== "card_printing") throw new Error("Expected retained Card and Printing");
+    expect(riftboundSourceAdapterRegistration.qualifiesPrintingIdentity(observed)).toBe(true);
+  }
 });
 
 test("Riot rejects changed locale, missing pagination links and duplicate publisher IDs", () => {
@@ -93,9 +126,11 @@ test("unmapped publisher fields remain inspectable even with fractional raw meta
   expect(() => canonicalJson(observations)).not.toThrow();
 });
 
-test("Riot scopes explicitly require owner Printing review while ordinary source qualification stays default", () => {
+test("Riot scopes permit qualification while bounded One Piece scopes retain owner Printing review", () => {
   for (const subset of ["complete", "public-english-inventory", "origins-errata", "announced-products-2027"])
-    expect(sourceAdapterForCoverage(riftboundSourceAdapterRegistration, subset).printingAdmission).toBe("owner_review");
+    expect(sourceAdapterForCoverage(riftboundSourceAdapterRegistration, subset).printingAdmission).toBe(
+      "source_qualification",
+    );
   expect(sourceAdapterForCoverage(riftboundSourceAdapterRegistration, "origins-errata").reconciliationCapability).toBe(
     "errata",
   );

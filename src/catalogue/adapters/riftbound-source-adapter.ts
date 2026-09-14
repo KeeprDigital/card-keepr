@@ -1,9 +1,9 @@
 import { adapterObjectMembers } from "./adapter-object-members";
 import { decodeHTML } from "entities";
 import { createHash } from "node:crypto";
-import { officialArtworkFingerprint } from "./official-artwork-identity";
+import { officialArtworkFingerprint, parsedOfficialArtworkIdentity } from "./official-artwork-identity";
 import { AdapterParseFailure, adapterUrl, decodeAdapterUtf8, withAdapterParseFailure } from "./adapter-parse-failure";
-import type { SourceAdapterRegistration } from "./source-adapter-registration-types";
+import type { SourceAdapterRegistration, SourcePrintingIdentityEvidence } from "./source-adapter-registration-types";
 import { riftboundOriginsErrata, riftboundOriginsErrataUrl } from "./riftbound-errata";
 import { riftboundAnnouncedProducts, riftboundProductsUrl } from "./riftbound-products";
 
@@ -21,7 +21,8 @@ export const riftboundSourceAdapterRegistration = {
   origin: "production",
   requestSurface: { kind: "credential-free-https" },
   reconciliationCapability: "catalogue",
-  printingAdmission: "owner_review",
+  printingAdmission: "source_qualification",
+  qualifiesPrintingIdentity: qualifiesRiotPrintingIdentity,
   reconciliationAreas: ["catalogue", "errata"],
   officialSourceContract: {
     supportedGame: "riftbound",
@@ -116,6 +117,36 @@ export const riftboundSourceAdapterRegistration = {
     ];
   },
 } satisfies SourceAdapterRegistration;
+
+function qualifiesRiotPrintingIdentity(evidence: SourcePrintingIdentityEvidence): boolean {
+  const { card, printing } = evidence.observedCardAndPrinting;
+  const attributes = printing?.game_data?.attributes;
+  const code = attributes?.public_code;
+  if (
+    card?.game !== "riftbound" ||
+    card.official_identity.kind !== "publisher_name" ||
+    card.official_identity.value !== card.name ||
+    printing?.game_data?.profile !== "riftbound@1" ||
+    typeof code !== "string"
+  )
+    return false;
+  // Riot's printed code preserves the variant suffix. The record, set and
+  // collector number must agree; a new URL or image encoding proves no identity.
+  const identity = /^([A-Z]{3})-(\d{3})(?:[a-z]|\*)?\/\d{3}$/u.exec(code);
+  const locator = code.replace("*", "-star").replace("/", "-").toLowerCase();
+  const artwork =
+    evidence.artworkFingerprint === null ? null : parsedOfficialArtworkIdentity(evidence.artworkFingerprint);
+  return (
+    identity !== null &&
+    attributes?.set_code === identity[1] &&
+    attributes?.collector_number === Number(identity[2]) &&
+    evidence.locator === locator &&
+    evidence.variantKey === locator &&
+    artwork?.official_card_identity === code.toUpperCase() &&
+    artwork.roles.length === 1 &&
+    artwork.roles[0] === "front"
+  );
+}
 
 function inventorySurfaceUrl(surface: string) {
   if (surface !== "catalogue")

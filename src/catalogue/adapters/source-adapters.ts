@@ -74,6 +74,16 @@ export function assertOfficialSourceUrl(value: string, contract: OfficialSourceC
   return url;
 }
 
+// Qualification belongs to these proven parser contracts, not publisher
+// ownership or future registrations that happen to use the same factory.
+const qualifiedOfficialCatalogueAdapters = new Set([
+  "one-piece-en@6",
+  "fusion-world-en@9",
+  "digimon-en@7",
+  "gundam-en-asia@7",
+  "gundam-en-us@7",
+]);
+
 // The registration facts every production raw-catalogue version shares.
 function productionCatalogueRegistration(
   adapter: Readonly<{
@@ -95,6 +105,9 @@ function productionCatalogueRegistration(
     origin: "production" as const,
     requestSurface: { kind: "credential-free-https" as const },
     reconciliationCapability: "catalogue" as const,
+    printingAdmission: qualifiedOfficialCatalogueAdapters.has(adapter.adapterVersion)
+      ? ("source_qualification" as const)
+      : undefined,
     reconciliationAreas: adapter.reconciliationAreas,
     inheritDiscoveryRequestHeaders: adapter.inheritDiscoveryRequestHeaders,
   };

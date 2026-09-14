@@ -3,13 +3,32 @@ import { administrationRequest, installRuntimeSuite } from "./runtime-helpers";
 
 installRuntimeSuite();
 
-test("new publisher authority remains opt-in and an explicit owner designation is visible", async () => {
+test("Riot starts with the approved exact English authority scopes and retains explicit owner decisions", async () => {
   const before = await (
     await administrationRequest("/v1/source-authorities", "GET")
   ).json<{
-    authorities: { game: string }[];
+    authorities: {
+      game: string;
+      locale: string;
+      release_region: string;
+      area: string;
+      source_lineage: string;
+      generation: number;
+    }[];
   }>();
-  expect(before.authorities.some((a) => a.game === "riftbound")).toBe(false);
+  expect(before.authorities.filter((a) => a.game === "riftbound")).toEqual(
+    ["card_facts", "printing_details", "corrected_card_content"].map((area) =>
+      expect.objectContaining({
+        game: "riftbound",
+        locale: "en",
+        release_region: "US",
+        area,
+        source_lineage: "riftbound-en",
+        generation: 0,
+      }),
+    ),
+  );
+  expect(before.authorities).toHaveLength(18);
   const selection = {
     game: "riftbound",
     locale: "en",
@@ -25,7 +44,7 @@ test("new publisher authority remains opt-in and an explicit owner designation i
   const decision = await changed.json();
   const after = await (await administrationRequest("/v1/source-authorities", "GET")).json<{ authorities: unknown[] }>();
   expect(after.authorities).toContainEqual(decision);
-  expect(after.authorities).toHaveLength(before.authorities.length + 1);
+  expect(after.authorities).toHaveLength(before.authorities.length);
   expect(await (await administrationRequest("/v1/source-authorities", "POST", selection)).json()).toEqual(decision);
   expect(
     (
