@@ -363,6 +363,7 @@ test("the real Pokémon pilot preserves treatments and official correction throu
   const publicText = JSON.stringify({ cards, printings, products, exported });
   for (const privateField of [
     "source_design_key",
+    "card_design_key",
     "variant_id",
     "source_lineage",
     "source_record_json",
@@ -396,7 +397,7 @@ test("the real Pokémon pilot preserves treatments and official correction throu
       new Set(
         retained
           .filter((row) => row.source_lineage === "tcgdex-pokemon-en")
-          .map((row) => JSON.parse(row.content_json).card_identity_evidence.source_design_key),
+          .map((row) => JSON.parse(row.evidence_json).card_design_key),
       ),
       new Set(["svp-051", "base1-4"]),
     );

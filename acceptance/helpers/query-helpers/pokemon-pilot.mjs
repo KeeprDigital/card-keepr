@@ -6,6 +6,6 @@ export function pokemonAdmissionHistory(database) {
 
 export function pokemonRetainedProposals(database) {
   return database.prepare(
-    "SELECT id, source_lineage, content_json FROM entity_proposals WHERE game = 'pokemon' ORDER BY id",
+    "SELECT id, source_lineage, evidence_json FROM entity_proposals WHERE game = 'pokemon' ORDER BY id",
   );
 }
