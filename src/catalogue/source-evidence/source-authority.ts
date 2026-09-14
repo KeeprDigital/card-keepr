@@ -1,5 +1,6 @@
 import { sourceLineages, requiredSourceAdapter, adapterReconciliationAreas } from "../adapters";
 import { AdministrationProblem, type CatalogueStore, canonicalJson } from "../shared";
+import { sameSourceDecisionIntent } from "./source-decision-intent";
 import {
   type AuthorityDecision,
   authorityDecisionsStatement,
@@ -122,7 +123,7 @@ export async function selectSourceAuthority(
   return publicDecision(decision);
 }
 function replayDecision(decision: AuthorityDecision, requestJson: string) {
-  if (decision.request_json !== requestJson)
+  if (!sameSourceDecisionIntent(decision.request_json, requestJson))
     throw new AdministrationProblem(
       409,
       "idempotency_key_reused",

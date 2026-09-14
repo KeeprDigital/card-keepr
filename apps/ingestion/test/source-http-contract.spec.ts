@@ -4,8 +4,51 @@ import { expect, test } from "vitest";
 import { administrationRequest, createCollection, installRuntimeSuite } from "./runtime-helpers";
 import { assertHttpResponse } from "../../../test/support/http-contract";
 import contract from "../../../contracts/admin-openapi.json";
+import { catalogueStore } from "../../../src/catalogue/shared";
+import { selectSourceAuthority } from "../../../src/catalogue/source-evidence/source-authority";
+import { authorityDecisionsStatement } from "../../../src/catalogue/source-evidence/source-authority-repository";
+import { decideSourceLifecycle } from "../../../src/catalogue/source-evidence/source-lifecycle";
+import { sourceLifecycleHistoryStatement } from "../../../src/catalogue/source-evidence/source-lifecycle-repository";
 
 installRuntimeSuite();
+
+test("numeric authority replay preserves a retained zero-padded generation intent and rejects changed intent", async () => {
+  const database = catalogueStore(env.CATALOGUE_DB);
+  const intent = {
+    game: "one-piece",
+    locale: "en",
+    release_region: "OCEANIA",
+    area: "card_facts",
+    source_lineage: "limitless-one-piece-en",
+    expected_generation: 0,
+    rationale: "Select supplemental card facts.",
+    idempotency_key: "hono-retained-authority",
+  };
+  const original = await selectSourceAuthority(
+    database,
+    { ...intent, expected_generation: "00" },
+    "2026-09-14T00:00:00.000Z",
+  );
+  const retained = (await authorityDecisionsStatement(database).all()).results;
+  expect(retained).toHaveLength(1);
+  expect(retained[0]!.request_json).toContain('"expected_generation":"00"');
+  const replay = await administrationRequest("/v1/source-authorities", "POST", intent);
+  expect(replay.status, await replay.clone().text()).toBe(200);
+  expect(await replay.clone().json()).toEqual(original);
+  await assertHttpResponse(contract, "/v1/source-authorities", "post", replay);
+  for (const change of [
+    { expected_generation: 1 },
+    { area: "printing_details" },
+    { source_lineage: "one-piece-en" },
+    { rationale: "A different owner intent." },
+  ]) {
+    const conflict = await administrationRequest("/v1/source-authorities", "POST", { ...intent, ...change });
+    expect(conflict.status).toBe(409);
+    expect(await conflict.clone().json()).toMatchObject({ code: "idempotency_key_reused" });
+    await assertHttpResponse(contract, "/v1/source-authorities", "post", conflict);
+  }
+  expect((await authorityDecisionsStatement(database).all()).results).toEqual(retained);
+});
 
 test("source authority accepts a JSON integer generation and retains the exact decision on replay", async () => {
   const intent = {
@@ -34,6 +77,54 @@ test("source authority accepts a JSON integer generation and retains the exact d
   });
   expect(invalid.status).toBe(422);
   await assertHttpResponse(contract, "/v1/source-authorities", "post", invalid);
+});
+
+test("numeric lifecycle replay preserves retained generation bytes and rejects changed intent", async () => {
+  const database = catalogueStore(env.CATALOGUE_DB);
+  const lineage = "limitless-one-piece-en";
+  const path = `/v1/source-lineages/${lineage}/lifecycle`;
+  const intent = {
+    state: "retired",
+    expected_generation: 1,
+    rationale: "Retire the supplemental source.",
+    idempotency_key: "hono-retained-lifecycle",
+  };
+  await decideSourceLifecycle(
+    database,
+    lineage,
+    { ...intent, state: "active", expected_generation: "0", idempotency_key: "hono-initial-lifecycle" },
+    "2026-09-14T00:00:00.000Z",
+  );
+  const original = await decideSourceLifecycle(
+    database,
+    lineage,
+    { ...intent, expected_generation: "0001" },
+    "2026-09-14T00:00:01.000Z",
+  );
+  const retained = (await sourceLifecycleHistoryStatement(database, lineage).all()).results;
+  expect(retained).toHaveLength(2);
+  expect(retained[0]!.request_json).toContain('"expected_generation":"0001"');
+  const replay = await administrationRequest(path, "POST", intent);
+  expect(replay.status, await replay.clone().text()).toBe(200);
+  expect(await replay.clone().json()).toEqual(original);
+  await assertHttpResponse(contract, "/v1/source-lineages/{lineage}/lifecycle", "post", replay);
+  for (const change of [{ state: "active" }, { expected_generation: 2 }, { rationale: "A different owner intent." }]) {
+    const conflict = await administrationRequest(path, "POST", { ...intent, ...change });
+    expect(conflict.status).toBe(409);
+    expect(await conflict.clone().json()).toMatchObject({ code: "idempotency_key_reused" });
+    await assertHttpResponse(contract, "/v1/source-lineages/{lineage}/lifecycle", "post", conflict);
+  }
+  const otherLineage = await administrationRequest("/v1/source-lineages/riftbound-en/lifecycle", "POST", intent);
+  expect(otherLineage.status).toBe(409);
+  expect(await otherLineage.clone().json()).toMatchObject({ code: "idempotency_key_reused" });
+  await assertHttpResponse(contract, "/v1/source-lineages/{lineage}/lifecycle", "post", otherLineage);
+  expect((await sourceLifecycleHistoryStatement(database, lineage).all()).results).toEqual(retained);
+  const current = await administrationRequest(path, "GET");
+  expect(await current.json()).toMatchObject({
+    state: "retired",
+    generation: 2,
+    history: [original, expect.anything()],
+  });
 });
 
 test("owner inspects the registry and retires a non-authoritative source with immutable lifecycle history", async () => {
