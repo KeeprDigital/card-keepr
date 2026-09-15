@@ -7,7 +7,7 @@ import split from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall
 import normal from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/normal.json?raw";
 import etched from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/etched.json?raw";
 import { catalogueStore, sha256, utf8 } from "../../../src/catalogue/shared";
-import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
+import { requiredSourceAdapter, sourceAdapterForCoverage } from "../../../src/catalogue/adapters";
 import {
   appendDiscoveredEvidenceRequests,
   pendingEvidenceRequests,
@@ -24,9 +24,9 @@ export const raw = utf8(
     .join(""),
 );
 
-export async function seedArchive(key: string, corrupt = false, input = raw) {
+export async function seedArchive(key: string, corrupt = false, input = raw, adapterVersion = version) {
   const db = catalogueStore(env.CATALOGUE_DB),
-    adapter = requiredSourceAdapter(version);
+    adapter = sourceAdapterForCoverage(requiredSourceAdapter(adapterVersion), "representative-english-paper");
   const compressed = new Uint8Array(
     await new Response(new Blob([input]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer(),
   );
@@ -34,7 +34,7 @@ export async function seedArchive(key: string, corrupt = false, input = raw) {
   const result = await startEvidenceRun(db, {
     supported_game: "magic",
     source_lineage: "scryfall-magic-en",
-    adapter_version: version,
+    adapter_version: adapterVersion,
     subset: "representative-english-paper",
     idempotency_key: key,
     requests: adapter.requiredSurfaces!.map((surface) => ({
