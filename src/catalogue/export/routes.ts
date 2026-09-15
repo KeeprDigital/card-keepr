@@ -1,5 +1,6 @@
+import type { HttpRoute } from "../../http/openapi";
 import { httpRoute } from "../../http/openapi";
-import { type Route, type RouteContext } from "../../http/routes";
+import { type RouteContext } from "../../http/routes";
 import type { CatalogueStore } from "../shared";
 import {
   catalogueExportDeletionStatus,
@@ -21,7 +22,7 @@ import {
 type Context = RouteContext<{ CATALOGUE_DB: CatalogueStore; CATALOGUE_EXPORTS: R2Bucket }> & { observedAt: string };
 const route = httpRoute<Context>();
 const headers = { "Cache-Control": "no-store" };
-export const exportRoutes: Route<Context>[] = [
+export const exportRoutes: HttpRoute<Context>[] = [
   route(planExportDeletionRoute, async (c) =>
     c.json(
       exportDeletionPlanSchema.parse(

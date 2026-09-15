@@ -42,7 +42,7 @@ its first approved publication.
 | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Work on the repository                                      | [Development](docs/development.md), [testing](docs/testing.md)                                                                     |
 | Understand terminology and design                           | [Glossary](CONTEXT.md), [architecture](docs/architecture.md), [code map](src/catalogue/README.md)                                  |
-| Integrate with the API or CLI                               | [Interface contracts](contracts/README.md)                                                                                         |
+| Integrate with the API or CLI                               | [Interface contracts](contracts/README.md), [read or download API docs](contracts/HTTP.md#read-or-download-documentation)          |
 | Collect sources, resolve identity, admit or correct records | [Sources and owner decisions](docs/runbooks/sources.md)                                                                            |
 | Inspect and publish a candidate                             | [Publication](docs/runbooks/publication.md)                                                                                        |
 | Verify backups or restore the catalogue                     | [Backup and recovery](docs/runbooks/backup-recovery.md)                                                                            |

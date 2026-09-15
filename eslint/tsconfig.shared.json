@@ -6,6 +6,7 @@
   },
   "include": [
     "../apps/ingestion/worker-configuration.d.ts",
+    "../apps/ingestion/src/**/*.ts",
     "../src/**/*.ts",
     "../src/**/*.mts",
     "../src/**/*.mjs",

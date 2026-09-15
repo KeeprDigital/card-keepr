@@ -1,3 +1,5 @@
+import { documentationResponse } from "./helpers/documentation.mjs";
+import { assertPlatformResponse } from "./helpers/platform-http-contract.mjs";
 import { isolatedBindings as devBindings } from "./helpers/isolated-bindings.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -25,7 +27,11 @@ import { d1Adapter } from "./helpers/query-helpers/sqlite-d1-adapter.mjs";
 async function fixture(t, sha = "a".repeat(40)) {
   const vite = await createServer({ logLevel: "silent", server: { middlewareMode: true } });
   t.after(() => vite.close());
-  const { handleDevDeployment } = await vite.ssrLoadModule("/src/catalogue/ingestion/dev-deployment.ts");
+  const { handleDevDeployment: receiveDevDeployment } = await vite.ssrLoadModule(
+    "/src/catalogue/ingestion/dev-deployment.ts",
+  );
+  const handleDevDeployment = async (...args) =>
+    assertPlatformResponse("/v1/dev-deployments", await receiveDevDeployment(...args));
   const { catalogueStore } = await vite.ssrLoadModule("/src/catalogue/shared/index.ts");
   const database = new DatabaseSync(":memory:");
   t.after(() => database.close());
@@ -574,6 +580,8 @@ for (const [scenario, expectedError] of [
       requests.push(url.pathname);
       if (url.hostname === "api.github.com") return githubFetch(input, init);
       if (url.hostname === "card-dev.keepr.digital") {
+        const docs = documentationResponse(input, init);
+        if (docs) return docs;
         const runtime = url.pathname.includes("/ingest/") ? "ingestion" : "api";
         if (
           url.pathname.endsWith("/health") &&

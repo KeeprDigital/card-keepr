@@ -9,11 +9,11 @@ const publicationFields = {
   supported_game: identifier,
   manifest_digest: digest,
   expected_game_revision_id: identifier,
-  candidate_generation: z.number().int().nonnegative(),
+  candidate_generation: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   deadline: identifier,
   approved_at: identifier,
   inspection_receipt: digest,
-  generation: z.number().int().nonnegative(),
+  generation: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   state: z.enum(["approved", "waiting_artifacts", "waiting_backup", "retry_paused", "published", "failed"]),
   failure_code: identifier.nullable(),
   resulting_revision_id: identifier.nullable(),
@@ -47,7 +47,7 @@ export const startPublicationRoute = createRoute({
             candidate_id: identifier,
             manifest_digest: digest,
             expected_game_revision_id: identifier,
-            generation: z.number().int().nonnegative(),
+            generation: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
             idempotency_key: identifier,
           }),
         },
@@ -121,7 +121,10 @@ export const resumePublicationRoute = createRoute({
       required: true,
       content: {
         "application/json": {
-          schema: z.strictObject({ generation: z.number().int().nonnegative(), idempotency_key: identifier }),
+          schema: z.strictObject({
+            generation: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+            idempotency_key: identifier,
+          }),
         },
       },
     },
@@ -146,7 +149,11 @@ export const advancePublicationRoute = createRoute({
     params: z.strictObject({ publication: identifier }),
     body: {
       required: true,
-      content: { "application/json": { schema: z.strictObject({ generation: z.number().int().nonnegative() }) } },
+      content: {
+        "application/json": {
+          schema: z.strictObject({ generation: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) }),
+        },
+      },
     },
   },
   responses: {

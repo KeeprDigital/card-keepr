@@ -1,4 +1,5 @@
 import { operationalCallers } from "./http-callers.mjs";
+import { environmentNames } from "../src/http/environment-target.mjs";
 import { readFileSync, writeFileSync } from "node:fs";
 import { build } from "esbuild";
 import { parse } from "jsonc-parser";
@@ -26,7 +27,13 @@ function output(path, value) {
   } else writeFileSync(path, value);
 }
 const inventory = [];
-const migrationFamilies = JSON.parse(readFileSync("contracts/http-migration-families.json", "utf8"));
+const expectedOperations = JSON.parse(readFileSync("contracts/http-operations.json", "utf8"));
+const expectedKeys = new Set();
+for (const row of expectedOperations) {
+  const key = `${row.worker} ${row.method} ${row.path.replaceAll(/:([A-Za-z]+)/g, "{$1}")}`;
+  if (!workerFamilies[row.worker] || expectedKeys.has(key)) throw new Error(`Invalid required operation: ${key}`);
+  expectedKeys.add(key);
+}
 const callers = operationalCallers();
 const ajv = new Ajv2020({
   strict: false,
@@ -37,7 +44,20 @@ const ajv = new Ajv2020({
 addFormats(ajv);
 const validators = {};
 const validatorKeys = {};
+const headerValidatorKeys = {};
 const schemaValidators = new Map();
+function schemaValidator(root, schema, path) {
+  const signature = JSON.stringify({ root, schema });
+  let name = schemaValidators.get(signature);
+  if (!name) {
+    name = `response${Object.keys(validators).length}`;
+    const pointer = path.map((part) => part.replaceAll("~", "~0").replaceAll("/", "~1")).join("/");
+    ajv.addSchema({ $ref: `${root}#/${pointer}` }, name);
+    validators[name] = name;
+    schemaValidators.set(signature, name);
+  }
+  return name;
+}
 for (const [worker, families] of Object.entries(workerFamilies)) {
   const routes = Object.values(families).flat();
   const implemented = new Set();
@@ -47,38 +67,48 @@ for (const [worker, families] of Object.entries(workerFamilies)) {
       const key = `${route.method} ${path}`;
       if (implemented.has(key)) throw new Error(`Duplicate route: ${worker} ${key}`);
       implemented.add(key);
-      const migration =
-        worker === "admin"
-          ? migrationFamilies.find((row) => row.method === route.method && row.path === route.pathname)
-          : null;
-      if (worker === "admin" && !migration)
-        throw new Error(`Classify the new administration operation ${key} in http-migration-families.json.`);
+      const expected = expectedOperations.find(
+        (row) =>
+          row.worker === worker && row.method === route.method && row.path.replaceAll(/:([A-Za-z]+)/g, "{$1}") === path,
+      );
+      if (!expected) throw new Error(`Classify the new operation ${worker} ${key} in http-operations.json.`);
+      if (expected.family !== family) throw new Error(`Operation ownership changed: ${worker} ${key}`);
       inventory.push({
         worker,
         family,
         method: route.method,
         path,
-        contract: route.definition ? "generated" : "legacy",
-        slice: migration?.slice ?? "Catalogue reads",
-        ...(worker === "read" && family !== "read"
+        contract: "generated",
+        slice: expected.slice,
+        ...(["readiness", "liveness", "preflight", "documentation", "platform"].includes(family)
           ? {
               treatment: {
                 readiness: "authenticated-readiness",
                 liveness: "unauthenticated-liveness",
                 preflight: "consumer-CORS-preflight",
+                documentation: worker === "read" ? "public-documentation" : "owner-documentation",
+                platform: "signed-workflow-deployment",
               }[family],
             }
           : {}),
-        named_cli: migration?.cli ?? (path === "/v1/cards" ? "cards search" : null),
+        named_cli: expected.cli,
         callers: callers(path.replaceAll(/\{[^}]+\}/g, "resource")),
       });
     }
+  for (const expected of expectedOperations.filter((row) => row.worker === worker)) {
+    const key = `${expected.method} ${expected.path.replaceAll(/:([A-Za-z]+)/g, "{$1}")}`;
+    if (!implemented.has(key)) throw new Error(`Required operation disappeared: ${worker} ${key}`);
+  }
   const config = parse(readFileSync(`apps/${worker === "read" ? "api" : "ingestion"}/wrangler.jsonc`, "utf8"));
   const servers = [
     ...new Set(
-      [config.vars.PUBLIC_BASE_URL, ...Object.values(config.env ?? {}).map((env) => env.vars?.PUBLIC_BASE_URL)].filter(
-        Boolean,
-      ),
+      [
+        config.vars.PUBLIC_BASE_URL,
+        ...["dev", "staging"].map(
+          (environment) => environmentNames(environment).publicBases[worker === "read" ? "api" : "ingestion"],
+        ),
+        ...Object.values(config.env ?? {}).map((env) => env.vars?.PUBLIC_BASE_URL),
+      ].filter(Boolean),
     ),
   ].map((url) => ({ url }));
   const doc = httpRouter(routes).getOpenAPI31Document({
@@ -88,14 +118,17 @@ for (const [worker, families] of Object.entries(workerFamilies)) {
       version: "1.0.0",
       description:
         worker === "read"
-          ? "Generated catalogue-read and API utility contracts. Catalogue data and readiness require the consumer bearer key; liveness and allowed preflight preserve their separate policies."
-          : "Generated administration contracts. Unmigrated operations are explicitly inventoried.",
+          ? "Complete catalogue reference. Catalogue data and readiness require the consumer bearer key. Documentation and liveness are publicly readable; consumer requests retain their allowed-origin policy."
+          : "Complete administration reference. Owner operations and documentation require the administration bearer key; deployment operations require their separately documented signed Workflow credentials. Readiness and documentation remain available during recovery.",
     },
     servers,
   });
   // One root per Worker lets all response validators share compiled components.
   // Separate roots for every response duplicate large retained-record schemas.
   const schemaRoot = `urn:card-keepr:http:${worker}`;
+  for (const entries of Object.values(doc.components ?? {}))
+    for (const name of Object.keys(entries ?? {}))
+      if (!/^[A-Za-z0-9._-]+$/.test(name)) throw new Error(`Invalid OpenAPI component name: ${name}`);
   ajv.addSchema(doc, schemaRoot);
   const ids = new Set();
   for (const [path, operations] of Object.entries(doc.paths))
@@ -103,24 +136,27 @@ for (const [worker, families] of Object.entries(workerFamilies)) {
       if (ids.has(operation.operationId)) throw new Error(`Duplicate operation ID: ${operation.operationId}`);
       ids.add(operation.operationId);
       if (!implemented.has(`${method.toUpperCase()} ${path}`)) throw new Error(`Unimplemented operation ${path}`);
-      for (const [status, response] of Object.entries(operation.responses))
+      for (const [status, response] of Object.entries(operation.responses)) {
+        for (const [header, declaration] of Object.entries(response.headers ?? {})) {
+          if (!declaration.schema)
+            throw new Error(`Missing header schema: ${worker} ${method} ${path} ${status} ${header}`);
+          headerValidatorKeys[`${worker} ${method} ${path} ${status} ${header}`] = schemaValidator(
+            schemaRoot,
+            declaration.schema,
+            ["paths", path, method, "responses", status, "headers", header, "schema"],
+          );
+        }
         for (const [media, representation] of Object.entries(response.content ?? {})) {
           if (!media.includes("json")) continue;
-          const signature = JSON.stringify({ root: schemaRoot, schema: representation.schema });
-          let name = schemaValidators.get(signature);
-          if (!name) {
-            name = `response${Object.keys(validators).length}`;
-            const pointer = ["paths", path, method, "responses", status, "content", media, "schema"]
-              .map((part) => part.replaceAll("~", "~0").replaceAll("/", "~1"))
-              .join("/");
-            ajv.addSchema({ $ref: `${schemaRoot}#/${pointer}` }, name);
-            validators[name] = name;
-            schemaValidators.set(signature, name);
-          }
-          validatorKeys[`${worker} ${method} ${path} ${status} ${media}`] = name;
+          validatorKeys[`${worker} ${method} ${path} ${status} ${media}`] = schemaValidator(
+            schemaRoot,
+            representation.schema,
+            ["paths", path, method, "responses", status, "content", media, "schema"],
+          );
         }
+      }
     }
-  for (const route of routes.filter((route) => route.definition)) {
+  for (const route of routes) {
     if (!doc.paths[route.definition.path]?.[route.definition.method])
       throw new Error(`Missing generated operation ${route.pathname}`);
   }
@@ -137,39 +173,8 @@ for (const [worker, families] of Object.entries(workerFamilies)) {
     for (const child of Object.values(value)) references(child);
   }
   references(doc);
-  doc["x-unmigrated-operations"] = inventory
-    .filter((row) => row.worker === worker && row.contract === "legacy")
-    .map(({ method, path, family }) => ({ method, path, family }));
   output(`contracts/${worker}-openapi.json`, JSON.stringify(doc, null, 2) + "\n");
 }
-for (const worker of ["admin"])
-  for (const [method, path, treatment] of [
-    ["GET", "/health", "authenticated-readiness"],
-    ["GET", "/healthz", "unauthenticated-liveness"],
-    ["HEAD", "/healthz", "unauthenticated-liveness"],
-  ])
-    inventory.push({ worker, method, path, contract: "platform", treatment, callers: callers(path) });
-inventory.push({
-  worker: "admin",
-  method: "POST",
-  path: "/v1/dev-deployments",
-  contract: "platform",
-  treatment: "dev-only signed workflow identity",
-  callers: callers("/v1/dev-deployments"),
-});
-for (const [path, treatment] of [
-  ["/v1/staging-release-authorizations", "production-only signed manual workflow identity"],
-  ["/v1/staging-deployments", "staging-only signed manual workflow identity"],
-  ["/v1/staging-deployments/{release}/outcome", "staging-only signed manual workflow identity"],
-])
-  inventory.push({
-    worker: "admin",
-    method: "POST",
-    path,
-    contract: "platform",
-    treatment,
-    callers: callers(path.replaceAll(/\{[^}]+\}/g, "resource")),
-  });
 inventory.sort((a, b) => `${a.worker} ${a.path} ${a.method}`.localeCompare(`${b.worker} ${b.path} ${b.method}`, "en"));
 output("contracts/http-route-inventory.json", JSON.stringify(inventory, null, 2) + "\n");
 // Vite transports each module with its source map to the test Worker. Keep the
@@ -178,7 +183,7 @@ output("contracts/http-route-inventory.json", JSON.stringify(inventory, null, 2)
 const validatorModules = [];
 for (const worker of Object.keys(workerFamilies)) {
   const names = new Set(
-    Object.entries(validatorKeys)
+    [...Object.entries(validatorKeys), ...Object.entries(headerValidatorKeys)]
       .filter(([key]) => key.startsWith(`${worker} `))
       .map(([, name]) => name),
   );
@@ -203,11 +208,12 @@ for (const worker of Object.keys(workerFamilies)) {
 }
 output(
   "test/support/http-response-validators.mjs",
-  `// Generated from HTTP registrations; run pnpm generate:http.\n${validatorModules.join("\n")}\nexport const responseValidators = ${JSON.stringify(validatorKeys)};\n`,
+  `// Generated from HTTP registrations; run pnpm generate:http.\n${validatorModules.join("\n")}\nexport const responseValidators = ${JSON.stringify(validatorKeys)};\nexport const headerValidators = ${JSON.stringify(headerValidatorKeys)};\n`,
 );
 output(
   "test/support/http-response-validators.d.mts",
   Object.keys(validators)
     .map((name) => `export function ${name}(value: unknown): boolean;`)
-    .join("\n") + "\nexport const responseValidators: Record<string, string>;\n",
+    .join("\n") +
+    "\nexport const responseValidators: Record<string, string>;\nexport const headerValidators: Record<string, string>;\n",
 );

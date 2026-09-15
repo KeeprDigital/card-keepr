@@ -7,6 +7,7 @@ import { AdministrationProblem, type CatalogueStore } from "../shared";
 import { administrationStatus } from "./administration-inspection";
 import { resolveProductionRelease } from "./production-release-preparation";
 import { preparedProductionReleaseStatement } from "./production-release-repository";
+import { devDeploymentIntentSchema } from "./platform-http-contract";
 
 /** Dev-only workflow identity grants one exact preparation, never administration access. */
 export async function handleDevDeployment(
@@ -28,7 +29,7 @@ export async function handleDevDeployment(
     identity = await verifyDevWorkflow(
       request.headers.get("authorization")?.replace(/^Bearer /u, "") ?? "",
       request.headers.get("x-github-token") ?? "",
-      intent,
+      devDeploymentIntentSchema.parse(intent),
     );
   } catch {
     throw new AdministrationProblem(

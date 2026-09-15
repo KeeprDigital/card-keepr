@@ -26,25 +26,37 @@ export async function assertHttpResponse(
 ) {
   const branch = document.paths[path]?.[method]?.responses[String(response.status)];
   expect(branch, `${method} ${path} status ${response.status} is declared`).toBeDefined();
-  for (const [name, header] of Object.entries(branch!.headers ?? {}))
+  const worker = document.info.title.includes("administration") ? "admin" : "read";
+  const key = `${worker} ${method} ${path} ${response.status}`;
+  for (const [name, header] of Object.entries(branch!.headers ?? {})) {
     if (header.required) expect(response.headers.has(name), name).toBe(true);
-  if (method === "head" || response.status === 304) {
+    const value = response.headers.get(name);
+    if (value !== null)
+      assertGeneratedValue(validators.headerValidators[`${key} ${name}`], value, `${key} header ${name}`);
+  }
+  if (response.status === 304 || response.status === 204 || !branch!.content) {
     expect(response.body).toBeNull();
     return;
   }
-  const media = response.headers.get("content-type")?.split(";")[0];
+  const media = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
   const representation = branch!.content?.[media!] ?? branch!.content?.["*/*"];
   expect(representation, `declared media ${media}`).toBeDefined();
+  if (method === "head") {
+    expect(response.body).toBeNull();
+    return;
+  }
   // A snapshot retains arbitrary source media, including JSON, as opaque bytes.
   if (!media?.includes("json") || !branch!.content?.[media]) return;
-  const worker = document.info.title.includes("administration") ? "admin" : "read";
-  const name = validators.responseValidators[`${worker} ${method} ${path} ${response.status} ${media}`];
+  const name = validators.responseValidators[`${key} ${media}`];
+  assertGeneratedValue(name, body ?? (await response.clone().json()), `${key} response`);
+}
+
+function assertGeneratedValue(name: string | undefined, value: unknown, description: string) {
   const validate = validators[name as keyof typeof validators];
   expect(typeof validate).toBe("function");
   if (typeof validate !== "function") throw new Error("Missing generated response validator.");
-  const matches = validate(body ?? (await response.clone().json()));
-  expect(
-    matches,
-    `${method} ${path} response matches generated schema: ${JSON.stringify(Reflect.get(validate, "errors"))}`,
-  ).toBe(true);
+  const matches = validate(value);
+  expect(matches, `${description} matches generated schema: ${JSON.stringify(Reflect.get(validate, "errors"))}`).toBe(
+    true,
+  );
 }

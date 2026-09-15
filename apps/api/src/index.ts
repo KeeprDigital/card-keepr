@@ -12,19 +12,23 @@ import { httpDispatch } from "../../../src/http/openapi";
 import { routeSegments } from "../../../src/http/routes";
 import { apiLivenessRoutes, apiReadinessRoutes, apiPreflightRoutes } from "./utility-routes";
 import { apiProblemResponse } from "./problem";
+import { apiDocumentationRoutes } from "./documentation-routes";
 
 const routes = [...catalogueRoutes];
 const dispatch = httpDispatch(routes);
 const dispatchLiveness = httpDispatch(apiLivenessRoutes);
 const dispatchReadiness = httpDispatch(apiReadinessRoutes);
 const dispatchPreflight = httpDispatch(apiPreflightRoutes);
-const logOptions = { routeSegments: routeSegments(routes, ["/health", "/healthz"]) };
+const dispatchDocumentation = httpDispatch(apiDocumentationRoutes);
+const logOptions = { routeSegments: routeSegments([...routes, ...apiDocumentationRoutes], ["/health", "/healthz"]) };
 
 const apiHttp = new Hono<{ Bindings: { env: Env; requestId: string; base: PublicBase } }>();
 apiHttp.onError((error, c) => apiProblemResponse(error, c.env.requestId));
 apiHttp.use("*", async (c, next) => {
   const { env, requestId } = c.env;
   const request = c.req.raw;
+  if (request.method === "GET" && apiDocumentationRoutes.some((route) => route.pathname === c.req.path))
+    return dispatchDocumentation(request.method, c.req.path, { ...c.env, request });
   if (request.method === "OPTIONS")
     return dispatchPreflight(request.method, new URL(request.url).pathname, { ...c.env, request });
   if (!hasAllowedOrigin(request, env.CORS_ALLOWED_ORIGINS)) {

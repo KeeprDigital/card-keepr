@@ -4,48 +4,12 @@ import { livenessRequest, readinessResponse } from "../../../src/http/health";
 import { allowedPreflightResponse } from "../../../src/http/cors";
 import { problemResponse } from "../../../src/http/problem";
 import type { PublicBase } from "../../../src/http/public-base";
+import { readinessSchema } from "../../../src/http/health-contract";
 import { apiCapabilities } from "../../../src/runtime-capabilities.mjs";
 
 type Context = { env: Env; request: Request; requestId: string; base: PublicBase };
 const cacheHeaders = { "Cache-Control": { required: true, schema: { type: "string" as const } } };
-const status = z.enum(["pass", "fail"]);
-const probe = z.strictObject({ status, reason: z.enum(["binding_missing", "probe_failed", "timed_out"]).optional() });
-const healthSchema = z
-  .strictObject({
-    contract: z.literal("card-keepr-runtime-health@1"),
-    runtime: z.literal("api"),
-    status: z.enum(["ok", "degraded"]),
-    capabilities: z.array(z.enum(apiCapabilities)),
-    checks: z.strictObject({
-      database: z.strictObject({
-        status,
-        migration_level: z.number().int().nullable(),
-        current_revision_id: z.string().nullable(),
-        reason: z
-          .enum([
-            "binding_missing",
-            "query_failed",
-            "schema_state_missing",
-            "catalogue_state_missing",
-            "database_id_not_configured",
-            "timed_out",
-          ])
-          .optional(),
-      }),
-      objects: z.strictObject({
-        status,
-        buckets: z.strictObject({ PRINTING_IMAGES: probe, CATALOGUE_EXPORTS: probe }),
-      }),
-      public_base: z.strictObject({ status, configured: z.string(), arrived_through_public_base: z.boolean() }),
-      version: z.strictObject({
-        status,
-        id: z.string().nullable(),
-        tag: z.string().nullable(),
-        timestamp: z.string().nullable(),
-      }),
-    }),
-  })
-  .openapi("ApiReadiness");
+const healthSchema = readinessSchema("api", apiCapabilities, ["PRINTING_IMAGES", "CATALOGUE_EXPORTS"]);
 const readiness = createRoute({
   method: "get",
   path: "/health",

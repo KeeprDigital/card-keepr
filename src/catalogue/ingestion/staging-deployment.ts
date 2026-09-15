@@ -14,6 +14,7 @@ import {
 import { administrationStatus } from "./administration-inspection";
 import { resolveProductionRelease } from "./production-release-preparation";
 import { stagingIntentIdentity, type StagingAuthorization } from "./staging-authorization";
+import { stagingOutcomeRequestSchema } from "./platform-http-contract";
 import {
   recordStagingProtocolStatement,
   stagingDeploymentSucceededStatement,
@@ -193,6 +194,7 @@ export async function handleStagingOutcome(
   );
   let outcome: ReturnType<typeof validateStagingOutcome>;
   try {
+    stagingOutcomeRequestSchema.parse(body);
     outcome = validateStagingOutcome(body.outcome, authorization.intent, authorization.intent_digest);
   } catch {
     throw new AdministrationProblem(

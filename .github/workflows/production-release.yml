@@ -283,7 +283,8 @@ jobs:
         if: env.FRESH_BASELINE_HANDOFF != 'true' && (inputs.bootstrap != 'true')
         run: |
           set -euo pipefail
-          smoke_input="$(jq -cn --arg url "${API_BASE_URL}" --arg key "${API_TRAFFIC_TOKEN}" --arg revision "${EXPECTED_CURRENT_REVISION}" --argjson targets "${SMOKE_TARGETS_JSON}" '{apiUrl:$url,apiKey:$key,currentRevisionId:$revision,revisions:$targets.revisions,printingImageId:$targets.printing_image_id,staleCursor:$targets.stale_cursor,staleRevisionId:$targets.stale_revision_id}')"
+          ingestion_url="$(node --input-type=module -e 'import { readFile } from "node:fs/promises"; process.stdout.write(String(JSON.parse(await readFile(process.argv[1], "utf8")).vars.PUBLIC_BASE_URL));' "${INGESTION_RELEASE_CONFIG}")"
+          smoke_input="$(jq -cn --arg url "${API_BASE_URL}" --arg ingestion "${ingestion_url}" --arg key "${API_TRAFFIC_TOKEN}" --arg revision "${EXPECTED_CURRENT_REVISION}" --argjson targets "${SMOKE_TARGETS_JSON}" '{apiUrl:$url,ingestionUrl:$ingestion,apiKey:$key,currentRevisionId:$revision,revisions:$targets.revisions,printingImageId:$targets.printing_image_id,staleCursor:$targets.stale_cursor,staleRevisionId:$targets.stale_revision_id}')"
           smoke="$(KEEPR_SMOKE_INPUT="${smoke_input}" node scripts/production-smoke.mjs)"
           KEEPR_RELEASE_EVIDENCE="${smoke}" node scripts/production-release.mjs evidence-sql smoke "${RELEASE_ID}" /tmp/production-release/smoke.sql
           result="$(node scripts/production-release-d1.mjs execute --config "${RELEASE_STATE_CONFIG}" --file /tmp/production-release/smoke.sql)"
@@ -294,7 +295,7 @@ jobs:
       - name: Run reduced Bootstrap Mode smoke checks
         # An empty catalogue has no Card, Printing, export, or retained
         # revision to read: only health and auth on both mounts and the spine
-        # revision from /v1/catalogue are checked. Nothing is rolled back.
+        # revision from /v1/catalogue and documentation access are checked. Nothing is rolled back.
         if: env.FRESH_BASELINE_HANDOFF != 'true' && (inputs.bootstrap == 'true')
         run: |
           set -euo pipefail

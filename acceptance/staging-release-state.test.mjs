@@ -1,3 +1,4 @@
+import { assertPlatformResponse } from "./helpers/platform-http-contract.mjs";
 import { stagingStateFixture as fixture } from "./helpers/staging-state.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -9,12 +10,16 @@ test("staging retains its own exact plan and refuses successful validation witho
   const production = await fixture(t);
   const staging = await fixture(t);
   const { token } = await stagingWorkflowFixture(t);
-  const { handleStagingAuthorization } = await production.vite.ssrLoadModule(
+  const { handleStagingAuthorization: receiveAuthorization } = await production.vite.ssrLoadModule(
     "/src/catalogue/ingestion/staging-authorization.ts",
   );
-  const { handleStagingDeployment, handleStagingOutcome, showStagingDeployment } = await staging.vite.ssrLoadModule(
-    "/src/catalogue/ingestion/staging-deployment.ts",
-  );
+  const {
+    handleStagingDeployment: receiveDeployment,
+    handleStagingOutcome: receiveOutcome,
+    showStagingDeployment,
+  } = await staging.vite.ssrLoadModule("/src/catalogue/ingestion/staging-deployment.ts");
+  const handleStagingAuthorization = async (...args) =>
+    assertPlatformResponse("/v1/staging-release-authorizations", await receiveAuthorization(...args));
   const now = new Date().toISOString();
   const preview = await production.resolveStagingRelease(
     production.database,
@@ -30,6 +35,10 @@ test("staging retains its own exact plan and refuses successful validation witho
     production.target,
     now,
   );
+  const handleStagingDeployment = async (...args) =>
+    assertPlatformResponse("/v1/staging-deployments", await receiveDeployment(...args));
+  const handleStagingOutcome = async (...args) =>
+    assertPlatformResponse("/v1/staging-deployments/{release}/outcome", await receiveOutcome(...args));
   const provider = globalThis.fetch;
   globalThis.fetch = async (url, options) => {
     if (String(url) === "https://card.keepr.digital/ingest/v1/staging-release-authorizations")
@@ -141,7 +150,11 @@ test("migration rehearsal traverses the recorded production predecessor independ
 test("a lost authorization response replays the same claim and deadline without granting another workflow attempt", async (t) => {
   const { vite, database, bucket, target, choices, resolveStagingRelease } = await fixture(t);
   const { token, state } = await stagingWorkflowFixture(t);
-  const { handleStagingAuthorization } = await vite.ssrLoadModule("/src/catalogue/ingestion/staging-authorization.ts");
+  const { handleStagingAuthorization: receiveAuthorization } = await vite.ssrLoadModule(
+    "/src/catalogue/ingestion/staging-authorization.ts",
+  );
+  const handleStagingAuthorization = async (...args) =>
+    assertPlatformResponse("/v1/staging-release-authorizations", await receiveAuthorization(...args));
   const now = new Date().toISOString();
   const preview = await resolveStagingRelease(database, bucket, { ...choices, prepare: true }, target, now);
   const recorded = await resolveStagingRelease(

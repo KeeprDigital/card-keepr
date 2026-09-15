@@ -1,14 +1,47 @@
-# Generated HTTP contracts and migration
+# Generated HTTP contracts
 
-The catalogue-read interface is fully registered through Hono under
-[#316](https://github.com/KeeprDigital/card-keepr/issues/316), following the
-[#315](https://github.com/KeeprDigital/card-keepr/issues/315) pilot and
-[#312](https://github.com/KeeprDigital/card-keepr/issues/312) direction. The generated
-[read OpenAPI](read-openapi.json) covers all consumer routes, API health/liveness
-and CORS preflight. The [administration OpenAPI](admin-openapi.json) now covers all
-inventoried administration families, with no `x-unmigrated-operations` remaining.
-Documentation hosting and final cutover belong to
-[#325](https://github.com/KeeprDigital/card-keepr/issues/325).
+The [catalogue OpenAPI](read-openapi.json) and [administration OpenAPI](admin-openapi.json)
+cover every registered business operation, signed deployment operation, utility
+and documentation route. Both Workers use executable Hono/Zod definitions for
+routing and generation. [#325](https://github.com/KeeprDigital/card-keepr/issues/325)
+completes the routing cutover under [#312](https://github.com/KeeprDigital/card-keepr/issues/312).
+Persisted records, Catalogue Exports and domain transitions retain their independent contracts.
+
+## Read or download documentation
+
+Each Worker serves GET `/docs` (HTML) and GET `/openapi.json` (bundled OpenAPI 3.1)
+beneath its configured `PUBLIC_BASE_URL`. Catalogue documentation is public;
+catalogue data and readiness still require the consumer bearer key. Administration
+documentation accepts the primary or replacement administration bearer key and
+retains the administration rate limit. It remains readable during recovery or
+unavailable catalogue storage. A consumer key does not grant owner access.
+
+The HTML reference contains every operation, request/response schema, authentication
+scheme and local schema link. Its styles and definitions are self-contained, with
+no scripts, external assets, browser credential storage or subsequent spec fetch.
+Download the protected page and open the resulting file in a browser:
+
+```sh
+pnpm --silent run keepr docs catalogue --target dev > catalogue.html
+pnpm --silent run keepr docs administration --target staging > administration.html
+pnpm --silent run keepr docs administration --target staging --json > administration-openapi.json
+```
+
+Explicit targets use `KEEPR_DEV_ADMINISTRATION_KEY`, `KEEPR_STAGING_ADMINISTRATION_KEY`
+or `KEEPR_PRODUCTION_ADMINISTRATION_KEY`; they never inherit an unscoped key.
+Without `--target`, the existing `KEEPR_API_URL`/`KEEPR_INGESTION_URL` and
+`KEEPR_ADMINISTRATION_KEY` apply, defaulting to the local Worker addresses.
+Public downloads send no credential. The specification link on a saved owner
+page still requires the same Authorization header; `--json` downloads it directly.
+
+Served specs and HTML advertise only the active configured origin and mount,
+including root and trailing-slash configurations; the incoming Host cannot change
+them. Checked-in specs list production from Worker configuration and isolated
+bases from the same environment authority used by deployment and CLI selection.
+All schema references are bundled. Public documents cache for five minutes;
+owner documents are private/no-store. Both set nosniff, no-referrer and a restrictive
+Content Security Policy. Only GET is exposed for documentation; image/liveness
+HEAD and consumer OPTIONS retain their own explicitly declared behavior.
 
 ## Published discovery and reads
 
@@ -126,7 +159,7 @@ The CLI requests ordinary JSON and derives text and exit status locally through
 the shared pure presenter. Acceptance, pending and paused publication exit 10;
 failed publication exits 8; published exits 0 and still requires separate backup
 inspection. Target resolution, confirmation and canonical release dispatch bytes
-remain server-owned. Unmigrated families retain their documented outcome semantics.
+remain server-owned. Each family retains its documented outcome semantics.
 There is no server-negotiated CLI representation.
 
 Preparation acceptance and pending/paused status also exit 10; failed preparation
@@ -237,36 +270,55 @@ preserves SQL flags, serialized definition pins and phase-owned JSON cursor keys
 The CLI sends numeric reconciliation generations, matching the numeric intent
 already retained by historical actions.
 
-## Migrating a family
+## Add or change an operation
 
-1. Find the operation and potential callers in [the generated inventory](http-route-inventory.json).
-   [Family assignments](http-migration-families.json) partition the
-   administration operations, including those without named CLI descriptors.
-   Named descriptors identify the CLI implementation; literal/template caller
-   references are an inventory aid, not evidence that a test runs that route.
-2. Replace its legacy `route` with a wire registration and validated handler in
-   the owning cluster. Both Workers dispatch migrated and legacy operations
-   through the Hono bridge. Their outer guards cover both. Administration's
-   shared route composition is consumed directly by the Worker and generator.
-3. Update all affected CLI, release and test callers together. Record any
-   consolidation or retirement in the family assignments, preserving required
-   retained-record inspection, immutable replay and recovery capabilities.
-4. Regenerate contracts and use actual-response checks at the existing Worker or
-   CLI seams. Extend the streaming behavioral tests for binary/header/no-body
-   changes. Remove superseded legacy HTTP definitions as their callers migrate;
-   retained/export validation contracts continue to have separate ownership.
+1. Start with [required operations](http-operations.json) and the
+   [generated route/caller inventory](http-route-inventory.json). The required
+   inventory is maintained independently of executable arrays, so deleting an
+   operation from both routing and generated output fails coverage. Business
+   routes without a CLI command remain required. Caller references are a census
+   aid; they do not establish executed test coverage.
+2. Define the operation in its owning cluster, bind its validated handler and
+   include it in the shared composition consumed by the Worker and generator.
+   Utility, documentation and signed platform families follow the same rule.
+   There is no optional registration or legacy routing fallback.
+3. Update affected CLI, operational and test callers together. Change the required
+   inventory only for an intentional addition, consolidation or retirement,
+   preserving historical inspection, immutable replay and recovery capabilities.
+4. Regenerate with `pnpm generate:http`. Extend request validation and actual
+   Worker response checks for the affected status, media and header variants,
+   including historical outcomes. Future Game Profiles and game additions must
+   regenerate and validate their affected contracts in their own slices.
 
-`generate:http` emits both bundled specifications, the inventory and standalone
-response validators used by Worker tests. `check:generated` rejects stale output,
-unresolved or unbundled references, duplicate operation IDs/registrations and
-migrated operations missing from the generated paths. Servers come from each
-Worker's configured public base, including its mount. The inventory explicitly
-classifies API health/liveness/preflight registrations and administration utility
-surfaces, including dev deployment and signed staging release endpoints, outside
-ordinary catalogue route arrays;
-there are currently no deployed documentation endpoints.
+`pnpm check` requires generated freshness, complete bidirectional operation
+coverage, unique registrations/operation IDs, header schemas and resolved bundled
+references. Generation emits the specs, caller inventory and compiled response/header
+validators. JSON validators share named components with `inlineRefs: false` and
+remain split per Worker to fit the test runtime's module transport. These choices
+do not relax validation. Worker tests validate actual response bodies, status,
+media and declared header values against those generated validators. HEAD, 204
+and 304 prove body absence; opaque and binary streams retain byte/range/digest
+checks without validation buffering their bodies. Generated request tests exercise
+strict-object, safe-integer and supported-environment boundaries. Independent
+historical snapshot/export validators remain in place; superseded HTTP
+`CommandRequest` definitions have been removed.
 
-Follow the repository's [validation policy](../docs/testing.md). Generated response
-checks exercise real Worker results and declared headers; image tests also compare
-actual bytes and ranges. Successful pilot checks do not establish final HTTP
-coverage, source-launch readiness, live deployment or Go-Live.
+Middleware order is part of the boundary:
+
+| Surface                   | Guards before dispatch                                                               | Outcomes outside its success body                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| Outside either mount      | Configured path check                                                                | 404; no authentication or rate-limit work                                              |
+| Liveness GET/HEAD         | Independent liveness limit; no credential or request log                             | 429, sanitized 500; bodyless HEAD                                                      |
+| Catalogue docs GET        | Mount and operational logging                                                        | Public HTML/JSON; consumer origin restrictions remain on data                          |
+| Consumer preflight        | Allowed Origin/method/header policy                                                  | Bodyless 204, denied 403                                                               |
+| Catalogue data/readiness  | Consumer CORS, rate limit and bearer key                                             | 401/403/429; domain/readiness failures and conditional variants declared per operation |
+| Signed deployment POST    | Administration limit, environment, signed Workflow identity and exact release checks | Bounded decoding, signature/expiry/conflict errors; no owner bearer substitution       |
+| Owner docs/readiness GET  | Administration limit and primary/replacement bearer key                              | 401/429 and sanitized failures; available before recovery guards                       |
+| Owner business operations | Administration limit, bearer key, request clock, recovery/fresh-baseline guards      | Shared problem responses plus operation-specific history/receipt/status branches       |
+
+The existing required CI paths run generated checks, actual Worker assertions and
+CLI/release smoke tests. The release smoke probes public HTML/spec, the active
+server and protected owner docs anonymously, with no owner credential in deployment
+workflows. Follow [testing](../docs/testing.md) for the full gate. Local documentation
+and contract validation do not establish live deployment, source-launch readiness
+or Go-Live.

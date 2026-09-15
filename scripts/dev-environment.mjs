@@ -37,7 +37,7 @@ export async function environmentConfigurations(environment, { accountId, catalo
       ...route,
       pattern: route.pattern.replace("card.keepr.digital", names.host),
     }));
-    config.vars.PUBLIC_BASE_URL = `https://${names.host}/${index === 0 ? "api" : "ingest"}`;
+    config.vars.PUBLIC_BASE_URL = names.publicBases[index === 0 ? "api" : "ingestion"];
     config.d1_databases[0].database_id = catalogueId;
     config.d1_databases[0].database_name = names.catalogue;
     for (const binding of config.r2_buckets) {

@@ -88,7 +88,10 @@ export default defineConfig([
   },
   {
     files: ["apps/ingestion/src/**/*.ts"],
-    languageOptions: { parserOptions: { project: ["./apps/ingestion/tsconfig.json"] } },
+    // The shared program already loads these files through ingestion-worker.ts
+    // with the same ingestion bindings. Reuse it rather than retaining a
+    // second complete catalogue/spec type graph in the lint process.
+    languageOptions: { parserOptions: { project: [projects[0]] } },
   },
   { files: ["apps/ingestion/test/**/*.ts"], languageOptions: { parserOptions: { project: [projects[2]] } } },
   {

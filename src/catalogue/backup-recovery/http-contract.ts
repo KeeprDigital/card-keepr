@@ -175,7 +175,7 @@ export const backupStartRoute = createRoute({
 const recoveryIdentity = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/);
 const recoveryMethod = z.enum(["time_travel", "replacement_database"]);
 export const recoveryBeginCommand = z.strictObject({
-  environment: identifier,
+  environment: z.enum(["dev", "staging", "production"]),
   recovery_id: recoveryIdentity,
   method: recoveryMethod,
   target_revision_id: recoveryIdentity,

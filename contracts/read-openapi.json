@@ -3,11 +3,17 @@
   "info": {
     "title": "Card Keepr catalogue read API",
     "version": "1.0.0",
-    "description": "Generated catalogue-read and API utility contracts. Catalogue data and readiness require the consumer bearer key; liveness and allowed preflight preserve their separate policies."
+    "description": "Complete catalogue reference. Catalogue data and readiness require the consumer bearer key. Documentation and liveness are publicly readable; consumer requests retain their allowed-origin policy."
   },
   "servers": [
     {
       "url": "https://card.keepr.digital/api"
+    },
+    {
+      "url": "https://card-dev.keepr.digital/api"
+    },
+    {
+      "url": "https://card-staging.keepr.digital/api"
     }
   ],
   "components": {
@@ -14402,8 +14408,158 @@
           }
         }
       }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "catalogueOpenApi",
+        "security": [],
+        "summary": "Download the complete OpenAPI specification",
+        "responses": {
+          "200": {
+            "description": "Bundled OpenAPI for this deployment.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "public, max-age=300"
+                }
+              },
+              "X-Content-Type-Options": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "Referrer-Policy": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "Content-Security-Policy": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "openapi": {
+                      "type": "string",
+                      "enum": [
+                        "3.1.0"
+                      ]
+                    },
+                    "info": {
+                      "type": "object",
+                      "properties": {
+                        "title": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "title",
+                        "version"
+                      ]
+                    },
+                    "servers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          }
+                        },
+                        "required": [
+                          "url"
+                        ]
+                      }
+                    },
+                    "paths": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    },
+                    "components": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "openapi",
+                    "info",
+                    "servers",
+                    "paths",
+                    "components"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/docs": {
+      "get": {
+        "operationId": "catalogueDocumentation",
+        "security": [],
+        "summary": "Read the API reference",
+        "responses": {
+          "200": {
+            "description": "Complete, self-contained API reference; no scripts or external assets.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "public, max-age=300"
+                }
+              },
+              "X-Content-Type-Options": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "Referrer-Policy": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "Content-Security-Policy": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+                }
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
-  "webhooks": {},
-  "x-unmigrated-operations": []
+  "webhooks": {}
 }

@@ -246,12 +246,10 @@ capacity. [Source intake foundation](https://github.com/KeeprDigital/card-keepr/
 
 ## HTTP interface direction
 
-The accepted direction is Hono for maintainable HTTP routing and middleware in
-both Workers. Separate generated OpenAPI specifications cover the complete
+Both Workers use Hono for HTTP routing and middleware. Separate generated OpenAPI specifications cover the complete
 catalogue-read and administration HTTP interfaces, using the authoritative route
-and schema definitions used by the implementation. Automated checks must keep
-the contracts aligned as routes evolve. Hosting the current separately maintained
-specification alone does not complete this direction. The
+and schema definitions used by the implementation. Required generation and actual-response checks keep
+the contracts aligned as routes evolve. The
 [Hono implementation](../contracts/HTTP.md) routes both Workers through Hono.
 The complete catalogue-read interface, including published Game Profile discovery
 and API utilities, uses executable Zod OpenAPI definitions. Source and collection
@@ -260,9 +258,11 @@ preparation and inspection, identity review, corrections, Entity Proposals and
 Curated Revisions, maintenance, owner software-release, backup/recovery and
 retained historical run operations are also registered.
 Typed owner target resolution is separate from current status inspection.
-The generated inventory accounts for every administration operation. Final
-cutover and documentation hosting remain accepted direction;
-retained-document validation and domain transitions stay independent of Zod.
+The required operation inventory and generated caller census account for every
+business route, signed platform endpoint, utility and documentation registration.
+[#325](https://github.com/KeeprDigital/card-keepr/issues/325) removes the temporary
+routing bridge and superseded HTTP-only schemas. Retained-document validation
+and domain transitions stay independent of Zod.
 
 There are no current Catalogue Consumers to constrain this pre-Go-Live HTTP
 redesign. Routes, wire formats and interface structure may change where there
@@ -273,9 +273,11 @@ canonical identity and recovery remain governed by their existing policies.
 
 The specification initially supports the owner's applications. Future use beyond
 those applications is intended, while the first release remains private and
-single-owner. Catalogue OpenAPI and its documentation will be publicly readable;
+single-owner. Catalogue OpenAPI and its documentation are publicly readable;
 catalogue data requests remain authenticated and administration documentation
-stays protected. Documentation readership and later external API access are
+stays protected. The self-contained reference can be downloaded through the CLI
+and opened without a browser bearer session. Served server addresses and links
+come from the active configured public base. Documentation readership and later external API access are
 separate decisions; neither changes the current Catalogue Consumer definition
 implicitly.
 

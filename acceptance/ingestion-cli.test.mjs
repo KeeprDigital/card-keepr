@@ -117,38 +117,23 @@ const run = {
   },
 };
 
-test("guarded reconciliation and bounded search repair are normative administration commands", async () => {
-  const schema = JSON.parse(await readFile(resolve(root, "contracts/schemas/administration.schema.json"), "utf8"));
-  assert.deepEqual(schema.$defs.ReconciliationCommandRequest.required, [
-    "expected_current_revision_id",
-    "idempotency_key",
-  ]);
-  assert.equal(schema.$defs.ReconciliationCommandRequest.additionalProperties, false);
-  assert.deepEqual(schema.$defs.CatalogueSearchRepairCommandRequest.required, [
-    "target_revision_id",
-    "expected_current_revision_id",
-    "idempotency_key",
-  ]);
-  assert.equal(schema.$defs.CatalogueSearchRepairCommandRequest.additionalProperties, false);
-  assert.deepEqual(schema.$defs.CatalogueBackupCommandRequest.required, [
-    "expected_current_revision_id",
-    "idempotency_key",
-  ]);
-  assert.equal(schema.$defs.CatalogueBackupCommandRequest.additionalProperties, false);
-  assert.equal(schema.$defs.CatalogueRecoveryBeginCommandRequest.additionalProperties, false);
-  assert.deepEqual(schema.$defs.CatalogueRecoveryVerifyCommandRequest.required, ["target_digest", "idempotency_key"]);
-  assert.deepEqual(schema.$defs.CatalogueRecoveryAcceptCommandRequest.required, [
-    "expected_restored_revision_id",
-    "target_digest",
-    "confirmation_recovery_id",
-    "idempotency_key",
-  ]);
-  const contract = await readFile(resolve(root, "contracts/ADMINISTRATION.md"), "utf8");
-  assert.match(contract, /never executes reconciliation inline/);
-  assert.match(contract, /one resumable, byte-bounded repair step/);
-  assert.match(contract, /backup create.*starts or observes.*Workflow/s);
-  assert.match(contract, /first non-terminal response is HTTP `202`/);
-  assert.match(contract, /exact replays observe the same.*HTTP `200`/s);
+test("generated contracts retain historical reconciliation and supported maintenance", async () => {
+  const document = JSON.parse(await readFile(resolve(root, "contracts/admin-openapi.json"), "utf8"));
+  const reconciliation = document.paths["/v1/ingestion-runs/{run}/reconciliation"].post;
+  assert.ok(reconciliation.responses[200].content["application/json"].schema);
+  assert.ok(reconciliation.responses[202].content["application/json"].schema);
+  for (const path of [
+    "/v1/catalogue-search-materialization/repair",
+    "/v1/backups",
+    "/v1/recoveries",
+    "/v1/recoveries/{recovery}/verification",
+    "/v1/recoveries/{recovery}/acceptance",
+  ]) {
+    const operation = document.paths[path].post;
+    assert.deepEqual(operation.security, [{ bearerAuth: [] }]);
+    assert.equal(operation.requestBody.required, true);
+    assert.ok(operation.requestBody.content["application/json"].schema);
+  }
 });
 
 test("CLI reconciliation requires explicit production selection and confirmation", async () => {

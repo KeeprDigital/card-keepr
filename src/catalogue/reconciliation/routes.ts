@@ -1,3 +1,4 @@
+import type { HttpRoute } from "../../http/openapi";
 import {
   retainedReconciliationActionRoutes,
   retainedReconciliationStatusSchema,
@@ -68,7 +69,7 @@ import {
   inspectReconciliationProgress,
   inspectReconciliationText,
 } from "./reconciliation-progress";
-import { type Route, type RouteContext } from "../../http/routes";
+import { type RouteContext } from "../../http/routes";
 import { type CatalogueStore } from "../shared";
 import { resumeReconciliationWorkflow, startOrObserveReconciliationWorkflow } from "./reconciliation-workflow";
 
@@ -80,7 +81,7 @@ type Environment = {
 };
 type Context = RouteContext<Environment> & { observedAt: string };
 
-export const reconciliationRoutes: Route<Context>[] = [
+export const reconciliationRoutes: HttpRoute<Context>[] = [
   httpRoute<Context>()(stagingCleanupRoute, async (c) => {
     const input = c.req.valid("json");
     return c.json(

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://card-keepr.invalid/schemas/administration@1",
-  "title": "Card Keepr historical administration state and current command requests",
-  "description": "The root decodes historical administration@1 snapshots, including the retired run-owned publication lifecycle. It is not the current status response or a native publication request. Current command inputs are the named CommandRequest definitions; numeric fields describe normalized inputs after the HTTP adapter converts CLI decimal strings.",
+  "title": "Card Keepr historical administration state",
+  "description": "Decodes historical administration@1 snapshots, including the retired run-owned publication lifecycle. Current HTTP inputs and responses are generated from executable route definitions in admin-openapi.json.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -21,92 +21,86 @@
     "last_transition"
   ],
   "properties": {
-    "contract": { "const": "card-keepr-administration@1" },
-    "now": { "$ref": "#/$defs/TimestampMs" },
-    "current_revision_id": { "$ref": "#/$defs/OpaqueId" },
+    "contract": {
+      "const": "card-keepr-administration@1"
+    },
+    "now": {
+      "$ref": "#/$defs/TimestampMs"
+    },
+    "current_revision_id": {
+      "$ref": "#/$defs/OpaqueId"
+    },
     "active_run_id": {
-      "oneOf": [{ "$ref": "#/$defs/OpaqueId" }, { "type": "null" }]
+      "oneOf": [
+        {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "runs": {
       "type": "object",
-      "additionalProperties": { "$ref": "#/$defs/IngestionRun" }
+      "additionalProperties": {
+        "$ref": "#/$defs/IngestionRun"
+      }
     },
     "backups": {
       "type": "object",
-      "additionalProperties": { "$ref": "#/$defs/BackupAttempt" }
+      "additionalProperties": {
+        "$ref": "#/$defs/BackupAttempt"
+      }
     },
     "catalogue_exports": {
       "type": "object",
-      "additionalProperties": { "$ref": "#/$defs/CatalogueExportMaintenanceState" }
+      "additionalProperties": {
+        "$ref": "#/$defs/CatalogueExportMaintenanceState"
+      }
     },
     "export_deletion_plans": {
       "type": "object",
-      "additionalProperties": { "$ref": "#/$defs/ExportDeletionPlan" }
+      "additionalProperties": {
+        "$ref": "#/$defs/ExportDeletionPlan"
+      }
     },
     "export_deletions": {
       "type": "object",
-      "additionalProperties": { "$ref": "#/$defs/ExportDeletionOperation" }
+      "additionalProperties": {
+        "$ref": "#/$defs/ExportDeletionOperation"
+      }
     },
-    "recovery": { "$ref": "#/$defs/RecoveryState" },
+    "recovery": {
+      "$ref": "#/$defs/RecoveryState"
+    },
     "release": {
-      "oneOf": [{ "$ref": "#/$defs/ProductionRelease" }, { "type": "null" }]
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ProductionRelease"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "credential_rotations": {
       "type": "object",
-      "additionalProperties": { "$ref": "#/$defs/CredentialRotation" }
+      "additionalProperties": {
+        "$ref": "#/$defs/CredentialRotation"
+      }
     },
     "last_transition": {
-      "oneOf": [{ "$ref": "#/$defs/TransitionOutcome" }, { "type": "null" }]
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TransitionOutcome"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "$defs": {
-    "NativeIdentifier": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 200,
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]*$"
-    },
-    "Generation": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 9007199254740991
-    },
-    "PublicationPreparationCommandRequest": {
-      "description": "POST /v1/game-candidates/:candidate/publication-preparation/start or /resume dispatches durable artifact preparation (HTTP 202); the unsuffixed route advances one unit (HTTP 200). The /resume route sets resume=true. Start at sequence 0, then use the retained sequence. Generation binds the candidate.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["manifest_digest", "generation", "sequence", "idempotency_key"],
-      "properties": {
-        "manifest_digest": { "$ref": "#/$defs/Sha256" },
-        "generation": { "$ref": "#/$defs/Generation" },
-        "sequence": { "$ref": "#/$defs/Generation" },
-        "idempotency_key": { "$ref": "#/$defs/NativeIdentifier" },
-        "resume": { "type": "boolean" }
-      }
-    },
-    "PublicationResumeCommandRequest": {
-      "description": "POST /v1/publications/:operation/resume. Generation is the current publication operation generation, distinct from the candidate generation. HTTP 202 retains the resumed acknowledgement; status observes progress.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["generation", "idempotency_key"],
-      "properties": {
-        "generation": { "$ref": "#/$defs/Generation" },
-        "idempotency_key": { "type": "string", "minLength": 1 }
-      }
-    },
-    "PublicationApprovalCommandRequest": {
-      "description": "POST /v1/publications/start (dispatch) or /v1/publications (durable approval only). Returns HTTP 202 with the retained whole-candidate acknowledgement; GET /v1/publications/:id observes current progress.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["candidate_id", "manifest_digest", "expected_game_revision_id", "generation", "idempotency_key"],
-      "properties": {
-        "candidate_id": { "type": "string", "minLength": 1 },
-        "manifest_digest": { "$ref": "#/$defs/Sha256" },
-        "expected_game_revision_id": { "type": "string", "minLength": 1 },
-        "generation": { "$ref": "#/$defs/Generation" },
-        "idempotency_key": { "type": "string", "minLength": 1 }
-      }
-    },
     "OpaqueId": {
       "type": "string",
       "minLength": 1,
@@ -122,85 +116,17 @@
       "minimum": 0
     },
     "NullableTimestampMs": {
-      "oneOf": [{ "$ref": "#/$defs/TimestampMs" }, { "type": "null" }]
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TimestampMs"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "SupportedGame": {
       "enum": ["one-piece", "fusion-world", "digimon", "gundam", "riftbound", "magic", "pokemon"]
-    },
-    "ReconciliationCommandRequest": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["expected_current_revision_id", "idempotency_key"],
-      "properties": {
-        "expected_current_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "idempotency_key": { "$ref": "#/$defs/OpaqueId" }
-      }
-    },
-    "CatalogueSearchRepairCommandRequest": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["target_revision_id", "expected_current_revision_id", "idempotency_key"],
-      "properties": {
-        "target_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "expected_current_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "idempotency_key": { "$ref": "#/$defs/OpaqueId" }
-      }
-    },
-    "CatalogueBackupCommandRequest": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["expected_current_revision_id", "idempotency_key"],
-      "properties": {
-        "expected_current_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "idempotency_key": { "$ref": "#/$defs/OpaqueId" }
-      }
-    },
-    "CatalogueRecoveryBeginCommandRequest": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "environment",
-        "recovery_id",
-        "method",
-        "target_revision_id",
-        "target_bookmark",
-        "target_digest",
-        "backup_attempt_id",
-        "expected_current_revision_id",
-        "idempotency_key"
-      ],
-      "properties": {
-        "environment": { "enum": ["dev", "staging", "production"] },
-        "recovery_id": { "$ref": "#/$defs/OpaqueId" },
-        "method": { "enum": ["time_travel", "replacement_database"] },
-        "target_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "target_bookmark": { "type": "string", "minLength": 1 },
-        "target_digest": { "$ref": "#/$defs/Sha256" },
-        "backup_attempt_id": { "$ref": "#/$defs/OpaqueId" },
-        "expected_current_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "idempotency_key": { "$ref": "#/$defs/OpaqueId" },
-        "linked_operation_id": { "$ref": "#/$defs/OpaqueId" }
-      }
-    },
-    "CatalogueRecoveryVerifyCommandRequest": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["target_digest", "idempotency_key"],
-      "properties": {
-        "target_digest": { "$ref": "#/$defs/Sha256" },
-        "idempotency_key": { "$ref": "#/$defs/OpaqueId" }
-      }
-    },
-    "CatalogueRecoveryAcceptCommandRequest": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["expected_restored_revision_id", "target_digest", "confirmation_recovery_id", "idempotency_key"],
-      "properties": {
-        "expected_restored_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "target_digest": { "$ref": "#/$defs/Sha256" },
-        "confirmation_recovery_id": { "$ref": "#/$defs/OpaqueId" },
-        "idempotency_key": { "$ref": "#/$defs/OpaqueId" }
-      }
     },
     "IngestionRun": {
       "description": "Historical run-owned snapshot decoding only; native candidate and publication states are independent records.",
@@ -222,7 +148,9 @@
         "terminal_at"
       ],
       "properties": {
-        "id": { "$ref": "#/$defs/OpaqueId" },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
         "state": {
           "enum": [
             "planning",
@@ -241,28 +169,74 @@
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/SupportedGame" }
+          "items": {
+            "$ref": "#/$defs/SupportedGame"
+          }
         },
-        "started_at": { "$ref": "#/$defs/TimestampMs" },
-        "expected_current_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "started_at": {
+          "$ref": "#/$defs/TimestampMs"
+        },
+        "expected_current_revision_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
         "linked_run_id": {
-          "oneOf": [{ "$ref": "#/$defs/OpaqueId" }, { "type": "null" }]
+          "oneOf": [
+            {
+              "$ref": "#/$defs/OpaqueId"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
-        "idempotency_key": { "$ref": "#/$defs/OpaqueId" },
+        "idempotency_key": {
+          "$ref": "#/$defs/OpaqueId"
+        },
         "candidate_digest": {
-          "oneOf": [{ "$ref": "#/$defs/Sha256" }, { "type": "null" }]
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
-        "candidate_created_at": { "$ref": "#/$defs/NullableTimestampMs" },
-        "approval_deadline": { "$ref": "#/$defs/NullableTimestampMs" },
+        "candidate_created_at": {
+          "$ref": "#/$defs/NullableTimestampMs"
+        },
+        "approval_deadline": {
+          "$ref": "#/$defs/NullableTimestampMs"
+        },
         "approval": {
-          "oneOf": [{ "$ref": "#/$defs/Approval" }, { "type": "null" }]
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Approval"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "published_revision_id": {
-          "oneOf": [{ "$ref": "#/$defs/OpaqueId" }, { "type": "null" }]
+          "oneOf": [
+            {
+              "$ref": "#/$defs/OpaqueId"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
-        "export_manifest_digest": { "$ref": "#/$defs/Sha256" },
-        "failure_code": { "$ref": "#/$defs/OpaqueId" },
-        "terminal_at": { "$ref": "#/$defs/NullableTimestampMs" }
+        "export_manifest_digest": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "failure_code": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "terminal_at": {
+          "$ref": "#/$defs/NullableTimestampMs"
+        }
       }
     },
     "Approval": {
@@ -271,9 +245,15 @@
       "additionalProperties": false,
       "required": ["approved_at", "candidate_digest", "expected_current_revision_id"],
       "properties": {
-        "approved_at": { "$ref": "#/$defs/TimestampMs" },
-        "candidate_digest": { "$ref": "#/$defs/Sha256" },
-        "expected_current_revision_id": { "$ref": "#/$defs/OpaqueId" }
+        "approved_at": {
+          "$ref": "#/$defs/TimestampMs"
+        },
+        "candidate_digest": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "expected_current_revision_id": {
+          "$ref": "#/$defs/OpaqueId"
+        }
       }
     },
     "BackupAttempt": {
@@ -281,18 +261,38 @@
       "additionalProperties": false,
       "required": ["id", "catalogue_revision_id", "state", "manifest_digest", "linked_attempt_id"],
       "properties": {
-        "id": { "$ref": "#/$defs/OpaqueId" },
-        "catalogue_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "catalogue_revision_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
         "state": {
           "enum": ["pending", "exporting", "restoring_verification", "verifying", "verified", "failed"]
         },
         "manifest_digest": {
-          "oneOf": [{ "$ref": "#/$defs/Sha256" }, { "type": "null" }]
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "linked_attempt_id": {
-          "oneOf": [{ "$ref": "#/$defs/OpaqueId" }, { "type": "null" }]
+          "oneOf": [
+            {
+              "$ref": "#/$defs/OpaqueId"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
-        "failure_code": { "$ref": "#/$defs/OpaqueId" }
+        "failure_code": {
+          "$ref": "#/$defs/OpaqueId"
+        }
       }
     },
     "CatalogueExportMaintenanceState": {
@@ -308,8 +308,12 @@
         "deleted_at"
       ],
       "properties": {
-        "catalogue_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "manifest_digest": { "$ref": "#/$defs/Sha256" },
+        "catalogue_revision_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "manifest_digest": {
+          "$ref": "#/$defs/Sha256"
+        },
         "object_keys": {
           "type": "array",
           "minItems": 2,
@@ -319,12 +323,25 @@
             "pattern": "^catalogue-exports/[^/]+/"
           }
         },
-        "object_set_digest": { "$ref": "#/$defs/Sha256" },
-        "state": { "enum": ["available", "deleting", "deleted"] },
-        "deletion_operation_id": {
-          "oneOf": [{ "$ref": "#/$defs/OpaqueId" }, { "type": "null" }]
+        "object_set_digest": {
+          "$ref": "#/$defs/Sha256"
         },
-        "deleted_at": { "$ref": "#/$defs/NullableTimestampMs" }
+        "state": {
+          "enum": ["available", "deleting", "deleted"]
+        },
+        "deletion_operation_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/OpaqueId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deleted_at": {
+          "$ref": "#/$defs/NullableTimestampMs"
+        }
       }
     },
     "DeletionDependency": {
@@ -335,8 +352,13 @@
         "code": {
           "enum": ["current_catalogue_revision", "catalogue_consumers_may_depend", "authenticated_urls_will_return_410"]
         },
-        "severity": { "enum": ["blocking", "warning"] },
-        "detail": { "type": "string", "minLength": 1 }
+        "severity": {
+          "enum": ["blocking", "warning"]
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "ExportDeletionPlan": {
@@ -355,25 +377,46 @@
         "expires_at"
       ],
       "properties": {
-        "id": { "$ref": "#/$defs/OpaqueId" },
-        "catalogue_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "manifest_digest": { "$ref": "#/$defs/Sha256" },
-        "expected_current_revision_id": { "$ref": "#/$defs/OpaqueId" },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "catalogue_revision_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "manifest_digest": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "expected_current_revision_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
         "object_keys": {
           "type": "array",
           "minItems": 2,
           "uniqueItems": true,
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
-        "object_set_digest": { "$ref": "#/$defs/Sha256" },
+        "object_set_digest": {
+          "$ref": "#/$defs/Sha256"
+        },
         "dependencies": {
           "type": "array",
           "minItems": 2,
-          "items": { "$ref": "#/$defs/DeletionDependency" }
+          "items": {
+            "$ref": "#/$defs/DeletionDependency"
+          }
         },
-        "plan_digest": { "$ref": "#/$defs/Sha256" },
-        "created_at": { "$ref": "#/$defs/TimestampMs" },
-        "expires_at": { "$ref": "#/$defs/TimestampMs" }
+        "plan_digest": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "created_at": {
+          "$ref": "#/$defs/TimestampMs"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/TimestampMs"
+        }
       }
     },
     "ExportDeletionOperation": {
@@ -392,17 +435,39 @@
         "completed_at"
       ],
       "properties": {
-        "id": { "$ref": "#/$defs/OpaqueId" },
-        "plan_id": { "$ref": "#/$defs/OpaqueId" },
-        "state": { "enum": ["deleting", "deleted", "failed"] },
-        "catalogue_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "manifest_digest": { "$ref": "#/$defs/Sha256" },
-        "expected_current_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "object_set_digest": { "$ref": "#/$defs/Sha256" },
-        "idempotency_key": { "$ref": "#/$defs/OpaqueId" },
-        "requested_at": { "$ref": "#/$defs/TimestampMs" },
-        "completed_at": { "$ref": "#/$defs/NullableTimestampMs" },
-        "failure_code": { "$ref": "#/$defs/OpaqueId" }
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "plan_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "state": {
+          "enum": ["deleting", "deleted", "failed"]
+        },
+        "catalogue_revision_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "manifest_digest": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "expected_current_revision_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "object_set_digest": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "requested_at": {
+          "$ref": "#/$defs/TimestampMs"
+        },
+        "completed_at": {
+          "$ref": "#/$defs/NullableTimestampMs"
+        },
+        "failure_code": {
+          "$ref": "#/$defs/OpaqueId"
+        }
       }
     },
     "RecoveryState": {
@@ -410,12 +475,28 @@
       "additionalProperties": false,
       "required": ["health", "verified_revision_id", "operation"],
       "properties": {
-        "health": { "enum": ["healthy", "degraded", "blocked"] },
+        "health": {
+          "enum": ["healthy", "degraded", "blocked"]
+        },
         "verified_revision_id": {
-          "oneOf": [{ "$ref": "#/$defs/OpaqueId" }, { "type": "null" }]
+          "oneOf": [
+            {
+              "$ref": "#/$defs/OpaqueId"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "operation": {
-          "oneOf": [{ "$ref": "#/$defs/RecoveryOperation" }, { "type": "null" }]
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RecoveryOperation"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -424,16 +505,31 @@
       "additionalProperties": false,
       "required": ["id", "state", "target_revision_id", "target_digest", "linked_operation_id"],
       "properties": {
-        "id": { "$ref": "#/$defs/OpaqueId" },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
         "state": {
           "enum": ["preparing", "restoring", "validating", "awaiting_acceptance", "accepted", "failed"]
         },
-        "target_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "target_digest": { "$ref": "#/$defs/Sha256" },
-        "linked_operation_id": {
-          "oneOf": [{ "$ref": "#/$defs/OpaqueId" }, { "type": "null" }]
+        "target_revision_id": {
+          "$ref": "#/$defs/OpaqueId"
         },
-        "failure_code": { "$ref": "#/$defs/OpaqueId" }
+        "target_digest": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "linked_operation_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/OpaqueId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failure_code": {
+          "$ref": "#/$defs/OpaqueId"
+        }
       }
     },
     "ProductionRelease": {
@@ -441,14 +537,24 @@
       "additionalProperties": false,
       "required": ["id", "state", "environment", "expected_current_revision_id", "workflow_dispatch_id"],
       "properties": {
-        "id": { "$ref": "#/$defs/OpaqueId" },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
         "state": {
           "enum": ["requested", "preflight", "migrating", "deploying", "smoke_testing", "succeeded", "failed"]
         },
-        "environment": { "const": "production" },
-        "expected_current_revision_id": { "$ref": "#/$defs/OpaqueId" },
-        "workflow_dispatch_id": { "$ref": "#/$defs/OpaqueId" },
-        "failure_code": { "$ref": "#/$defs/OpaqueId" }
+        "environment": {
+          "const": "production"
+        },
+        "expected_current_revision_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "workflow_dispatch_id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "failure_code": {
+          "$ref": "#/$defs/OpaqueId"
+        }
       }
     },
     "CredentialRotation": {
@@ -456,7 +562,9 @@
       "additionalProperties": false,
       "required": ["id", "credential_class", "state", "old_fingerprint", "replacement_fingerprint"],
       "properties": {
-        "id": { "$ref": "#/$defs/OpaqueId" },
+        "id": {
+          "$ref": "#/$defs/OpaqueId"
+        },
         "credential_class": {
           "enum": [
             "api_bearer_key",
@@ -469,8 +577,14 @@
         "state": {
           "enum": ["replacement_installed", "replacement_verified", "old_revoked"]
         },
-        "old_fingerprint": { "type": "string", "minLength": 1 },
-        "replacement_fingerprint": { "type": "string", "minLength": 1 }
+        "old_fingerprint": {
+          "type": "string",
+          "minLength": 1
+        },
+        "replacement_fingerprint": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "TransitionOutcome": {
@@ -478,11 +592,22 @@
       "additionalProperties": false,
       "required": ["action", "accepted", "code", "detail", "at"],
       "properties": {
-        "action": { "type": "string", "minLength": 1 },
-        "accepted": { "type": "boolean" },
-        "code": { "$ref": "#/$defs/OpaqueId" },
-        "detail": { "type": "string" },
-        "at": { "$ref": "#/$defs/TimestampMs" }
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "accepted": {
+          "type": "boolean"
+        },
+        "code": {
+          "$ref": "#/$defs/OpaqueId"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "at": {
+          "$ref": "#/$defs/TimestampMs"
+        }
       }
     }
   }

@@ -1,19 +1,13 @@
 import { readAdministrationBody } from "../../http/administration";
 import { verifyStagingWorkflow } from "../../http/dev-workflow-identity.mjs";
-import {
-  AdministrationProblem,
-  type CatalogueStore,
-  canonicalJson,
-  isReleaseDigest,
-  isReleaseIdentity,
-  sha256Text,
-} from "../shared";
+import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { showStagingRelease, type StagingIntent } from "./staging-release";
 import {
   recordStagingProtocolStatement,
   stagingIntentStartingStateGate,
   stagingRecordStatement,
 } from "./staging-release-repository";
+import { stagingIntentIdentitySchema } from "./platform-http-contract";
 
 export type StagingAuthorization = {
   contract: "card-keepr-staging-authorization@1";
@@ -107,17 +101,14 @@ export async function handleStagingAuthorization(
 }
 
 export function stagingIntentIdentity(body: Record<string, unknown>): { releaseId: string; intentDigest: string } {
-  if (
-    Object.keys(body).sort().join("|") !== "intent_digest|release_id" ||
-    !isReleaseIdentity(body.release_id) ||
-    !isReleaseDigest(body.intent_digest)
-  )
+  const parsed = stagingIntentIdentitySchema.safeParse(body);
+  if (!parsed.success)
     throw new AdministrationProblem(
       422,
       "invalid_staging_intent",
       "The exact release identity and intent digest are required.",
     );
-  return { releaseId: body.release_id, intentDigest: body.intent_digest };
+  return { releaseId: parsed.data.release_id, intentDigest: parsed.data.intent_digest };
 }
 async function readClaim(database: CatalogueStore, key: string): Promise<StagingAuthorization | null> {
   const row = await stagingRecordStatement(database, key).first<{ operation: string; response_json: string }>();

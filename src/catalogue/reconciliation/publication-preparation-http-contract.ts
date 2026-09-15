@@ -2,7 +2,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { boundedJson, digest, identifier, problemResponses, secured } from "../../http/openapi";
 import { registeredSupportedGames } from "../shared";
 
-const count = z.number().int().nonnegative();
+const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const preparationState = z.enum(["preparing", "verified", "retry_paused", "failed"]);
 export const publicationPreparationSchema = z
   .strictObject({

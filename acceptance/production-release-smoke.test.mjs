@@ -1,3 +1,4 @@
+import { documentationResponse } from "./helpers/documentation.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { runBootstrapSmoke, runProductionSmoke } from "../scripts/production-smoke.mjs";
@@ -26,6 +27,7 @@ test("black-box smoke covers auth, representative reads, retained exports, and s
   const result = await runProductionSmoke(
     {
       apiUrl: "https://api.example.invalid",
+      ingestionUrl: "https://owner.example.invalid/ingest",
       apiKey: "traffic-key",
       currentRevisionId: "catrev-current",
       revisions,
@@ -34,8 +36,10 @@ test("black-box smoke covers auth, representative reads, retained exports, and s
       staleRevisionId: "catrev-archived",
     },
     async (url, init) => {
+      const docs = documentationResponse(url, init);
       const parsed = new URL(url);
       visited.push(`${parsed.pathname}${parsed.search}`);
+      if (docs) return docs;
       if (init.headers.authorization === "Bearer deliberately-invalid") {
         return new Response(JSON.stringify({ code: "authentication_required" }), { status: 401 });
       }
@@ -98,6 +102,7 @@ test("black-box smoke appends route paths to an API base that carries a mount pa
   await runProductionSmoke(
     {
       apiUrl: "https://card.keepr.digital/api/",
+      ingestionUrl: "https://card.keepr.digital/ingest/",
       apiKey: "traffic-key",
       currentRevisionId: "catrev-current",
       revisions,
@@ -106,8 +111,10 @@ test("black-box smoke appends route paths to an API base that carries a mount pa
       staleRevisionId: "catrev-archived",
     },
     async (url, init) => {
+      const docs = documentationResponse(url, init);
       const parsed = new URL(url);
       visited.push(`${parsed.pathname}${parsed.search}`);
+      if (docs) return docs;
       if (init.headers.authorization === "Bearer deliberately-invalid") {
         return new Response(JSON.stringify({ code: "authentication_required" }), { status: 401 });
       }
@@ -147,7 +154,9 @@ test("black-box smoke appends route paths to an API base that carries a mount pa
   assert.ok(visited.includes("/api/v1/catalogue"));
   assert.ok(visited.includes("/api/v1/printing-images/image-1/content"));
   assert.ok(visited.includes("/api/v1/catalogue-exports/catrev-current/components/cards"));
-  assert.ok(visited.every((path) => path.startsWith("/api/")));
+  assert.ok(visited.every((path) => path.startsWith("/api/") || path.startsWith("/ingest/")));
+  assert.ok(visited.includes("/api/docs"));
+  assert.ok(visited.includes("/ingest/openapi.json"));
   assert.ok(visited.every((path) => !path.startsWith("/api//")));
 });
 
@@ -173,8 +182,10 @@ test("Bootstrap Mode smoke proves health and auth on both mounts and the Spine R
       currentRevisionId: "catrev_spine_000",
     },
     async (url, init) => {
+      const docs = documentationResponse(url, init);
       const parsed = new URL(url);
       visited.push(`${parsed.pathname}${parsed.search}`);
+      if (docs) return docs;
       // Liveness answers without a credential; everything else is authenticated.
       if (parsed.pathname.endsWith("/healthz")) {
         assert.equal(init.headers.authorization, undefined);
@@ -200,7 +211,7 @@ test("Bootstrap Mode smoke proves health and auth on both mounts and the Spine R
   assert.deepEqual(result, {
     contract: "card-keepr-production-bootstrap-smoke@1",
     revision_id: "catrev_spine_000",
-    checks: 6,
+    checks: 10,
   });
   assert.deepEqual(visited, [
     "/api/health",
@@ -209,6 +220,10 @@ test("Bootstrap Mode smoke proves health and auth on both mounts and the Spine R
     "/api/healthz",
     "/ingest/healthz",
     "/api/v1/catalogue",
+    "/api/docs",
+    "/api/openapi.json",
+    "/ingest/docs",
+    "/ingest/openapi.json",
   ]);
 });
 
@@ -250,6 +265,8 @@ test("Bootstrap Mode smoke fails when the catalogue no longer reports the Spine 
         currentRevisionId: "catrev_spine_000",
       },
       async (url, init) => {
+        const docs = documentationResponse(url, init);
+        if (docs) return docs;
         const parsed = new URL(url);
         if (parsed.pathname.endsWith("/healthz"))
           return new Response(JSON.stringify(healthDocument(parsed.pathname)), { status: 200 });

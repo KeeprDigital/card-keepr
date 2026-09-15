@@ -8,16 +8,6 @@ export type RouteContext<Environment> = {
   context?: ExecutionContext;
 };
 
-export type Route<Context> = {
-  method: string;
-  pathname: string;
-  handler: (context: Context, params: Record<string, string | undefined>) => Promise<Response | null>;
-};
-
-export function route<Context>(method: string, pathname: string, handler: Route<Context>["handler"]): Route<Context> {
-  return { method, pathname, handler };
-}
-
 export function routeSegments(
   routes: readonly { pathname: string }[],
   preRoutePaths: readonly string[] = [],

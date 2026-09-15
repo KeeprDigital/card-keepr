@@ -1,5 +1,6 @@
+import type { HttpRoute } from "../../http/openapi";
 import { httpRoute, retainedWireValue } from "../../http/openapi";
-import { type Route, type RouteContext } from "../../http/routes";
+import { type RouteContext } from "../../http/routes";
 import { type CatalogueStore } from "../shared";
 import {
   createCuratedRevision,
@@ -28,7 +29,7 @@ type Environment = { KEEPR_ENVIRONMENT?: string; CATALOGUE_DB: CatalogueStore };
 type Context = RouteContext<Environment> & { observedAt: string };
 const route = httpRoute<Context>();
 const headers = { "Cache-Control": "no-store" };
-export const curatedRoutes: Route<Context>[] = [
+export const curatedRoutes: HttpRoute<Context>[] = [
   route(validateCuratedRoute, async (c) => {
     const body = c.req.valid("json");
     const original = await c.req.json<typeof body>();

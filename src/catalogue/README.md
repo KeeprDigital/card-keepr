@@ -20,7 +20,9 @@ modules are implementation details. The import gate counts type imports too.
 
 Cross-cluster imports target the owning index; indexes enumerate exports from their
 actual defining modules. The API Worker imports only `read`, `shared`, `src/http`
-and runtime capabilities. `src/http` is a leaf and imports no catalogue code.
+and runtime capabilities, plus the generated `contracts/read-openapi.json` public
+reference. That single artifact exception does not permit administration schemas
+or internal modules. `src/http` is a leaf and imports no catalogue code.
 Tests and tools may import internals. `pnpm run check:imports` enforces boundaries
 and detects cycles; its `allowedImports` table is the executable dependency rule.
 

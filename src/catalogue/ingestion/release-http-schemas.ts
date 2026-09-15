@@ -53,15 +53,17 @@ export const releaseReceiptFields = {
   state: z.literal("requested"),
   dispatch_digest: digest,
   prepared_plan_json: identifier,
-  dispatch_inputs: z.discriminatedUnion("operation", [
-    z.strictObject({ ...dispatchFields, operation: z.literal("production_release") }),
-    z.strictObject({ ...dispatchFields, operation: z.literal("cancel_fresh_baseline_handoff") }),
-    z.strictObject({
-      ...dispatchFields,
-      operation: z.literal("correct_fresh_baseline_handoff"),
-      correction_json: identifier,
-      correction_digest: digest,
-    }),
-  ]),
+  dispatch_inputs: z
+    .discriminatedUnion("operation", [
+      z.strictObject({ ...dispatchFields, operation: z.literal("production_release") }),
+      z.strictObject({ ...dispatchFields, operation: z.literal("cancel_fresh_baseline_handoff") }),
+      z.strictObject({
+        ...dispatchFields,
+        operation: z.literal("correct_fresh_baseline_handoff"),
+        correction_json: identifier,
+        correction_digest: digest,
+      }),
+    ])
+    .openapi("ReleaseDispatchInputs"),
 };
 export const releaseReceiptSchema = z.strictObject(releaseReceiptFields).openapi("ProductionReleaseReceipt");
