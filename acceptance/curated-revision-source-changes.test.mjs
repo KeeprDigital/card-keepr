@@ -1,3 +1,4 @@
+import { assertCuratedDocument } from "./helpers/curated-http-contract.mjs";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -131,6 +132,34 @@ test("the repository CLI resolves a source conflict through the emulated ingesti
   };
   const proposalDigest = digest(proposal);
   await writeFile(proposalFile, JSON.stringify(proposal), { mode: 0o600 });
+  const validationArguments = [
+    "curated-revision",
+    "validate",
+    "--proposal",
+    proposalFile,
+    "--expected-current-revision",
+    currentRevisionId,
+    "--secrets-stdin-fd",
+    "3",
+    "--json",
+  ];
+  const validated = await runCli(validationArguments, cliEnvironment, {
+    secrets: { administration_key: administrationKey },
+  });
+  assert.equal(validated.code, 0, validated.stderr);
+  const validation = JSON.parse(validated.stdout);
+  assertCuratedDocument("validate", 200, validation);
+  assert.equal(validation.proposal_digest, proposalDigest);
+  const stale = await runCli(
+    validationArguments.map((value) => (value === currentRevisionId ? "catrev_stale" : value)),
+    cliEnvironment,
+    { secrets: { administration_key: administrationKey } },
+  );
+  assert.notEqual(stale.code, 0);
+  const staleProblem = JSON.parse(stale.stdout);
+  assert.equal(staleProblem.code, "current_revision_mismatch");
+  assert.equal(staleProblem.contract, "card-keepr-cli-problem@1");
+  assert.equal(staleProblem.status, "error");
   const createIdempotencyKey = "cli-worker-curated-create";
   const createConfirmation = JSON.stringify({
     production_target: status.production_target,
@@ -169,6 +198,7 @@ test("the repository CLI resolves a source conflict through the emulated ingesti
   );
   assert.equal(createdResult.code, 0, `${createdResult.stdout}\n${createdResult.stderr}\n${ingestion.getOutput()}`);
   const created = JSON.parse(createdResult.stdout);
+  assertCuratedDocument("create", 201, created);
   assert.equal(created.status, "active");
 
   const restartedPort = ingestion.port;
@@ -203,6 +233,7 @@ test("the repository CLI resolves a source conflict through the emulated ingesti
     },
   );
   assert.equal(shownResult.code, 0, shownResult.stderr);
+  assertCuratedDocument("show", 200, JSON.parse(shownResult.stdout));
   const shown = JSON.parse(shownResult.stdout).revision;
   assert.equal(shown.status, "reconfirmation_required");
   assert.equal(shown.event_version, 2);
@@ -267,6 +298,7 @@ test("the repository CLI resolves a source conflict through the emulated ingesti
     `${reaffirmedResult.stdout}\n${reaffirmedResult.stderr}\n${ingestion.getOutput()}`,
   );
   const reaffirmed = JSON.parse(reaffirmedResult.stdout);
+  assertCuratedDocument("reaffirm", 200, reaffirmed);
   assert.match(reaffirmed.operation_id, /^curop_/u);
   assert.deepEqual(
     { ...reaffirmed, operation_id: "<opaque>" },

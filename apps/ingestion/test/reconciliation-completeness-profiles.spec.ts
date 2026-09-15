@@ -301,7 +301,7 @@ test("a partial-game publication carries an unselected curation and its immutabl
       },
     ],
   };
-  const missingEvidence = await post("/admin/v1/curated-revisions", {
+  const missingEvidence = await post("/v1/curated-revisions", {
     environment: "production",
     expected_current_revision_id: initialRevision,
     proposal: missingEvidenceProposal,
@@ -310,7 +310,7 @@ test("a partial-game publication carries an unselected curation and its immutabl
   });
   expect(missingEvidence.response.status).toBe(422);
   expect(missingEvidence.document.code).toBe("curated_revision_evidence_not_retained");
-  const created = await post("/admin/v1/curated-revisions", {
+  const created = await post("/v1/curated-revisions", {
     environment: "production",
     expected_current_revision_id: initialRevision,
     proposal,
@@ -340,7 +340,7 @@ test("a partial-game publication carries an unselected curation and its immutabl
   expect(curatedPublication.response.status).toBe(200);
   const curatedCatalogueRevision = requiredString(curatedPublication.document, "resulting_revision_id");
 
-  const ledgerBefore = await get(`/admin/v1/curated-revisions/${curatedRevisionId}`);
+  const ledgerBefore = await get(`/v1/curated-revisions/${curatedRevisionId}`);
   expect(ledgerBefore.response.status).toBe(200);
   expect(ledgerBefore.document.events).toEqual(expect.arrayContaining([expect.any(Object)]));
   const before = (await exportComponentRecords(curatedCatalogueRevision, "cards")).find(
@@ -376,7 +376,7 @@ test("a partial-game publication carries an unselected curation and its immutabl
     curated_provenance: [{ curated_revision_id: curatedRevisionId }],
   });
   expect(carried).toEqual(curatedRecords);
-  const ledgerAfter = await get(`/admin/v1/curated-revisions/${curatedRevisionId}`);
+  const ledgerAfter = await get(`/v1/curated-revisions/${curatedRevisionId}`);
   expect(ledgerAfter.response.status).toBe(200);
   expect(ledgerAfter.document).toEqual(ledgerBefore.document);
 }, 60_000);

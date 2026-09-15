@@ -40,7 +40,7 @@ test("CLI validates a proposal file against an explicit Catalogue Revision", asy
   assert.deepEqual(observed, [
     {
       method: "POST",
-      path: "/admin/v1/curated-revisions/validate",
+      path: "/v1/curated-revisions/validate",
       authorization: "Bearer cli-admin-key",
       body: { proposal, catalogue_revision_id: "catrev_123" },
     },
@@ -107,7 +107,7 @@ test("CLI creates a production Curated Revision with all mutation bindings", asy
   });
   assert.deepEqual(observed[1], {
     method: "POST",
-    path: "/admin/v1/curated-revisions",
+    path: "/v1/curated-revisions",
     authorization: "Bearer cli-admin-key",
     body: {
       environment: "production",
@@ -241,11 +241,11 @@ test("CLI reaffirmation binds the inspected source conflict before mutation", as
       { method: "GET", path: "/v1/status" },
       {
         method: "GET",
-        path: "/admin/v1/curated-revisions/currev_reaffirm",
+        path: "/v1/curated-revisions/currev_reaffirm",
       },
       {
         method: "POST",
-        path: "/admin/v1/curated-revisions/currev_reaffirm/reaffirm",
+        path: "/v1/curated-revisions/currev_reaffirm/reaffirm",
       },
     ],
   );
@@ -325,8 +325,8 @@ test("CLI retirement resolves the exact revision and production identities befor
     observed.map(({ method, path }) => ({ method, path })),
     [
       { method: "GET", path: "/v1/status" },
-      { method: "GET", path: "/admin/v1/curated-revisions/currev_123" },
-      { method: "POST", path: "/admin/v1/curated-revisions/currev_123/retire" },
+      { method: "GET", path: "/v1/curated-revisions/currev_123" },
+      { method: "POST", path: "/v1/curated-revisions/currev_123/retire" },
     ],
   );
   assert.equal(observed[2].authorization, "Bearer cli-admin-key");

@@ -176,7 +176,7 @@ test("a CLI mutation paces its confirmation and write before the next administra
   assert.equal(cli.code, 0, cli.stdout + cli.stderr);
   assert.deepEqual(
     arrivals.map(({ path }) => path),
-    ["/v1/status", "/admin/v1/curated-revisions", "/v1/after-mutation"],
+    ["/v1/status", "/v1/curated-revisions", "/v1/after-mutation"],
   );
   for (let i = 1; i < arrivals.length; i++)
     assert.ok(arrivals[i].at - arrivals[i - 1].at >= 75, JSON.stringify(arrivals));

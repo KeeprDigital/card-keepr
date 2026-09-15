@@ -1,131 +1,6 @@
 [
   {
     "worker": "admin",
-    "family": "curated",
-    "method": "GET",
-    "path": "/admin/v1/curated-revisions",
-    "contract": "legacy",
-    "slice": "Curated Revisions",
-    "named_cli": "curated-revision list",
-    "callers": [
-      "acceptance/curated-revisions-cli.test.mjs",
-      "acceptance/native-request-pacing.test.mjs",
-      "apps/ingestion/test/curated-revisions.spec.ts",
-      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
-      "apps/ingestion/test/game-reconciliation-resources.spec.ts",
-      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
-      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
-      "apps/ingestion/test/reconciliation-curated-lookup.spec.ts",
-      "apps/ingestion/test/reconciliation-progress.spec.ts",
-      "apps/ingestion/test/runtime-game-preparation-dispatch.spec.ts",
-      "cli/curated-revisions.mjs"
-    ]
-  },
-  {
-    "worker": "admin",
-    "family": "curated",
-    "method": "POST",
-    "path": "/admin/v1/curated-revisions",
-    "contract": "legacy",
-    "slice": "Curated Revisions",
-    "named_cli": "curated-revision create",
-    "callers": [
-      "acceptance/curated-revisions-cli.test.mjs",
-      "acceptance/native-request-pacing.test.mjs",
-      "apps/ingestion/test/curated-revisions.spec.ts",
-      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
-      "apps/ingestion/test/game-reconciliation-resources.spec.ts",
-      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
-      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
-      "apps/ingestion/test/reconciliation-curated-lookup.spec.ts",
-      "apps/ingestion/test/reconciliation-progress.spec.ts",
-      "apps/ingestion/test/runtime-game-preparation-dispatch.spec.ts",
-      "cli/curated-revisions.mjs"
-    ]
-  },
-  {
-    "worker": "admin",
-    "family": "curated",
-    "method": "GET",
-    "path": "/admin/v1/curated-revisions/{revision}",
-    "contract": "legacy",
-    "slice": "Curated Revisions",
-    "named_cli": "curated-revision show",
-    "callers": [
-      "acceptance/helpers/cli-http.mjs",
-      "apps/ingestion/test/curated-revisions.spec.ts",
-      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
-      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
-      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
-      "apps/ingestion/test/reconciliation-progress.spec.ts",
-      "cli/curated-revisions.mjs"
-    ]
-  },
-  {
-    "worker": "admin",
-    "family": "curated",
-    "method": "POST",
-    "path": "/admin/v1/curated-revisions/{revision}/reaffirm",
-    "contract": "legacy",
-    "slice": "Curated Revisions",
-    "named_cli": "curated-revision reaffirm",
-    "callers": [
-      "apps/ingestion/test/curated-revisions.spec.ts",
-      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
-      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
-      "cli/curated-revisions.mjs"
-    ]
-  },
-  {
-    "worker": "admin",
-    "family": "curated",
-    "method": "POST",
-    "path": "/admin/v1/curated-revisions/{revision}/retire",
-    "contract": "legacy",
-    "slice": "Curated Revisions",
-    "named_cli": "curated-revision retire",
-    "callers": [
-      "apps/ingestion/test/curated-revisions.spec.ts",
-      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
-      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
-      "cli/curated-revisions.mjs"
-    ]
-  },
-  {
-    "worker": "admin",
-    "family": "curated",
-    "method": "POST",
-    "path": "/admin/v1/curated-revisions/{revision}/supersede",
-    "contract": "legacy",
-    "slice": "Curated Revisions",
-    "named_cli": "curated-revision supersede",
-    "callers": [
-      "apps/ingestion/test/curated-revisions.spec.ts",
-      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
-      "cli/curated-revisions.mjs"
-    ]
-  },
-  {
-    "worker": "admin",
-    "family": "curated",
-    "method": "POST",
-    "path": "/admin/v1/curated-revisions/validate",
-    "contract": "legacy",
-    "slice": "Curated Revisions",
-    "named_cli": "curated-revision validate",
-    "callers": [
-      "acceptance/curated-revisions-cli.test.mjs",
-      "acceptance/helpers/cli-http.mjs",
-      "apps/ingestion/test/curated-revisions.spec.ts",
-      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
-      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
-      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
-      "apps/ingestion/test/reconciliation-progress.spec.ts",
-      "cli/curated-revisions.mjs"
-    ]
-  },
-  {
-    "worker": "admin",
     "method": "GET",
     "path": "/health",
     "contract": "platform",
@@ -348,6 +223,145 @@
       "apps/ingestion/test/reconciliation-export-and-repair.spec.ts",
       "apps/ingestion/test/reconciliation-workflow-binding.spec.ts",
       "cli/keepr.mjs",
+      "cli/staging-release.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "curated",
+    "method": "GET",
+    "path": "/v1/curated-revisions",
+    "contract": "generated",
+    "slice": "Curated Revisions",
+    "named_cli": "curated-revision list",
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/curated-revisions-cli.test.mjs",
+      "acceptance/helpers/curated-http-contract.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/native-request-pacing.test.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/curated-revisions.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/game-reconciliation-resources.spec.ts",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-lookup.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/runtime-game-preparation-dispatch.spec.ts",
+      "cli/curated-revisions.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "curated",
+    "method": "POST",
+    "path": "/v1/curated-revisions",
+    "contract": "generated",
+    "slice": "Curated Revisions",
+    "named_cli": "curated-revision create",
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/curated-revisions-cli.test.mjs",
+      "acceptance/helpers/curated-http-contract.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/native-request-pacing.test.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/curated-revisions.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/game-reconciliation-resources.spec.ts",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-lookup.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/runtime-game-preparation-dispatch.spec.ts",
+      "cli/curated-revisions.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "curated",
+    "method": "GET",
+    "path": "/v1/curated-revisions/{revision}",
+    "contract": "generated",
+    "slice": "Curated Revisions",
+    "named_cli": "curated-revision show",
+    "callers": [
+      "acceptance/card-categories.test.mjs",
+      "acceptance/helpers/cli-http.mjs",
+      "apps/ingestion/test/curated-revisions.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "cli/curated-revisions.mjs",
+      "cli/staging-release.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "curated",
+    "method": "POST",
+    "path": "/v1/curated-revisions/{revision}/reaffirm",
+    "contract": "generated",
+    "slice": "Curated Revisions",
+    "named_cli": "curated-revision reaffirm",
+    "callers": [
+      "apps/ingestion/test/curated-revisions.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
+      "cli/curated-revisions.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "curated",
+    "method": "POST",
+    "path": "/v1/curated-revisions/{revision}/retire",
+    "contract": "generated",
+    "slice": "Curated Revisions",
+    "named_cli": "curated-revision retire",
+    "callers": [
+      "apps/ingestion/test/curated-revisions.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
+      "cli/curated-revisions.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "curated",
+    "method": "POST",
+    "path": "/v1/curated-revisions/{revision}/supersede",
+    "contract": "generated",
+    "slice": "Curated Revisions",
+    "named_cli": "curated-revision supersede",
+    "callers": [
+      "apps/ingestion/test/curated-revisions.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
+      "cli/curated-revisions.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "curated",
+    "method": "POST",
+    "path": "/v1/curated-revisions/validate",
+    "contract": "generated",
+    "slice": "Curated Revisions",
+    "named_cli": "curated-revision validate",
+    "callers": [
+      "acceptance/card-categories.test.mjs",
+      "acceptance/curated-revisions-cli.test.mjs",
+      "acceptance/helpers/cli-http.mjs",
+      "apps/ingestion/test/curated-revisions.spec.ts",
+      "apps/ingestion/test/game-reconciliation-operations.spec.ts",
+      "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
+      "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "cli/curated-revisions.mjs",
       "cli/staging-release.mjs"
     ]
   },
@@ -721,6 +735,7 @@
     "callers": [
       "acceptance/card-model-migration.test.mjs",
       "acceptance/scryfall-catalogue.test.mjs",
+      "apps/ingestion/test/curated-retained-inspection.spec.ts",
       "apps/ingestion/test/game-candidate-http.spec.ts",
       "apps/ingestion/test/source-design-identity.spec.ts",
       "cli/keepr.mjs"
@@ -2009,6 +2024,7 @@
     "callers": [
       "acceptance/composed-recovery.test.mjs",
       "acceptance/scryfall-catalogue.test.mjs",
+      "apps/ingestion/test/curated-revisions.spec.ts",
       "apps/ingestion/test/reconciliation-progress.spec.ts",
       "apps/ingestion/test/runtime-workflow-collection.spec.ts",
       "apps/ingestion/test/source-http-contract.spec.ts"

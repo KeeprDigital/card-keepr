@@ -81,9 +81,7 @@ async function resolveFixtureTarget(request, document, query) {
     const operation = query.get("curated_operation");
     let binding = JSON.parse(query.get("curated_binding"));
     if (operation !== "create") {
-      const { revision } = await lookup(
-        `/admin/v1/curated-revisions/${encodeURIComponent(binding.curated_revision_id)}`,
-      );
+      const { revision } = await lookup(`/v1/curated-revisions/${encodeURIComponent(binding.curated_revision_id)}`);
       if (revision.event_version !== binding.expected_event_version)
         return fail("The Curated Revision does not resolve to the supplied lifecycle event version.");
       if ((revision.pending_conflict?.digest ?? null) !== binding.conflict_digest)

@@ -597,49 +597,49 @@
   {
     "family": "curated",
     "method": "POST",
-    "path": "/admin/v1/curated-revisions/validate",
+    "path": "/v1/curated-revisions/validate",
     "slice": "Curated Revisions",
     "cli": "curated-revision validate"
   },
   {
     "family": "curated",
     "method": "GET",
-    "path": "/admin/v1/curated-revisions",
+    "path": "/v1/curated-revisions",
     "slice": "Curated Revisions",
     "cli": "curated-revision list"
   },
   {
     "family": "curated",
     "method": "POST",
-    "path": "/admin/v1/curated-revisions",
+    "path": "/v1/curated-revisions",
     "slice": "Curated Revisions",
     "cli": "curated-revision create"
   },
   {
     "family": "curated",
     "method": "POST",
-    "path": "/admin/v1/curated-revisions/:revision/reaffirm",
+    "path": "/v1/curated-revisions/:revision/reaffirm",
     "slice": "Curated Revisions",
     "cli": "curated-revision reaffirm"
   },
   {
     "family": "curated",
     "method": "POST",
-    "path": "/admin/v1/curated-revisions/:revision/supersede",
+    "path": "/v1/curated-revisions/:revision/supersede",
     "slice": "Curated Revisions",
     "cli": "curated-revision supersede"
   },
   {
     "family": "curated",
     "method": "POST",
-    "path": "/admin/v1/curated-revisions/:revision/retire",
+    "path": "/v1/curated-revisions/:revision/retire",
     "slice": "Curated Revisions",
     "cli": "curated-revision retire"
   },
   {
     "family": "curated",
     "method": "GET",
-    "path": "/admin/v1/curated-revisions/:revision",
+    "path": "/v1/curated-revisions/:revision",
     "slice": "Curated Revisions",
     "cli": "curated-revision show"
   },

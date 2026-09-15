@@ -1706,7 +1706,7 @@ test("a Product reducer committed tombstone replays without restoring a curated 
   };
   expect(
     (
-      await post("/admin/v1/curated-revisions", {
+      await post("/v1/curated-revisions", {
         environment: "production",
         expected_current_revision_id: published.revisionId,
         proposal,
@@ -1850,7 +1850,7 @@ test.each(["entity", "selection", "entity after commit"])(
       reviewed_source_digest: await sha256Text(canonicalJson(original.name)),
       supersedes_revision_id: null,
     };
-    const created = await post("/admin/v1/curated-revisions", {
+    const created = await post("/v1/curated-revisions", {
       environment: "production",
       expected_current_revision_id: publishedSeed.document.resulting_revision_id,
       proposal,
@@ -2056,7 +2056,7 @@ test("persistent curated comparison records every changed source field before fa
       reviewed_source_digest: await sha256Text(canonicalJson(card[field])),
       supersedes_revision_id: null,
     };
-    const created = await post("/admin/v1/curated-revisions", {
+    const created = await post("/v1/curated-revisions", {
       environment: "production",
       expected_current_revision_id: published.revisionId,
       proposal,
@@ -2142,7 +2142,7 @@ test("persistent curated comparison records every changed source field before fa
     expect.objectContaining({ code: "curated_revision_reconfirmation_required" }),
   ]);
   for (const revision of revisions) {
-    const shown = await get(`/admin/v1/curated-revisions/${revision}`);
+    const shown = await get(`/v1/curated-revisions/${revision}`);
     expect(shown.document).toMatchObject({
       revision: { status: "reconfirmation_required", pending_conflict: { run_id: run.id } },
     });
@@ -2191,7 +2191,7 @@ test("persistent curated edits retain Release ownership and official relationshi
       reviewed_source_digest: await sha256Text(canonicalJson(change.source)),
       supersedes_revision_id: null,
     };
-    const created = await post("/admin/v1/curated-revisions", {
+    const created = await post("/v1/curated-revisions", {
       environment: "production",
       expected_current_revision_id: published.document.resulting_revision_id,
       proposal,

@@ -6,26 +6,8 @@ import { requiredProfileContract } from "../shared";
 const count = z.number().int().nonnegative();
 const text = z.string().nullable(); // Long strings are replaced by null and described by text_parts.
 const game = z.enum(gameProfileRegistrations().map(({ game }) => game));
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
-// Used only for actual source-defined values and owner assertions; catalogue facts have explicit schemas below.
-const nonNullSourceValue: z.ZodType<Exclude<JsonValue, null>> = z
-  .lazy(() =>
-    z.union([
-      z.string(),
-      z.number(),
-      z.boolean(),
-      z.array(z.union([nonNullSourceValue, z.null()])),
-      z.record(z.string(), z.union([nonNullSourceValue, z.null()])),
-    ]),
-  )
-  .openapi("CandidateNonNullSourceValue");
-export const sourceValue = z.union([nonNullSourceValue, z.null()]);
-const sourceObject = z.record(z.string(), sourceValue);
-// Validate free-form JSON without rebuilding it: literal keys such as __proto__
-// are retained evidence and must survive both command parsing and inspection.
-export const retainedSourceObject = z
-  .custom<z.infer<typeof sourceObject>>((value) => sourceObject.safeParse(value).success)
-  .openapi({ type: "object", additionalProperties: true });
+export { sourceValue, retainedSourceObject } from "../shared";
+import { sourceValue } from "../shared";
 export const textPart = z.strictObject({
   path: z.array(z.union([z.string(), count])),
   sha256: digest,

@@ -165,6 +165,15 @@ admission stay in the domain; retained correction and identity evidence reuse
 the shared historical schemas. Admission, correction and review resolution leave
 whole-candidate approval and publication separate.
 
+## Curated Revisions
+
+All seven Curated Revision operations use generated schemas under
+`/v1/curated-revisions`. The [administration protocol](ADMINISTRATION.md#curated-revision-http)
+defines current validation, immutable mutation receipts, historical inspection,
+physical evidence retention and CLI behavior. Current proposals remain strict;
+explicit historical shapes preserve acknowledged empty-name extensions for exact
+replay. Handlers validate retained values without rebuilding their property names.
+
 ## Migrating a family
 
 1. Find the operation and potential callers in [the generated inventory](http-route-inventory.json).

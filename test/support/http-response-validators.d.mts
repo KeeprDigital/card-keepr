@@ -56,4 +56,8 @@ export function response54(value: unknown): boolean;
 export function response55(value: unknown): boolean;
 export function response56(value: unknown): boolean;
 export function response57(value: unknown): boolean;
+export function response58(value: unknown): boolean;
+export function response59(value: unknown): boolean;
+export function response60(value: unknown): boolean;
+export function response61(value: unknown): boolean;
 export const responseValidators: Record<string, string>;

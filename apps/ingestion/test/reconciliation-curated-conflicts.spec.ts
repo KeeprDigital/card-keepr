@@ -28,7 +28,7 @@ test("all 32 changed Curated Revisions become reconfirmable with a bounded final
       reviewed_source_digest: await sha256Text(canonicalJson(card.name)),
       supersedes_revision_id: null,
     };
-    const created = await post("/admin/v1/curated-revisions", {
+    const created = await post("/v1/curated-revisions", {
       environment: "production",
       expected_current_revision_id: published.revisionId,
       proposal,
@@ -82,7 +82,7 @@ test("all 32 changed Curated Revisions become reconfirmable with a bounded final
             if (!interrupted) {
               interrupted = true;
               for (const id of revisions)
-                expect((await get(`/admin/v1/curated-revisions/${id}`)).document).toMatchObject({
+                expect((await get(`/v1/curated-revisions/${id}`)).document).toMatchObject({
                   revision: { status: "active", event_version: 1, pending_conflict: null },
                 });
               throw new Error("Injected interruption while prepared conflicts remain invisible.");
@@ -159,14 +159,14 @@ test("all 32 changed Curated Revisions become reconfirmable with a bounded final
   }
   expect([...conflicted].sort()).toEqual([...revisions].sort());
   for (const id of revisions)
-    expect((await get(`/admin/v1/curated-revisions/${id}`)).document).toMatchObject({
+    expect((await get(`/v1/curated-revisions/${id}`)).document).toMatchObject({
       revision: { status: "reconfirmation_required", pending_conflict: { run_id: run.id } },
     });
   for (const [index, action] of ["reaffirm", "retire"].entries()) {
     const id = revisions[index]!;
-    const before = (await get(`/admin/v1/curated-revisions/${id}`)).document;
+    const before = (await get(`/v1/curated-revisions/${id}`)).document;
     const revision = before.revision as { event_version: number; pending_conflict: { digest: string } };
-    const mutated = await post(`/admin/v1/curated-revisions/${id}/${action}`, {
+    const mutated = await post(`/v1/curated-revisions/${id}/${action}`, {
       environment: "production",
       expected_current_revision_id: published.revisionId,
       expected_event_version: revision.event_version,
@@ -175,7 +175,7 @@ test("all 32 changed Curated Revisions become reconfirmable with a bounded final
       idempotency_key: `curated-fanout-${action}`,
     });
     expect(mutated.response.status, JSON.stringify(mutated.document)).toBe(200);
-    const after = (await get(`/admin/v1/curated-revisions/${id}`)).document;
+    const after = (await get(`/v1/curated-revisions/${id}`)).document;
     expect(after).toMatchObject({
       revision: { status: action === "reaffirm" ? "active" : "retired", event_version: 3, pending_conflict: null },
     });
