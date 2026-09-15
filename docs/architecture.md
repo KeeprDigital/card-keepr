@@ -202,8 +202,14 @@ proposal decisions pin their source and image dependencies atomically. Backup
 verification follows retained archive and image identities independently of a
 request's current snapshot pointer, requires every receipt for a shared physical
 key to agree, and verifies those bytes again against the restored database.
-This storage foundation leaves the registered Magic pilot scope unchanged; the
-complete declared import remains [separate launch work](https://github.com/KeeprDigital/card-keepr/issues/327).
+Scryfall's default scope starts at one bulk metadata root, pins the dated
+Printing-bearing archive and its compressed length, and discovers current normal
+images from its selected records. The named four-card pilot retains its exact
+requests. Its pre-Go-Live capacity migration requires current/latest-event state
+agreement and completed or terminal collection, except permanently abandoned
+restored collections; reservation absence alone does not establish completion.
+The dated request envelope is separate from measured full-import capacity,
+publication and recovery, which remain [launch work](https://github.com/KeeprDigital/card-keepr/issues/327).
 
 Adapters may opt into bounded retained discovery context. Before interpretation,
 the parse operation atomically fixes its complete chain of ancestor Source

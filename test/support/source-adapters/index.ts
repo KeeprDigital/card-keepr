@@ -3,6 +3,7 @@ import { tcgdexRetainedGraphAdapter } from "./tcgdex-retained-graph";
 import { tcgdexReviewRecordAdapter } from "./tcgdex-review-record";
 import { designIdentityAdapters } from "./design-identity";
 import { capacitySourceAdapter } from "./capacity";
+import { scryfallArchiveCappedAdapter } from "./scryfall-archive-capped";
 import {
   registerSourceAdapters,
   type SourceAdapterRegistration,
@@ -217,6 +218,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
       parse: parseCardSourceDocument,
     })),
     capacitySourceAdapter,
+    scryfallArchiveCappedAdapter,
     retainedParentContextAdapter,
     tcgdexRetainedGraphAdapter,
     tcgdexReviewRecordAdapter,
@@ -239,7 +241,12 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
     Object.freeze({
       ...adapter,
       coverageLossThreshold: { absolute: 25, fraction: 0.2 },
-      requestCapacity: adapter.adapterVersion === "fixture-fusion-world-json-large@1" ? 15_000 : 5_000,
+      requestCapacity:
+        adapter.adapterVersion === scryfallArchiveCappedAdapter.adapterVersion
+          ? scryfallArchiveCappedAdapter.requestCapacity
+          : adapter.adapterVersion === "fixture-fusion-world-json-large@1"
+            ? 15_000
+            : 5_000,
     }),
   ),
 );

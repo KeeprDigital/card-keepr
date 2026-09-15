@@ -178,7 +178,7 @@ export const scryfallSourceAdapterRegistration: SourceAdapterRegistration = {
       };
     },
   },
-  requestCapacity: 10,
+  requestCapacity: 108_691,
   minimumRateLimitBackoffMilliseconds: 30_000,
   origin: "production",
   requestSurface: { kind: "credential-free-https" },
@@ -198,8 +198,12 @@ export const scryfallSourceAdapterRegistration: SourceAdapterRegistration = {
     );
   },
   reconciliationAreas: ["catalogue"],
-  requiredSurfaces: coverage.requiredSurfaces,
-  requestUrlForSurface: surfaceUrl,
+  requiredSurfaces: ["bulk-data"],
+  requestUrlForSurface: (surface) => {
+    if (surface !== "bulk-data")
+      throw new AdapterParseFailure("Invalid Scryfall bulk metadata surface.", { category: "configuration" });
+    return scryfallBulkMetadataUrl;
+  },
   coverageContracts: { "representative-english-paper": coverage },
   parseBytes(bytes, context) {
     if (context.mediaType?.startsWith("image/")) return [];

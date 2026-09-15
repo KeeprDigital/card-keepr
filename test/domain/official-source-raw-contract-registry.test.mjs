@@ -413,7 +413,7 @@ function isAdministrationProblem(code) {
 const expectedRequestCapacities = {
   "limitless-one-piece-en@1": 100,
   "riftbound-en@1": 5000,
-  "scryfall-magic-en@1": 10,
+  "scryfall-magic-en@1": 108_691,
   "tcgdex-pokemon-en@1": 4,
   "pokemon-official-en@1": 4,
   "one-piece-en@6": 10_000,

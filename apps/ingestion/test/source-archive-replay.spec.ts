@@ -120,14 +120,16 @@ test("sealed archive replay retains semantic state while its guarded batch chang
   expect(observed.calls).toEqual([]);
 });
 
-test("sealed archive discovery preserves evidence when one extra image request would exceed pilot capacity", async () => {
+test("sealed archive discovery preserves evidence when one extra image request exceeds a capped fixture budget", async () => {
+  const cappedVersion = "fixture-scryfall-archive-capped@1";
   const { db, run, request, snapshot } = await seedArchive(
     "archive-discovery-capacity-boundary",
     false,
     archiveBytes([reminder, control, reversible, art]),
+    cappedVersion,
   );
   const intent = { intent: "collection" as const, idempotencyKey: `${run.id}:${request.request_id}` };
-  const sealed = await parseSnapshotBatch(db, env.EVIDENCE_OBJECTS, snapshot.id, version, intent);
+  const sealed = await parseSnapshotBatch(db, env.EVIDENCE_OBJECTS, snapshot.id, cappedVersion, intent);
   if ("kind" in sealed) throw new Error("Four-record archive should seal in one callback.");
   expect(sealed.observation_count).toBe(4);
   const before = await retainedRows(db, snapshot.id, sealed.id);
