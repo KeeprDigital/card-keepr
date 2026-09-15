@@ -12,6 +12,7 @@ import * as validators from "../test/support/http-response-validators.mjs";
 import { reconciliationSourceDocument } from "../test/support/fake-publisher/reconciliation-documents.ts";
 import {
   applyMigrations,
+  executeSql,
   persistedDatabaseDirectory,
   runCli,
   startWorker,
@@ -302,7 +303,9 @@ test("owner backs up, retries, restores, verifies and explicitly accepts with im
   await stopWorker(worker);
   const databaseDirectory = await persistedDatabaseDirectory(statePath);
   const existingFiles = new Set(await readdir(databaseDirectory, { recursive: true }));
-  await applyMigrations(statePath, restoredConfigPath);
+  // Materialize the actual replacement binding, disposing its handles before
+  // installing the verified import. Its empty schema would be overwritten.
+  await executeSql(statePath, resolve("acceptance/fixtures/initialize-empty-database.sql"), restoredConfigPath);
   const restoredFiles = (await readdir(databaseDirectory, { recursive: true })).filter(
     (name) => name.endsWith(".sqlite") && !existingFiles.has(name),
   );
