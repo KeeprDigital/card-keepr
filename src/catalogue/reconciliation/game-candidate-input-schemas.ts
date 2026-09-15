@@ -140,16 +140,23 @@ const inputSchemas = {
     cardIdentities: z.array(z.strictObject({ kind: z.string(), value: text })).optional(),
   }),
 };
+// Named record schemas are shared by native and retained-run envelopes. Keeping
+// one generated validator per record avoids duplicating their large profile branches.
+const namedInputs = Object.fromEntries(
+  Object.entries(inputSchemas)
+    .filter(([kind]) => kind !== "observations")
+    .map(([kind, schema]) => [kind, schema.openapi(`ReconciliationInput_${kind}`)]),
+);
+const observations = {
+  categories: z.union([cardObservation, erratumObservation]).openapi("ReconciliationCategoryObservations"),
+  pre_categories: z
+    .union([historicalCardObservation, erratumObservation])
+    .openapi("ReconciliationHistoricalObservations"),
+};
 export const candidateInputSchema = z
   .union(
     (["categories", "pre_categories"] as const).flatMap((model) =>
-      Object.entries({
-        ...inputSchemas,
-        observations: z.union([
-          model === "categories" ? cardObservation : historicalCardObservation,
-          erratumObservation,
-        ]),
-      }).map(([kind, schema]) =>
+      Object.entries({ ...namedInputs, observations: observations[model] }).map(([kind, schema]) =>
         z.strictObject({
           contract: z.literal("card-keepr-reconciliation-input-partition@1"),
           ingestion_run_id: identifier,

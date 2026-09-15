@@ -126,4 +126,4 @@ export { readSourceRecordManifest } from "./source-record-manifest";
 
 export { cleanupSchema, captureCleanupRoute, stagingCleanupRoute, retryCleanupRoute } from "./cleanup-http-contract";
 
-export { operationalDiagnosticsSchema } from "./http-evidence-schema";
+export { operationalDiagnosticsSchema, evidenceStatusSchema } from "./http-evidence-schema";

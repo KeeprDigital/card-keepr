@@ -381,6 +381,10 @@ decisions retain their required category, applicability and policy fields.
 
 ## Historical run operations
 
+All 16 retained run operations use shared Hono registrations and the generated
+administration specification. Its historical tags distinguish this surface from
+ordinary per-game candidate preparation and whole-candidate publication.
+
 New POST `/v1/ingestion-runs/:run/approval` intents return HTTP `410`
 `run_approval_retired` without an administration claim, reservation, export or
 publication. The CLI reports retirement locally and sends no request. Aggregate
@@ -395,6 +399,28 @@ original candidate, approval, predecessor and ownership/recovery fences. It
 never acquires a new historical reservation. Inspection, historical rejection,
 recovery and reference-safe cleanup remain supported where their retained
 records authorize them.
+
+Pending administration responses include `claimed_at` only when an actual claim
+exists; historical reservation observation can omit it. A retry claim can omit
+`run_id` until its child is allocated. Rejection, retry and publication-cleanup
+replay their original receipts and retained problems before checking mutable
+eligibility or deadlines. Later changes to the child do not rewrite the parent's
+retry receipt. Historical approval fallback remains usable without a modern
+idempotency row.
+
+Run inspection preserves either evidence-backed status or the historical run
+shape, which has no contract discriminator and omits `export_manifest_digest`
+when absent. Candidate inspection checks retained bytes and header integrity,
+including older Card and Printing definitions. Fresh retry of an obsolete
+definition fails `409 reconciliation_definition_changed`.
+
+Reconciliation pause, resume and abandon accept nonnegative safe JSON integer
+`generation`. The CLI converts canonical decimal options once. Earlier string
+wire values were converted to numbers before intent was retained, so numeric
+commands replay those original action receipts. Status retains
+`definition_pins_json` as a string, admission flags as SQL `0`/`1`, nullable
+digests and literal phase cursor properties. Inputs, partitions and text remain
+fully inspectable through their bounded, digest-verified pages and chunks.
 
 `run reconcile` never executes reconciliation inline in the HTTP request. Its
 request is exactly `{expected_current_revision_id, idempotency_key}` and is
