@@ -72,7 +72,11 @@ it prints the required confirmation and exits `3` without applying that mutation
 Review the resolved target and copy the complete confirmation JSON, unchanged,
 into `EXACT_CONFIRMATION`. Rerun that same command with
 `--confirm "$EXACT_CONFIRMATION"`. Obtain a fresh confirmation for each distinct
-operation below; a changed current revision requires a fresh inspection.
+operation below. For a new request, inspect a changed current revision before
+proceeding. An exact acknowledged request remains replayable after later
+publication with its original arguments and confirmation, provided the observed
+production target has not changed. A replacement database binding changes that
+target and requires reviewing the newly resolved confirmation.
 
 With ingestion idle and recovery healthy, create a backup of the current revision:
 
@@ -92,6 +96,13 @@ Do not create a new identity to bypass an active attempt. The same key with a
 different request is rejected. After an ambiguous SQL import, the workflow starts
 a new Restore Generation on a clean disposable target; it does not import a second
 time into a possibly populated target.
+
+Create/retry exits `10` while its Workflow is pending or cannot currently be
+observed, `8` on dispatch failure or a completed structured failure, and `0` for
+verified completion. Inspect the output and attempt status: `status: complete`
+alone is not proof of a verified backup. Exact replay returns current observed
+status with the original Workflow identity and observed time, including when the
+attempt already has a retry child.
 
 A failed attempt is immutable. Only the latest failed leaf may be retried, using
 its exact ID and current attempt digest, with a new idempotency key:

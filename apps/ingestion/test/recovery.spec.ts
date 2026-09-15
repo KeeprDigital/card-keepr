@@ -11,7 +11,10 @@ import * as publishedCatalogueQueries from "./query-helpers/published-catalogue"
 import * as backupRecoveryQueries from "./query-helpers/backup-recovery";
 import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
+import worker from "../src/index";
+import adminDocument from "../../../contracts/admin-openapi.json";
+import { assertHttpResponse } from "../../../test/support/http-contract";
 import {
   acceptCatalogueRecovery,
   beginCatalogueRecovery,
@@ -464,6 +467,31 @@ test("exact accepted replay remains immutable after a later publication", async 
     },
     provider,
   );
+  const beginReplayBody = {
+    environment: "production",
+    recovery_id: "recovery-accepted-replay",
+    method: "time_travel",
+    target_revision_id: "catrev_spine_000",
+    target_bookmark: "bookmark-target",
+    target_digest: digest,
+    backup_attempt_id: "recovery-source",
+    expected_current_revision_id: "catrev_spine_000",
+    idempotency_key: "begin-accepted-replay",
+  };
+  const http = (path: string, body?: Record<string, unknown>) =>
+    exports.default.fetch(
+      new Request(`https://card-keepr.invalid${path}`, {
+        method: body === undefined ? "GET" : "POST",
+        headers: { authorization: "Bearer vitest-administration-key", "content-type": "application/json" },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      }),
+    );
+  const begunAgain = await http("/v1/recoveries", beginReplayBody);
+  expect(begunAgain.status).toBe(201);
+  expect(await begunAgain.clone().json()).toMatchObject({
+    state: "awaiting_acceptance",
+    verification: completeVerification,
+  });
   const acceptance = {
     expectedRestoredRevisionId: "catrev_spine_000",
     targetDigest: digest,
@@ -489,6 +517,81 @@ test("exact accepted replay remains immutable after a later publication", async 
       acceptance,
     ),
   ).resolves.toEqual(accepted);
+  const acceptedAgain = await http("/v1/recoveries/recovery-accepted-replay/acceptance", {
+    expected_restored_revision_id: acceptance.expectedRestoredRevisionId,
+    target_digest: acceptance.targetDigest,
+    confirmation_recovery_id: acceptance.confirmationRecoveryId,
+    idempotency_key: acceptance.idempotencyKey,
+  });
+  expect(acceptedAgain.status).toBe(200);
+  expect(await acceptedAgain.clone().json()).toEqual(accepted);
+  const verifiedAgain = await http("/v1/recoveries/recovery-accepted-replay/verification", {
+    target_digest: digest,
+    idempotency_key: "verify-accepted-replay",
+  });
+  expect(verifiedAgain.status).toBe(200);
+  expect(await verifiedAgain.clone().json()).toEqual(accepted);
+  const inspected = await http("/v1/recoveries/recovery-accepted-replay");
+  expect(inspected.status).toBe(200);
+  expect(await inspected.clone().json()).toEqual(accepted);
+  const verifyBody = { target_digest: digest, idempotency_key: "verify-accepted-replay" };
+  const acceptBody = {
+    expected_restored_revision_id: acceptance.expectedRestoredRevisionId,
+    target_digest: acceptance.targetDigest,
+    confirmation_recovery_id: acceptance.confirmationRecoveryId,
+    idempotency_key: acceptance.idempotencyKey,
+  };
+  const targetPath = "/v1/administration-targets/resolve";
+  for (const recovery of [
+    { action: "begin", input: beginReplayBody },
+    { action: "verify", recovery_id: beginReplayBody.recovery_id, input: verifyBody },
+    { action: "accept", recovery_id: beginReplayBody.recovery_id, input: acceptBody },
+  ]) {
+    const resolved = await http(targetPath, { recovery });
+    expect(resolved.status, await resolved.clone().text()).toBe(200);
+    await assertHttpResponse(adminDocument, targetPath, "post", resolved);
+    const document = await resolved.json<{ resolved_target: { production_target: unknown; confirmation: string } }>();
+    expect(document.resolved_target.confirmation).toBe(
+      JSON.stringify({
+        production_target: document.resolved_target.production_target,
+        ...(recovery.action === "begin" ? {} : { recovery_id: recovery.recovery_id }),
+        ...recovery.input,
+      }),
+    );
+    const changed = await http(targetPath, {
+      recovery: {
+        ...recovery,
+        input: { ...recovery.input, target_digest: "b".repeat(64) },
+      },
+    });
+    expect(changed.status).toBe(409);
+    expect(await changed.json()).toMatchObject({ code: "idempotency_key_reused" });
+  }
+  const fresh = await http(targetPath, {
+    recovery: {
+      action: "begin",
+      input: {
+        ...beginReplayBody,
+        recovery_id: "fresh-stale",
+        idempotency_key: "fresh-stale",
+      },
+    },
+  });
+  expect(fresh.status).toBe(409);
+  expect(await fresh.json()).toMatchObject({ code: "production_target_mismatch" });
+  const changedConfirmation = await http(targetPath, {
+    recovery: {
+      action: "accept",
+      recovery_id: beginReplayBody.recovery_id,
+      input: { ...acceptBody, confirmation_recovery_id: "another-recovery" },
+    },
+  });
+  expect(changedConfirmation.status).toBe(409);
+  expect(await changedConfirmation.json()).toMatchObject({ code: "idempotency_key_reused" });
+  await assertHttpResponse(adminDocument, "/v1/recoveries", "post", begunAgain);
+  await assertHttpResponse(adminDocument, "/v1/recoveries/{recovery}", "get", inspected);
+  await assertHttpResponse(adminDocument, "/v1/recoveries/{recovery}/verification", "post", verifiedAgain);
+  await assertHttpResponse(adminDocument, "/v1/recoveries/{recovery}/acceptance", "post", acceptedAgain);
   await expect(
     publishedCatalogueQueries.readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB).first(),
   ).resolves.toEqual({
@@ -554,7 +657,7 @@ test.each(["revision", "backup"])(
   },
 );
 
-test("inspect observes a paused restore without mutation and a second begin reports recovery_exists", async () => {
+test("inspect and HTTP confirmation preserve a paused restore while a second begin reports recovery_exists", async () => {
   let markRestoreStarted: () => void = () => {};
   const restoreStarted = new Promise<void>((resolve) => {
     markRestoreStarted = resolve;
@@ -576,35 +679,79 @@ test("inspect observes a paused restore without mutation and a second begin repo
     recoveryInput("recovery-paused", "begin-paused"),
     provider,
   );
-  await restoreStarted;
-  await expect(
-    inspectCatalogueRecovery(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, "recovery-paused"),
-  ).resolves.toMatchObject({ state: "restoring", failure: null });
-  await expect(
-    beginCatalogueRecovery(
-      catalogueStore(testEnv.CATALOGUE_DB),
-      testEnv.BACKUPS,
-      recoveryInput("recovery-paused", "begin-paused"),
-      provider,
-    ),
-  ).resolves.toMatchObject({ state: "restoring", failure: null });
-  expect(restoreCalls).toBe(1);
-  await expect(
-    beginCatalogueRecovery(
-      catalogueStore(testEnv.CATALOGUE_DB),
-      testEnv.BACKUPS,
-      recoveryInput("recovery-second-unlinked", "begin-second-unlinked"),
-      recoveryProvider(),
-    ),
-  ).rejects.toMatchObject({ code: "recovery_exists" });
-  await expect(
-    backupRecoveryQueries.readCatalogueRecoveryOperationsStateFailureCode(testEnv.CATALOGUE_DB).first(),
-  ).resolves.toEqual({ state: "restoring", failure_code: null });
-  releaseRestore?.({
-    bookmark: "bookmark-restored",
-    previousBookmark: "bookmark-undo",
-  });
-  await beginning;
+  try {
+    await restoreStarted;
+    await expect(
+      inspectCatalogueRecovery(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, "recovery-paused"),
+    ).resolves.toMatchObject({ state: "restoring", failure: null });
+    await expect(
+      beginCatalogueRecovery(
+        catalogueStore(testEnv.CATALOGUE_DB),
+        testEnv.BACKUPS,
+        recoveryInput("recovery-paused", "begin-paused"),
+        provider,
+      ),
+    ).resolves.toMatchObject({ state: "restoring", failure: null });
+    expect(restoreCalls).toBe(1);
+    await expect(
+      beginCatalogueRecovery(
+        catalogueStore(testEnv.CATALOGUE_DB),
+        testEnv.BACKUPS,
+        recoveryInput("recovery-second-unlinked", "begin-second-unlinked"),
+        recoveryProvider(),
+      ),
+    ).rejects.toMatchObject({ code: "recovery_exists" });
+    await expect(
+      backupRecoveryQueries.readCatalogueRecoveryOperationsStateFailureCode(testEnv.CATALOGUE_DB).first(),
+    ).resolves.toEqual({ state: "restoring", failure_code: null });
+    const journalKey = "recovery-journals/recovery-paused.json";
+    const journalBefore = await (await testEnv.BACKUPS.get(journalKey))?.text();
+    expect(journalBefore).toBeDefined();
+    const fenceBefore = await ingestionQueries
+      .readOperationStateRecoveryHealthActiveRecoveryId(testEnv.CATALOGUE_DB)
+      .first();
+    const targetPath = "/v1/administration-targets/resolve";
+    const preview = await exports.default.fetch(
+      new Request(`https://card-keepr.invalid${targetPath}`, {
+        method: "POST",
+        headers: { authorization: "Bearer vitest-administration-key", "content-type": "application/json" },
+        body: JSON.stringify({
+          recovery: {
+            action: "begin",
+            input: {
+              environment: "production",
+              recovery_id: "recovery-paused",
+              method: "time_travel",
+              target_revision_id: "catrev_spine_000",
+              target_bookmark: "bookmark-target",
+              target_digest: digest,
+              backup_attempt_id: "recovery-source",
+              expected_current_revision_id: "catrev_spine_000",
+              idempotency_key: "begin-paused-preview-unused",
+            },
+          },
+        }),
+      }),
+    );
+    expect(preview.status, await preview.clone().text()).toBe(200);
+    await assertHttpResponse(adminDocument, targetPath, "post", preview);
+    await expect(
+      backupRecoveryQueries.readCatalogueRecoveryOperationsStateFailureCode(testEnv.CATALOGUE_DB).first(),
+    ).resolves.toEqual({ state: "restoring", failure_code: null });
+    expect(await (await testEnv.BACKUPS.get(journalKey))?.text()).toBe(journalBefore);
+    await expect(
+      ingestionQueries.readOperationStateRecoveryHealthActiveRecoveryId(testEnv.CATALOGUE_DB).first(),
+    ).resolves.toEqual(fenceBefore);
+    expect(restoreCalls).toBe(1);
+  } finally {
+    releaseRestore?.({
+      bookmark: "bookmark-restored",
+      previousBookmark: "bookmark-undo",
+    });
+    // Settle the original restore even when a preview assertion fails.
+    await beginning.catch(() => undefined);
+  }
+  await expect(beginning).resolves.toMatchObject({ state: "validating", failure: null });
   await verifyCatalogueRecovery(
     catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
@@ -626,6 +773,70 @@ test("inspect observes a paused restore without mutation and a second begin repo
     observedAt: "2026-08-05T09:46:00.000Z",
     boundDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
   });
+});
+
+test("recovery HTTP declares provider failure and keeps subsequent mutation fenced", async () => {
+  const providerBase = `https://api.cloudflare.com/client/v4/accounts/${testEnv.CLOUDFLARE_ACCOUNT_ID}/d1/database/${testEnv.CATALOGUE_D1_DATABASE_ID}/time_travel`;
+  let restoreCalls = 0;
+  // Control only the provider HTTP response; the Worker, D1 and R2 stay real.
+  const provider = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    if (input === `${providerBase}/bookmark` && init?.method === "GET")
+      return Response.json({ success: true, result: { bookmark: "bookmark-current" } });
+    if (input === `${providerBase}/restore?bookmark=bookmark-target` && init?.method === "POST") {
+      restoreCalls += 1;
+      return Response.json({ success: false, errors: [{ code: 9000 }] }, { status: 503 });
+    }
+    throw new Error("Unexpected recovery provider request");
+  });
+  const send = (path: string, body: Record<string, unknown>) =>
+    worker.fetch(
+      new Request(`https://card-keepr.invalid${path}`, {
+        method: "POST",
+        headers: { authorization: "Bearer vitest-administration-key", "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      testEnv,
+    );
+  try {
+    const response = await send("/v1/recoveries", {
+      environment: "production",
+      recovery_id: "recovery-http-failure",
+      method: "time_travel",
+      target_revision_id: "catrev_spine_000",
+      target_bookmark: "bookmark-target",
+      target_digest: digest,
+      backup_attempt_id: "recovery-source",
+      expected_current_revision_id: "catrev_spine_000",
+      idempotency_key: "begin-http-failure",
+    });
+    expect(response.status, await response.clone().text()).toBe(502);
+    expect(await response.clone().json()).toMatchObject({ status: 502, code: "recovery_failed" });
+    expect(response.headers.get("content-type")).toBe("application/problem+json");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(restoreCalls).toBe(1);
+    await expect(
+      inspectCatalogueRecovery(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, "recovery-http-failure"),
+    ).resolves.toMatchObject({ state: "failed", failure: { code: "recovery_failed" } });
+    await expect(
+      ingestionQueries.readOperationStateRecoveryHealthActiveRecoveryId(testEnv.CATALOGUE_DB).first(),
+    ).resolves.toEqual({
+      recovery_health: "blocked",
+      active_recovery_id: "recovery-http-failure",
+      recovery_restore_guard: "blocked",
+    });
+    const blocked = await send("/v1/backups", {
+      expected_current_revision_id: "catrev_spine_000",
+      idempotency_key: "backup-after-http-recovery-failure",
+    });
+    expect(blocked.status).toBe(409);
+    expect(await blocked.clone().json()).toMatchObject({ code: "backup_in_progress" });
+    await assertHttpResponse(adminDocument, "/v1/backups", "post", blocked);
+    expect(restoreCalls).toBe(1);
+    await assertHttpResponse(adminDocument, "/v1/recoveries", "post", response);
+  } finally {
+    provider.mockRestore();
+    await resetMaintenanceOperation(testEnv.CATALOGUE_DB).run();
+  }
 });
 
 test("an ambiguous Time Travel response rehydrates a fail-closed journal", async () => {
@@ -1042,9 +1253,8 @@ test("an ambiguous source writer prevents recovery despite absent bytes and elap
   await failUnfinishedMaintenanceRecoveries(testEnv.CATALOGUE_DB).run();
   await resetMaintenanceOperation(testEnv.CATALOGUE_DB).run();
   const { seedRunFixtureStatement } = await import("./query-helpers/run-events");
-  const { beginEvidenceObjectWrite } = await import(
-    "../../../src/catalogue/source-evidence/evidence-cleanup-repository"
-  );
+  const { beginEvidenceObjectWrite } =
+    await import("../../../src/catalogue/source-evidence/evidence-cleanup-repository");
   await seedRunFixtureStatement(testEnv.CATALOGUE_DB, {
     id: "recovery-unknown-writer",
     state: "failed",

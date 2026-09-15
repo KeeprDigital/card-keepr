@@ -10,8 +10,18 @@ export function administrationPresentation(document, status = 200) {
     contract: "card-keepr-cli-presentation@1",
     document,
     text: formatAdministrationResult(document),
-    exit_code: gameCandidateExitCode(document) ?? publicationExitCode(document) ?? (incomplete ? 10 : 0),
+    exit_code:
+      backupExitCode(document) ??
+      gameCandidateExitCode(document) ??
+      publicationExitCode(document) ??
+      (incomplete ? 10 : 0),
   };
+}
+function backupExitCode(document) {
+  if (document.contract !== "card-keepr-catalogue-backup-workflow@1") return null;
+  if (document.status === "dispatch_failed") return 8;
+  if (document.status !== "complete") return 10;
+  return document.output?.contract === "card-keepr-catalogue-backup@1" && document.output.verified === true ? 0 : 8;
 }
 function gameCandidateExitCode(document) {
   if (document.contract === "card-keepr-game-preparation-acceptance@1") return 10;
@@ -35,6 +45,14 @@ function publicationExitCode(document) {
   return document.state === "published" ? 0 : 10;
 }
 function formatAdministrationResult(document) {
+  if (document.contract === "card-keepr-catalogue-backup-workflow@1") {
+    const output = document.output;
+    if (output?.contract === "card-keepr-catalogue-backup-workflow-failure@1")
+      return `Backup ${document.idempotency_key}: failed (${output.code}); ${output.detail}`;
+    if (output?.contract === "card-keepr-catalogue-backup@1" && output.verified === true)
+      return `Backup ${document.idempotency_key}: verified for Catalogue Revision ${output.catalogue_revision_id}.`;
+    return `Backup ${document.idempotency_key}: ${document.status}; inspect the attempt for recovery evidence.`;
+  }
   if (document.contract === "card-keepr-game-preparation-acceptance@1")
     return `Candidate ${document.id}: ${document.action} accepted; inspect ${document.links.status} for current status.`;
   if (document.contract === "card-keepr-game-candidate@1")

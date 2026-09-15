@@ -25,6 +25,17 @@ type BackupWorkflowRequest = CatalogueBackupWorkflowParams &
     linked_attempt_id: string | null;
   }>;
 
+/** Target resolution observes the original intent without dispatching work. */
+export async function acknowledgedCatalogueBackupRequest(
+  database: CatalogueStore,
+  input: Omit<CatalogueBackupWorkflowParams, "observed_at">,
+): Promise<boolean> {
+  const retained = await workflowRequest(database, input.idempotency_key);
+  if (retained === null) return false;
+  assertExactReplay(retained, canonicalJson(input));
+  return true;
+}
+
 export async function startOrObserveCatalogueBackupWorkflow(
   database: CatalogueStore,
   workflow: Workflow<CatalogueBackupWorkflowParams>,

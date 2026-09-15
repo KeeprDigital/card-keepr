@@ -116,7 +116,7 @@ test("target resolution uses typed choices and search repair requires exact iden
   expect(
     validate({ recovery_id: "recovery", target_digest: "a".repeat(64), expected_restored_revision_id: "catrev_old" }),
     JSON.stringify(validate.errors),
-  ).toBe(true);
+  ).toBe(false);
   expect(validate({ recovery_id: "recovery" })).toBe(false);
   expect(validate({ expected_current_revision_id: "catrev_current", arbitrary: true })).toBe(false);
   const repair = request("/v1/catalogue-search-materialization/repair");
