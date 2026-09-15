@@ -5,6 +5,7 @@ import { assertIdentifier, type StartEvidenceRunRequest } from "./source-evidenc
 import { parseSnapshot, reparseSnapshot } from "./source-evidence-parsing";
 import {
   extendRunRequestCapacity,
+  pendingEvidenceHostShardsStatement,
   retryEvidenceRun,
   showEvidenceRun,
   startEvidenceRun,
@@ -13,6 +14,17 @@ import type { ObservationSetRow, SnapshotRow } from "./source-evidence-repositor
 
 export type { StartEvidenceRunRequest };
 export { extendRunRequestCapacity, retryEvidenceRun, showEvidenceRun, startEvidenceRun };
+
+/** One next shard per host, with bounded results independent of request count. */
+export async function pendingEvidenceHostShards(database: CatalogueStore, runId: string) {
+  const result = await pendingEvidenceHostShardsStatement(database, runId).all<{
+    hostname: string;
+    minimum_sequence_number: number;
+    pending_request_count: number;
+    pending_shard_count: number;
+  }>();
+  return result.results;
+}
 
 export async function reparseSourceSnapshot(
   database: CatalogueStore,

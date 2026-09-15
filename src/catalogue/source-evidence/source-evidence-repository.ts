@@ -1024,9 +1024,8 @@ export async function pendingEvidenceRequestPage(
 
 export const evidenceHostShardRequestCapacity = 200;
 
-/** One next shard per host, with bounded results independent of request count. */
-export async function pendingEvidenceHostShards(database: CatalogueStore, runId: string) {
-  const result = await repositoryStatements(database)
+export function pendingEvidenceHostShardsStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
     .prepare(
       `WITH shards AS (
       SELECT ${sourceRequestHostnameSql("url")} AS hostname,
@@ -1044,14 +1043,7 @@ export async function pendingEvidenceHostShards(database: CatalogueStore, runId:
     FROM ranked WHERE position = 1
     ORDER BY minimum_sequence_number, hostname LIMIT 100`,
     )
-    .bind(runId)
-    .all<{
-      hostname: string;
-      minimum_sequence_number: number;
-      pending_request_count: number;
-      pending_shard_count: number;
-    }>();
-  return result.results;
+    .bind(runId);
 }
 
 /** A Workflow can act only while its parent and its own scope still own the run. */

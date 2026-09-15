@@ -22,6 +22,7 @@ export type { IngestionEvidenceRow } from "./ingestion-run-repository";
 export { evidenceInspectionOptions, sourceEvidenceRoutes } from "./routes";
 export {
   extendRunRequestCapacity,
+  pendingEvidenceHostShards,
   reparseSourceSnapshot,
   retryEvidenceRun,
   type StartEvidenceRunRequest,
@@ -86,7 +87,6 @@ export {
   pauseEvidenceRunForWorkflowRecovery,
   pauseEvidenceRunOnOwnerRequest,
   pendingEvidenceRequestPage,
-  pendingEvidenceHostShards,
   evidenceHostShardRequestCapacity,
   pendingEvidenceRequests,
   persistOfficialSourceCollectionPlan,
