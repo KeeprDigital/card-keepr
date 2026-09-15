@@ -101,6 +101,14 @@ const fullOnePieceAdapter = createBandaiAdapter(
 const p001CatalogueUrl = "https://en.onepiece-cardgame.com/cardlist/?freewords=P-001";
 const p001EventUrl = "https://en.onepiece-cardgame.com/events/2023/championship/store_championship_wave1.php";
 const p001TrophyUrl = "https://en.onepiece-cardgame.com/images/events/2023/championship/prize/P-001.png?v2";
+const pilotCatalogueNumbers = ["P-001", "ST01-001", "OP16-002", "OP16-019", "OP16-021"];
+const pilotCatalogueUrls = new Map(
+  pilotCatalogueNumbers.map((number) => [`https://en.onepiece-cardgame.com/cardlist/?freewords=${number}`, number]),
+);
+const pilotSurfaces = new Map([
+  ...[...pilotCatalogueUrls].map(([url, number]) => [`${number.toLowerCase()}-catalogue`, url] as const),
+  ["store-championship-p001", p001EventUrl],
+]);
 export const onePieceCoverageContracts = {
   "p-001-catalogue": {
     description:
@@ -117,6 +125,19 @@ export const onePieceCoverageContracts = {
     cardIdentities: [{ kind: "card_number", value: "P-001" }],
     requiredSurfaces: ["p-001-catalogue", "store-championship-p001"],
     requestUrlForSurface: (surface: string) => (surface === "p-001-catalogue" ? p001CatalogueUrl : p001EventUrl),
+  },
+  "five-card-pilot-and-corroboration": {
+    description:
+      "Complete English P-001, ST01-001, OP16-002, OP16-019 and OP16-021 catalogue searches and fronts, plus separate P-001 Store Championship corroboration. Absence applies only to these searches; this pilot is not full-source coverage.",
+    printingAdmission: "owner_review" as const,
+    cardIdentities: pilotCatalogueNumbers.map((value) => ({ kind: "card_number", value })),
+    requiredSurfaces: [...pilotSurfaces.keys()],
+    requestUrlForSurface(surface: string) {
+      const url = pilotSurfaces.get(surface);
+      if (url === undefined)
+        throw new AdapterParseFailure("Unknown One Piece pilot surface.", { category: "configuration" });
+      return url;
+    },
   },
 };
 function verifyP001Corroboration(bytes: Uint8Array) {
@@ -136,19 +157,21 @@ export const onePieceAdapter = {
       verifyP001Corroboration(bytes);
       return [];
     }
-    if (context.url !== p001CatalogueUrl) return fullOnePieceAdapter.parse(context, bytes);
-    return parseP001Catalogue(bytes).observations;
+    const number = pilotCatalogueUrls.get(context.url);
+    if (number === undefined) return fullOnePieceAdapter.parse(context, bytes);
+    return parseScopedCatalogue(bytes, context.url, number).observations;
   },
   discoverRequests(bytes: Uint8Array, context: Parameters<typeof fullOnePieceAdapter.parse>[0]) {
     if (context.url === p001EventUrl) {
       verifyP001Corroboration(bytes);
       return [{ role: "image" as const, url: p001TrophyUrl, headers: { accept: "image/png" } }];
     }
-    if (context.url !== p001CatalogueUrl) return fullOnePieceAdapter.discoverRequests(bytes, context);
-    return parseP001Catalogue(bytes).observations.flatMap((observation) => {
+    const number = pilotCatalogueUrls.get(context.url);
+    if (number === undefined) return fullOnePieceAdapter.discoverRequests(bytes, context);
+    return parseScopedCatalogue(bytes, context.url, number).observations.flatMap((observation) => {
       if (!("appearance_evidence" in observation)) return [];
       const images = observation.appearance_evidence?.images;
-      if (!Array.isArray(images)) throw new AdapterParseFailure("P-001 image inventory is missing.");
+      if (!Array.isArray(images)) throw new AdapterParseFailure(`${number} image inventory is missing.`);
       return images.map((image) => ({
         role: "image" as const,
         url: String(image.source_url),
@@ -157,20 +180,20 @@ export const onePieceAdapter = {
     });
   },
 };
-function parseP001Catalogue(bytes: Uint8Array) {
+function parseScopedCatalogue(bytes: Uint8Array, url: string, number: string) {
   const html = decodeAdapterUtf8(bytes);
-  const parsed = parseOnePieceBandaiCardListV1(html, p001CatalogueUrl, true);
+  const parsed = parseOnePieceBandaiCardListV1(html, url, true);
   if (
     parsed.observations.length === 0 ||
-    parsed.observations.some((o) => !("card" in o) || o.card?.official_identity.value !== "P-001")
+    parsed.observations.some((o) => !("card" in o) || o.card?.official_identity.value !== number)
   )
-    throw new AdapterParseFailure("P-001 catalogue contains missing or out-of-scope card identities.");
+    throw new AdapterParseFailure(`${number} catalogue contains missing or out-of-scope card identities.`);
   const locators = parsed.observations.map((o) => ("identity_evidence" in o ? o.identity_evidence?.locator : null));
   if (
-    locators.some((x) => typeof x !== "string" || !/^P-001(?:_p[0-9]+)?$/u.test(x)) ||
+    locators.some((x) => typeof x !== "string" || !new RegExp(`^${number}(?:_p[0-9]+)?$`, "u").test(x)) ||
     new Set(locators).size !== locators.length
   )
-    throw new AdapterParseFailure("P-001 catalogue has duplicate or invalid source locators.");
+    throw new AdapterParseFailure(`${number} catalogue has duplicate or invalid source locators.`);
   return parsed;
 }
 

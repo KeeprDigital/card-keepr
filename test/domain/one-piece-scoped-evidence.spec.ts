@@ -1,4 +1,4 @@
-import { onePieceAdapter } from "../../src/catalogue/adapters/one-piece-adapter";
+import { onePieceAdapter, onePieceCoverageContracts } from "../../src/catalogue/adapters/one-piece-adapter";
 import { AdapterParseFailure } from "../../src/catalogue/adapters/adapter-parse-failure";
 import { URL } from "node:url";
 import { readFileSync } from "node:fs";
@@ -114,6 +114,54 @@ test("a structurally complete Bandai six-record scope can report a disappeared s
   };
   expect(onePieceAdapter.parse(context, new TextEncoder().encode(original))).toHaveLength(7);
   expect(onePieceAdapter.parse(context, new TextEncoder().encode(reduced))).toHaveLength(6);
+});
+
+test("the complete Bandai Stage search discovers only its two referenced fronts", () => {
+  const bytes = readFileSync(
+    new URL("../../acceptance/fixtures/real-sources/2026-09-15-limitless/raw/bandai-op16-021.body", import.meta.url),
+  );
+  const context = {
+    url: "https://en.onepiece-cardgame.com/cardlist/?freewords=OP16-021",
+    mediaType: "text/html",
+    requestId: "one-piece-en:op16-021-catalogue",
+  };
+  expect(onePieceAdapter.parse(context, bytes)).toMatchObject([
+    { identity_evidence: { locator: "OP16-021" } },
+    { identity_evidence: { locator: "OP16-021_p1" } },
+  ]);
+  expect(onePieceAdapter.discoverRequests(bytes, context)).toEqual([
+    {
+      role: "image",
+      url: "https://en.onepiece-cardgame.com/images/cardlist/card/OP16-021.png?260828",
+      headers: { accept: "image/png" },
+    },
+    {
+      role: "image",
+      url: "https://en.onepiece-cardgame.com/images/cardlist/card/OP16-021_p1.png?260828",
+      headers: { accept: "image/png" },
+    },
+  ]);
+});
+
+test("the named Bandai pilot requires every complete search and keeps separate P-001 event corroboration", () => {
+  const coverage = onePieceCoverageContracts["five-card-pilot-and-corroboration"];
+  expect(coverage.printingAdmission).toBe("owner_review");
+  expect(coverage.cardIdentities.map((identity) => identity.value)).toEqual([
+    "P-001",
+    "ST01-001",
+    "OP16-002",
+    "OP16-019",
+    "OP16-021",
+  ]);
+  expect(coverage.requiredSurfaces.map(coverage.requestUrlForSurface)).toEqual([
+    "https://en.onepiece-cardgame.com/cardlist/?freewords=P-001",
+    "https://en.onepiece-cardgame.com/cardlist/?freewords=ST01-001",
+    "https://en.onepiece-cardgame.com/cardlist/?freewords=OP16-002",
+    "https://en.onepiece-cardgame.com/cardlist/?freewords=OP16-019",
+    "https://en.onepiece-cardgame.com/cardlist/?freewords=OP16-021",
+    "https://en.onepiece-cardgame.com/events/2023/championship/store_championship_wave1.php",
+  ]);
+  expect(() => coverage.requestUrlForSurface("unselected-card")).toThrow("Unknown One Piece pilot surface");
 });
 
 for (const url of [

@@ -88,7 +88,10 @@ export async function nativeCandidateAtRevision(
     );
     if (partition.kind === "printings") {
       const printing = value as CataloguePrinting;
-      const identity = await nativePriorPrintingIdentity(db, candidate.preparation_id, printing);
+      const locator = cursor.locator === undefined ? undefined : printing.locator_evidence?.[cursor.locator];
+      if (cursor.locator !== undefined && !locator)
+        throw new Error("Native prior locator continuation changed its retained identity.");
+      const identity = await nativePriorPrintingIdentity(db, candidate.preparation_id, printing, locator);
       if (cursor.locator === undefined) {
         await seed.printing(printing, identity);
         if (identity?.locators.length) {

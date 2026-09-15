@@ -1,0 +1,2 @@
+# Preserve original response entity bytes and serialized headers.
+raw/* -text

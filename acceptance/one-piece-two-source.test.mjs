@@ -29,7 +29,7 @@ import { onePieceEvidenceMetrics } from "./helpers/one-piece-evidence-metrics.mj
 
 // Actual retained HTTP bodies. External HTTP and Cloudflare control plane are
 // replayed locally; collection, parsing and all owner operations are shipped code.
-test("retained P-001: owner collects every declared Bandai record through native workflows", async (t) => {
+test("retained One Piece: expand the P-001 publication through complete five-Card source scopes", async (t) => {
   const started = performance.now();
   const initialCpu = process.cpuUsage();
   const directory = await mkdtemp(join(tmpdir(), "keepr-real-one-piece-"));
@@ -39,12 +39,18 @@ test("retained P-001: owner collects every declared Bandai record through native
     encoding: "utf8",
   });
   assert.equal(replay.status, 0, replay.stderr);
+  const additionalPack = resolve("acceptance/fixtures/real-sources/2026-09-15-limitless");
   const manifest = JSON.parse(await readFile(join(pack, "manifest.json"), "utf8"));
+  const additionalManifest = JSON.parse(await readFile(join(additionalPack, "manifest.json"), "utf8"));
+  const retainedCaptures = [
+    ...manifest.captures.map((capture) => ({ capture, directory: pack })),
+    ...additionalManifest.captures.map((capture) => ({ capture, directory: additionalPack })),
+  ];
   const captures = new Map(
     await Promise.all(
-      manifest.captures.map(async (capture) => {
-        const bodyBytes = await readFile(join(pack, capture.body));
-        const headerBytes = await readFile(join(pack, capture.headers));
+      retainedCaptures.map(async ({ capture, directory }) => {
+        const bodyBytes = await readFile(join(directory, capture.body));
+        const headerBytes = await readFile(join(directory, capture.headers));
         assert.equal(createHash("sha256").update(bodyBytes).digest("hex"), capture.sha256);
         assert.equal(createHash("sha256").update(headerBytes).digest("hex"), capture.headersSha256);
         const headers = {};
@@ -95,7 +101,7 @@ test("retained P-001: owner collects every declared Bandai record through native
       const capture = captures.get(request.url);
       assert.ok(capture, `undeclared network request ${request.url}`);
       served.push(capture.id);
-      if (request.url.includes("en.onepiece-cardgame.com/cardlist/") && fault === "disappearance") {
+      if (request.url === "https://en.onepiece-cardgame.com/cardlist/?freewords=P-001" && fault === "disappearance") {
         const original = capture.bodyBytes.toString("utf8");
         const body = original
           .replace(/<dl class="modalCol" id="P-001_p6">[\s\S]*?<\/dl>/u, "")
@@ -105,7 +111,7 @@ test("retained P-001: owner collects every declared Bandai record through native
       }
       if (request.url.includes("onepiece.limitlesstcg.com") && fault === "outage")
         return new Response("Injected optional-source outage", { status: 503 });
-      if (request.url.includes("onepiece.limitlesstcg.com") && fault === "conflict") {
+      if (new URL(request.url).pathname === "/cards/en/P-001" && fault === "conflict") {
         const body = capture.bodyBytes.toString("utf8").replace(/[0-9]+ Cost/u, "999 Cost");
         assert.notEqual(body, capture.bodyBytes.toString("utf8"));
         return new Response(body, { headers: capture.headers });
@@ -195,10 +201,36 @@ test("retained P-001: owner collects every declared Bandai record through native
       ...Array.from({ length: 8 }, (_, i) => `limitless-p001-image-${i}`),
     ].sort(),
   );
-  const cli = async (args) => {
+  const cli = async (args, expectedCode = 0) => {
     const result = await runCli([...args, "--json"], environment);
-    assert.equal(result.code, 0, `${result.stdout} ${result.stderr}`);
+    assert.equal(result.code, expectedCode, `${result.stdout} ${result.stderr}`);
     return JSON.parse(result.stdout);
+  };
+  const abandon = async (candidate, intent) => {
+    const accepted = await cli(
+      [
+        "game-candidate",
+        "abandon",
+        "--candidate-id",
+        candidate.id,
+        "--generation",
+        String(candidate.generation),
+        "--idempotency-key",
+        intent,
+        "--yes",
+      ],
+      10,
+    );
+    assert.equal(accepted.contract, "card-keepr-game-preparation-acceptance@1");
+    assert.equal(accepted.id, candidate.id);
+    assert.equal(accepted.action, "abandon");
+    assert.equal(accepted.state, "accepted");
+    await waitForAdministrationDocument(
+      `/v1/game-candidates/${candidate.id}`,
+      (document) => document.state === "abandoned" || (document.state === "failed" ? JSON.stringify(document) : false),
+      environment,
+      worker,
+    );
   };
   const sealed = async (id) => {
     try {
@@ -219,18 +251,7 @@ test("retained P-001: owner collects every declared Bandai record through native
     }
   };
   for (const candidate of intakeCandidates.candidates) {
-    if (candidate.state === "sealed")
-      await cli([
-        "game-candidate",
-        "abandon",
-        "--candidate-id",
-        candidate.id,
-        "--generation",
-        String(candidate.generation),
-        "--idempotency-key",
-        "retain-intake-before-owner-decisions",
-        "--yes",
-      ]);
+    if (candidate.state === "sealed") await abandon(candidate, "retain-intake-before-owner-decisions");
   }
   const proposals = JSON.parse(proposed.stdout).proposals;
   const base = proposals.find((p) => p.source_lineage === "one-piece-en" && JSON.parse(p.reference)[0] === "P-001");
@@ -436,6 +457,127 @@ test("retained P-001: owner collects every declared Bandai record through native
   assert.equal(linkedInspection.warnings.filter((w) => w.code === "entity_proposal_excluded").length, 0);
   const linkedPublication = await publishNativeCollection(linkedInspection, "linked-appearances", environment, worker);
   let finalPublication = linkedPublication;
+  await writeFile(planPath, await readFile("docs/examples/one-piece-five-card-plan.json"));
+  const collectPilot = async (intent) => {
+    const collection = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", intent]);
+    await cli(["source", "resume", "--run-id", collection.id]);
+    await sealed(collection.id);
+    return inspectNativeCollection(collection.id, environment);
+  };
+  const pilotIntake = await collectPilot("five-card-pilot-intake");
+  assert.deepEqual(
+    pilotIntake.records.printings.map((printing) => printing.id).sort(),
+    [...printingIds.values(), winnerPrintingId].sort(),
+    "new evidence cannot publish unadmitted entities or replace existing P-001 identities",
+  );
+  const pilotEvidence = await cli(["source", "show", "--run-id", pilotIntake.run_id]);
+  assert.equal(pilotEvidence.snapshots.length, 47);
+  for (const snapshot of pilotEvidence.snapshots)
+    assert.equal(snapshot.content.digest, captures.get(snapshot.request.url).sha256);
+  for (const candidate of pilotIntake.candidates) await abandon(candidate, "review-five-card-intake");
+
+  const pilotNumbers = ["ST01-001", "OP16-002", "OP16-019", "OP16-021"];
+  const newProposals = (await cli(["entity-proposal", "list", "--game", "one-piece"])).proposals.filter((proposal) =>
+    pilotNumbers.some((number) => JSON.parse(proposal.reference)[0].includes(number)),
+  );
+  assert.equal(newProposals.length, 11);
+  const decidePilot = async (proposal, action, key, target, rationale) => {
+    assert.ok(proposal, key);
+    await writeFile(
+      decisionPath,
+      JSON.stringify({
+        expected_generation: "0",
+        idempotency_key: key,
+        ...target,
+        rationale,
+        exception: {
+          scope: ["identity"],
+          attestation:
+            "Replay of the retained 2026-09-15 original-image comparison: artwork, crop, frame, printed number and gameplay content were inspected. No finish, reverse-face, individual-copy identity or physical-stock authentication inference.",
+        },
+      }),
+    );
+    return cli(["entity-proposal", action, "--proposal-id", proposal.id, "--decision", decisionPath, "--yes"]);
+  };
+  const pilotCardIds = new Map();
+  const pilotPrintingIds = new Map();
+  for (const number of pilotNumbers) {
+    const proposal = newProposals.find(
+      (entry) => entry.source_lineage === "one-piece-en" && JSON.parse(entry.reference)[0] === number,
+    );
+    const decision = await decidePilot(
+      proposal,
+      "admit",
+      `pilot-base-${number}`,
+      {},
+      `The complete Bandai ${number} search and its inspected original front establish this design and appearance. ST01-001's Leader/Life design is distinct from the same-name P-001 Character.`,
+    );
+    pilotCardIds.set(number, decision.history[0].decision.card.id);
+    pilotPrintingIds.set(number, decision.history[0].decision.printing.id);
+  }
+  assert.equal(new Set([cardId, ...pilotCardIds.values()]).size, 5);
+  const pilotBases = await collectPilot("five-card-bases");
+  assert.equal(pilotBases.records.cards.length, 5);
+  assert.equal(pilotBases.records.printings.length, 12);
+  finalPublication = await publishNativeCollection(pilotBases, "five-card-bases", environment, worker);
+
+  const stageAlternate = newProposals.find(
+    (entry) => entry.source_lineage === "one-piece-en" && JSON.parse(entry.reference)[0] === "OP16-021_p1",
+  );
+  const stageDecision = await decidePilot(
+    stageAlternate,
+    "admit",
+    "pilot-stage-alternate",
+    { card_id: pilotCardIds.get("OP16-021") },
+    "The retained Bandai sailing-ship front and alternate star marking differ from the comic-panel base; both depict the same Stage design and two effect clauses.",
+  );
+  pilotPrintingIds.set("OP16-021_p1", stageDecision.history[0].decision.printing.id);
+  const serial = newProposals.find(
+    (entry) =>
+      entry.source_lineage === "limitless-one-piece-en" &&
+      JSON.parse(entry.reference)[0].includes("/ST01-001") &&
+      JSON.parse(entry.reference)[1] === "v1",
+  );
+  const serialDecision = await decidePilot(
+    serial,
+    "admit",
+    "pilot-supplementary-serial",
+    { card_id: pilotCardIds.get("ST01-001") },
+    "Explicit supplementary-only admission: the Limitless Prize Cards front shows Luffy holding his hat, a blue/white geometric frame, gold text, serial marking and NOT FOR SALE. It is absent from the complete one-record Bandai ST01-001 catalogue search, without an all-official-publication absence claim. The depicted 001/700 is not an individual-copy identity.",
+  );
+  pilotPrintingIds.set("ST01-001_serial", serialDecision.history[0].decision.printing.id);
+  const pilotAppearances = await collectPilot("five-card-appearances");
+  assert.equal(pilotAppearances.records.printings.length, 14);
+  finalPublication = await publishNativeCollection(pilotAppearances, "five-card-appearances", environment, worker);
+
+  for (const proposal of newProposals.filter(
+    (entry) => entry.source_lineage === "limitless-one-piece-en" && entry.id !== serial.id,
+  )) {
+    const [locator, variant] = JSON.parse(proposal.reference);
+    const number = new URL(locator).pathname.split("/").at(-1);
+    const target = pilotPrintingIds.get(variant === "base" ? number : `${number}_p1`);
+    assert.ok(target);
+    const linked = await decidePilot(
+      proposal,
+      "link",
+      `pilot-match-${number}-${variant}`,
+      { printing_id: target },
+      `Retained original PNG/WebP comparison matches ${number} ${variant} by artwork, crop, frame, printed markings and wording. The decision uses the reviewed complete profile and appearance; names, numbers or encoding alone do not merge entities.`,
+    );
+    assert.equal(linked.history[0].decision.printing.id, target);
+  }
+  const fullPilot = await collectPilot("five-card-linked");
+  const allPrintingIds = [...printingIds.values(), winnerPrintingId, ...pilotPrintingIds.values()];
+  assert.deepEqual(fullPilot.records.printings.map((printing) => printing.id).sort(), [...allPrintingIds].sort());
+  assert.equal(fullPilot.records.printing_images.length, 26);
+  assert.equal(fullPilot.warnings.filter((warning) => warning.code === "entity_proposal_excluded").length, 0);
+  finalPublication = await publishNativeCollection(fullPilot, "five-card-linked", environment, worker);
+  const authorities = (await cli(["source", "authorities"])).authorities;
+  for (const area of ["card_facts", "printing_details", "corrected_card_content"])
+    assert.equal(
+      authorities.find((authority) => authority.game === "one-piece" && authority.area === area).source_lineage,
+      "one-piece-en",
+    );
   const fullPlan = JSON.parse(await readFile(planPath, "utf8"));
   for (const scenario of ["official-only", "scoped-disappearance", "optional-outage"]) {
     const scenarioPlan = structuredClone(fullPlan);
@@ -463,10 +605,7 @@ test("retained P-001: owner collects every declared Bandai record through native
       assert.equal(supplemental.successful_checked_at, null);
       assert.equal(supplemental.content_captured_at, null);
     }
-    assert.deepEqual(
-      inspection.records.printings.map((p) => p.id).sort(),
-      [...printingIds.values(), winnerPrintingId].sort(),
-    );
+    assert.deepEqual(inspection.records.printings.map((p) => p.id).sort(), [...allPrintingIds].sort());
     const missing = inspection.warnings.filter((warning) => warning.code === "record_not_observed");
     if (scenario === "scoped-disappearance") {
       assert.ok(missing.length > 0);
@@ -500,8 +639,8 @@ test("retained P-001: owner collects every declared Bandai record through native
         "Node test driver only; excludes workerd and short-lived CLI processes. Workflow elapsed time is not CPU time.",
     },
     {
-      parsed_catalogue_records_per_complete_two_source_collection: proposals.length,
-      accepted_printings: linkedInspection.records.printings.length,
+      parsed_catalogue_records_per_complete_two_source_collection: proposals.length + newProposals.length,
+      accepted_printings: fullPilot.records.printings.length,
     },
   );
   await stopWorker(worker);
@@ -512,9 +651,9 @@ test("retained P-001: owner collects every declared Bandai record through native
       nativeExportRecords(api.url, apiKey, finalPublication.resulting_revision_id, kind),
     ),
   );
-  assert.equal(cards.length, 1);
-  assert.deepEqual(printings.map((p) => p.id).sort(), [...printingIds.values(), winnerPrintingId].sort());
-  assert.equal(images.length, 15);
+  assert.equal(cards.length, 5);
+  assert.deepEqual(printings.map((p) => p.id).sort(), [...allPrintingIds].sort());
+  assert.equal(images.length, 26);
   assert.equal(printings.find((p) => p.id === winnerPrintingId).printed_rules_text, null);
   const publicJson = JSON.stringify({ cards, printings, images });
   assert.doesNotMatch(publicJson, /source_lineage|proposal_id|eligibility|admission_history/u);
@@ -526,6 +665,41 @@ test("retained P-001: owner collects every declared Bandai record through native
     found.data.map((card) => card.id),
     [cardId],
   );
+  const sameNameSearch = await fetch(`${api.url}/v1/cards?q=Monkey&game=one-piece`, { headers });
+  assert.equal(sameNameSearch.status, 200);
+  assert.deepEqual(
+    (await sameNameSearch.json()).data.map((entry) => entry.id).sort(),
+    [cardId, pilotCardIds.get("ST01-001")].sort(),
+    "the same-name Leader and Character remain separate consumer Cards",
+  );
+  const expectedGameplay = new Map([
+    ["ST01-001", { card_type: "leader", cost: null, life: 5, power: 5000, counter: null, trigger_text: null }],
+    ["OP16-002", { card_type: "character", cost: 1, life: null, power: 2000, counter: 1000, trigger_text: null }],
+    [
+      "OP16-019",
+      {
+        card_type: "event",
+        cost: 9,
+        life: null,
+        power: null,
+        counter: null,
+        battle_attributes: [],
+        trigger_text: "[Trigger] Your Leader gains +1000 power during this turn.",
+      },
+    ],
+    ["OP16-021", { card_type: "stage", cost: 1, life: null, power: null, battle_attributes: [], trigger_text: null }],
+  ]);
+  for (const [number, expected] of expectedGameplay) {
+    const exported = cards.find((entry) => entry.id === pilotCardIds.get(number));
+    assert.equal(exported.category, "gameplay");
+    assert.equal(exported.gameplay_applicability, "applicable");
+    for (const [field, value] of Object.entries(expected))
+      assert.deepEqual(exported.game_data.attributes[field], value, `${number} ${field}`);
+    const response = await fetch(`${api.url}/v1/cards/${exported.id}`, { headers });
+    assert.equal(response.status, 200);
+    const data = (await response.json()).data;
+    for (const [field, value] of Object.entries(exported)) assert.deepEqual(data[field], value, `${number} ${field}`);
+  }
   for (const printing of printings.filter((p) => [...printingIds.values()].includes(p.id))) {
     assert.deepEqual(printing.rarity, baseIntake.content.printing.rarity);
     assert.equal(printing.printed_rules_text, baseIntake.content.printing.printed_rules_text);
@@ -556,7 +730,8 @@ test("retained P-001: owner collects every declared Bandai record through native
   const cardResponse = await fetch(`${api.url}/v1/cards/${cardId}`, { headers });
   assert.equal(cardResponse.status, 200);
   const card = (await cardResponse.json()).data;
-  for (const [field, value] of Object.entries(cards[0])) assert.deepEqual(card[field], value, `Card ${field}`);
+  for (const [field, value] of Object.entries(cards.find((entry) => entry.id === cardId)))
+    assert.deepEqual(card[field], value, `Card ${field}`);
   assert.deepEqual(card.printing_ids.sort(), [...printingIds.values(), winnerPrintingId].sort());
   const exportBytes = { compressed: 0, uncompressed: 0, records: 0, components: 0 };
   let after = null;
@@ -590,18 +765,24 @@ test("retained P-001: owner collects every declared Bandai record through native
     "printings",
   );
   assert.deepEqual(restoredPrintings, printings);
-  const restoredWinner = await fetch(`${restoredApi.url}/v1/printings/${winnerPrintingId}`, { headers });
-  assert.equal(restoredWinner.status, 200);
-  const restoredWinnerData = (await restoredWinner.json()).data;
-  assert.equal(restoredWinnerData.id, winnerPrintingId);
-  assert.equal(restoredWinnerData.printing_images.length, 1);
-  for (const image of restoredWinnerData.printing_images) {
-    const content = await fetch(new URL(image.links.content, restoredApi.url), { headers });
-    assert.equal(content.status, 200);
-    const bytes = Buffer.from(await content.arrayBuffer());
-    assert.equal(bytes.length, image.content_byte_length);
-    assert.equal(createHash("sha256").update(bytes).digest("hex"), image.content_sha256);
-    assert.ok([...captures.values()].some((c) => c.sha256 === image.content_sha256));
+  assert.deepEqual(
+    await nativeExportRecords(restoredApi.url, apiKey, finalPublication.resulting_revision_id, "cards"),
+    cards,
+  );
+  for (const supplementary of [winnerPrintingId, pilotPrintingIds.get("ST01-001_serial")]) {
+    const restoredWinner = await fetch(`${restoredApi.url}/v1/printings/${supplementary}`, { headers });
+    assert.equal(restoredWinner.status, 200);
+    const restoredWinnerData = (await restoredWinner.json()).data;
+    assert.equal(restoredWinnerData.id, supplementary);
+    assert.equal(restoredWinnerData.printing_images.length, 1);
+    for (const image of restoredWinnerData.printing_images) {
+      const content = await fetch(new URL(image.links.content, restoredApi.url), { headers });
+      assert.equal(content.status, 200);
+      const bytes = Buffer.from(await content.arrayBuffer());
+      assert.equal(bytes.length, image.content_byte_length);
+      assert.equal(createHash("sha256").update(bytes).digest("hex"), image.content_sha256);
+      assert.ok([...captures.values()].some((c) => c.sha256 === image.content_sha256));
+    }
   }
   metrics.restored_api_and_export_verified = true;
   metrics.verified_public_export = exportBytes;

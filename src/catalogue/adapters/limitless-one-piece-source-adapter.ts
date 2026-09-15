@@ -1,4 +1,4 @@
-import type { SourceAdapterRegistration } from "./source-adapter-registration-types";
+import type { SourceAdapterParseContext, SourceAdapterRegistration } from "./source-adapter-registration-types";
 import { AdapterParseFailure, adapterUrl, decodeAdapterUtf8 } from "./adapter-parse-failure";
 import { cardObservation, htmlText, requiredHtmlMatch } from "./adapter-html";
 import { normalizeOnePieceCardPage } from "./one-piece-source-adapter";
@@ -19,12 +19,32 @@ const coverage = {
     return root;
   },
 };
+const pilotNumbers = ["P-001", "ST01-001", "OP16-002", "OP16-019", "OP16-021"];
+const pilotRoots = new Map(
+  pilotNumbers.map((number) => [
+    `${number.toLowerCase()}-catalogue`,
+    number === "P-001" ? root : `https://onepiece.limitlesstcg.com/cards/${number}`,
+  ]),
+);
+const pilotCoverage = {
+  description:
+    "Complete English variant inventories and referenced fronts for P-001, ST01-001, OP16-002, OP16-019 and OP16-021. This named pilot does not establish full-source coverage.",
+  cardIdentities: pilotNumbers.map((value) => ({ kind: "card_number", value })),
+  requiredSurfaces: [...pilotRoots.keys()],
+  requestUrlForSurface(requested: string) {
+    const url = pilotRoots.get(requested);
+    if (url === undefined)
+      throw new AdapterParseFailure("Unknown Limitless coverage surface.", { category: "configuration" });
+    return url;
+  },
+};
 
 function pageIdentity(value: string) {
   const url = adapterUrl(value);
+  const number = /^\/cards\/(?:en\/)?(P-001|ST01-001|OP16-002|OP16-019|OP16-021)$/u.exec(url.pathname)?.[1];
   if (
     url.origin !== adapterUrl(root).origin ||
-    url.pathname !== "/cards/en/P-001" ||
+    number === undefined ||
     url.hash ||
     url.username ||
     url.password ||
@@ -32,53 +52,63 @@ function pageIdentity(value: string) {
     url.searchParams.getAll("v").length > 1 ||
     (url.search && !/^\?v=[1-9][0-9]*$/u.test(url.search))
   )
-    throw new AdapterParseFailure("Limitless P-001 page is outside the declared source coverage.");
-  return url.searchParams.get("v");
+    throw new AdapterParseFailure("Limitless page is outside the declared source coverage.");
+  return {
+    number,
+    variant: url.searchParams.get("v"),
+    base: `${url.origin}${url.pathname}`,
+    canonical: `${url.origin}/cards/en/${number}${url.search}`,
+  };
 }
-function parsePage(bytes: Uint8Array, url: string) {
-  const variant = pageIdentity(url);
+function parsePage(bytes: Uint8Array, url: string, parents: SourceAdapterParseContext["parents"] = []) {
+  const identity = pageIdentity(url);
+  const { variant } = identity;
   const html = decodeAdapterUtf8(bytes);
   const required = (pattern: RegExp, label: string) => requiredHtmlMatch(html, pattern, `Limitless ${label}`)[1]!;
   const number = htmlText(required(/<span class="card-text-id">([\s\S]*?)<\/span>/u, "card identifier"));
-  if (number !== "P-001") throw new AdapterParseFailure("Limitless page and card identifier disagree.");
+  if (number !== identity.number) throw new AdapterParseFailure("Limitless page and card identifier disagree.");
   const name = htmlText(required(/<span class="card-text-name">([\s\S]*?)<\/span>/u, "card name"));
   const tooltip = (label: string) =>
     htmlText(required(new RegExp(`<span data-tooltip="${label}">([\\s\\S]*?)<\\/span>`, "u"), label));
   const text = required(/<div class="card-text">([\s\S]*?)<div class="card-legality">/u, "card content");
   const sections = [...text.matchAll(/<div class="card-text-section">([\s\S]*?)<\/div>/gu)];
-  if (sections.length !== 3) throw new AdapterParseFailure("Limitless P-001 rules sections changed.");
+  if (sections.length !== 3) throw new AdapterParseFailure("Limitless rules sections changed.");
   const recognizedLabels = new Set(["Category", "Color", "Attribute", "Type"]);
   const optionalFields = [...text.matchAll(/<span data-tooltip="([^"]+)">([\s\S]*?)<\/span>/gu)]
     .map((match) => ({ label: htmlText(match[1]!), value: htmlText(match[2]!) }))
     .filter(({ label }) => !recognizedLabels.has(label));
-  const effect = htmlText(
-    sections[1]![1]!.replace(/<span data-tooltip="([^"]+)">[\s\S]*?<\/span>/gu, (span, label: string) =>
+  const rules = sections[1]![1]!
+    .replace(/<span data-tooltip="([^"]+)">[\s\S]*?<\/span>/gu, (span, label: string) =>
       recognizedLabels.has(htmlText(label)) ? span : "",
-    ),
-  );
+    )
+    .split(/<br>\s*<br>\s*\[Trigger\]/u);
+  if (rules.length > 2) throw new AdapterParseFailure("Limitless repeats the Trigger section.");
+  const effect = htmlText(rules[0]!);
+  const category = tooltip("Category");
+  const hasCombatProperties = category === "Leader" || category === "Character";
   const raw = {
-    Category: tooltip("Category"),
+    Category: category,
     Color: tooltip("Color"),
-    Cost: htmlText(required(/([0-9]+) Cost/u, "cost")),
-    Life: null,
-    Attribute: tooltip("Attribute"),
-    Power: htmlText(required(/([0-9]+) Power/u, "power")),
-    Counter: null,
+    Cost: category === "Leader" ? null : htmlText(required(/([0-9]+) Cost/u, "cost")),
+    Life: category === "Leader" ? htmlText(required(/([0-9]+) Life/u, "life")) : null,
+    Attribute: hasCombatProperties ? tooltip("Attribute") : null,
+    Power: hasCombatProperties ? htmlText(required(/([0-9]+) Power/u, "power")) : null,
+    Counter: /\+([0-9]+) Counter/u.exec(text)?.[1] ?? null,
     Type: tooltip("Type").split("/"),
     "Block icon": [htmlText(required(/<div class="regulation-mark">\s*Block ([0-9]+)<\/div>/u, "printed block icon"))],
     Effect: effect,
-    Trigger: null,
+    Trigger: rules[1] === undefined ? null : `[Trigger] ${htmlText(rules[1])}`,
   };
   const normalized = normalizeOnePieceCardPage(raw);
   const image = required(/<div class="card-image">\s*<img\b[^>]*\bsrc="([^"]+)"/u, "front image");
   const imageUrl = adapterUrl(image);
   if (
     imageUrl.origin !== imageOrigin ||
-    !/^\/one-piece\/P\/P-001(?:_p[0-9]+)?_EN\.webp$/u.test(imageUrl.pathname) ||
+    !new RegExp(`^/one-piece/${number.split("-")[0]}/${number}(?:_p[0-9]+)?_EN\\.webp$`, "u").test(imageUrl.pathname) ||
     imageUrl.search ||
     imageUrl.hash
   )
-    throw new AdapterParseFailure("Limitless P-001 image is outside the declared source image authority.");
+    throw new AdapterParseFailure("Limitless image is outside the declared source image authority.");
   const table = required(/<table class="card-prints-versions">([\s\S]*?)<\/table>/u, "complete Printing table");
   const rows = [...table.matchAll(/<tr\b([^>]*)>([\s\S]*?)<\/tr>/gu)].filter((r) => /<td>/u.test(r[2]!));
   if (rows.length === 0 || rows.filter((r) => /class="current"/u.test(r[1]!)).length !== 1)
@@ -87,21 +117,31 @@ function parsePage(bytes: Uint8Array, url: string) {
     if (/class="current"/u.test(row[1]!)) return url;
     const href = requiredHtmlMatch(row[2]!, /<td>\s*<a\s+href="([^"]+)"/u, "Limitless Printing page link")[1]!;
     const linked = adapterUrl(href.replaceAll("&amp;", "&"), root).href;
-    pageIdentity(linked);
+    if (pageIdentity(linked).number !== number)
+      throw new AdapterParseFailure("Limitless Printing inventory links a different Card number.");
     return linked;
   });
-  if (new Set(links).size !== rows.length || !links.includes(root))
+  const canonicalLinks = links.map((link) => pageIdentity(link).canonical).sort();
+  if (new Set(canonicalLinks).size !== rows.length || !canonicalLinks.includes(pageIdentity(identity.base).canonical))
     throw new AdapterParseFailure("Limitless Printing inventory has duplicate or missing base identities.");
+  for (const parent of parents) {
+    if (![`/cards/${number}`, `/cards/en/${number}`].includes(adapterUrl(parent.url).pathname)) continue;
+    const parentLinks = parsePage(parent.bytes, parent.url)
+      .links.map((link) => pageIdentity(link).canonical)
+      .sort();
+    if (JSON.stringify(parentLinks) !== JSON.stringify(canonicalLinks))
+      throw new AdapterParseFailure("Limitless Printing inventory changed between retained pages.");
+  }
   const artwork = officialArtworkFingerprint(number, ["front"], null);
   const observation = cardObservation(
     {
-      path: url,
+      path: identity.canonical,
       number,
       title: name,
       rules: effect,
       profile: "one-piece@1",
       attributes: { ...normalized.attributes, effect_text: effect },
-      distribution: { code: surface, kind: "source_bucket" },
+      distribution: { code: `${number.toLowerCase()}-catalogue`, kind: "source_bucket" },
       printing: { rarity: null, normalizedRarity: null, attributes: {} },
       printed_rules: null,
       variant: variant === null ? "base" : `v${variant}`,
@@ -135,24 +175,25 @@ export const limitlessOnePieceSourceAdapterRegistration: SourceAdapterRegistrati
   parserContract: "limitless-one-piece-p001-html@1",
   maximumSnapshotBytes: 1024 * 1024,
   requestCapacity: 100,
+  retainedParentContext: { maximumDepth: 3, maximumTotalBytes: 3 * 1024 * 1024 },
   origin: "production",
   requestSurface: { kind: "credential-free-https" },
   reconciliationCapability: "catalogue",
   printingAdmission: "owner_review",
   reconciliationAreas: ["catalogue"],
-  coverageContracts: { [surface]: coverage },
+  coverageContracts: { [surface]: coverage, "five-card-pilot": pilotCoverage },
   requiredSurfaces: coverage.requiredSurfaces,
   requestUrlForSurface: coverage.requestUrlForSurface,
   parseBytes(bytes, context) {
     if (context.requestId?.includes(":image:")) return [];
-    return [parsePage(bytes, context.url).observation];
+    return [parsePage(bytes, context.url, context.parents).observation];
   },
   discoverRequests(bytes, context) {
     if (context.requestId?.includes(":image:")) return [];
-    const page = parsePage(bytes, context.url);
+    const page = parsePage(bytes, context.url, context.parents);
     return [
       ...page.links
-        .filter((url) => url !== root && url !== context.url)
+        .filter((url) => url !== pageIdentity(context.url).base && url !== context.url)
         .map((url) => ({ role: "detail" as const, url, headers: { accept: "text/html" } })),
       { role: "image" as const, url: page.image, headers: { accept: "image/webp" } },
     ];

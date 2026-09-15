@@ -93,23 +93,41 @@ export async function nativePriorPrintingIdentity(
   db: CatalogueStore,
   preparation: string,
   printing: CataloguePrinting,
+  locator?: NonNullable<CataloguePrinting["locator_evidence"]>[number],
 ): Promise<NativePrintingIdentity | undefined> {
   const checkpoint = await reconciliationCheckpoint<{
     complete: boolean;
-    indexes: { localPrintingCompatibility: number };
+    indexes: { localPrintingCompatibility: number; localLocators: number };
     prior: PriorStatePositions;
   }>(db, preparation, "official_reduction");
   if (!checkpoint?.value.complete) throw new Error("Native predecessor has no completed identity reduction.");
   const observed = new ReconciliationReducerIndex<{ printingId: string; compatibility: PrintingCompatibility }>(
     db,
     preparation,
-    "printing_compatibility",
+    locator ? "locators" : "printing_compatibility",
   );
-  observed.resumeAt(checkpoint.value.indexes.localPrintingCompatibility);
-  const carried = new ReconciliationReducerIndex<NativePrintingIdentity>(db, preparation, "prior_printing_identities");
-  carried.resumeAt(checkpoint.value.prior.priorPrintingIdentities ?? 0);
-  const identity = await observed.get(printing.id);
-  const compatibility = identity?.compatibility ?? (await carried.get(printing.id))?.compatibility;
+  observed.resumeAt(
+    locator ? checkpoint.value.indexes.localLocators : checkpoint.value.indexes.localPrintingCompatibility,
+  );
+  const carried = new ReconciliationReducerIndex<NativePrintingIdentity>(
+    db,
+    preparation,
+    locator ? "prior_printing_locators" : "prior_printing_identities",
+  );
+  carried.resumeAt(
+    (locator ? checkpoint.value.prior.priorPrintingLocators : checkpoint.value.prior.priorPrintingIdentities) ?? 0,
+  );
+  // A reviewed cross-source Printing can have different source representations.
+  // Its last observed tuple cannot stand in for another retained locator's tuple.
+  const identity = await observed.get(locator ? nativePrintingLocatorKey(locator) : printing.id);
+  const carriedKey = locator ? nativePrintingLocatorStateKey({ id: printing.id, locators: [locator] }) : printing.id;
+  const priorIdentity = identity ? undefined : await carried.get(carriedKey);
+  if (
+    priorIdentity &&
+    (priorIdentity.id !== printing.id || (locator && nativePrintingLocatorStateKey(priorIdentity) !== carriedKey))
+  )
+    throw new Error("Native prior Printing compatibility has another identity.");
+  const compatibility = identity?.compatibility ?? priorIdentity?.compatibility;
   if (!compatibility) {
     if (printing.locator_evidence?.length)
       throw new Error("Native prior Printing compatibility evidence is unavailable.");
@@ -117,6 +135,8 @@ export async function nativePriorPrintingIdentity(
   }
   if (identity && identity.printingId !== printing.id)
     throw new Error("Native prior Printing compatibility has another identity.");
+  if (locator && compatibility.source_lineage !== locator.source_lineage)
+    throw new Error("Native prior Printing locator compatibility has another Source Lineage.");
   if (compatibility.card_id !== printing.card_id) {
     const associations = await reconciliationCheckpoint<{ complete: boolean }>(
       db,
@@ -145,7 +165,7 @@ export function nativePrintingLocatorKey(
 ) {
   return canonicalJson([locator.source_lineage, locator.locator, locator.variant_key]);
 }
-export function nativePrintingLocatorStateKey(identity: NativePrintingIdentity) {
+export function nativePrintingLocatorStateKey(identity: Pick<NativePrintingIdentity, "id" | "locators">) {
   if (identity.locators.length !== 1) throw new Error("One native locator unit must retain exactly one locator.");
   return canonicalJson([identity.id, nativePrintingLocatorKey(identity.locators[0]!)]);
 }
