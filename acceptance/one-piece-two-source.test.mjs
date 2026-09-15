@@ -201,10 +201,36 @@ test("retained One Piece: expand the P-001 publication through complete five-Car
       ...Array.from({ length: 8 }, (_, i) => `limitless-p001-image-${i}`),
     ].sort(),
   );
-  const cli = async (args) => {
+  const cli = async (args, expectedCode = 0) => {
     const result = await runCli([...args, "--json"], environment);
-    assert.equal(result.code, 0, `${result.stdout} ${result.stderr}`);
+    assert.equal(result.code, expectedCode, `${result.stdout} ${result.stderr}`);
     return JSON.parse(result.stdout);
+  };
+  const abandon = async (candidate, intent) => {
+    const accepted = await cli(
+      [
+        "game-candidate",
+        "abandon",
+        "--candidate-id",
+        candidate.id,
+        "--generation",
+        String(candidate.generation),
+        "--idempotency-key",
+        intent,
+        "--yes",
+      ],
+      10,
+    );
+    assert.equal(accepted.contract, "card-keepr-game-preparation-acceptance@1");
+    assert.equal(accepted.id, candidate.id);
+    assert.equal(accepted.action, "abandon");
+    assert.equal(accepted.state, "accepted");
+    await waitForAdministrationDocument(
+      `/v1/game-candidates/${candidate.id}`,
+      (document) => document.state === "abandoned" || (document.state === "failed" ? JSON.stringify(document) : false),
+      environment,
+      worker,
+    );
   };
   const sealed = async (id) => {
     try {
@@ -225,18 +251,7 @@ test("retained One Piece: expand the P-001 publication through complete five-Car
     }
   };
   for (const candidate of intakeCandidates.candidates) {
-    if (candidate.state === "sealed")
-      await cli([
-        "game-candidate",
-        "abandon",
-        "--candidate-id",
-        candidate.id,
-        "--generation",
-        String(candidate.generation),
-        "--idempotency-key",
-        "retain-intake-before-owner-decisions",
-        "--yes",
-      ]);
+    if (candidate.state === "sealed") await abandon(candidate, "retain-intake-before-owner-decisions");
   }
   const proposals = JSON.parse(proposed.stdout).proposals;
   const base = proposals.find((p) => p.source_lineage === "one-piece-en" && JSON.parse(p.reference)[0] === "P-001");
@@ -459,18 +474,7 @@ test("retained One Piece: expand the P-001 publication through complete five-Car
   assert.equal(pilotEvidence.snapshots.length, 47);
   for (const snapshot of pilotEvidence.snapshots)
     assert.equal(snapshot.content.digest, captures.get(snapshot.request.url).sha256);
-  for (const candidate of pilotIntake.candidates)
-    await cli([
-      "game-candidate",
-      "abandon",
-      "--candidate-id",
-      candidate.id,
-      "--generation",
-      String(candidate.generation),
-      "--idempotency-key",
-      "review-five-card-intake",
-      "--yes",
-    ]);
+  for (const candidate of pilotIntake.candidates) await abandon(candidate, "review-five-card-intake");
 
   const pilotNumbers = ["ST01-001", "OP16-002", "OP16-019", "OP16-021"];
   const newProposals = (await cli(["entity-proposal", "list", "--game", "one-piece"])).proposals.filter((proposal) =>
