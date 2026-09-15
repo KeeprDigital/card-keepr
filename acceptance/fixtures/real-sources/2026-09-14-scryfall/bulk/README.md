@@ -1,6 +1,6 @@
 # Retained Scryfall bulk records
 
-These 36 records are exact, newline-terminated JSONL records extracted from the
+These 37 records are exact, newline-terminated JSONL records extracted from the
 pinned `default_cards` archive for [#327](https://github.com/KeeprDigital/card-keepr/issues/327).
 `manifest.json` records each source UUID, original line number, decoded byte
 offset where measured, byte length and SHA-256. The source archive SHA-256 is
@@ -9,7 +9,8 @@ Do not format or rewrite the JSON files.
 
 The selection exercises logical faces sharing a physical side, reversible
 appearances, etched finish evidence, missing illustration/image/artist facts,
-original printed wording, and the excluded incidental `front_card` layout.
+original printed wording, the excluded incidental `front_card` layout, and a
+Manifest reminder whose source `token` layout does not establish a Card category.
 It is a regression selection, not the complete declared source inventory.
 The [parent pack](../README.md) retains the original four-record pilot and its
 six real JPEGs. Two Bloomvine physical-side images were inspected separately;

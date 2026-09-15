@@ -271,7 +271,7 @@ export const documentSchemas = {
     declared_finishes: array({ enum: ["nonfoil", "foil", "etched"] }, { minItems: 1, maxItems: 3, uniqueItems: true }),
     issues: array(
       object({
-        code: { const: "logical_parts_unresolved" },
+        code: { enum: ["logical_parts_unresolved", "category_unresolved"] },
         source_paths: array({ ...string, minLength: 1, maxLength: 256 }, { minItems: 1, maxItems: 16 }),
       }),
       { minItems: 1, maxItems: 3 },

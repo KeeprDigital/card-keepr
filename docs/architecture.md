@@ -137,8 +137,11 @@ identity resolution and correction decisions do not publish a candidate.
 
 Scryfall records whose physical faces cannot establish the required logical Card
 parts retain their exact source claims and private image evidence as separate
-Entity Proposals for each declared finish. They contribute no Card or Printing
-while that structure remains unresolved. A decision about one finish does not
+Entity Proposals for each declared finish. Otherwise-valid records with a token
+layout but no Token type prefix use the same path with an unresolved category;
+the layout alone does not establish that they are tokens, gameplay Cards or
+out-of-scope inserts. They contribute no Card or Printing while the required
+structure or category remains unresolved. A decision about one finish does not
 decide another, and another printing's rules text cannot fill the source's gap.
 [Magic source assembly](https://github.com/KeeprDigital/card-keepr/issues/327).
 
