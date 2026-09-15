@@ -176,7 +176,10 @@ export const ingestionRoutes = [
   ),
   httpRoute<Context>()(resolveAdministrationTargetRoute, async (c) => {
     const { env, observedAt } = c.env;
-    const input = c.req.valid("json");
+    const _validated = c.req.valid("json");
+    // Retained Curated targets can contain literal extension property names;
+    // resolution must confirm the original JSON that the mutation will replay.
+    const input = await c.req.json<typeof _validated>();
     const status = await administrationStatus(
       env.CATALOGUE_DB,
       env.CATALOGUE_EXPORTS,

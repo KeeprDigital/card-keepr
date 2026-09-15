@@ -98,6 +98,7 @@
     "named_cli": null,
     "callers": [
       "acceptance/card-categories.test.mjs",
+      "acceptance/curated-revision-source-changes.test.mjs",
       "acceptance/helpers/cli-http.mjs",
       "acceptance/maintenance-owner-http.test.mjs",
       "acceptance/native-request-pacing.test.mjs",

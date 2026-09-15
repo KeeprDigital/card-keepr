@@ -130,3 +130,56 @@ test("target resolution uses typed choices and search repair requires exact iden
   expect(repair({ ...command, idempotency_key: "x".repeat(201) })).toBe(false);
   expect(repair({ ...command, idempotency_key: "owner key" })).toBe(false);
 });
+
+test("target resolution documents retained Curated relationship extensions without widening fresh validation", () => {
+  const validate = request("/v1/administration-targets/resolve");
+  const target = {
+    kind: "relationship",
+    relationship_kind: "product-card",
+    from: { type: "product", id: "product", "": "retained endpoint", later: [1, null] },
+    to: { type: "card", id: "card", "": { reviewed: true } },
+    "": "retained target",
+    later: { exact: true },
+  };
+  Object.defineProperty(target, "__proto__", { value: ["literal extension"], enumerable: true });
+  const command = {
+    expected_current_revision_id: "catrev_current",
+    curated_operation: "create",
+    curated_binding: {
+      affected_supported_game: "one-piece",
+      target,
+      content_digest: "a".repeat(64),
+      idempotency_key: "retained",
+    },
+  };
+  expect(validate(command), JSON.stringify(validate.errors)).toBe(true);
+  expect(
+    validate({
+      ...command,
+      curated_operation: "supersede",
+      curated_binding: {
+        curated_revision_id: "currev_old",
+        expected_event_version: 1,
+        conflict_digest: null,
+        idempotency_key: "retained-replacement",
+        replacement_supported_game: "one-piece",
+        replacement_target: target,
+        replacement_content_digest: "b".repeat(64),
+      },
+    }),
+    JSON.stringify(validate.errors),
+  ).toBe(true);
+  expect(
+    validate({
+      ...command,
+      curated_binding: {
+        ...command.curated_binding,
+        target: { ...target, from: { ...target.from, type: "invented" } },
+      },
+    }),
+  ).toBe(false);
+  const freshTarget = ajv.compile({
+    $ref: "administration#/components/schemas/CuratedRevisionProposal/properties/target",
+  });
+  expect(freshTarget(target)).toBe(false);
+});

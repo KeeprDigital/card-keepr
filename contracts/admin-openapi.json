@@ -3226,6 +3226,356 @@
         ],
         "additionalProperties": false
       },
+      "RetainedCuratedRevisionTarget": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "field"
+                ]
+              },
+              "entity_type": {
+                "type": "string",
+                "enum": [
+                  "card",
+                  "printing",
+                  "product",
+                  "release",
+                  "distribution_context",
+                  "erratum"
+                ]
+              },
+              "entity_id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^\\/(?:[^~]|~[01])+$"
+              }
+            },
+            "required": [
+              "kind",
+              "entity_type",
+              "entity_id",
+              "path"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "relationship"
+                ]
+              },
+              "relationship_kind": {
+                "type": "string",
+                "enum": [
+                  "printing-product",
+                  "printing-distribution-context",
+                  "distribution-context-product",
+                  "product-card"
+                ]
+              },
+              "from": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "card",
+                          "printing",
+                          "product",
+                          "distribution_context"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "card",
+                          "printing",
+                          "product",
+                          "distribution_context"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                      },
+                      "": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/CandidateNonNullSourceValue"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "id",
+                      ""
+                    ],
+                    "additionalProperties": {}
+                  }
+                ]
+              },
+              "to": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "card",
+                          "printing",
+                          "product",
+                          "distribution_context"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "card",
+                          "printing",
+                          "product",
+                          "distribution_context"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                      },
+                      "": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/CandidateNonNullSourceValue"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "id",
+                      ""
+                    ],
+                    "additionalProperties": {}
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "relationship_kind",
+              "from",
+              "to"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "relationship"
+                ]
+              },
+              "relationship_kind": {
+                "type": "string",
+                "enum": [
+                  "printing-product",
+                  "printing-distribution-context",
+                  "distribution-context-product",
+                  "product-card"
+                ]
+              },
+              "from": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "card",
+                          "printing",
+                          "product",
+                          "distribution_context"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "card",
+                          "printing",
+                          "product",
+                          "distribution_context"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                      },
+                      "": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/CandidateNonNullSourceValue"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "id",
+                      ""
+                    ],
+                    "additionalProperties": {}
+                  }
+                ]
+              },
+              "to": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "card",
+                          "printing",
+                          "product",
+                          "distribution_context"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "card",
+                          "printing",
+                          "product",
+                          "distribution_context"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+                      },
+                      "": {
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/CandidateNonNullSourceValue"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "id",
+                      ""
+                    ],
+                    "additionalProperties": {}
+                  }
+                ]
+              },
+              "": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CandidateNonNullSourceValue"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "relationship_kind",
+              "from",
+              "to",
+              ""
+            ],
+            "additionalProperties": {}
+          }
+        ]
+      },
       "EvidenceCleanupObjects": {
         "type": "object",
         "properties": {
@@ -44794,118 +45144,7 @@
                             ]
                           },
                           "target": {
-                            "anyOf": [
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "kind": {
-                                    "type": "string",
-                                    "enum": [
-                                      "field"
-                                    ]
-                                  },
-                                  "entity_type": {
-                                    "type": "string",
-                                    "enum": [
-                                      "card",
-                                      "printing",
-                                      "product",
-                                      "release",
-                                      "distribution_context",
-                                      "erratum"
-                                    ]
-                                  },
-                                  "entity_id": {
-                                    "type": "string",
-                                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
-                                  },
-                                  "path": {
-                                    "type": "string",
-                                    "pattern": "^\\/(?:[^~]|~[01])+$"
-                                  }
-                                },
-                                "required": [
-                                  "kind",
-                                  "entity_type",
-                                  "entity_id",
-                                  "path"
-                                ],
-                                "additionalProperties": false
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "kind": {
-                                    "type": "string",
-                                    "enum": [
-                                      "relationship"
-                                    ]
-                                  },
-                                  "relationship_kind": {
-                                    "type": "string",
-                                    "enum": [
-                                      "printing-product",
-                                      "printing-distribution-context",
-                                      "distribution-context-product",
-                                      "product-card"
-                                    ]
-                                  },
-                                  "from": {
-                                    "type": "object",
-                                    "properties": {
-                                      "type": {
-                                        "type": "string",
-                                        "enum": [
-                                          "card",
-                                          "printing",
-                                          "product",
-                                          "distribution_context"
-                                        ]
-                                      },
-                                      "id": {
-                                        "type": "string",
-                                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
-                                      }
-                                    },
-                                    "required": [
-                                      "type",
-                                      "id"
-                                    ],
-                                    "additionalProperties": false
-                                  },
-                                  "to": {
-                                    "type": "object",
-                                    "properties": {
-                                      "type": {
-                                        "type": "string",
-                                        "enum": [
-                                          "card",
-                                          "printing",
-                                          "product",
-                                          "distribution_context"
-                                        ]
-                                      },
-                                      "id": {
-                                        "type": "string",
-                                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
-                                      }
-                                    },
-                                    "required": [
-                                      "type",
-                                      "id"
-                                    ],
-                                    "additionalProperties": false
-                                  }
-                                },
-                                "required": [
-                                  "kind",
-                                  "relationship_kind",
-                                  "from",
-                                  "to"
-                                ],
-                                "additionalProperties": false
-                              }
-                            ]
+                            "$ref": "#/components/schemas/RetainedCuratedRevisionTarget"
                           },
                           "content_digest": {
                             "type": "string",
@@ -45033,118 +45272,7 @@
                             ]
                           },
                           "replacement_target": {
-                            "anyOf": [
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "kind": {
-                                    "type": "string",
-                                    "enum": [
-                                      "field"
-                                    ]
-                                  },
-                                  "entity_type": {
-                                    "type": "string",
-                                    "enum": [
-                                      "card",
-                                      "printing",
-                                      "product",
-                                      "release",
-                                      "distribution_context",
-                                      "erratum"
-                                    ]
-                                  },
-                                  "entity_id": {
-                                    "type": "string",
-                                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
-                                  },
-                                  "path": {
-                                    "type": "string",
-                                    "pattern": "^\\/(?:[^~]|~[01])+$"
-                                  }
-                                },
-                                "required": [
-                                  "kind",
-                                  "entity_type",
-                                  "entity_id",
-                                  "path"
-                                ],
-                                "additionalProperties": false
-                              },
-                              {
-                                "type": "object",
-                                "properties": {
-                                  "kind": {
-                                    "type": "string",
-                                    "enum": [
-                                      "relationship"
-                                    ]
-                                  },
-                                  "relationship_kind": {
-                                    "type": "string",
-                                    "enum": [
-                                      "printing-product",
-                                      "printing-distribution-context",
-                                      "distribution-context-product",
-                                      "product-card"
-                                    ]
-                                  },
-                                  "from": {
-                                    "type": "object",
-                                    "properties": {
-                                      "type": {
-                                        "type": "string",
-                                        "enum": [
-                                          "card",
-                                          "printing",
-                                          "product",
-                                          "distribution_context"
-                                        ]
-                                      },
-                                      "id": {
-                                        "type": "string",
-                                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
-                                      }
-                                    },
-                                    "required": [
-                                      "type",
-                                      "id"
-                                    ],
-                                    "additionalProperties": false
-                                  },
-                                  "to": {
-                                    "type": "object",
-                                    "properties": {
-                                      "type": {
-                                        "type": "string",
-                                        "enum": [
-                                          "card",
-                                          "printing",
-                                          "product",
-                                          "distribution_context"
-                                        ]
-                                      },
-                                      "id": {
-                                        "type": "string",
-                                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
-                                      }
-                                    },
-                                    "required": [
-                                      "type",
-                                      "id"
-                                    ],
-                                    "additionalProperties": false
-                                  }
-                                },
-                                "required": [
-                                  "kind",
-                                  "relationship_kind",
-                                  "from",
-                                  "to"
-                                ],
-                                "additionalProperties": false
-                              }
-                            ]
+                            "$ref": "#/components/schemas/RetainedCuratedRevisionTarget"
                           },
                           "replacement_content_digest": {
                             "type": "string",

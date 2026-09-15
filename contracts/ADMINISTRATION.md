@@ -454,6 +454,9 @@ revision (optionally with a run or repair revision), exact recovery identity/dig
 It returns `card-keepr-administration-target@1` with `resolved_target.production_target`
 and the server-owned confirmation. Resolution is read-only, remains available
 under a fresh-baseline fence, and never replaces mutation-time target/state guards.
+Curated resolution accepts the same explicit retained relationship-target extensions
+as inspection and replay, and confirms their literal JSON. Fresh Curated mutations
+continue to validate current proposal shapes.
 
 Evidence cleanup creation and retry return 202 with the current cleanup document;
 status and bounded advance return 200. Exact creation replay matches original owner,

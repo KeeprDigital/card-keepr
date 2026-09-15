@@ -1,6 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { boundedJson, digest, identifier, problemResponses, secured } from "../../http/openapi";
-import { curatedProposalSchema } from "../curated";
+import { retainedCuratedTargetSchema } from "../curated";
 import { registeredSupportedGames } from "../shared";
 import { administrationStatusSchema } from "./administration-status-schema";
 import { releaseTargetSchema, releaseJsonBody as body, releaseJsonResponse as response } from "./release-http-schemas";
@@ -26,7 +26,7 @@ export const administrationTargetCommand = z.union([
     curated_operation: z.literal("create"),
     curated_binding: z.strictObject({
       affected_supported_game: z.enum(registeredSupportedGames()),
-      target: curatedProposalSchema.shape.target,
+      target: retainedCuratedTargetSchema,
       content_digest: digest,
       idempotency_key: identifier,
     }),
@@ -42,7 +42,7 @@ export const administrationTargetCommand = z.union([
     curated_binding: z.strictObject({
       ...lifecycle,
       replacement_supported_game: z.enum(registeredSupportedGames()),
-      replacement_target: curatedProposalSchema.shape.target,
+      replacement_target: retainedCuratedTargetSchema,
       replacement_content_digest: digest,
     }),
   }),

@@ -3,7 +3,7 @@ import { beforeEach, afterEach, expect, test, vi } from "vitest";
 import worker from "../src/index";
 import arrayIntent from "./fixtures/staging-array-intent.json";
 import nestedIntent from "./fixtures/staging-nested-intent.json";
-import { seedRetainedStagingIntent } from "./query-helpers/staging-intent";
+import { retainedStagingIntentStatement } from "./query-helpers/staging-intent";
 import document from "../../../contracts/admin-openapi.json";
 import { assertHttpResponse } from "../../../test/support/http-contract";
 
@@ -148,7 +148,16 @@ test("owner HTTP intent requires administration auth and replays without a fresh
 test.each([arrayIntent, nestedIntent])(
   "retained scope $choices.release_id replays literally after its deadline",
   async (fixture) => {
-    await seedRetainedStagingIntent(testEnv.CATALOGUE_DB, fixture);
+    await testEnv.CATALOGUE_DB.batch(
+      [`staging-intent:${fixture.choices.release_id}`, fixture.choices.idempotency_key].map((key) =>
+        retainedStagingIntentStatement(testEnv.CATALOGUE_DB, {
+          key,
+          requestJson: fixture.request_json,
+          responseJson: JSON.stringify(fixture.response),
+          createdAt: fixture.response.intent.authorized_at,
+        }),
+      ),
+    );
     vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
       throw new Error("provider unavailable");
     });

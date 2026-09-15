@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createServer } from "vite";
 import { renderRunFixtureSql } from "./helpers/query-helpers/run-event-fixture.mjs";
+import { retainedCuratedCreationSql } from "./helpers/query-helpers/curated-retained-intent.mjs";
+import * as httpValidators from "../test/support/http-response-validators.mjs";
 import test from "node:test";
 import {
   applyMigrations,
@@ -348,6 +350,218 @@ test("the repository CLI resolves a source conflict through the emulated ingesti
     cliEnvironment,
   );
   assert.equal(rejectedResult.code, 0, rejectedResult.stderr);
+});
+
+test("owner CLI resolves literal retained relationship targets before immutable replay and strict fresh mutation", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "card-keepr-retained-target-"));
+  const statePath = join(directory, "state");
+  const environmentFile = join(directory, "ingestion.env");
+  const proposalFile = join(directory, "proposal.json");
+  const administrationKey = randomUUID();
+  await writeFile(environmentFile, `ADMINISTRATION_KEY=${administrationKey}\n`, { mode: 0o600 });
+  const vite = await createServer({ logLevel: "silent", server: { middlewareMode: true } });
+  let ingestion;
+  t.after(async () => {
+    if (ingestion) await stopWorker(ingestion);
+    await vite.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  await applyMigrations(statePath);
+  await seedSql(statePath, directory, "baseline.sql", await baselineSql(vite));
+  const target = {
+    kind: "relationship",
+    relationship_kind: "product-card",
+    from: { ...officialRelationship.from, "": "retained endpoint", later: [1, null] },
+    to: { ...officialRelationship.to, "": { reviewed: true } },
+    "": "retained target",
+    later: { exact: true },
+  };
+  Object.defineProperty(target, "__proto__", { value: { literal: "target extension" }, enumerable: true });
+  Object.defineProperty(target.from, "__proto__", { value: ["literal endpoint extension"], enumerable: true });
+  const proposal = {
+    game: "one-piece",
+    target,
+    assertion: { kind: "relationship", presence: "absent" },
+    rationale: "The retained owner decision reviewed the official relationship.",
+    evidence: [{ kind: "owner_reference", uri: "https://owner.example/retained", content_digest: "a".repeat(64) }],
+    effective_interval: { from: null, to: null },
+    reviewed_source_digest: digest("present"),
+    supersedes_revision_id: null,
+  };
+  const key = "retained-relationship-create";
+  const contentDigest = digest(proposal);
+  const command = {
+    environment: "production",
+    expected_current_revision_id: currentRevisionId,
+    proposal,
+    proposal_digest: contentDigest,
+    idempotency_key: key,
+  };
+  const receipt = {
+    operation_id: `curop_${createHash("sha256").update(key).digest("hex").slice(0, 32)}`,
+    curated_revision_id: "currev_retained_relationship",
+    status: "active",
+    event_version: 1,
+    content_digest: contentDigest,
+    current_catalogue_revision_id: currentRevisionId,
+    code: "curated_revision_created",
+  };
+  // Restore the explicitly supported acknowledged shape into native D1, with
+  // real published endpoints. Fresh commands cannot create this historical shape.
+  await seedSql(
+    statePath,
+    directory,
+    "retained-intent.sql",
+    retainedCuratedCreationSql({
+      revisionId: receipt.curated_revision_id,
+      game: proposal.game,
+      targetKey: [
+        proposal.game,
+        "relationship",
+        target.relationship_kind,
+        target.from.type,
+        target.from.id,
+        target.to.type,
+        target.to.id,
+      ].join("|"),
+      proposalJson: canonicalJson(proposal),
+      contentDigest,
+      reviewedSourceDigest: proposal.reviewed_source_digest,
+      schemaBindingJson: canonicalJson({ catalogue_revision_id: currentRevisionId, game_profile: "one-piece@1" }),
+      createdAt: observedAt,
+      eventJson: canonicalJson({ reviewed_source_digest: proposal.reviewed_source_digest }),
+      idempotencyKey: key,
+      requestDigest: digest(command),
+      receiptJson: canonicalJson(receipt),
+    }),
+  );
+  ingestion = await startWorker({ config: "apps/ingestion/wrangler.jsonc", envFile: environmentFile, statePath });
+  await waitForHealth(`${ingestion.url}/health`, administrationKey, ingestion);
+  const cliEnvironment = { KEEPR_INGESTION_URL: ingestion.url, KEEPR_ADMINISTRATION_KEY: administrationKey };
+  const curatedCli = (args) =>
+    runCli([...args, "--secrets-stdin-fd", "3"], cliEnvironment, {
+      secrets: { administration_key: administrationKey },
+    });
+  const statusResult = await runCli(["status", "--json"], cliEnvironment);
+  assert.equal(statusResult.code, 0, statusResult.stdout + statusResult.stderr);
+  const status = JSON.parse(statusResult.stdout);
+  const binding = {
+    affected_supported_game: proposal.game,
+    target,
+    content_digest: contentDigest,
+    idempotency_key: key,
+  };
+  const confirmation = JSON.stringify({
+    production_target: status.production_target,
+    operation: "create",
+    current_catalogue_revision_id: currentRevisionId,
+    ...binding,
+  });
+  await writeFile(proposalFile, JSON.stringify(proposal), { mode: 0o600 });
+  const args = [
+    "curated-revision",
+    "create",
+    "--proposal",
+    proposalFile,
+    "--proposal-digest",
+    contentDigest,
+    "--expected-current-revision",
+    currentRevisionId,
+    "--idempotency-key",
+    key,
+    "--environment",
+    "production",
+    "--confirm",
+    confirmation,
+    "--yes",
+    "--json",
+  ];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const replay = await curatedCli(args);
+    assert.equal(replay.code, 0, replay.stdout + replay.stderr);
+    assert.deepEqual(JSON.parse(replay.stdout), receipt);
+    assertCuratedDocument("create", 200, JSON.parse(replay.stdout));
+  }
+  const resolveTarget = async (operation, choices, expectedStatus = 200) => {
+    const response = await fetch(`${ingestion.url}/v1/administration-targets/resolve`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${administrationKey}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        expected_current_revision_id: currentRevisionId,
+        curated_operation: operation,
+        curated_binding: choices,
+      }),
+    });
+    assert.equal(response.status, expectedStatus, await response.clone().text());
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    const document = await response.json();
+    const media = expectedStatus === 200 ? "application/json" : "application/problem+json";
+    const validate =
+      httpValidators[
+        httpValidators.responseValidators[`admin post /v1/administration-targets/resolve ${expectedStatus} ${media}`]
+      ];
+    assert.equal(validate(document), true, JSON.stringify(validate.errors));
+    return document;
+  };
+  const resolved = await resolveTarget("create", binding);
+  assert.equal(resolved.resolved_target.confirmation, confirmation);
+  const freshKey = "fresh-retained-target";
+  const freshConfirmation = (await resolveTarget("create", { ...binding, idempotency_key: freshKey })).resolved_target
+    .confirmation;
+  const fresh = await curatedCli(
+    args.map((value) => (value === key ? freshKey : value === confirmation ? freshConfirmation : value)),
+  );
+  assert.equal(fresh.code, 8, fresh.stdout + fresh.stderr);
+  assert.equal(JSON.parse(fresh.stdout).code, "curated_revision_schema_invalid");
+
+  const replacement = { ...proposal, supersedes_revision_id: receipt.curated_revision_id };
+  const replacementDigest = digest(replacement);
+  const replaceBinding = {
+    curated_revision_id: receipt.curated_revision_id,
+    expected_event_version: 1,
+    conflict_digest: null,
+    idempotency_key: "fresh-retained-replacement",
+    replacement_supported_game: proposal.game,
+    replacement_target: target,
+    replacement_content_digest: replacementDigest,
+  };
+  const replaceResolved = await resolveTarget("supersede", replaceBinding);
+  const replaceConfirmation = replaceResolved.resolved_target.confirmation;
+  const replaceChoices = JSON.parse(replaceConfirmation);
+  assert.deepEqual(replaceChoices.replacement_target, target);
+  assert.deepEqual(replaceChoices.target, target);
+  await writeFile(proposalFile, JSON.stringify(replacement), { mode: 0o600 });
+  const supersede = await curatedCli([
+    "curated-revision",
+    "supersede",
+    "--revision-id",
+    receipt.curated_revision_id,
+    "--event-version",
+    "1",
+    "--rationale",
+    "Review retained replacement",
+    "--proposal",
+    proposalFile,
+    "--proposal-digest",
+    replacementDigest,
+    "--expected-current-revision",
+    currentRevisionId,
+    "--idempotency-key",
+    replaceBinding.idempotency_key,
+    "--environment",
+    "production",
+    "--confirm",
+    replaceConfirmation,
+    "--yes",
+    "--json",
+  ]);
+  assert.equal(supersede.code, 8, supersede.stdout + supersede.stderr);
+  assert.equal(JSON.parse(supersede.stdout).code, "curated_revision_schema_invalid");
+  await resolveTarget("create", { ...binding, target: { ...target, from: { ...target.from, type: "invented" } } }, 422);
+  const shown = await curatedCli(["curated-revision", "show", "--revision-id", receipt.curated_revision_id, "--json"]);
+  assert.equal(shown.code, 0, shown.stdout + shown.stderr);
+  assertCuratedDocument("show", 200, JSON.parse(shown.stdout));
+  assert.deepEqual(JSON.parse(shown.stdout).revision.content, proposal);
 });
 
 async function baselineSql(vite) {

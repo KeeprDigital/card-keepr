@@ -70,6 +70,7 @@ function proposalSchemas(partitioned: boolean) {
     from: historicalObject(endpoint.shape),
     to: historicalObject(endpoint.shape),
   });
+  const retainedTarget = z.union([field, historicalRelationship]);
   const retained = historicalObject({
     ...proposalFields,
     // The former WHATWG URL guard acknowledged literal whitespace, controls,
@@ -79,15 +80,16 @@ function proposalSchemas(partitioned: boolean) {
         ? z.string().nullable()
         : z.string().min(1).describe("Original acknowledged owner URL, retained without normalization."),
     ),
-    target: z.union([field, historicalRelationship]),
+    target: retainedTarget,
     assertion: z.union([historicalObject(fieldAssertion.shape), historicalObject(relationshipAssertion.shape)]),
     effective_interval: historicalObject(interval.shape),
   });
-  return { current: z.strictObject(proposalFields), retained };
+  return { current: z.strictObject(proposalFields), retained, retainedTarget };
 }
 
 const owner = proposalSchemas(false);
 export const curatedProposalSchema = owner.current.openapi("CuratedRevisionProposal");
+export const retainedCuratedTargetSchema = owner.retainedTarget.openapi("RetainedCuratedRevisionTarget");
 export const retainedCuratedProposalSchema = owner.retained.openapi("RetainedCuratedRevisionProposal");
 // Candidate evidence replaces long text with null and separate text descriptors.
 export const partitionedCuratedProposalSchema = proposalSchemas(true).retained.openapi(
