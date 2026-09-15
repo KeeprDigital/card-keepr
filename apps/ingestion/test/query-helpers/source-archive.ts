@@ -20,6 +20,12 @@ export function markArchiveFixtureCaptured(db: CatalogueStore) {
 export function archiveFixtureSnapshot(db: CatalogueStore) {
   return repositoryStatements(db).prepare("SELECT * FROM source_snapshots WHERE id=?");
 }
+export function archiveRequestParseState(db: CatalogueStore) {
+  return repositoryStatements(db).prepare(`SELECT request.state,request.failure_code,
+    parse.id AS parse_operation_id,parse.observation_set_id,parse.parsed_at,parse.state AS parse_state
+    FROM source_requests request JOIN source_parse_operations parse ON parse.source_snapshot_id=request.source_snapshot_id
+    WHERE request.ingestion_run_id=? AND request.request_id=? AND parse.intent=? AND parse.idempotency_key=?`);
+}
 export function archiveImageSnapshot(db: CatalogueStore) {
   return repositoryStatements(db).prepare(`SELECT snapshot.* FROM source_requests request
     JOIN source_snapshots snapshot ON snapshot.id=request.source_snapshot_id

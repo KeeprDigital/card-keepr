@@ -13,15 +13,21 @@ export async function* gzipJsonlRecords(source: AsyncIterable<Uint8Array>, limit
     throw new SourceArchiveFailure("Archive limits must be positive safe integers.");
   const iterator = source[Symbol.asyncIterator]();
   let compressed = 0;
+  let upstreamFailure: { error: unknown } | undefined;
   const input = new ReadableStream<Uint8Array>({
     async pull(controller) {
-      const next = await iterator.next();
-      if (next.done) controller.close();
-      else {
-        compressed += next.value.byteLength;
-        if (compressed > limits.compressedBytes)
-          throw new SourceArchiveFailure("Compressed archive exceeds its byte limit.");
-        controller.enqueue(next.value);
+      try {
+        const next = await iterator.next();
+        if (next.done) controller.close();
+        else {
+          compressed += next.value.byteLength;
+          if (compressed > limits.compressedBytes)
+            throw new SourceArchiveFailure("Compressed archive exceeds its byte limit.");
+          controller.enqueue(next.value);
+        }
+      } catch (error) {
+        upstreamFailure = { error };
+        throw error;
       }
     },
     async cancel() {
@@ -63,6 +69,8 @@ export async function* gzipJsonlRecords(source: AsyncIterable<Uint8Array>, limit
       yield { ordinal, offset, bytes: pending.slice(0, length) };
     }
   } catch (error) {
+    // Native decompression can recreate upstream errors; preserve their original provenance.
+    if (upstreamFailure) throw upstreamFailure.error;
     if (error instanceof TypeError)
       throw new SourceArchiveFailure("Gzip archive integrity verification failed.", { cause: error });
     throw error;

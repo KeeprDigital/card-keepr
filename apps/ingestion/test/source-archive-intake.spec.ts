@@ -1,5 +1,7 @@
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
+import etched from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/etched.json?raw";
+import { parseCapturedRequest } from "../../../src/catalogue/source-evidence";
 import { catalogueStore, sha256 } from "../../../src/catalogue/shared";
 import { decodeArchiveBatch } from "../../../src/catalogue/source-evidence/source-archive-decode";
 import { sourceParseAuthorityGuard } from "../../../src/catalogue/source-evidence/source-parse-authority-repository";
@@ -10,6 +12,84 @@ import { installRuntimeSuite } from "./runtime-helpers";
 import { raw, version, seedArchive } from "./source-archive-fixture";
 
 installRuntimeSuite();
+
+function failingArchiveRead(key: string, failure: TypeError, location: "get" | "body"): R2Bucket {
+  return new Proxy(env.EVIDENCE_OBJECTS, {
+    get(target, property) {
+      if (property === "get")
+        return async (requested: string) => {
+          if (requested === key && location === "get") throw failure;
+          const object = await target.get(requested);
+          if (!object || requested !== key) return object;
+          // Cancel the real returned stream before substituting the failed read;
+          // the retained R2 object and its bytes remain unchanged.
+          await object.body.cancel();
+          const body = new ReadableStream<Uint8Array>({
+            pull() {
+              throw failure;
+            },
+          });
+          return new Proxy(object, {
+            get(value, field) {
+              if (field === "body") return body;
+              const result = Reflect.get(value, field, value);
+              return typeof result === "function" ? result.bind(value) : result;
+            },
+          });
+        };
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
+
+test.each(["get", "body"] as const)(
+  "an upstream R2 %s TypeError preserves the captured request and exact parse intent",
+  async (location) => {
+    const { db, run, request, snapshot } = await seedArchive(
+      `archive-upstream-${location}`,
+      false,
+      new TextEncoder().encode(etched),
+    );
+    const failure = new TypeError(`archive R2 ${location} unavailable`);
+    await expect(
+      parseCapturedRequest(
+        db,
+        failingArchiveRead(snapshot.content_object_key, failure, location),
+        run,
+        request,
+        snapshot.id,
+      ),
+    ).rejects.toBe(failure);
+    const key = `${run.id}:${request.request_id}`;
+    const before = await queries
+      .archiveRequestParseState(db)
+      .bind(run.id, request.request_id, "collection", key)
+      .first();
+    expect(before).toMatchObject({ state: "captured", failure_code: null });
+    expect(await queries.archiveObservationCount(db).bind(snapshot.id).first("count")).toBe(0);
+    expect(await parseCapturedRequest(db, env.EVIDENCE_OBJECTS, run, request, snapshot.id)).toEqual({
+      kind: "done",
+      failure_code: null,
+      request_made: false,
+    });
+    expect(
+      await queries.archiveRequestParseState(db).bind(run.id, request.request_id, "collection", key).first(),
+    ).toEqual({ ...before, state: "observed", parse_state: "finalized" });
+    const sealed = await parseSnapshotBatch(db, env.EVIDENCE_OBJECTS, snapshot.id, version, {
+      intent: "collection",
+      idempotencyKey: key,
+    });
+    expect(sealed).toMatchObject({ id: before!.observation_set_id, observation_count: 1 });
+    expect(
+      await parseSnapshotBatch(db, env.EVIDENCE_OBJECTS, snapshot.id, version, {
+        intent: "collection",
+        idempotencyKey: key,
+      }),
+    ).toEqual(sealed);
+    expect(await queries.archiveObservationCount(db).bind(snapshot.id).first("count")).toBe(1);
+  },
+);
 
 test("derived archive blocks replay a committed prefix without sealing partial evidence", async () => {
   const { db, run, snapshot, pin } = await seedArchive("archive-prefix-replay");
@@ -41,7 +121,14 @@ test("derived archive blocks replay a committed prefix without sealing partial e
   expect(injected).toBe(true);
   expect(await queries.archiveObservationCount(db).bind(snapshot.id).first("count")).toBe(0);
   const before = await queries.archiveBlockReceipts(db).bind(snapshot.id).all();
+  const beforeCursor = await queries.archiveDecodeReceipt(db).bind(snapshot.id).first();
   expect(before.results).toHaveLength(1);
+  const upstream = new TypeError("retained archive read unavailable during prefix replay");
+  await expect(
+    decodeArchiveBatch(db, failingArchiveRead(snapshot.content_object_key, upstream, "body"), snapshot, pin, guard, 4),
+  ).rejects.toBe(upstream);
+  expect((await queries.archiveBlockReceipts(db).bind(snapshot.id).all()).results).toEqual(before.results);
+  expect(await queries.archiveDecodeReceipt(db).bind(snapshot.id).first()).toEqual(beforeCursor);
   const receipt = await decodeArchiveBatch(db, env.EVIDENCE_OBJECTS, snapshot, pin, guard, 4);
   expect(receipt).toMatchObject({
     state: "decoded",
