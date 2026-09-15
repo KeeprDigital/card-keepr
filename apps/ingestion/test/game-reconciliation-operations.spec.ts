@@ -438,7 +438,7 @@ test("a native source change retains reconfirmable curated diagnostics without f
     reviewed_source_digest: await sha256Text(canonicalJson(card.name)),
     supersedes_revision_id: null,
   };
-  const revision = await post("/admin/v1/curated-revisions", {
+  const revision = await post("/v1/curated-revisions", {
     environment: "production",
     expected_current_revision_id: published.revisionId,
     proposal,
@@ -467,7 +467,7 @@ test("a native source change retains reconfirmable curated diagnostics without f
     failure_code: "curated_revision_reconfirmation_required",
   });
   expect((await get(`/v1/ingestion-runs/${run.id}`)).document).toMatchObject({ state: "parsing" });
-  const status = (await get(`/admin/v1/curated-revisions/${revisionId}`)).document;
+  const status = (await get(`/v1/curated-revisions/${revisionId}`)).document;
   expect(status).toMatchObject({
     revision: { status: "reconfirmation_required", pending_conflict: { preparation_id: id, run_id: run.id } },
   });
@@ -480,7 +480,7 @@ test("a native source change retains reconfirmable curated diagnostics without f
   });
   expect(bypass.response.status, JSON.stringify(bypass.document)).toBe(409);
   expect(bypass.document).toMatchObject({ code: "curated_revision_reconfirmation_required" });
-  const reaffirmed = await post(`/admin/v1/curated-revisions/${revisionId}/reaffirm`, {
+  const reaffirmed = await post(`/v1/curated-revisions/${revisionId}/reaffirm`, {
     environment: "production",
     expected_current_revision_id: published.revisionId,
     expected_event_version: pending.event_version,
@@ -531,7 +531,7 @@ test("invalid native curated composition fails terminally and replays its retain
     reviewed_source_digest: await sha256Text(canonicalJson(5)),
     supersedes_revision_id: null,
   };
-  const revision = await post("/admin/v1/curated-revisions", {
+  const revision = await post("/v1/curated-revisions", {
     environment: "production",
     expected_current_revision_id: published.revisionId,
     proposal,
@@ -613,7 +613,7 @@ test("a fresh native preparation pins later owner corrections and retains them a
     reviewed_source_digest: await sha256Text(canonicalJson(card.name)),
     supersedes_revision_id: null,
   };
-  const revision = await post("/admin/v1/curated-revisions", {
+  const revision = await post("/v1/curated-revisions", {
     environment: "production",
     expected_current_revision_id: published.revisionId,
     proposal,
@@ -645,7 +645,7 @@ test("a fresh native preparation pins later owner corrections and retains them a
   );
   expect(created.status).toBe(202);
   const id = requiredString(await created.json<Record<string, unknown>>(), "id");
-  const retired = await post(`/admin/v1/curated-revisions/${revision.document.curated_revision_id}/retire`, {
+  const retired = await post(`/v1/curated-revisions/${revision.document.curated_revision_id}/retire`, {
     environment: "production",
     expected_current_revision_id: published.revisionId,
     expected_event_version: 1,

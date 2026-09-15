@@ -42,7 +42,7 @@ describe.each(["release", "relationships"] as const)("a curated %s lookup", (kin
     };
     expect(
       (
-        await post("/admin/v1/curated-revisions", {
+        await post("/v1/curated-revisions", {
           environment: "production",
           expected_current_revision_id: published.revisionId,
           proposal,

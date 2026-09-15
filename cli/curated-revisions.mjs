@@ -27,7 +27,7 @@ async function validate(arguments_, environment, json) {
   return request(
     environment,
     json,
-    "/admin/v1/curated-revisions/validate",
+    "/v1/curated-revisions/validate",
     "POST",
     {
       proposal: proposalRead.value,
@@ -54,7 +54,7 @@ async function list(arguments_, environment, json) {
   return request(
     environment,
     json,
-    `/admin/v1/curated-revisions${query.size === 0 ? "" : `?${query}`}`,
+    `/v1/curated-revisions${query.size === 0 ? "" : `?${query}`}`,
     "GET",
     undefined,
     secret,
@@ -67,7 +67,7 @@ async function show(arguments_, environment, json) {
   if (options.error !== null || id === undefined) return usage(json);
   const secret = requiredAdministrationSecret(options, json);
   if (typeof secret === "number") return secret;
-  return request(environment, json, `/admin/v1/curated-revisions/${encodeURIComponent(id)}`, "GET", undefined, secret);
+  return request(environment, json, `/v1/curated-revisions/${encodeURIComponent(id)}`, "GET", undefined, secret);
 }
 
 async function create(arguments_, environment, json) {
@@ -109,7 +109,7 @@ async function create(arguments_, environment, json) {
   return request(
     environment,
     json,
-    "/admin/v1/curated-revisions",
+    "/v1/curated-revisions",
     "POST",
     {
       environment: environment.KEEPR_TARGET ?? "production",
@@ -178,7 +178,7 @@ async function lifecycle(operation, arguments_, environment, json) {
   return request(
     environment,
     json,
-    `/admin/v1/curated-revisions/${encodeURIComponent(revisionId)}/${operation}`,
+    `/v1/curated-revisions/${encodeURIComponent(revisionId)}/${operation}`,
     "POST",
     {
       environment: environment.KEEPR_TARGET ?? "production",

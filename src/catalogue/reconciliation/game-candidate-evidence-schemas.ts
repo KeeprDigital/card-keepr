@@ -1,3 +1,4 @@
+import { partitionedCuratedProposalSchema } from "../curated";
 import { z } from "@hono/zod-openapi";
 import { digest, identifier } from "../../http/openapi";
 import {
@@ -10,8 +11,6 @@ import {
   historicalCard,
   historicalPrinting,
   candidateWarning,
-  curatedEvidence,
-  curatedTarget,
   sourceValue,
   retainedSourceObject,
 } from "./game-candidate-record-schemas";
@@ -47,19 +46,6 @@ export const correctionRequest = z.strictObject({
   expected_current_revision_id: identifier,
   rationale: text,
   evidence: z.strictObject({ attestation: text }),
-});
-const curatedProposal = z.strictObject({
-  game: identifier,
-  target: curatedTarget,
-  assertion: z.union([
-    z.strictObject({ kind: z.literal("field"), value: sourceValue }),
-    z.strictObject({ kind: z.literal("relationship"), presence: z.enum(["present", "absent"]) }),
-  ]),
-  rationale: text,
-  evidence: curatedEvidence,
-  effective_interval: z.strictObject({ from: text, to: text }),
-  reviewed_source_digest: digest,
-  supersedes_revision_id: identifier.nullable(),
 });
 const admissionDecision = (
   card: typeof cardRecord | typeof historicalCard,
@@ -183,7 +169,7 @@ const evidence = {
   }),
   curated: z.strictObject({
     id: identifier,
-    proposal: curatedProposal,
+    proposal: partitionedCuratedProposalSchema,
     content_digest: digest,
     reviewed_source_digest: digest,
     active: z

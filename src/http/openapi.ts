@@ -170,3 +170,9 @@ export const revisionResponseHeaders = {
   "X-Catalogue-Revision": { required: true, schema: { type: "string" as const } },
   "Cache-Control": { required: true, schema: { type: "string" as const } },
 };
+
+/** Validate retained JSON without rebuilding it or stripping literal property names. */
+export function retainedWireValue<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {
+  schema.parse(value);
+  return value as z.infer<T>;
+}

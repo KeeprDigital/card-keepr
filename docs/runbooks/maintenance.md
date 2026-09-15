@@ -68,6 +68,14 @@ waits for older retained backups that could restore an unfenced identity; cleanu
 never shortens backup retention to force progress. A later verified checkpoint
 includes cleanup reservations and preserves the unavailable state on recovery.
 
+Curated Revision evidence remains retained after retirement or supersession.
+The historical retention migration protects previously acknowledged references
+without replaying owner commands or rewriting their content. It preserves existing
+cleanup claims: `410 evidence_reclaimed` still means that dependency is unavailable,
+even when a historical decision names it. Protection does not recover deleted
+bytes; inspect the cleanup's exact object results and retained recovery evidence
+before deciding any separately authorized recovery action.
+
 `paused` and per-key results distinguish backup-retention waits, unsettled
 writers/deleters and retryable storage failures. A timeout, absent HEAD or another
 successful deletion does not settle an ambiguous write/delete ticket. Do not

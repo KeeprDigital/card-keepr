@@ -190,3 +190,5 @@ export {
   validateStagingOutcome,
   type StagingOutcome,
 } from "./staging-validation.mjs";
+
+export { sourceValue, retainedSourceObject } from "./http-source-value";

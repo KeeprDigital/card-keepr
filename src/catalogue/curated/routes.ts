@@ -1,6 +1,6 @@
-import { assertOnlyFields, readAdministrationBody, requiredString } from "../../http/administration";
-import { type RouteContext, route } from "../../http/routes";
-import { AdministrationProblem, type CatalogueStore } from "../shared";
+import { httpRoute, retainedWireValue } from "../../http/openapi";
+import { type Route, type RouteContext } from "../../http/routes";
+import { type CatalogueStore } from "../shared";
 import {
   createCuratedRevision,
   listCuratedRevisions,
@@ -10,72 +10,97 @@ import {
   supersedeCuratedRevision,
   validateCuratedRevision,
 } from "./curated-revisions";
+import {
+  createCuratedRoute,
+  listCuratedRoute,
+  reaffirmCuratedRoute,
+  retireCuratedRoute,
+  showCuratedRoute,
+  supersedeCuratedRoute,
+  validateCuratedRoute,
+  curatedValidationSchema,
+  curatedReceiptSchema,
+  curatedInspectionSchema,
+  curatedListSchema,
+} from "./http-contract";
 
-type Environment = {
-  KEEPR_ENVIRONMENT?: string;
-  CATALOGUE_DB: CatalogueStore;
-};
+type Environment = { KEEPR_ENVIRONMENT?: string; CATALOGUE_DB: CatalogueStore };
 type Context = RouteContext<Environment> & { observedAt: string };
-
-export const curatedRoutes = [
-  route<Context>("POST", "/admin/v1/curated-revisions/validate", async ({ request, env }) => {
-    const body = await readAdministrationBody(request);
-    assertOnlyFields(body, ["proposal", "catalogue_revision_id"]);
-    return Response.json(
-      await validateCuratedRevision(env.CATALOGUE_DB, body.proposal, requiredString(body, "catalogue_revision_id")),
+const route = httpRoute<Context>();
+const headers = { "Cache-Control": "no-store" };
+export const curatedRoutes: Route<Context>[] = [
+  route(validateCuratedRoute, async (c) => {
+    const body = c.req.valid("json");
+    const original = await c.req.json<typeof body>();
+    return c.json(
+      curatedValidationSchema.parse(
+        await validateCuratedRevision(c.env.env.CATALOGUE_DB, original.proposal, body.catalogue_revision_id),
+      ),
+      200,
+      headers,
     );
   }),
-  route<Context>("GET", "/admin/v1/curated-revisions", async ({ env, request }) => {
-    const url = new URL(request.url);
-    const unexpected = [...url.searchParams.keys()].find(
-      (parameter) => !["game", "target", "status"].includes(parameter),
-    );
-    if (unexpected !== undefined) {
-      throw new AdministrationProblem(
-        422,
-        "invalid_parameter",
-        `${unexpected} is not accepted for this administration operation.`,
-      );
-    }
-    return Response.json(
-      await listCuratedRevisions(env.CATALOGUE_DB, {
-        ...(url.searchParams.has("game") ? { game: url.searchParams.get("game")! } : {}),
-        ...(url.searchParams.has("target") ? { target: url.searchParams.get("target")! } : {}),
-        ...(url.searchParams.has("status") ? { status: url.searchParams.get("status")! } : {}),
-      }),
-    );
-  }),
-  route<Context>("POST", "/admin/v1/curated-revisions", async ({ request, env, observedAt }) => {
-    const result = await createCuratedRevision(
-      env.CATALOGUE_DB,
-      await readAdministrationBody(request),
-      observedAt,
-      env.KEEPR_ENVIRONMENT,
-    );
-    return Response.json(result.document, {
-      status: result.created ? 201 : 200,
-    });
-  }),
-  ...["reaffirm", "supersede", "retire"].map((operation) =>
-    route<Context>(
-      "POST",
-      `/admin/v1/curated-revisions/:revision/${operation}`,
-      async ({ request, env, observedAt }, params) => {
-        const revisionId = params.revision!;
-        const body = await readAdministrationBody(request);
-        const result =
-          operation === "reaffirm"
-            ? await reaffirmCuratedRevision(env.CATALOGUE_DB, revisionId, body, observedAt, env.KEEPR_ENVIRONMENT)
-            : operation === "supersede"
-              ? await supersedeCuratedRevision(env.CATALOGUE_DB, revisionId, body, observedAt, env.KEEPR_ENVIRONMENT)
-              : await retireCuratedRevision(env.CATALOGUE_DB, revisionId, body, observedAt, env.KEEPR_ENVIRONMENT);
-        return Response.json(result.document, {
-          status: result.created && operation === "supersede" ? 201 : 200,
-        });
-      },
+  route(listCuratedRoute, async (c) =>
+    c.json(
+      retainedWireValue(curatedListSchema, await listCuratedRevisions(c.env.env.CATALOGUE_DB, c.req.valid("query"))),
+      200,
+      headers,
     ),
   ),
-  route<Context>("GET", "/admin/v1/curated-revisions/:revision", async ({ env }, params) => {
-    return Response.json(await showCuratedRevision(env.CATALOGUE_DB, params.revision!));
+  route(showCuratedRoute, async (c) =>
+    c.json(
+      retainedWireValue(
+        curatedInspectionSchema,
+        await showCuratedRevision(c.env.env.CATALOGUE_DB, c.req.valid("param").revision),
+      ),
+      200,
+      headers,
+    ),
+  ),
+  route(createCuratedRoute, async (c) => {
+    const _validated = c.req.valid("json");
+    // Hono validates the complete envelope. Retain the original JSON for hashing:
+    // rebuilding a historical loose object can strip literal __proto__ properties.
+    const input = await c.req.json<typeof _validated>();
+    const result = await createCuratedRevision(
+      c.env.env.CATALOGUE_DB,
+      input,
+      c.env.observedAt,
+      c.env.env.KEEPR_ENVIRONMENT,
+    );
+    return c.json(curatedReceiptSchema.parse(result.document), result.created ? 201 : 200, headers);
+  }),
+  route(reaffirmCuratedRoute, async (c) => {
+    const _validated = c.req.valid("json");
+    const result = await reaffirmCuratedRevision(
+      c.env.env.CATALOGUE_DB,
+      c.req.valid("param").revision,
+      await c.req.json<typeof _validated>(),
+      c.env.observedAt,
+      c.env.env.KEEPR_ENVIRONMENT,
+    );
+    return c.json(curatedReceiptSchema.parse(result.document), 200, headers);
+  }),
+  route(retireCuratedRoute, async (c) => {
+    const _validated = c.req.valid("json");
+    const result = await retireCuratedRevision(
+      c.env.env.CATALOGUE_DB,
+      c.req.valid("param").revision,
+      await c.req.json<typeof _validated>(),
+      c.env.observedAt,
+      c.env.env.KEEPR_ENVIRONMENT,
+    );
+    return c.json(curatedReceiptSchema.parse(result.document), 200, headers);
+  }),
+  route(supersedeCuratedRoute, async (c) => {
+    const _validated = c.req.valid("json");
+    const result = await supersedeCuratedRevision(
+      c.env.env.CATALOGUE_DB,
+      c.req.valid("param").revision,
+      await c.req.json<typeof _validated>(),
+      c.env.observedAt,
+      c.env.env.KEEPR_ENVIRONMENT,
+    );
+    return c.json(curatedReceiptSchema.parse(result.document), result.created ? 201 : 200, headers);
   }),
 ];

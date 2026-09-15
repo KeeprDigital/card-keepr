@@ -175,7 +175,7 @@ test("pending reconfirmation in the first game does not prevent the collection p
   };
   expect(
     (
-      await post("/admin/v1/curated-revisions", {
+      await post("/v1/curated-revisions", {
         environment: "production",
         expected_current_revision_id: predecessor,
         proposal,

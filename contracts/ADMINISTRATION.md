@@ -24,6 +24,46 @@ for read-only exact-commit checks; no Worker receives Cloudflare deployment
 credentials. See [isolated dev](../docs/runbooks/isolated-dev.md) for its signed
 workflow authentication and release guards.
 
+## Curated Revision HTTP
+
+All seven operations use `/v1/curated-revisions`: list/create at the collection,
+`validate`, inspection at `/{revision}`, and `reaffirm`, `retire`, and `supersede`
+under that revision. The generated administration specification owns the exact
+schemas. The CLI's `curated-revision` commands use this namespace.
+
+Validation binds the complete proposal to the exact current Catalogue Revision
+and Game Profile, including the reviewed source digest, evidence, rationale and
+required closed-open effective interval. Creation must supply the same proposal
+and digest. Curated Revisions correct existing facts; they cannot admit entities,
+change protected identities, invent profile fields or populate inapplicable
+art-Card gameplay fields. Supersession binds the prior decision and its current
+conflict, when present. Retirement and supersession require an explicitly present
+`conflict_digest`, including `null` when no conflict exists.
+
+Creation and supersession return `201` for a new decision and `200` for exact
+replay. Reaffirmation and retirement return `200`. Mutation replay returns the
+original immutable receipt, including its original event version and status;
+list/show return current inspection. Historical acknowledged empty-name proposal
+extensions remain inspectable and eligible for exact command replay, while fresh
+commands are strict. Removing or changing retained command properties conflicts.
+The wire boundary preserves literal JSON property names when checking those
+retained values. Idempotency keys are nonempty strings; Curated evidence and
+target identities retain their own pattern without a generic ID length ceiling.
+
+Schema-invalid JSON bodies return `422 invalid_parameter`; malformed JSON returns
+`400 invalid_json`, and invalid query parameters return `400 invalid_parameter`.
+Domain errors retain their specific codes for
+stale catalogue/source bindings, inapplicable fields, unavailable evidence and
+owner-state conflicts. Every operation requires the administration bearer key;
+JSON success responses use `Cache-Control: no-store`.
+
+New creation and supersession atomically pin cited raw snapshots and observation
+manifests with the decision. A cleanup claim winning that transaction rejects the
+decision without retaining its event or receipt. Historical retention protection
+is independent of replay and lifecycle status. Existing cleanup tombstones remain
+unavailable; the retention change cannot recover previously deleted bytes. See
+[maintenance](../docs/runbooks/maintenance.md#reclaim-unused-terminal-evidence).
+
 ## Interaction rules
 
 Read-only commands never prompt. Native commands use the configured ingestion

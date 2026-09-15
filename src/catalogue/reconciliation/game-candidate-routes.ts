@@ -5,7 +5,7 @@ import {
   inspectReconciliationText,
 } from "./reconciliation-progress";
 import * as inspection from "./game-candidate-http-contract";
-import { httpRoute, streamingHttpRoute } from "../../http/openapi";
+import { httpRoute, streamingHttpRoute, retainedWireValue } from "../../http/openapi";
 import { publicUrl } from "../../http/public-base";
 import type { RouteContext } from "../../http/routes";
 import type { CatalogueStore } from "../shared";
@@ -163,7 +163,8 @@ export const gameCandidateRoutes = [
       query = c.req.valid("query");
     const candidate = await inspectGameCandidate(c.env.env.CATALOGUE_DB, params.candidate);
     return c.json(
-      inspection.candidateEvidenceSchema.parse(
+      retainedWireValue(
+        inspection.candidateEvidenceSchema,
         await inspectCandidateEvidence(
           c.env.env.CATALOGUE_DB,
           candidate,

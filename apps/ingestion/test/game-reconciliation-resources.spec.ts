@@ -55,7 +55,7 @@ test.each([
       reviewed_source_digest: await sha256Text(canonicalJson(card.name)),
       supersedes_revision_id: null,
     };
-    const revision = await post("/admin/v1/curated-revisions", {
+    const revision = await post("/v1/curated-revisions", {
       environment: "production",
       expected_current_revision_id: predecessor,
       proposal,

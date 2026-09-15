@@ -204,11 +204,11 @@ export async function createCuratedRevision(
   observedAt: string,
   targetEnvironment = "production",
 ): Promise<{ created: boolean; document: MutationResult }> {
-  onlyFields(input, ["environment", "expected_current_revision_id", "proposal", "proposal_digest", "idempotency_key"]);
   const idempotencyKey = requiredString(input.idempotency_key, "idempotency_key");
   const requestDigest = await sha256Text(canonicalJson(input));
   const replay = await idempotencyReplay(database, idempotencyKey, requestDigest);
   if (replay !== null) return replay;
+  onlyFields(input, ["environment", "expected_current_revision_id", "proposal", "proposal_digest", "idempotency_key"]);
   if (input.environment !== targetEnvironment) {
     throw new AdministrationProblem(
       422,
@@ -315,7 +315,7 @@ export async function reaffirmCuratedRevision(
   observedAt: string,
   targetEnvironment = "production",
 ): Promise<{ created: boolean; document: MutationResult }> {
-  onlyFields(input, [
+  const mutation = await existingRevisionMutation(database, revisionId, input, observedAt, targetEnvironment, [
     "environment",
     "expected_current_revision_id",
     "expected_event_version",
@@ -323,7 +323,6 @@ export async function reaffirmCuratedRevision(
     "rationale",
     "idempotency_key",
   ]);
-  const mutation = await existingRevisionMutation(database, revisionId, input, observedAt, targetEnvironment);
   if (mutation.replay !== null) return mutation.replay;
   if (mutation.row.status !== "reconfirmation_required" || mutation.conflict === null) {
     throw new AdministrationProblem(
@@ -373,7 +372,8 @@ export async function retireCuratedRevision(
   observedAt: string,
   targetEnvironment = "production",
 ): Promise<{ created: boolean; document: MutationResult }> {
-  onlyFields(input, [
+  requiredOwnField(input, "conflict_digest");
+  const mutation = await existingRevisionMutation(database, revisionId, input, observedAt, targetEnvironment, [
     "environment",
     "expected_current_revision_id",
     "expected_event_version",
@@ -381,8 +381,6 @@ export async function retireCuratedRevision(
     "rationale",
     "idempotency_key",
   ]);
-  requiredOwnField(input, "conflict_digest");
-  const mutation = await existingRevisionMutation(database, revisionId, input, observedAt, targetEnvironment);
   if (mutation.replay !== null) return mutation.replay;
   assertConflictBinding(mutation.conflict, input.conflict_digest);
   const rationale = requiredString(input.rationale, "rationale");
@@ -417,7 +415,8 @@ export async function supersedeCuratedRevision(
   observedAt: string,
   targetEnvironment = "production",
 ): Promise<{ created: boolean; document: MutationResult }> {
-  onlyFields(input, [
+  requiredOwnField(input, "conflict_digest");
+  const mutation = await existingRevisionMutation(database, revisionId, input, observedAt, targetEnvironment, [
     "environment",
     "expected_current_revision_id",
     "expected_event_version",
@@ -427,8 +426,6 @@ export async function supersedeCuratedRevision(
     "rationale",
     "idempotency_key",
   ]);
-  requiredOwnField(input, "conflict_digest");
-  const mutation = await existingRevisionMutation(database, revisionId, input, observedAt, targetEnvironment);
   if (mutation.replay !== null) return mutation.replay;
   assertConflictBinding(mutation.conflict, input.conflict_digest);
   requiredString(input.rationale, "rationale");
@@ -639,7 +636,7 @@ export async function prepareCuratedRevisionRunStart(
   }[] = [];
   const conflicts: typeof prepared = [];
   for (const row of rows) {
-    const proposal = structuralProposal(JSON.parse(row.proposal_json));
+    const proposal = structuralProposal(JSON.parse(row.proposal_json), true);
     const officialTarget = candidateTarget(official, proposal);
     let reviewedSourceValue: unknown;
     if (proposal.target.kind === "field") {
@@ -840,7 +837,7 @@ export async function applyPinnedCuratedRevisions(
   const official = stripCuratedRevisionEffects(candidate, selectedGames);
   const planned = rows.results.map((row) => ({
     row,
-    proposal: structuralProposal(JSON.parse(row.proposal_json)),
+    proposal: structuralProposal(JSON.parse(row.proposal_json), true),
   }));
   const comparisons: {
     row: (typeof rows.results)[number];
@@ -1002,7 +999,7 @@ export async function applyPinnedCuratedRevisionsToDraft(
         await checkpoint(row);
         continue;
       }
-      const proposal = structuralProposal(JSON.parse(row.proposal_json));
+      const proposal = structuralProposal(JSON.parse(row.proposal_json), true);
       const snapshot = await prepareSnapshot(official, proposal, "official");
       const reviewedSourceValue = draftReviewedValue(snapshot, proposal);
       if ((await sha256Text(canonicalJson(reviewedSourceValue))) !== row.reviewed_source_digest) {
@@ -1023,7 +1020,7 @@ export async function applyPinnedCuratedRevisionsToDraft(
         await checkpoint(row);
         continue;
       }
-      const proposal = structuralProposal(JSON.parse(row.proposal_json));
+      const proposal = structuralProposal(JSON.parse(row.proposal_json), true);
       const reviewedSourceValue = draftReviewedValue(await prepareSnapshot(official, proposal, "official"), proposal);
       const snapshot = await prepareSnapshot(result, proposal, "result");
       if (proposal.target.kind === "field") {
@@ -1329,7 +1326,7 @@ export async function curatedRevisionInspectionForRun(
     throw new Error("The immutable Curated Revision pin-set rows are invalid.");
   }
   const effects = rows.results.flatMap((row) => {
-    const proposal = structuralProposal(JSON.parse(row.proposal_json));
+    const proposal = structuralProposal(JSON.parse(row.proposal_json), true);
     if (!candidateContainsCuratedRevision(candidate, proposal, row.revision_id, row.content_digest)) {
       if (sourceChangeFailure) return [];
       throw new Error(`Candidate is missing applied Curated Revision ${row.revision_id}.`);
@@ -1540,7 +1537,8 @@ async function existingRevisionMutation(
   revisionId: string,
   input: Record<string, unknown>,
   observedAt: string,
-  targetEnvironment = "production",
+  targetEnvironment: string,
+  allowedFields: readonly string[],
 ): Promise<ExistingMutation> {
   const idempotencyKey = requiredString(input.idempotency_key, "idempotency_key");
   const requestDigest = await sha256Text(canonicalJson({ revision_id: revisionId, ...input }));
@@ -1556,6 +1554,7 @@ async function existingRevisionMutation(
       operationId: replay.document.operation_id,
     };
   }
+  onlyFields(input, allowedFields);
   if (input.environment !== targetEnvironment) {
     throw new AdministrationProblem(
       422,
@@ -1733,6 +1732,13 @@ async function idempotencyReplay(
 
 function lifecycleWriteProblem(error: unknown): Error {
   const detail = error instanceof Error ? error.message : String(error);
+  if (detail.includes("evidence_cleanup_reference_fenced")) {
+    return new AdministrationProblem(
+      409,
+      "curated_revision_evidence_unavailable",
+      "Cleanup has already claimed a cited Source Observation's physical evidence.",
+    );
+  }
   if (detail.includes("curated_revision_target_conflict")) {
     return new AdministrationProblem(
       409,
@@ -1815,7 +1821,7 @@ async function validateSupersedingProposal(
   } else {
     assertRelationshipRepresentable(target as unknown as CatalogueCandidate, proposal);
   }
-  const previous = structuralProposal(JSON.parse(mutation.row.proposal_json));
+  const previous = structuralProposal(JSON.parse(mutation.row.proposal_json), true);
   const expectedDigest =
     targetKey(previous) === targetKey(proposal)
       ? (mutation.conflict?.observed_source_digest ??
@@ -1841,7 +1847,7 @@ async function sourceDigestForProposal(target: Record<string, unknown>, proposal
 }
 
 async function revisionContent(database: CatalogueStore, row: RevisionRow): Promise<Record<string, unknown>> {
-  const proposal = structuralProposal(JSON.parse(row.proposal_json));
+  const proposal = structuralProposal(JSON.parse(row.proposal_json), true);
   const events = await curatedStatements
     .curatedRevisionEventHistoryStatement(database, { id: row.id })
     .all<{ kind: string; event_version: number; event_json: string; created_at: string; author: string }>();
@@ -2127,13 +2133,14 @@ function entityExists(candidate: CatalogueCandidate, type: string, id: string, g
   return false;
 }
 
-function structuralProposal(input: unknown): Proposal {
+function structuralProposal(input: unknown, retained = false): Proposal {
+  const fields = (value: Record<string, unknown>, allowed: readonly string[]) => onlyFields(value, allowed, retained);
   const value = decodeDocument<Record<string, unknown>>(
     "record",
     input,
     () => new AdministrationProblem(422, "curated_revision_schema_invalid", "Proposal is required."),
   );
-  onlyFields(value, [
+  fields(value, [
     "game",
     "target",
     "assertion",
@@ -2164,7 +2171,7 @@ function structuralProposal(input: unknown): Proposal {
   if (evidence.some((item) => item.kind === "owner_reference" && !absoluteUri(item.uri)))
     invalid("At least one valid evidence reference is required.");
   const interval = value.effective_interval;
-  if (record(interval)) onlyFields(interval, ["from", "to"]);
+  if (record(interval)) fields(interval, ["from", "to"]);
   if (
     !record(interval) ||
     !onlyDate(interval.from) ||
@@ -2180,8 +2187,8 @@ function structuralProposal(input: unknown): Proposal {
   if (!record(value.target) || !record(value.assertion))
     throw new AdministrationProblem(422, "curated_revision_target_invalid", "The target and assertion are required.");
   if (value.target.kind === "field") {
-    onlyFields(value.target, ["kind", "entity_type", "entity_id", "path"]);
-    onlyFields(value.assertion, ["kind", "value"]);
+    fields(value.target, ["kind", "entity_type", "entity_id", "path"]);
+    fields(value.assertion, ["kind", "value"]);
     decodeDocument(
       "proposalFieldTarget",
       value.target,
@@ -2190,12 +2197,12 @@ function structuralProposal(input: unknown): Proposal {
     if (value.assertion.kind !== "field" || !Object.hasOwn(value.assertion, "value"))
       invalid("A field target requires an explicit field assertion.");
   } else if (value.target.kind === "relationship") {
-    onlyFields(value.target, ["kind", "relationship_kind", "from", "to"]);
-    onlyFields(value.assertion, ["kind", "presence"]);
+    fields(value.target, ["kind", "relationship_kind", "from", "to"]);
+    fields(value.assertion, ["kind", "presence"]);
     if (!record(value.target.from) || !record(value.target.to))
       throw new AdministrationProblem(422, "curated_revision_target_invalid", "Relationship target is incomplete.");
-    onlyFields(value.target.from, ["type", "id"]);
-    onlyFields(value.target.to, ["type", "id"]);
+    fields(value.target.from, ["type", "id"]);
+    fields(value.target.to, ["type", "id"]);
     if (
       !opaque(value.target.from.id) ||
       !opaque(value.target.to.id) ||
@@ -2541,9 +2548,9 @@ function requiredString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.length === 0) invalid(`${field} must be a non-empty string.`);
   return value as string;
 }
-function onlyFields(value: Record<string, unknown>, fields: readonly string[]) {
+function onlyFields(value: Record<string, unknown>, fields: readonly string[], retained = false) {
   const extra = Object.keys(value).find((key) => !fields.includes(key));
-  if (extra) invalid(`${extra} is not accepted.`);
+  if (extra !== undefined && !(retained && extra === "")) invalid(`${extra} is not accepted.`);
 }
 function requiredOwnField(value: Record<string, unknown>, field: string): void {
   if (!Object.hasOwn(value, field)) invalid(`${field} is required, including when null.`);
