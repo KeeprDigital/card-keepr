@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import bloomvine from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/reversible-adventure.json?raw";
+import reminder from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/manifest-reminder.json?raw";
 import control from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/etched.json?raw";
 import split from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/split-three.json?raw";
 import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
@@ -19,7 +20,7 @@ installReconciliationSuite({ directPreparation: true });
 test("review-required source claims retain separate finish proposals while the resolved control reaches the candidate", async () => {
   const adapter = requiredSourceAdapter("scryfall-magic-en@1");
   const values: unknown[] = [];
-  for (const raw of [bloomvine, control, split])
+  for (const raw of [bloomvine, reminder, control, split])
     values.push(
       ...(await adapter.parseBytes!(new TextEncoder().encode(raw), {
         url: JSON.parse(raw).uri,
@@ -93,19 +94,27 @@ test("review-required source claims retain separate finish proposals while the r
     id: string;
     reference: string;
   }[];
-  const reviews = proposals.filter((p) => JSON.parse(p.reference)[0] === JSON.parse(bloomvine).id);
-  expect(reviews.map((p) => JSON.parse(p.reference)[1]).sort()).toEqual(["foil", "nonfoil"]);
-  for (const proposal of reviews) {
-    const inspected = (await get(`/v1/entity-proposals/${proposal.id}`)).document;
-    expect(inspected).toMatchObject({
-      status: "unresolved",
-      generation: 0,
-      content: { finish: JSON.parse(proposal.reference)[1] },
-    });
-    expect(inspected.content).not.toHaveProperty("card");
-    expect(inspected.content).not.toHaveProperty("printing");
-    expect(
-      new TextEncoder().encode(JSON.stringify({ content: inspected.content, evidence: inspected.evidence })).byteLength,
-    ).toBeLessThan(65536);
+  for (const [raw, reason] of [
+    [bloomvine, "logical_parts_unresolved"],
+    [reminder, "category_unresolved"],
+  ] as const) {
+    const reviews = proposals.filter((p) => JSON.parse(p.reference)[0] === JSON.parse(raw).id);
+    expect(reviews.map((p) => JSON.parse(p.reference)[1]).sort()).toEqual(["foil", "nonfoil"]);
+    for (const proposal of reviews) {
+      const inspected = (await get(`/v1/entity-proposals/${proposal.id}`)).document;
+      expect(inspected).toMatchObject({
+        status: "unresolved",
+        generation: 0,
+        content: { finish: JSON.parse(proposal.reference)[1] },
+        evidence: { issues: [{ code: reason }] },
+      });
+      expect(inspected.content).not.toHaveProperty("card");
+      expect(inspected.content).not.toHaveProperty("printing");
+      expect(inspected.content).not.toHaveProperty("category");
+      expect(
+        new TextEncoder().encode(JSON.stringify({ content: inspected.content, evidence: inspected.evidence }))
+          .byteLength,
+      ).toBeLessThan(65536);
+    }
   }
 });

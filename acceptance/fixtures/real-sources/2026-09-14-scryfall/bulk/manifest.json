@@ -290,6 +290,13 @@
       "byte_length": 6877,
       "sha256": "40f0c3ff92ed43d77b7fc7c1358a7abc0295eef94d444cd20805bc88b8692a87",
       "extraction": "Exact original newline-terminated record from independently hash-verified retained exception subset; decoded byte offset was not recorded."
+    },
+    {
+      "file": "manifest-reminder.json",
+      "id": "01104ab1-84e1-4c78-853d-637c6554bdf9",
+      "line": 502,
+      "byte_length": 19276,
+      "sha256": "54b64fd4f105475868e994a0e64114d94ec0d9c29e6db226eb50d9b12e0343a6"
     }
   ]
 }
