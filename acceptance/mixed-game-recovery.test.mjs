@@ -8,10 +8,10 @@ import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { reconciliationSourceDocument } from "../test/support/fake-publisher/reconciliation-documents.ts";
 import {
-  applyMigrations,
-  runCli,
-  startWorker,
-  stopWorker,
+  applyMigrations as originalApplyMigrations,
+  runCli as originalRunCli,
+  startWorker as originalStartWorker,
+  stopWorker as originalStopWorker,
   waitForAdministrationDocument,
   waitForHealth,
 } from "./helpers/acceptance-runtime.mjs";
@@ -21,10 +21,18 @@ import { nativeExportReader } from "./helpers/native-export-reader.mjs";
 import { withNativeRequestPacing } from "./helpers/native-request-pacing.mjs";
 import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs";
 
+import { phaseAsync, journeyStage, journeyComplete } from "./helpers/mixed-phase-diagnostics.mjs";
+
+const applyMigrations = (...args) => phaseAsync("migration-setup", "catalogue", () => originalApplyMigrations(...args));
+const startWorker = (...args) => phaseAsync("bundle-boot", "worker", () => originalStartWorker(...args));
+const stopWorker = (...args) => phaseAsync("worker-stop", "worker", () => originalStopWorker(...args));
+const runCli = (...args) => phaseAsync("journey-cli", "command", () => originalRunCli(...args));
+
 // Synthetic source facts, actual publication/backup Workflows and SQL imports.
 // All seven registered games prove sibling preservation; three further publications cross the
 // current-plus-two retention boundary. No full catalogue or capacity preflight.
 test("mixed-game composition and current plus two survive an actual SQL import", async (t) => {
+  journeyStage("setup");
   const exportReader = nativeExportReader(250);
   const nativeExportRecords = exportReader.records;
   const directory = await mkdtemp(join(tmpdir(), "keepr-mixed-game-restore-"));
@@ -124,6 +132,7 @@ test("mixed-game composition and current plus two survive an actual SQL import",
   );
   // A declared multi-game collection selects the shipped native preparation
   // path. Single-game synthetic adapters intentionally retain the legacy path.
+  journeyStage("initial-collection");
   const source = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", "mixed-game-source"]);
   await cli(["source", "resume", "--run-id", source.id]);
   await waitForAdministrationDocument(
@@ -149,6 +158,7 @@ test("mixed-game composition and current plus two survive an actual SQL import",
   );
   assert.deepEqual(collection.candidates.map((c) => c.supported_game).sort(), sources.map(([game]) => game).sort());
   for (const [game] of sources) {
+    journeyStage(`publication-${game}`);
     const selected = collection.candidates.find((c) => c.supported_game === game);
     const candidate = await cli(["game-candidate", "show", "--candidate-id", selected.id]);
     const published = await publishNativeCollection(
@@ -171,6 +181,7 @@ test("mixed-game composition and current plus two survive an actual SQL import",
   }
   const initialCompositionRevision = revisions.at(-1);
   for (let repeat = 0; repeat < 3; repeat++) {
+    journeyStage(`refresh-${repeat}`);
     await writeFile(
       planPath,
       JSON.stringify({
@@ -235,6 +246,7 @@ test("mixed-game composition and current plus two survive an actual SQL import",
       );
     previousComponents = nextComponents;
   }
+  journeyStage("retained-reads-before-restore");
   const cards = await nativeExportRecords(api.url, apiKey, revisions.at(-1), "cards");
   assert.deepEqual([...new Set(cards.map((c) => c.game))].sort(), sources.map(([game]) => game).sort());
   const headers = { authorization: `Bearer ${apiKey}` };
@@ -252,12 +264,15 @@ test("mixed-game composition and current plus two survive an actual SQL import",
     assert.equal((await retired.json()).code, "catalogue_query_unavailable");
   };
   await verifyRetainedReads();
+  journeyStage("restore-binding");
   await stopWorker(api);
   await stopWorker(worker);
   const restored = await verifiedBackupApiState(statePath, directory);
   exportReader.clear();
   api = await startWorker({ config: "apps/api/wrangler.jsonc", statePath: restored, vars: { API_BEARER_KEY: apiKey } });
   await waitForHealth(`${api.url}/health`, apiKey, api);
+  journeyStage("retained-reads-after-restore");
   assert.deepEqual(await nativeExportRecords(api.url, apiKey, revisions.at(-1), "cards"), cards);
   await verifyRetainedReads();
+  journeyComplete();
 });

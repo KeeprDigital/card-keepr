@@ -1,3 +1,5 @@
+import { phaseAsync } from "./mixed-phase-diagnostics.mjs";
+
 // One queue for opt-in native administration traffic, including CLI commands,
 // helper reads and polling. Hold the slot until the CLI exits or fetch headers
 // arrive so slow commands
@@ -20,7 +22,7 @@ export function createNativeRequestQueue({
     const pending = state.tail.then(async () => {
       if (state.completedAt !== null) {
         const delay = Math.max(0, state.completedAt + interval - now());
-        if (delay) await sleep(delay);
+        if (delay) await phaseAsync("pacing", "intentional-wait", () => sleep(delay), false);
       }
       try {
         return await action();
