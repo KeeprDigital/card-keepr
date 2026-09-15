@@ -12,6 +12,7 @@
       "acceptance/documentation-cli.test.mjs",
       "acceptance/helpers/documentation.mjs",
       "acceptance/production-release-smoke.test.mjs",
+      "acceptance/staging-execution.test.mjs",
       "apps/api/test/documentation.spec.ts",
       "apps/ingestion/test/documentation.spec.ts",
       "cli/documentation.mjs",
@@ -128,6 +129,7 @@
     "callers": [
       "acceptance/documentation-cli.test.mjs",
       "acceptance/production-release-smoke.test.mjs",
+      "acceptance/staging-execution.test.mjs",
       "apps/api/test/documentation.spec.ts",
       "apps/ingestion/test/documentation.spec.ts",
       "cli/documentation.mjs",
@@ -2329,6 +2331,7 @@
       "acceptance/documentation-cli.test.mjs",
       "acceptance/helpers/documentation.mjs",
       "acceptance/production-release-smoke.test.mjs",
+      "acceptance/staging-execution.test.mjs",
       "apps/api/test/documentation.spec.ts",
       "apps/ingestion/test/documentation.spec.ts",
       "cli/documentation.mjs",
@@ -2445,6 +2448,7 @@
     "callers": [
       "acceptance/documentation-cli.test.mjs",
       "acceptance/production-release-smoke.test.mjs",
+      "acceptance/staging-execution.test.mjs",
       "apps/api/test/documentation.spec.ts",
       "apps/ingestion/test/documentation.spec.ts",
       "cli/documentation.mjs",
