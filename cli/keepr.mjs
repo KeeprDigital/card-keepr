@@ -216,10 +216,7 @@ const commandRoutes = {
       idempotency_key: "idempotency-key",
     },
     production: "Catalogue backup",
-    query: {
-      expected_current_revision_id: "expected-current-revision",
-    },
-    confirmBody: true,
+    backupRecovery: "backup",
   },
   verifyRecovery: {
     path: "/v1/recoveries/{recovery-id}/verification",
@@ -228,14 +225,7 @@ const commandRoutes = {
       idempotency_key: "idempotency-key",
     },
     production: "Catalogue recovery verification",
-    query: {
-      recovery_id: "recovery-id",
-      target_digest: "target-digest",
-    },
-    confirmBody: true,
-    confirmRoute: {
-      recovery_id: "recovery-id",
-    },
+    backupRecovery: "verify",
   },
   acceptRecovery: {
     path: "/v1/recoveries/{recovery-id}/acceptance",
@@ -246,15 +236,7 @@ const commandRoutes = {
       idempotency_key: "idempotency-key",
     },
     production: "Catalogue recovery acceptance",
-    query: {
-      recovery_id: "recovery-id",
-      target_digest: "target-digest",
-      expected_restored_revision_id: "expected-restored-revision",
-    },
-    confirmBody: true,
-    confirmRoute: {
-      recovery_id: "recovery-id",
-    },
+    backupRecovery: "accept",
   },
   beginRecovery: {
     path: "/v1/recoveries",
@@ -270,10 +252,7 @@ const commandRoutes = {
       linked_operation_id: "linked-operation-id",
     },
     production: "Catalogue recovery",
-    query: {
-      expected_current_revision_id: "expected-current-revision",
-    },
-    confirmBody: true,
+    backupRecovery: "begin",
     bodyEnvironment: true,
     optional: ["linked-operation-id"],
     choices: {
@@ -385,12 +364,23 @@ async function routeCommand(name, arguments_, environment, json) {
     body[field] = Number(body[field]);
   }
   if (definition.production) {
-    const resolved = await resolveTarget(environment, json, mapped(definition.query));
+    const choices =
+      definition.backupRecovery === "backup"
+        ? { backup: body }
+        : definition.backupRecovery
+          ? {
+              recovery: {
+                action: definition.backupRecovery,
+                ...(definition.backupRecovery === "begin" ? {} : { recovery_id: value("recovery-id") }),
+                input: body,
+              },
+            }
+          : mapped(definition.query);
+    const resolved = await resolveTarget(environment, json, choices);
     if (typeof resolved === "number") return resolved;
-    const confirmation = definition.confirmBody
-      ? { production_target: resolved.productionTarget, ...mapped(definition.confirmRoute), ...body }
-      : resolved.productionTarget;
-    const confirmed = confirmProductionTarget(json, confirmation, value("confirm"));
+    const confirmed = definition.backupRecovery
+      ? confirmTargetText(json, resolved.confirmation, value("confirm"))
+      : confirmProductionTarget(json, resolved.productionTarget, value("confirm"));
     if (confirmed !== 0) return confirmed;
   }
   const [pathTemplate, queryTemplate] = definition.path.split("?");
@@ -709,7 +699,13 @@ async function retryBackup(arguments_, environment, json) {
   if (target !== (environment.KEEPR_TARGET ?? "production")) {
     return productionTargetFailure(json, targetConfirmationDetail("Catalogue backup retry", environment));
   }
-  const resolved = await resolveProductionStatus(environment, json, expected);
+  const body = {
+    expected_current_revision_id: expected,
+    idempotency_key: idempotencyKey,
+    failed_attempt_id: failedAttemptId,
+    failed_attempt_digest: failedAttemptDigest,
+  };
+  const resolved = await resolveTarget(environment, json, { backup: body });
   if (typeof resolved === "number") return resolved;
   writeResolvedBackupRetry(json, {
     contract: "card-keepr-resolved-backup-retry@1",
@@ -720,24 +716,9 @@ async function retryBackup(arguments_, environment, json) {
     failed_attempt_id: failedAttemptId,
     failed_attempt_digest: failedAttemptDigest,
   });
-  const confirmed = confirmProductionTarget(
-    json,
-    {
-      production_target: resolved.productionTarget,
-      expected_current_revision_id: expected,
-      idempotency_key: idempotencyKey,
-      failed_attempt_id: failedAttemptId,
-      failed_attempt_digest: failedAttemptDigest,
-    },
-    confirmation,
-  );
+  const confirmed = confirmTargetText(json, resolved.confirmation, confirmation);
   if (confirmed !== 0) return confirmed;
-  return administrationRequest(environment, json, "/v1/backups", "POST", {
-    expected_current_revision_id: expected,
-    idempotency_key: idempotencyKey,
-    failed_attempt_id: failedAttemptId,
-    failed_attempt_digest: failedAttemptDigest,
-  });
+  return administrationRequest(environment, json, "/v1/backups", "POST", body);
 }
 
 async function catalogueExportDeletion(action, arguments_, environment, json) {
@@ -1060,11 +1041,14 @@ async function resolveTarget(environment, json, parameters) {
       },
       8,
     );
-  return { productionTarget: resolved.production_target };
+  return { productionTarget: resolved.production_target, confirmation: resolved.confirmation };
 }
 
 function confirmProductionTarget(json, productionTarget, confirmation) {
-  const required = JSON.stringify(productionTarget);
+  return confirmTargetText(json, JSON.stringify(productionTarget), confirmation);
+}
+
+function confirmTargetText(json, required, confirmation) {
   if (confirmation === required) return 0;
   return writeFailure(
     json,

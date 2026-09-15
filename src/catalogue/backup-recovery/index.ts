@@ -44,3 +44,6 @@ export { backupRecoveryRoutes } from "./routes";
 
 export { publicationBackupDispatchStatements, outstandingBackupDispatches } from "./backup-dispatch";
 export { catalogueMutationFenced } from "./backup-recovery";
+
+export { backupRecoveryTargetCommand } from "./http-contract";
+export { backupRecoveryConfirmationBinding } from "./http-target";

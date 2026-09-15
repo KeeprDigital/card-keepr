@@ -1,14 +1,47 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:net";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs";
+import { createVerifiedBackupFixture } from "./helpers/query-helpers/verified-backup-fixture.mjs";
 import { inspectNativeCollection } from "./helpers/native-catalogue-runtime.mjs";
 import {
   allocatePort,
   isAddressInUse,
   portPartition,
+  persistedDatabaseDirectory,
   runProcess,
   waitForRunState,
 } from "./helpers/acceptance-runtime.mjs";
+
+test("verified restore accepts an explicit empty binding while discovery requires a catalogue", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "keepr-verified-binding-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const statePath = join(directory, "state");
+  const databaseDirectory = await persistedDatabaseDirectory(statePath);
+  await mkdir(databaseDirectory, { recursive: true });
+  const target = join(databaseDirectory, "replacement.sqlite");
+  new DatabaseSync(target).close();
+  const restored = join(directory, "restore-1.sqlite");
+  const source = new DatabaseSync(restored);
+  createVerifiedBackupFixture(source).run();
+  source.close();
+  const empty = await readFile(target);
+  await assert.rejects(verifiedBackupApiState(statePath, directory), /API binding database was not found/u);
+  await assert.rejects(verifiedBackupApiState(statePath, directory, restored), /API binding database was not found/u);
+  await assert.rejects(
+    verifiedBackupApiState(statePath, directory, join(databaseDirectory, "missing.sqlite")),
+    /API binding database was not found/u,
+  );
+  assert.deepEqual(await readFile(target), empty);
+  assert.equal(await verifiedBackupApiState(statePath, directory, target), statePath);
+  assert.deepEqual(await readFile(target), await readFile(restored));
+  // Once the selected binding has a catalogue, existing automatic callers still work.
+  assert.equal(await verifiedBackupApiState(statePath, directory), statePath);
+});
 
 // The acceptance runtime's own guarantees: each file draws Worker ports from
 // its private partition and skips ports another program holds, boot-collision

@@ -161,14 +161,13 @@ type RecoveryJournal = Readonly<{
   backup: VerifiedBackupRow;
 }>;
 
-export async function beginCatalogueRecovery(
-  database: CatalogueStore,
-  backups: R2Bucket,
-  input: BeginCatalogueRecoveryInput,
-  provider: D1RecoveryProvider = cloudflareD1RecoveryProvider,
-): Promise<Record<string, unknown>> {
-  validateBeginInput(input);
-  const requestJson = canonicalJson({
+export type CatalogueRecoveryBeginIntent = Omit<
+  BeginCatalogueRecoveryInput,
+  "observedAt" | "cloudflareAccountId" | "catalogueDatabaseId" | "verificationToken"
+>;
+
+function beginRequestJson(input: CatalogueRecoveryBeginIntent): string {
+  return canonicalJson({
     recovery_id: input.recoveryId,
     method: input.method,
     target_revision_id: input.targetRevisionId,
@@ -179,17 +178,47 @@ export async function beginCatalogueRecovery(
     idempotency_key: input.idempotencyKey,
     linked_operation_id: input.linkedOperationId ?? null,
   });
+}
+
+async function retainedRecoveryBegin(
+  database: CatalogueStore,
+  backups: R2Bucket,
+  input: CatalogueRecoveryBeginIntent,
+  requestJson: string,
+  ambiguousRestoringIsFailure: boolean,
+): Promise<RecoveryRow | null> {
   let replay = await recoveryByIdempotency(database, input.idempotencyKey);
   if (replay !== null) {
     if (replay.request_json !== requestJson) throw idempotencyReused();
-    return recoveryDocument(database, replay);
+    return replay;
   }
-  await hydrateRetainedRecoveryIfPresent(database, backups, input.recoveryId, true);
+  await hydrateRetainedRecoveryIfPresent(database, backups, input.recoveryId, ambiguousRestoringIsFailure);
   replay = await recoveryByIdempotency(database, input.idempotencyKey);
   if (replay !== null) {
     if (replay.request_json !== requestJson) throw idempotencyReused();
-    return recoveryDocument(database, replay);
+    return replay;
   }
+  return null;
+}
+
+export async function acknowledgedCatalogueRecoveryBegin(
+  database: CatalogueStore,
+  backups: R2Bucket,
+  input: CatalogueRecoveryBeginIntent,
+): Promise<boolean> {
+  return (await retainedRecoveryBegin(database, backups, input, beginRequestJson(input), false)) !== null;
+}
+
+export async function beginCatalogueRecovery(
+  database: CatalogueStore,
+  backups: R2Bucket,
+  input: BeginCatalogueRecoveryInput,
+  provider: D1RecoveryProvider = cloudflareD1RecoveryProvider,
+): Promise<Record<string, unknown>> {
+  validateBeginInput(input);
+  const requestJson = beginRequestJson(input);
+  const replay = await retainedRecoveryBegin(database, backups, input, requestJson, true);
+  if (replay !== null) return recoveryDocument(database, replay);
   const identity = await recoveryRow(database, input.recoveryId);
   if (identity !== null) {
     throw new AdministrationProblem(409, "recovery_identity_conflict", "The recovery identity is already in use.");
@@ -353,6 +382,60 @@ export async function inspectCatalogueRecovery(
   return recoveryDocument(database, row);
 }
 
+function verificationRequestDigest(recoveryId: string, targetDigest: string) {
+  return sha256Text(canonicalJson({ recovery_id: recoveryId, target_digest: targetDigest }));
+}
+function exactVerificationReplay(row: RecoveryRow, key: string, requestDigest: string): boolean {
+  if (row.verification_idempotency_key === null) return false;
+  if (row.verification_idempotency_key !== key || row.verification_request_digest !== requestDigest)
+    throw idempotencyReused();
+  return true;
+}
+export async function acknowledgedCatalogueRecoveryVerification(
+  database: CatalogueStore,
+  backups: R2Bucket,
+  recoveryId: string,
+  input: Pick<VerifyCatalogueRecoveryInput, "targetDigest" | "idempotencyKey">,
+): Promise<boolean> {
+  await hydrateRecoveryJournal(database, backups, recoveryId);
+  return exactVerificationReplay(
+    await requiredRecovery(database, recoveryId),
+    input.idempotencyKey,
+    await verificationRequestDigest(recoveryId, input.targetDigest),
+  );
+}
+export type CatalogueRecoveryAcceptanceIntent = Omit<AcceptCatalogueRecoveryInput, "observedAt">;
+function acceptanceRequestDigest(recoveryId: string, input: CatalogueRecoveryAcceptanceIntent) {
+  return sha256Text(
+    canonicalJson({
+      recovery_id: recoveryId,
+      expected_restored_revision_id: input.expectedRestoredRevisionId,
+      target_digest: input.targetDigest,
+      confirmation_recovery_id: input.confirmationRecoveryId,
+      bound_database_id: input.boundDatabaseId,
+    }),
+  );
+}
+function exactAcceptanceReplay(row: RecoveryRow, key: string, requestDigest: string): boolean {
+  if (row.acceptance_idempotency_key === null) return false;
+  if (row.acceptance_idempotency_key !== key || row.acceptance_request_digest !== requestDigest)
+    throw idempotencyReused();
+  return true;
+}
+export async function acknowledgedCatalogueRecoveryAcceptance(
+  database: CatalogueStore,
+  backups: R2Bucket,
+  recoveryId: string,
+  input: CatalogueRecoveryAcceptanceIntent,
+): Promise<boolean> {
+  await hydrateRecoveryJournal(database, backups, recoveryId);
+  return exactAcceptanceReplay(
+    await requiredRecovery(database, recoveryId),
+    input.idempotencyKey,
+    await acceptanceRequestDigest(recoveryId, input),
+  );
+}
+
 export async function verifyCatalogueRecovery(
   database: CatalogueStore,
   backups: R2Bucket,
@@ -365,15 +448,8 @@ export async function verifyCatalogueRecovery(
   assertSha256(input.targetDigest, "target_digest");
   await hydrateRecoveryJournal(database, backups, recoveryId);
   const row = await requiredRecovery(database, recoveryId);
-  const requestDigest = await sha256Text(
-    canonicalJson({
-      recovery_id: recoveryId,
-      target_digest: input.targetDigest,
-    }),
-  );
-  if (row.verification_idempotency_key !== null) {
-    if (row.verification_idempotency_key !== input.idempotencyKey || row.verification_request_digest !== requestDigest)
-      throw idempotencyReused();
+  const requestDigest = await verificationRequestDigest(recoveryId, input.targetDigest);
+  if (exactVerificationReplay(row, input.idempotencyKey, requestDigest)) {
     const retained = await requiredRecoveryJournal(backups, recoveryId);
     await persistRecoveryJournal(backups, row, retained.backup);
     return recoveryDocument(database, row);
@@ -456,19 +532,9 @@ export async function acceptCatalogueRecovery(
 ): Promise<Record<string, unknown>> {
   assertOpaqueId(input.idempotencyKey, "idempotency_key");
   await hydrateRecoveryJournal(database, backups, recoveryId);
-  const requestDigest = await sha256Text(
-    canonicalJson({
-      recovery_id: recoveryId,
-      expected_restored_revision_id: input.expectedRestoredRevisionId,
-      target_digest: input.targetDigest,
-      confirmation_recovery_id: input.confirmationRecoveryId,
-      bound_database_id: input.boundDatabaseId,
-    }),
-  );
+  const requestDigest = await acceptanceRequestDigest(recoveryId, input);
   const row = await requiredRecovery(database, recoveryId);
-  if (row.acceptance_idempotency_key !== null) {
-    if (row.acceptance_idempotency_key !== input.idempotencyKey || row.acceptance_request_digest !== requestDigest)
-      throw idempotencyReused();
+  if (exactAcceptanceReplay(row, input.idempotencyKey, requestDigest)) {
     const retained = await requiredRecoveryJournal(backups, recoveryId);
     await releaseAcceptedRecoveryIfSafe(database, row, retained.backup, input.boundDatabaseId);
     await persistRecoveryJournal(backups, row, retained.backup);

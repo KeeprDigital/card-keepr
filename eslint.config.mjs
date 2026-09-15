@@ -44,6 +44,7 @@ export default defineConfig([
       "**/worker-configuration.d.ts",
       "src/catalogue/shared/document-validators.mjs",
       "test/support/http-response-validators.mjs",
+      "test/support/http-response-validators.{admin,read}.mjs",
       "pnpm-lock.yaml",
       "coverage/**",
       "test-results/**",

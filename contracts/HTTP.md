@@ -208,6 +208,17 @@ fresh scopes must be strings. The separately inventoried signed platform handler
 retain their workflow/environment credentials, expiry and exact-identity checks.
 See the [administration protocol](ADMINISTRATION.md#maintenance-http).
 
+## Backup and recovery
+
+[#323](https://github.com/KeeprDigital/card-keepr/issues/323) registers all seven
+backup and recovery operations. Their owning module defines the wire commands,
+current status, verified success and structured failure responses. The
+[administration protocol](ADMINISTRATION.md#backup-and-recovery-http) distinguishes
+new dispatch from exact replay, and current recovery documents from their
+immutable decision bindings. The [operator procedure](../docs/runbooks/backup-recovery.md)
+retains actual restore, verification, replacement binding and explicit owner
+acceptance as separate steps.
+
 ## Migrating a family
 
 1. Find the operation and potential callers in [the generated inventory](http-route-inventory.json).

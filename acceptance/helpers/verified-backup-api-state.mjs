@@ -8,6 +8,8 @@ import { catalogueStateTableExists } from "./query-helpers/schema.mjs";
  * Restore the disposable test binding in place, retaining its R2 objects and
  * binding identity. This also supports in-process persistence keyed by statePath.
  * Call only after both source runtimes have stopped and checkpoint verification passed.
+ * An explicitly selected binding may be newly initialized; automatic discovery
+ * still requires a catalogue so it cannot overwrite an unrelated empty binding.
  */
 export async function verifiedBackupApiState(statePath, directory, targetDatabaseFile) {
   const imports = (await readdir(directory))
@@ -22,7 +24,7 @@ export async function verifiedBackupApiState(statePath, directory, targetDatabas
     const database = new DatabaseSync(path, { readOnly: true });
     const catalogue = catalogueStateTableExists(database).get();
     database.close();
-    if (!catalogue) continue;
+    if (!catalogue && targetDatabaseFile === undefined) continue;
     await rm(`${path}-wal`, { force: true });
     await rm(`${path}-shm`, { force: true });
     await copyFile(join(directory, imports.at(-1)), path);

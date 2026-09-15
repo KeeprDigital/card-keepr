@@ -1,4 +1,5 @@
-import { inspectCatalogueRecovery } from "../backup-recovery";
+import { retainedWireValue } from "../../http/openapi";
+import { backupRecoveryConfirmationBinding, backupRecoveryTargetCommand } from "../backup-recovery";
 import { showCuratedRevision } from "../curated";
 import { AdministrationProblem, type CatalogueStore } from "../shared";
 import { requiredRun } from "./run-storage";
@@ -9,7 +10,26 @@ export async function resolveAdministrationTarget(
   backups: R2Bucket,
   status: Record<string, unknown>,
   input: Record<string, unknown>,
+  target: { environment: string; catalogueDatabaseId: string },
 ): Promise<Record<string, unknown>> {
+  if ("backup" in input || "recovery" in input) {
+    const choices = retainedWireValue(backupRecoveryTargetCommand, input);
+    const safe = status.safe_state as Record<string, unknown>;
+    const binding = await backupRecoveryConfirmationBinding(
+      database,
+      backups,
+      choices,
+      safe.current_revision_id,
+      target,
+    );
+    return {
+      contract: "card-keepr-administration-target@1",
+      resolved_target: {
+        production_target: status.production_target,
+        confirmation: JSON.stringify({ production_target: status.production_target, ...binding }),
+      },
+    };
+  }
   const choice = (name: string): string | null => (typeof input[name] === "string" ? input[name] : null);
   const safe = status.safe_state as Record<string, unknown>;
   const expected = choice("expected_current_revision_id");
@@ -26,22 +46,6 @@ export async function resolveAdministrationTarget(
   const repair = choice("repair_revision_id");
   if (repair !== null && !(status.repairable_catalogue_revision_ids as string[]).includes(repair))
     mismatch("The target Catalogue Revision was not resolved from the authoritative retained revision chain.");
-  const recoveryId = choice("recovery_id");
-  if (recoveryId !== null) {
-    const recovery = await inspectCatalogueRecovery(database, backups, recoveryId);
-    const restored = choice("expected_restored_revision_id");
-    if (
-      recovery.id !== recoveryId ||
-      recovery.target_digest !== choice("target_digest") ||
-      (restored !== null && recovery.target_revision_id !== restored)
-    )
-      mismatch("The production recovery operation does not match the supplied exact target evidence.");
-    if (
-      safe.current_revision_id !== recovery.expected_current_revision_id &&
-      safe.current_revision_id !== recovery.target_revision_id
-    )
-      mismatch("Production does not resolve to either the recovery source or restored Catalogue Revision.");
-  }
   let confirmation = JSON.stringify(status.production_target);
   const operation = choice("curated_operation");
   if (operation !== null) {

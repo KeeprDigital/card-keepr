@@ -188,7 +188,12 @@ export const ingestionRoutes = [
       false,
     );
     return c.json(
-      administrationTargetSchema.parse(await resolveAdministrationTarget(env.CATALOGUE_DB, env.BACKUPS, status, input)),
+      administrationTargetSchema.parse(
+        await resolveAdministrationTarget(env.CATALOGUE_DB, env.BACKUPS, status, input, {
+          environment: env.KEEPR_ENVIRONMENT ?? "production",
+          catalogueDatabaseId: env.CATALOGUE_D1_DATABASE_ID,
+        }),
+      ),
       200,
       { "Cache-Control": "no-store" },
     );
