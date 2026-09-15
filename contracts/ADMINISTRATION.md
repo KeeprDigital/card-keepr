@@ -550,7 +550,23 @@ Retained run-owned records can still decode
 historical lifecycle and retained inspection/recovery machinery. They are not
 the native publication protocol and do not authorize a fresh aggregate approval.
 
-## Backup and recovery states
+## Backup and recovery HTTP
+
+All seven operations use the shared Hono definitions and generated administration
+specification: GET `/v1/backups/{attempt}`, GET
+`/v1/catalogue-revisions/{revision}/backups`, POST `/v1/backups`, GET
+`/v1/recoveries/{recovery}`, POST `/v1/recoveries`, and POST verification and
+acceptance beneath that recovery. They require the administration Bearer key;
+successful JSON is private with `Cache-Control: no-store`. Commands require
+`application/json`, retain the shared streamed 16 KiB bound, and reject unknown
+fields. Malformed JSON is 400, unsupported media 415, typed input errors 422,
+and domain conflicts 409.
+
+Backup idempotency keys remain nonempty strings without an opaque-ID length or
+character restriction. Retry requires both `failed_attempt_id` and
+`failed_attempt_digest`; missing fields never become null. Status can have null
+Workflow identity, dispatch or restore phase, and its resume body can omit retry
+fields. Inspection preserves these retained shapes.
 
 `backup create` starts or observes one idempotently bound ingestion Workflow
 for the D1 export/restore verification boundary. The durable Workflow
@@ -562,8 +578,13 @@ owner-bound and resumable, so a retried Workflow continues the retained export,
 restore, or verification phase rather than creating another attempt.
 The first non-terminal response is HTTP `202`; exact replays observe the same
 Workflow instance, resume a paused instance, and return HTTP `200`. The CLI
-exits `10` until the Workflow is complete. A retained terminal success or
-failure is an HTTP `200` observation and exits `0`.
+exits `10` while status is pending or unknown, `8` for dispatch failure or
+completed structured failure, and `0` only for a completed verified backup.
+A retained terminal success or failure is an HTTP `200` observation. The
+Workflow's `complete` status alone is insufficient to establish success.
+An exact acknowledged parent remains replayable after its retry child exists;
+replay retains original input, observed time and Workflow identity before fresh
+current-revision, idle and retry-leaf checks.
 
 `backup create` durably binds its exact expected revision to the idempotency
 key before export and creates an immutable backup attempt:
@@ -604,8 +625,18 @@ reviewed deployment action. `recovery verify` reuses every backup verification
 check against the exact restored database and digest. `recovery accept` requires
 the expected restored revision, target digest, typed recovery identity,
 production binding observation, idempotency key, and exact production
-confirmation. Changed idempotent replays fail closed; exact replays return the
-retained operation without repeating a restore, verification, or acceptance.
+confirmation. Changed idempotent replays fail closed. Begin returns HTTP 201,
+including exact replay; verification and acceptance return 200. Each returns the
+current recovery document with the original decision bindings. Begin after
+verification can therefore return `awaiting_acceptance`, and verification after
+acceptance returns `accepted`. The public `verification` is the persisted result
+or null, never the private expected-evidence manifest. Retained evidence may omit
+the representative Product digest or composition snapshot; present evidence stays
+validated and the accepted schema level remains bound to the backup.
+
+Replay preserves required journal hydration/persistence and safe recovery-fence
+release. Acceptance also binds the observed database identity. An accepted replay
+after later publication cannot reset the current catalogue or renew authority.
 
 ## Release states
 

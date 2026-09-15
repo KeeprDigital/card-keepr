@@ -1,5 +1,19 @@
-import { assertOnlyFields, readAdministrationBody, requiredString } from "../../http/administration";
-import { type RouteContext, route } from "../../http/routes";
+import { type Route, type RouteContext } from "../../http/routes";
+import { httpRoute, retainedWireValue } from "../../http/openapi";
+import {
+  backupStartRoute,
+  backupStatusRoute,
+  revisionBackupsRoute,
+  backupWorkflowSchema,
+  pendingBackupWorkflowSchema,
+  backupStatusSchema,
+  revisionBackupsSchema,
+  recoveryStatusRoute,
+  recoveryBeginRoute,
+  recoveryVerifyRoute,
+  recoveryAcceptRoute,
+  recoverySchema,
+} from "./http-contract";
 import { AdministrationProblem, type CatalogueStore } from "../shared";
 import { catalogueBackupAttemptStatus, catalogueRevisionBackupStatus } from "./backup-recovery";
 import { startOrObserveCatalogueBackupWorkflow } from "./backup-workflow";
@@ -23,134 +37,97 @@ type Environment = {
 };
 type Context = RouteContext<Environment> & { observedAt: string };
 
-export const backupRecoveryRoutes = [
-  route<Context>("GET", "/v1/backups/:attempt", async ({ env }, params) => {
-    return Response.json(await catalogueBackupAttemptStatus(env.CATALOGUE_DB, params.attempt!));
+export const backupRecoveryRoutes: Route<Context>[] = [
+  httpRoute<Context>()(backupStatusRoute, async (c) => {
+    const { env } = c.env;
+    const value = await catalogueBackupAttemptStatus(env.CATALOGUE_DB, c.req.valid("param").attempt);
+    c.header("Cache-Control", "no-store");
+    return c.json(retainedWireValue(backupStatusSchema, value), 200);
   }),
-  route<Context>("GET", "/v1/catalogue-revisions/:revision/backups", async ({ env }, params) => {
-    return Response.json(await catalogueRevisionBackupStatus(env.CATALOGUE_DB, params.revision!));
+  httpRoute<Context>()(revisionBackupsRoute, async (c) => {
+    const value = await catalogueRevisionBackupStatus(c.env.env.CATALOGUE_DB, c.req.valid("param").revision);
+    c.header("Cache-Control", "no-store");
+    return c.json(retainedWireValue(revisionBackupsSchema, value), 200);
   }),
-  route<Context>("POST", "/v1/backups", async ({ request, env, observedAt }) => {
-    const body = await readAdministrationBody(request);
-    assertOnlyFields(body, [
-      "expected_current_revision_id",
-      "idempotency_key",
-      "failed_attempt_id",
-      "failed_attempt_digest",
-    ]);
+  httpRoute<Context>()(backupStartRoute, async (c) => {
+    const { env, observedAt } = c.env;
     const result = await startOrObserveCatalogueBackupWorkflow(
       env.CATALOGUE_DB,
       env.CATALOGUE_BACKUP_WORKFLOW,
-      {
-        expected_current_revision_id: requiredString(body, "expected_current_revision_id"),
-        idempotency_key: requiredString(body, "idempotency_key"),
-        ...(body.failed_attempt_id === undefined
-          ? {}
-          : {
-              failed_attempt_id: requiredString(body, "failed_attempt_id"),
-            }),
-        ...(body.failed_attempt_digest === undefined
-          ? {}
-          : {
-              failed_attempt_digest: requiredString(body, "failed_attempt_digest"),
-            }),
-      },
+      c.req.valid("json"),
       observedAt,
     );
-    return Response.json(result.document, {
-      status: result.created && result.document.status !== "complete" ? 202 : 200,
-    });
+    c.header("Cache-Control", "no-store");
+    if (result.created && result.document.status !== "complete")
+      return c.json(retainedWireValue(pendingBackupWorkflowSchema, result.document), 202);
+    return c.json(retainedWireValue(backupWorkflowSchema, result.document), 200);
   }),
-  route<Context>("GET", "/v1/recoveries/:recovery", async ({ env }, params) => {
-    return Response.json(await inspectCatalogueRecovery(env.CATALOGUE_DB, env.BACKUPS, params.recovery!));
+  httpRoute<Context>()(recoveryStatusRoute, async (c) => {
+    const { env } = c.env;
+    const value = await inspectCatalogueRecovery(env.CATALOGUE_DB, env.BACKUPS, c.req.valid("param").recovery);
+    return c.json(retainedWireValue(recoverySchema, value), 200, { "Cache-Control": "no-store" });
   }),
-  route<Context>("POST", "/v1/recoveries", async ({ request, env, observedAt }) => {
-    const body = await readAdministrationBody(request);
-    assertOnlyFields(body, [
-      "environment",
-      "recovery_id",
-      "method",
-      "target_revision_id",
-      "target_bookmark",
-      "target_digest",
-      "backup_attempt_id",
-      "expected_current_revision_id",
-      "idempotency_key",
-      "linked_operation_id",
-    ]);
-    if (requiredString(body, "environment") !== (env.KEEPR_ENVIRONMENT ?? "production")) {
+  httpRoute<Context>()(recoveryBeginRoute, async (c) => {
+    const { env, observedAt } = c.env;
+    const body = c.req.valid("json");
+    if (body.environment !== (env.KEEPR_ENVIRONMENT ?? "production")) {
       throw new AdministrationProblem(
         422,
         "production_target_required",
         `Catalogue recovery requires environment ${env.KEEPR_ENVIRONMENT ?? "production"}.`,
       );
     }
-    const method = requiredString(body, "method");
-    if (method !== "time_travel" && method !== "replacement_database") {
-      throw new AdministrationProblem(
-        422,
-        "invalid_recovery_method",
-        "method must be time_travel or replacement_database.",
-      );
-    }
     const document = await beginCatalogueRecovery(env.CATALOGUE_DB, env.BACKUPS, {
-      recoveryId: requiredString(body, "recovery_id"),
-      method,
-      targetRevisionId: requiredString(body, "target_revision_id"),
-      targetBookmark: requiredString(body, "target_bookmark"),
-      targetDigest: requiredString(body, "target_digest"),
-      backupAttemptId: requiredString(body, "backup_attempt_id"),
-      expectedCurrentRevisionId: requiredString(body, "expected_current_revision_id"),
-      idempotencyKey: requiredString(body, "idempotency_key"),
+      recoveryId: body.recovery_id,
+      method: body.method,
+      targetRevisionId: body.target_revision_id,
+      targetBookmark: body.target_bookmark,
+      targetDigest: body.target_digest,
+      backupAttemptId: body.backup_attempt_id,
+      expectedCurrentRevisionId: body.expected_current_revision_id,
+      idempotencyKey: body.idempotency_key,
       ...(body.linked_operation_id === undefined
         ? {}
         : {
-            linkedOperationId: requiredString(body, "linked_operation_id"),
+            linkedOperationId: body.linked_operation_id,
           }),
       observedAt,
       cloudflareAccountId: env.CLOUDFLARE_ACCOUNT_ID,
       catalogueDatabaseId: env.CATALOGUE_D1_DATABASE_ID,
       verificationToken: env.D1_VERIFICATION_TOKEN,
     });
-    return Response.json(document, { status: 201 });
+    return c.json(retainedWireValue(recoverySchema, document), 201, { "Cache-Control": "no-store" });
   }),
-  route<Context>("POST", "/v1/recoveries/:recovery/verification", async ({ request, env, observedAt }, params) => {
-    const body = await readAdministrationBody(request);
-    assertOnlyFields(body, ["target_digest", "idempotency_key"]);
-    return Response.json(
-      await verifyCatalogueRecovery(
-        env.CATALOGUE_DB,
-        env.BACKUPS,
-        params.recovery!,
-        {
-          targetDigest: requiredString(body, "target_digest"),
-          idempotencyKey: requiredString(body, "idempotency_key"),
-          observedAt,
-          cloudflareAccountId: env.CLOUDFLARE_ACCOUNT_ID,
-          verificationToken: env.D1_VERIFICATION_TOKEN,
-        },
-        undefined,
-        { catalogue: env.CATALOGUE_EXPORTS, images: env.PRINTING_IMAGES },
-      ),
-    );
-  }),
-  route<Context>("POST", "/v1/recoveries/:recovery/acceptance", async ({ request, env, observedAt }, params) => {
-    const body = await readAdministrationBody(request);
-    assertOnlyFields(body, [
-      "expected_restored_revision_id",
-      "target_digest",
-      "confirmation_recovery_id",
-      "idempotency_key",
-    ]);
-    return Response.json(
-      await acceptCatalogueRecovery(env.CATALOGUE_DB, env.BACKUPS, params.recovery!, {
-        expectedRestoredRevisionId: requiredString(body, "expected_restored_revision_id"),
-        targetDigest: requiredString(body, "target_digest"),
-        confirmationRecoveryId: requiredString(body, "confirmation_recovery_id"),
-        idempotencyKey: requiredString(body, "idempotency_key"),
+  httpRoute<Context>()(recoveryVerifyRoute, async (c) => {
+    const { env, observedAt } = c.env;
+    const body = c.req.valid("json");
+    const document = await verifyCatalogueRecovery(
+      env.CATALOGUE_DB,
+      env.BACKUPS,
+      c.req.valid("param").recovery,
+      {
+        targetDigest: body.target_digest,
+        idempotencyKey: body.idempotency_key,
         observedAt,
-        boundDatabaseId: env.CATALOGUE_D1_DATABASE_ID,
-      }),
+        cloudflareAccountId: env.CLOUDFLARE_ACCOUNT_ID,
+        verificationToken: env.D1_VERIFICATION_TOKEN,
+      },
+      undefined,
+      { catalogue: env.CATALOGUE_EXPORTS, images: env.PRINTING_IMAGES },
     );
+    return c.json(retainedWireValue(recoverySchema, document), 200, { "Cache-Control": "no-store" });
+  }),
+  httpRoute<Context>()(recoveryAcceptRoute, async (c) => {
+    const { env, observedAt } = c.env;
+    const body = c.req.valid("json");
+    const document = await acceptCatalogueRecovery(env.CATALOGUE_DB, env.BACKUPS, c.req.valid("param").recovery, {
+      expectedRestoredRevisionId: body.expected_restored_revision_id,
+      targetDigest: body.target_digest,
+      confirmationRecoveryId: body.confirmation_recovery_id,
+      idempotencyKey: body.idempotency_key,
+      observedAt,
+      boundDatabaseId: env.CATALOGUE_D1_DATABASE_ID,
+    });
+    return c.json(retainedWireValue(recoverySchema, document), 200, { "Cache-Control": "no-store" });
   }),
 ];

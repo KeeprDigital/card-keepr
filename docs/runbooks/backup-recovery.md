@@ -93,6 +93,13 @@ different request is rejected. After an ambiguous SQL import, the workflow start
 a new Restore Generation on a clean disposable target; it does not import a second
 time into a possibly populated target.
 
+Create/retry exits `10` while its Workflow is pending or cannot currently be
+observed, `8` on dispatch failure or a completed structured failure, and `0` for
+verified completion. Inspect the output and attempt status: `status: complete`
+alone is not proof of a verified backup. Exact replay returns current observed
+status with the original Workflow identity and observed time, including when the
+attempt already has a retry child.
+
 A failed attempt is immutable. Only the latest failed leaf may be retried, using
 its exact ID and current attempt digest, with a new idempotency key:
 

@@ -12,6 +12,8 @@ import * as backupRecoveryQueries from "./query-helpers/backup-recovery";
 import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { beforeEach, expect, test } from "vitest";
+import adminDocument from "../../../contracts/admin-openapi.json";
+import { assertHttpResponse } from "../../../test/support/http-contract";
 import {
   acceptCatalogueRecovery,
   beginCatalogueRecovery,
@@ -464,6 +466,31 @@ test("exact accepted replay remains immutable after a later publication", async 
     },
     provider,
   );
+  const beginReplayBody = {
+    environment: "production",
+    recovery_id: "recovery-accepted-replay",
+    method: "time_travel",
+    target_revision_id: "catrev_spine_000",
+    target_bookmark: "bookmark-target",
+    target_digest: digest,
+    backup_attempt_id: "recovery-source",
+    expected_current_revision_id: "catrev_spine_000",
+    idempotency_key: "begin-accepted-replay",
+  };
+  const http = (path: string, body?: Record<string, unknown>) =>
+    exports.default.fetch(
+      new Request(`https://card-keepr.invalid${path}`, {
+        method: body === undefined ? "GET" : "POST",
+        headers: { authorization: "Bearer vitest-administration-key", "content-type": "application/json" },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      }),
+    );
+  const begunAgain = await http("/v1/recoveries", beginReplayBody);
+  expect(begunAgain.status).toBe(201);
+  expect(await begunAgain.clone().json()).toMatchObject({
+    state: "awaiting_acceptance",
+    verification: completeVerification,
+  });
   const acceptance = {
     expectedRestoredRevisionId: "catrev_spine_000",
     targetDigest: digest,
@@ -489,6 +516,27 @@ test("exact accepted replay remains immutable after a later publication", async 
       acceptance,
     ),
   ).resolves.toEqual(accepted);
+  const acceptedAgain = await http("/v1/recoveries/recovery-accepted-replay/acceptance", {
+    expected_restored_revision_id: acceptance.expectedRestoredRevisionId,
+    target_digest: acceptance.targetDigest,
+    confirmation_recovery_id: acceptance.confirmationRecoveryId,
+    idempotency_key: acceptance.idempotencyKey,
+  });
+  expect(acceptedAgain.status).toBe(200);
+  expect(await acceptedAgain.clone().json()).toEqual(accepted);
+  const verifiedAgain = await http("/v1/recoveries/recovery-accepted-replay/verification", {
+    target_digest: digest,
+    idempotency_key: "verify-accepted-replay",
+  });
+  expect(verifiedAgain.status).toBe(200);
+  expect(await verifiedAgain.clone().json()).toEqual(accepted);
+  const inspected = await http("/v1/recoveries/recovery-accepted-replay");
+  expect(inspected.status).toBe(200);
+  expect(await inspected.clone().json()).toEqual(accepted);
+  await assertHttpResponse(adminDocument, "/v1/recoveries", "post", begunAgain);
+  await assertHttpResponse(adminDocument, "/v1/recoveries/{recovery}", "get", inspected);
+  await assertHttpResponse(adminDocument, "/v1/recoveries/{recovery}/verification", "post", verifiedAgain);
+  await assertHttpResponse(adminDocument, "/v1/recoveries/{recovery}/acceptance", "post", acceptedAgain);
   await expect(
     publishedCatalogueQueries.readCatalogueStateCurrentRevisionId(testEnv.CATALOGUE_DB).first(),
   ).resolves.toEqual({
@@ -1042,9 +1090,8 @@ test("an ambiguous source writer prevents recovery despite absent bytes and elap
   await failUnfinishedMaintenanceRecoveries(testEnv.CATALOGUE_DB).run();
   await resetMaintenanceOperation(testEnv.CATALOGUE_DB).run();
   const { seedRunFixtureStatement } = await import("./query-helpers/run-events");
-  const { beginEvidenceObjectWrite } = await import(
-    "../../../src/catalogue/source-evidence/evidence-cleanup-repository"
-  );
+  const { beginEvidenceObjectWrite } =
+    await import("../../../src/catalogue/source-evidence/evidence-cleanup-repository");
   await seedRunFixtureStatement(testEnv.CATALOGUE_DB, {
     id: "recovery-unknown-writer",
     state: "failed",

@@ -8,7 +8,7 @@ import { nativeSqliteExport } from "./native-sqlite-export.mjs";
 
 // Only the Cloudflare control-plane boundary is simulated. SQL export/import
 // and every verification query execute against actual independent SQLite files.
-export function nativeRecoveryCloudflare({ databaseDirectory, directory }) {
+export function nativeRecoveryCloudflare({ databaseDirectory, directory, sourceDatabaseFile }) {
   let exported,
     uploaded,
     target,
@@ -19,6 +19,7 @@ export function nativeRecoveryCloudflare({ databaseDirectory, directory }) {
   const hooks = { afterImport: undefined, afterExport: undefined };
   const success = (result) => Response.json({ success: true, result });
   async function sourceFile() {
+    if (sourceDatabaseFile !== undefined) return sourceDatabaseFile;
     const names = await readdir(databaseDirectory, { recursive: true });
     for (const name of names.filter((name) => name.endsWith(".sqlite"))) {
       const path = join(databaseDirectory, name);

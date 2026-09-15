@@ -115,7 +115,7 @@
     "family": "backup-recovery",
     "method": "POST",
     "path": "/v1/backups",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Backup and recovery",
     "named_cli": "createBackup",
     "callers": [
@@ -125,6 +125,7 @@
       "acceptance/ingestion-cli.test.mjs",
       "acceptance/native-backup-retry.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/backup-http-contract.spec.ts",
       "apps/ingestion/test/backup-recovery.spec.ts",
       "apps/ingestion/test/composed-recovery.spec.ts",
       "apps/ingestion/test/reconciliation-scale-and-recovery.spec.ts",
@@ -137,7 +138,7 @@
     "family": "backup-recovery",
     "method": "GET",
     "path": "/v1/backups/{attempt}",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Backup and recovery",
     "named_cli": "backup status --attempt-id",
     "callers": [
@@ -224,7 +225,7 @@
     "family": "backup-recovery",
     "method": "GET",
     "path": "/v1/catalogue-revisions/{revision}/backups",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Backup and recovery",
     "named_cli": "backup status --catalogue-revision",
     "callers": [
@@ -1866,7 +1867,7 @@
     "family": "backup-recovery",
     "method": "POST",
     "path": "/v1/recoveries",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Backup and recovery",
     "named_cli": "beginRecovery",
     "callers": [
@@ -1874,6 +1875,7 @@
       "acceptance/helpers/native-fresh-baseline.mjs",
       "acceptance/ingestion-cli.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/recovery.spec.ts",
       "cli/keepr.mjs"
     ]
   },
@@ -1882,7 +1884,7 @@
     "family": "backup-recovery",
     "method": "GET",
     "path": "/v1/recoveries/{recovery}",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Backup and recovery",
     "named_cli": "inspectRecovery",
     "callers": [
@@ -1890,6 +1892,7 @@
       "acceptance/helpers/cli-http.mjs",
       "acceptance/ingestion-cli.test.mjs",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "apps/ingestion/test/recovery.spec.ts",
       "cli/keepr.mjs",
       "cli/staging-release.mjs"
     ]
@@ -1899,11 +1902,12 @@
     "family": "backup-recovery",
     "method": "POST",
     "path": "/v1/recoveries/{recovery}/acceptance",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Backup and recovery",
     "named_cli": "acceptRecovery",
     "callers": [
       "acceptance/ingestion-cli.test.mjs",
+      "apps/ingestion/test/recovery.spec.ts",
       "cli/keepr.mjs"
     ]
   },
@@ -1912,11 +1916,12 @@
     "family": "backup-recovery",
     "method": "POST",
     "path": "/v1/recoveries/{recovery}/verification",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Backup and recovery",
     "named_cli": "verifyRecovery",
     "callers": [
       "acceptance/ingestion-cli.test.mjs",
+      "apps/ingestion/test/recovery.spec.ts",
       "cli/keepr.mjs"
     ]
   },
