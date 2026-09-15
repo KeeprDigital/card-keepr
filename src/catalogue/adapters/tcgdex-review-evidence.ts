@@ -112,7 +112,7 @@ function validateClaims(card: Record<string, unknown>) {
     for (const value of optionalList(card[field])) {
       const relation = record(value);
       text(relation.type);
-      text(relation.value);
+      if (relation.value !== undefined) text(relation.value);
     }
   if (card.variants !== undefined)
     for (const value of Object.values(record(card.variants)))
