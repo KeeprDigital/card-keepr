@@ -9,7 +9,12 @@ import {
 import { sourceRecordProgress, type SourceRecordProgress } from "./source-record-repository";
 
 type Requests = Awaited<ReturnType<NonNullable<SourceAdapterRegistration["recordExtraction"]>["extract"]>>["requests"];
-export async function retainSourceRecordRequests(db: CatalogueStore, set: string, requests: Requests) {
+export async function retainSourceRecordRequests(
+  db: CatalogueStore,
+  set: string,
+  requests: Requests,
+  guard?: () => D1PreparedStatement,
+) {
   const progress = await sourceRecordProgress(db, set).first<SourceRecordProgress>();
   if (!progress) throw new Error("Source request progress is missing.");
   let ordinal = 0,
@@ -19,6 +24,7 @@ export async function retainSourceRecordRequests(db: CatalogueStore, set: string
     if (!pending.length) return;
     const first = pending[0]!.ordinal;
     await db.batch([
+      ...(guard ? [guard()] : []),
       ...pending.map((row) => retainSourceAuxiliary(db, set, "request", "", row)),
       advanceSourceRequests(db, set, first, ordinal, digest),
     ]);
@@ -44,7 +50,7 @@ export async function retainSourceRecordRequests(db: CatalogueStore, set: string
   }
   await flush();
   if (ordinal < progress.requests_next_ordinal) throw new Error("Source request suffix disappeared.");
-  await advanceSourceRequests(db, set, ordinal, ordinal, digest, true).run();
+  await db.batch([...(guard ? [guard()] : []), advanceSourceRequests(db, set, ordinal, ordinal, digest, true)]);
   const receipt = await sourceRecordProgress(db, set).first<SourceRecordProgress>();
   if (
     receipt?.requests_next_ordinal !== ordinal ||

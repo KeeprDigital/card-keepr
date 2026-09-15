@@ -44,7 +44,9 @@ import {
   terminalHttpFailureClass,
   transportPolicyForRole,
 } from "./source-evidence-model";
-import { parseSnapshot } from "./source-evidence-parsing";
+import { parseSnapshotBatch } from "./source-evidence-parsing";
+import { sourceParseAuthorityGuard, type SourceParseAuthority } from "./source-parse-authority-repository";
+import { discoverArchiveRequestsBatch } from "./source-archive-discovery";
 import {
   appendDiscoveredEvidenceRequests,
   captureAttemptsPerRetryGeneration,
@@ -458,11 +460,17 @@ export async function capturePreparedAttempt(
   operation = await requiredCaptureOperation(database, operation.attempt_id);
   const writeToken = crypto.randomUUID();
   try {
+    const capturingAdapter = requiredSourceAdapter(evidencePlan.adapter_version);
+    const archive =
+      request.request_role === "listing" &&
+      capturingAdapter.archiveExtraction?.matches({ url: request.url, requestId: request.request_id })
+        ? capturingAdapter.archiveExtraction
+        : undefined;
     const content = await streamSnapshotToR2(
       evidenceObjects,
       operation.content_object_key,
       response,
-      requiredSourceAdapter(evidencePlan.adapter_version).maximumSnapshotBytes,
+      archive?.maximumSnapshotBytes ?? capturingAdapter.maximumSnapshotBytes,
       async (upload) => {
         await retainEvidenceMultipart(database, writeToken, upload).run();
       },
@@ -617,22 +625,41 @@ export async function parseCapturedRequest(
   run: IngestionEvidenceRow,
   sourceRequest: EvidenceRequestRow,
   snapshotId: string,
+  workflowAttempt?: SourceParseAuthority["workflowAttempt"],
 ): Promise<CaptureTransportResult> {
   if (!admitsCollectionWork(run)) {
     return { kind: "done", failure_code: null, request_made: false };
   }
   const evidencePlan = evidencePlanForRequest(run, sourceRequest.request_id);
   try {
-    const observationSet = await parseSnapshot(database, evidenceObjects, snapshotId, evidencePlan.adapter_version, {
-      intent: "collection",
-      idempotencyKey: `${run.id}:${sourceRequest.request_id}`,
-    });
+    const observationSet = await parseSnapshotBatch(
+      database,
+      evidenceObjects,
+      snapshotId,
+      evidencePlan.adapter_version,
+      {
+        intent: "collection",
+        idempotencyKey: `${run.id}:${sourceRequest.request_id}`,
+        workflowAttempt,
+      },
+    );
+    if ("kind" in observationSet) return { kind: "done", failure_code: null, request_made: false };
     const adapter = sourceAdapterForCoverage(
       requiredSourceAdapter(evidencePlan.adapter_version),
       evidencePlan.coverage?.subset,
     );
-    for await (const requests of discoveredSourceRecordRequests(database, observationSet.id)) {
-      await appendDiscoveredEvidenceRequests(database, run, sourceRequest, requests);
+    if (
+      sourceRequest.request_role === "listing" &&
+      adapter.archiveExtraction?.matches({ url: sourceRequest.url, requestId: sourceRequest.request_id })
+    ) {
+      const complete = await discoverArchiveRequestsBatch(database, run, sourceRequest, observationSet.id, () =>
+        sourceParseAuthorityGuard(database, run.id, { intent: "collection", workflowAttempt }),
+      );
+      if (!complete) return { kind: "done", failure_code: null, request_made: false };
+    } else {
+      for await (const requests of discoveredSourceRecordRequests(database, observationSet.id)) {
+        await appendDiscoveredEvidenceRequests(database, run, sourceRequest, requests);
+      }
     }
     if (
       run.plan_origin === "production" &&
@@ -683,6 +710,8 @@ export async function parseCapturedRequest(
       request_made: false,
     };
   } catch (error) {
+    if (error instanceof Error && error.message.includes("source_parse_authority_superseded"))
+      return { kind: "done", failure_code: null, request_made: false };
     if (!(error instanceof AdministrationProblem)) throw error;
     if (error instanceof RequestCapacityProblem) {
       // Reaching request capacity is not evidence the parent Source Request

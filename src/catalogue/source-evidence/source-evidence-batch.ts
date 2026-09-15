@@ -221,6 +221,7 @@ async function persistCapturedRequest(
       await requiredEvidenceRun(input.database, input.runId),
       request,
       result.source_snapshot_id,
+      input.workflowAttempt,
     );
   }
 }

@@ -1,5 +1,6 @@
 import type { CatalogueCard, CardCategory, SupportedGame } from "./catalogue-candidate-types";
 import { canonicalJson } from "./serialization";
+import { magicLayouts, magicFaceRoles } from "./magic-layout";
 
 /** Re-derive model fields while preparing fresh work from retained Card facts.
  * The retained document and its identity remain untouched.
@@ -37,6 +38,7 @@ type Schema =
   | { kind: "enum"; values: readonly string[] }
   | {
       kind: "array";
+      nullable?: boolean;
       items: Schema;
       unique?: boolean;
       minimumItems?: number;
@@ -82,7 +84,7 @@ const profileContracts: Readonly<Record<string, ProfileContract>> = {
   "magic@1": {
     game: "magic",
     card: object(["layout", "type_line", "colour_identity", "faces"], {
-      layout: enumeration(["normal", "transform", "token"]),
+      layout: enumeration(magicLayouts.filter((layout) => layout !== "art_series")),
       type_line: string(false, 1),
       colour_identity: array(enumeration(["W", "U", "B", "R", "G"]), true),
       faces: array(
@@ -90,15 +92,15 @@ const profileContracts: Readonly<Record<string, ProfileContract>> = {
           role: enumeration(["front", "back"]),
           name: string(false, 1),
           mana_cost: nullableText,
-          type_line: string(false, 1),
-          colours: array(enumeration(["W", "U", "B", "R", "G"]), true),
+          type_line: string(true, 1),
+          colours: { ...array(enumeration(["W", "U", "B", "R", "G"]), true), nullable: true },
           oracle_text: nullableText,
           power: nullableText,
           toughness: nullableText,
         }),
         false,
         1,
-        2,
+        5,
       ),
     }),
     printing: object(
@@ -106,8 +108,8 @@ const profileContracts: Readonly<Record<string, ProfileContract>> = {
       {
         set_code: string(false, 1),
         collector_number: string(false, 1),
-        finish: enumeration(["nonfoil", "foil"]),
-        layout: enumeration(["normal", "transform", "art_series", "token"]),
+        finish: enumeration(["nonfoil", "foil", "etched"]),
+        layout: enumeration(magicLayouts),
         faces: array(
           object(["role", "name", "printed_rules_text"], {
             role: enumeration(["front", "back"]),
@@ -116,7 +118,7 @@ const profileContracts: Readonly<Record<string, ProfileContract>> = {
           }),
           false,
           1,
-          2,
+          5,
         ),
         artists: strings,
         reverse_face: nullableText,
@@ -126,7 +128,7 @@ const profileContracts: Readonly<Record<string, ProfileContract>> = {
     validateCard(value) {
       const faces = value.faces as { role: string }[];
       const roles = faces.map((face) => face.role);
-      if (roles.join(",") !== (value.layout === "transform" ? "front,back" : "front"))
+      if (roles.join(",") !== magicFaceRoles(String(value.layout), faces.length).join(","))
         throw new Error("Magic requires the ordered faces applicable to its layout.");
     },
   },
@@ -451,7 +453,7 @@ export function gameProfileCardClassification(
 ) {
   requiredProfileContract(profile);
   const token =
-    (profile === "magic@1" && attributes.layout === "token") ||
+    (profile === "magic@1" && ["token", "double_faced_token"].includes(String(attributes.layout))) ||
     (profile === "gundam@1" && attributes.card_type === "unit_token") ||
     (profile === "riftbound@1" && Array.isArray(attributes.supertypes) && attributes.supertypes.includes("token"));
   const resolved = category === undefined ? (token ? "token" : "gameplay") : category;
@@ -548,7 +550,7 @@ function exportedSchema(schema: Schema): Record<string, unknown> {
   if (schema.kind === "enum") return { enum: schema.values };
   if (schema.kind === "array") {
     return {
-      type: "array",
+      type: schema.nullable ? ["array", "null"] : "array",
       items: exportedSchema(schema.items),
       ...(schema.unique ? { uniqueItems: true } : {}),
       ...(schema.minimumItems === undefined ? {} : { minItems: schema.minimumItems }),
@@ -622,6 +624,7 @@ function sanitize(
     return undefined;
   }
   if (schema.kind === "array") {
+    if (value === null && schema.nullable) return null;
     if (!Array.isArray(value)) throw invalid(path);
     const result = value.flatMap((item, index) => {
       const canonical = sanitize(

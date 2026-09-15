@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { verifyCompositionArtifacts } from "./composition-artifacts";
+import { verifyCompositionSourceArtifacts } from "./composition-source-artifacts";
 import {
   captureCompositionSnapshot,
   verifyCompositionSnapshot,
@@ -74,6 +75,7 @@ export type D1BackupProvider = Readonly<{
       expectedSchemaMigrationLevel: number;
       expected: CatalogueVerificationEvidence;
       expectedRepresentativeDocuments?: CatalogueRepresentativeDocuments;
+      sourceEvidenceObjects?: R2Bucket;
     }>,
   ): Promise<RestoredCatalogueVerification>;
 }>;
@@ -130,6 +132,7 @@ type BackupExecutionOptions = Readonly<{
   terminalFailure?: boolean;
   publicationArtifacts?: R2Bucket;
   printingImages?: R2Bucket;
+  sourceEvidenceObjects?: R2Bucket;
 }>;
 
 export type PublicationBackupReservation = Readonly<{
@@ -589,6 +592,12 @@ export async function createVerifiedCatalogueBackup(
               input.expectedCurrentRevisionId,
               snapshot,
             );
+            await verifyCompositionSourceArtifacts(
+              async (request) =>
+                (await catalogueVerificationStatement(database, request).all<Record<string, unknown>>()).results,
+              options.sourceEvidenceObjects,
+              snapshot.source_evidence,
+            );
             expectedVerification.composition_snapshot = snapshot;
             const content = canonicalJson(snapshot);
             snapshotDigest = await sha256(content);
@@ -713,6 +722,7 @@ export async function createVerifiedCatalogueBackup(
         expectedSchemaMigrationLevel: schemaMigrationLevel,
         expected: expectedVerification,
         expectedRepresentativeDocuments,
+        sourceEvidenceObjects: options.sourceEvidenceObjects,
       });
       assertCompleteRestoredVerification(restoredVerification);
     }
@@ -802,6 +812,7 @@ export async function verifyRestoredCatalogue(
     expectedRevisionId: string;
     expectedSchemaMigrationLevel: number;
     expected: CatalogueVerificationEvidence;
+    sourceEvidenceObjects?: R2Bucket;
   }>,
 ): Promise<RestoredCatalogueVerification> {
   return verifyRestoredCatalogueQueries(async (request) => {
@@ -866,6 +877,7 @@ async function verifyRestoredCatalogueQueries(
     expectedSchemaMigrationLevel: number;
     expected: CatalogueVerificationEvidence;
     expectedRepresentativeDocuments?: CatalogueRepresentativeDocuments;
+    sourceEvidenceObjects?: R2Bucket;
   }>,
 ): Promise<RestoredCatalogueVerification> {
   if (input.expected.composition_snapshot) {
@@ -878,6 +890,7 @@ async function verifyRestoredCatalogueQueries(
     const [integrity] = await query({ kind: "integrity" });
     if (integrity?.quick_check !== "ok") throw new Error("Restored D1 integrity failed.");
     await verifyCompositionSnapshot(query, snapshot);
+    await verifyCompositionSourceArtifacts(query, input.sourceEvidenceObjects, snapshot.source_evidence);
     return completeRestoredVerification();
   }
   const [row] = await query({

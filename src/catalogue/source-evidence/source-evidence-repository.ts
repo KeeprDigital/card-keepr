@@ -543,6 +543,7 @@ export async function appendDiscoveredEvidenceRequests(
   run: Pick<IngestionEvidenceRow, "id" | "request_plan_json">,
   parent: EvidenceRequestRow,
   discovered: readonly DiscoveredEvidenceRequest[],
+  guard?: () => D1PreparedStatement,
 ): Promise<readonly EvidenceRequestRow[]> {
   const plan = evidencePlanForRequest(run, parent.request_id);
   const normalizedById = new Map<
@@ -629,6 +630,7 @@ export async function appendDiscoveredEvidenceRequests(
   if (normalized.length === 0) return [];
   const chunks = chunked(normalized, 100);
   const statements: D1PreparedStatement[] = [
+    ...(guard ? [guard()] : []),
     // Capacity admission must hold atomically inside the batch: this guard
     // recounts under the same implicit transaction, so concurrent Workflow
     // children cannot admit two batches that only fit individually. A CASE

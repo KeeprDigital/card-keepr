@@ -1,14 +1,16 @@
 import { createHash } from "node:crypto";
 import { canonicalJson, registeredSupportedGames } from "../shared";
 import {
-  type CompositionVerificationQuery,
+  type CompositionQuery,
   type AcceptedEvidenceArtifactRoot,
   compositionSnapshotTables,
+  compositionSourceSnapshotTables,
   maximumSnapshotPageRows,
   maximumSnapshotPageBytes,
   maximumSchemaSnapshotPageRows,
   maximumSchemaSnapshotPageBytes,
 } from "./composition-verification-repository";
+import { captureCompositionSourceArtifacts, type CompositionSourceEvidence } from "./composition-source-artifacts";
 
 export type CompositionSnapshotEvidence = {
   revision_id: string;
@@ -17,11 +19,12 @@ export type CompositionSnapshotEvidence = {
   ingestion_run_id: string;
   schema_migration_level: number;
   accepted_evidence_roots?: AcceptedEvidenceArtifactRoot[];
+  source_evidence?: CompositionSourceEvidence;
   members: number;
   schema_sha256: string;
   tables: { table: string; rows: number; sha256: string }[];
 };
-export type CompositionQuery = (query: CompositionVerificationQuery) => Promise<Record<string, unknown>[]>;
+export type { CompositionQuery } from "./composition-verification-repository";
 export async function captureCompositionSnapshot(
   query: CompositionQuery,
   revisionId: string,
@@ -62,12 +65,14 @@ export async function captureCompositionSnapshot(
   }
   const schema = createHash("sha256");
   let schemaAfter = "";
+  let hasSourceArchives = false;
   for (;;) {
     const page = await query({ kind: "composition-schema", after: schemaAfter });
     if (page.length === 0) break;
     if (page.length > maximumSchemaSnapshotPageRows) throw new Error("Schema snapshot page exceeds its row budget.");
     let pageBytes = 0;
     for (const entry of page) {
+      hasSourceArchives ||= entry.type === "table" && entry.name === "source_archive_decodes";
       if (typeof entry.name !== "string" || entry.name <= schemaAfter)
         throw new Error("Invalid schema snapshot cursor.");
       const encoded = new TextEncoder().encode(canonicalJson(entry));
@@ -80,6 +85,7 @@ export async function captureCompositionSnapshot(
   }
   const tables: CompositionSnapshotEvidence["tables"] = [];
   for (const table of compositionSnapshotTables) {
+    if (!hasSourceArchives && (compositionSourceSnapshotTables as readonly string[]).includes(table)) continue;
     // Schema 30 snapshots predate accepted-evidence metadata and partition fingerprints.
     if (
       state.migration_level < 31 &&
@@ -129,6 +135,7 @@ export async function captureCompositionSnapshot(
     members: state.members,
     schema_sha256: schema.digest("hex"),
     tables,
+    ...(hasSourceArchives ? { source_evidence: await captureCompositionSourceArtifacts(query) } : {}),
   };
 }
 export async function verifyCompositionSnapshot(query: CompositionQuery, expected: CompositionSnapshotEvidence) {

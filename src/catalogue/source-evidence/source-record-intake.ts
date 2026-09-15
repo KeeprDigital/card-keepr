@@ -3,6 +3,7 @@ import { retainSourceRecordText } from "./source-record-text";
 import { retainSourceRecordRequests } from "./source-record-requests";
 import { sourceAuxiliaryPage, type SourceAuxiliaryRow } from "./source-record-auxiliary-repository";
 import { createHash } from "node:crypto";
+import { adoptedArchiveDecode, type ArchiveDecode } from "./source-archive-repository";
 import { type CatalogueStore, canonicalJson, sha256Text, utf8 } from "../shared";
 import { AdapterParseFailure, type SourceAdapterRegistration } from "../adapters";
 import type { SnapshotRow } from "./source-evidence-repository-types";
@@ -184,12 +185,27 @@ export async function retainExtractedSourceRecords(
 export async function sealedSourceRecordProgress(
   db: CatalogueStore,
   id: string,
-  read: (operation: () => Promise<SourceRecordProgress | null>) => Promise<SourceRecordProgress | null> = (operation) =>
-    operation(),
+  read: <T>(operation: () => Promise<T>) => Promise<T> = (operation) => operation(),
 ) {
   const progress = await read(() => sourceRecordProgress(db, id).first<SourceRecordProgress>());
   if (!progress) return null;
   if (progress.sealed !== 1 || progress.authoritative !== 1) throw new Error("Source records are not sealed.");
+  const header = JSON.parse(progress.header_json) as { source_archive?: Record<string, unknown> };
+  if (header.source_archive !== undefined) {
+    const decoded = await read(() => adoptedArchiveDecode(db, id).first<ArchiveDecode>());
+    const archive = header.source_archive;
+    if (
+      !decoded ||
+      archive.contract !== "card-keepr-source-archive@1" ||
+      archive.source_snapshot_id !== decoded.source_snapshot_id ||
+      archive.block_count !== decoded.next_block ||
+      archive.raw_record_count !== decoded.next_record ||
+      archive.decoded_bytes !== decoded.decoded_bytes ||
+      archive.decoded_sha256 !== decoded.decoded_digest ||
+      archive.blocks_sha256 !== decoded.digest
+    )
+      throw new Error("Adopted source archive receipt changed.");
+  }
   return progress;
 }
 
@@ -234,7 +250,13 @@ export async function* discoveredSourceRecordRequests(db: CatalogueStore, id: st
       if (row.ordinal !== ordinal++ || (await sha256Text(row.content)) !== row.sha256)
         throw new Error("Source record request page failed integrity verification.");
       digest = await sourceRecordNextDigest(digest, row);
-      if (row.request_json !== "null") requests.push(JSON.parse(row.request_json));
+      if (row.request_json !== "null") {
+        const retained = JSON.parse(row.request_json);
+        if (Array.isArray(retained)) {
+          if (retained.length > 16) throw new Error("Source record request count is unbounded.");
+          requests.push(...retained);
+        } else requests.push(retained);
+      }
     }
     yield requests;
   }

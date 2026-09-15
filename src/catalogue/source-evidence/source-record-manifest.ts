@@ -1,10 +1,16 @@
 import { type CatalogueStore, canonicalJson, sha256Text, utf8 } from "../shared";
 import { attachRecordManifest, recordManifest, retainSourceAuxiliary } from "./source-record-auxiliary-repository";
-export async function retainSourceRecordManifest(db: CatalogueStore, set: string, manifest: Record<string, unknown>) {
+export async function retainSourceRecordManifest(
+  db: CatalogueStore,
+  set: string,
+  manifest: Record<string, unknown>,
+  guard?: () => D1PreparedStatement,
+) {
   const content = canonicalJson(manifest);
   if (utf8(content).byteLength > 32768) throw new Error("Source record manifest exceeds 32 KiB.");
   const sha256 = await sha256Text(content);
   await db.batch([
+    ...(guard ? [guard()] : []),
     retainSourceAuxiliary(db, set, "manifest", "", { ordinal: 0, content, sha256 }),
     attachRecordManifest(
       db,

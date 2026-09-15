@@ -23,11 +23,13 @@ export function profileWire(schema: ProfileSchema): z.ZodType {
       return z.boolean();
     case "enum":
       return z.enum(schema.values);
-    case "array":
-      return z
+    case "array": {
+      const value = z
         .array(profileWire(schema.items))
         .min(schema.minimumItems ?? 0)
         .max(schema.maximumItems ?? Number.MAX_SAFE_INTEGER);
+      return schema.nullable ? value.nullable() : value;
+    }
     case "object":
       return z.strictObject(
         Object.fromEntries(
@@ -168,17 +170,19 @@ export function profileFields(
   schema: ProfileSchema,
   prefix = "",
   multiple = false,
+  nullable = false,
 ): z.infer<typeof profileFieldSchema>[] {
-  if (schema.kind === "array") return profileFields(schema.items, prefix, true);
+  const permitsNull = nullable || ("nullable" in schema && schema.nullable === true);
+  if (schema.kind === "array") return profileFields(schema.items, prefix, true, permitsNull);
   if (schema.kind === "object")
     return Object.entries(schema.properties).flatMap(([key, value]) =>
-      profileFields(value, prefix ? `${prefix}.${key}` : key, multiple),
+      profileFields(value, prefix ? `${prefix}.${key}` : key, multiple, permitsNull),
     );
   return [
     {
       path: prefix,
       type: schema.kind,
-      nullable: "nullable" in schema && schema.nullable === true,
+      nullable: permitsNull,
       multiple,
       ...(schema.kind === "enum" ? { values: [...schema.values] } : {}),
     },

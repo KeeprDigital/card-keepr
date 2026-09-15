@@ -75,4 +75,5 @@ export function response73(value: unknown): boolean;
 export function response74(value: unknown): boolean;
 export function response75(value: unknown): boolean;
 export function response76(value: unknown): boolean;
+export function response77(value: unknown): boolean;
 export const responseValidators: Record<string, string>;

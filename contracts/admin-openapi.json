@@ -4720,6 +4720,49 @@
         ],
         "additionalProperties": false
       },
+      "SourceParsePending": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "pending"
+            ]
+          },
+          "source_snapshot_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "adapter_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "parse_operation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "observation_set_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "decoding",
+              "normalizing"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "source_snapshot_id",
+          "adapter_version",
+          "parse_operation_id",
+          "observation_set_id",
+          "phase"
+        ],
+        "additionalProperties": false
+      },
       "EvidenceStatus": {
         "type": "object",
         "properties": {
@@ -15546,8 +15589,28 @@
                         "type": "string",
                         "enum": [
                           "normal",
+                          "token",
                           "transform",
-                          "token"
+                          "saga",
+                          "adventure",
+                          "planar",
+                          "split",
+                          "modal_dfc",
+                          "emblem",
+                          "double_faced_token",
+                          "scheme",
+                          "mutate",
+                          "prepare",
+                          "class",
+                          "meld",
+                          "leveler",
+                          "flip",
+                          "prototype",
+                          "vanguard",
+                          "host",
+                          "case",
+                          "augment",
+                          "reversible_card"
                         ]
                       },
                       "type_line": {
@@ -15600,7 +15663,10 @@
                               ]
                             },
                             "colours": {
-                              "type": "array",
+                              "type": [
+                                "array",
+                                "null"
+                              ],
                               "items": {
                                 "type": "string",
                                 "enum": [
@@ -17506,16 +17572,37 @@
                         "type": "string",
                         "enum": [
                           "nonfoil",
-                          "foil"
+                          "foil",
+                          "etched"
                         ]
                       },
                       "layout": {
                         "type": "string",
                         "enum": [
                           "normal",
-                          "transform",
+                          "token",
                           "art_series",
-                          "token"
+                          "transform",
+                          "saga",
+                          "adventure",
+                          "planar",
+                          "split",
+                          "modal_dfc",
+                          "emblem",
+                          "double_faced_token",
+                          "scheme",
+                          "mutate",
+                          "prepare",
+                          "class",
+                          "meld",
+                          "leveler",
+                          "flip",
+                          "prototype",
+                          "vanguard",
+                          "host",
+                          "case",
+                          "augment",
+                          "reversible_card"
                         ]
                       },
                       "faces": {
@@ -20479,8 +20566,28 @@
                         "type": "string",
                         "enum": [
                           "normal",
+                          "token",
                           "transform",
-                          "token"
+                          "saga",
+                          "adventure",
+                          "planar",
+                          "split",
+                          "modal_dfc",
+                          "emblem",
+                          "double_faced_token",
+                          "scheme",
+                          "mutate",
+                          "prepare",
+                          "class",
+                          "meld",
+                          "leveler",
+                          "flip",
+                          "prototype",
+                          "vanguard",
+                          "host",
+                          "case",
+                          "augment",
+                          "reversible_card"
                         ]
                       },
                       "type_line": {
@@ -20533,7 +20640,10 @@
                               ]
                             },
                             "colours": {
-                              "type": "array",
+                              "type": [
+                                "array",
+                                "null"
+                              ],
                               "items": {
                                 "type": "string",
                                 "enum": [
@@ -21872,16 +21982,37 @@
                         "type": "string",
                         "enum": [
                           "nonfoil",
-                          "foil"
+                          "foil",
+                          "etched"
                         ]
                       },
                       "layout": {
                         "type": "string",
                         "enum": [
                           "normal",
-                          "transform",
+                          "token",
                           "art_series",
-                          "token"
+                          "transform",
+                          "saga",
+                          "adventure",
+                          "planar",
+                          "split",
+                          "modal_dfc",
+                          "emblem",
+                          "double_faced_token",
+                          "scheme",
+                          "mutate",
+                          "prepare",
+                          "class",
+                          "meld",
+                          "leveler",
+                          "flip",
+                          "prototype",
+                          "vanguard",
+                          "host",
+                          "case",
+                          "augment",
+                          "reversible_card"
                         ]
                       },
                       "faces": {
@@ -23778,8 +23909,28 @@
                                     "type": "string",
                                     "enum": [
                                       "normal",
+                                      "token",
                                       "transform",
-                                      "token"
+                                      "saga",
+                                      "adventure",
+                                      "planar",
+                                      "split",
+                                      "modal_dfc",
+                                      "emblem",
+                                      "double_faced_token",
+                                      "scheme",
+                                      "mutate",
+                                      "prepare",
+                                      "class",
+                                      "meld",
+                                      "leveler",
+                                      "flip",
+                                      "prototype",
+                                      "vanguard",
+                                      "host",
+                                      "case",
+                                      "augment",
+                                      "reversible_card"
                                     ]
                                   },
                                   "type_line": {
@@ -23832,7 +23983,10 @@
                                           ]
                                         },
                                         "colours": {
-                                          "type": "array",
+                                          "type": [
+                                            "array",
+                                            "null"
+                                          ],
                                           "items": {
                                             "type": "string",
                                             "enum": [
@@ -26012,16 +26166,37 @@
                         "type": "string",
                         "enum": [
                           "nonfoil",
-                          "foil"
+                          "foil",
+                          "etched"
                         ]
                       },
                       "layout": {
                         "type": "string",
                         "enum": [
                           "normal",
-                          "transform",
+                          "token",
                           "art_series",
-                          "token"
+                          "transform",
+                          "saga",
+                          "adventure",
+                          "planar",
+                          "split",
+                          "modal_dfc",
+                          "emblem",
+                          "double_faced_token",
+                          "scheme",
+                          "mutate",
+                          "prepare",
+                          "class",
+                          "meld",
+                          "leveler",
+                          "flip",
+                          "prototype",
+                          "vanguard",
+                          "host",
+                          "case",
+                          "augment",
+                          "reversible_card"
                         ]
                       },
                       "faces": {
@@ -26898,8 +27073,28 @@
                         "type": "string",
                         "enum": [
                           "normal",
+                          "token",
                           "transform",
-                          "token"
+                          "saga",
+                          "adventure",
+                          "planar",
+                          "split",
+                          "modal_dfc",
+                          "emblem",
+                          "double_faced_token",
+                          "scheme",
+                          "mutate",
+                          "prepare",
+                          "class",
+                          "meld",
+                          "leveler",
+                          "flip",
+                          "prototype",
+                          "vanguard",
+                          "host",
+                          "case",
+                          "augment",
+                          "reversible_card"
                         ]
                       },
                       "type_line": {
@@ -26952,7 +27147,10 @@
                               ]
                             },
                             "colours": {
-                              "type": "array",
+                              "type": [
+                                "array",
+                                "null"
+                              ],
                               "items": {
                                 "type": "string",
                                 "enum": [
@@ -28282,16 +28480,37 @@
                         "type": "string",
                         "enum": [
                           "nonfoil",
-                          "foil"
+                          "foil",
+                          "etched"
                         ]
                       },
                       "layout": {
                         "type": "string",
                         "enum": [
                           "normal",
-                          "transform",
+                          "token",
                           "art_series",
-                          "token"
+                          "transform",
+                          "saga",
+                          "adventure",
+                          "planar",
+                          "split",
+                          "modal_dfc",
+                          "emblem",
+                          "double_faced_token",
+                          "scheme",
+                          "mutate",
+                          "prepare",
+                          "class",
+                          "meld",
+                          "leveler",
+                          "flip",
+                          "prototype",
+                          "vanguard",
+                          "host",
+                          "case",
+                          "augment",
+                          "reversible_card"
                         ]
                       },
                       "faces": {
@@ -31038,8 +31257,28 @@
                                                   "type": "string",
                                                   "enum": [
                                                     "normal",
+                                                    "token",
                                                     "transform",
-                                                    "token"
+                                                    "saga",
+                                                    "adventure",
+                                                    "planar",
+                                                    "split",
+                                                    "modal_dfc",
+                                                    "emblem",
+                                                    "double_faced_token",
+                                                    "scheme",
+                                                    "mutate",
+                                                    "prepare",
+                                                    "class",
+                                                    "meld",
+                                                    "leveler",
+                                                    "flip",
+                                                    "prototype",
+                                                    "vanguard",
+                                                    "host",
+                                                    "case",
+                                                    "augment",
+                                                    "reversible_card"
                                                   ]
                                                 },
                                                 "type_line": {
@@ -31092,7 +31331,10 @@
                                                         ]
                                                       },
                                                       "colours": {
-                                                        "type": "array",
+                                                        "type": [
+                                                          "array",
+                                                          "null"
+                                                        ],
                                                         "items": {
                                                           "type": "string",
                                                           "enum": [
@@ -36647,8 +36889,28 @@
                             "type": "string",
                             "enum": [
                               "normal",
+                              "token",
                               "transform",
-                              "token"
+                              "saga",
+                              "adventure",
+                              "planar",
+                              "split",
+                              "modal_dfc",
+                              "emblem",
+                              "double_faced_token",
+                              "scheme",
+                              "mutate",
+                              "prepare",
+                              "class",
+                              "meld",
+                              "leveler",
+                              "flip",
+                              "prototype",
+                              "vanguard",
+                              "host",
+                              "case",
+                              "augment",
+                              "reversible_card"
                             ]
                           },
                           "type_line": {
@@ -36701,7 +36963,10 @@
                                   ]
                                 },
                                 "colours": {
-                                  "type": "array",
+                                  "type": [
+                                    "array",
+                                    "null"
+                                  ],
                                   "items": {
                                     "type": "string",
                                     "enum": [
@@ -51189,6 +51454,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SourceObservationSet"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A bounded parse step retained progress. Repeat this POST with the same snapshot, adapter version and idempotency key until 201 seals the observation set. Retrying the completed intent returns that same immutable set.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceParsePending"
                 }
               }
             }
