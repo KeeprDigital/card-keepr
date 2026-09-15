@@ -133,6 +133,7 @@ const identityEvidenceFields = new Set([
   "locator",
   "variant_key",
   "artwork_fingerprint",
+  "artwork_identity_explicit",
   "printed_fields_digest",
   "treatment",
   "demonstrably_novel",
@@ -347,6 +348,8 @@ export function parseReconciliationObservation(
     },
   };
   const identityEvidence = requiredRecord(record.identity_evidence, "identity_evidence");
+  if (identityEvidence.artwork_identity_explicit !== undefined && identityEvidence.artwork_identity_explicit !== false)
+    throw new Error("identity_evidence.artwork_identity_explicit can only mark unresolved evidence as false.");
   const variantKey = nullableString(identityEvidence.variant_key, "identity_evidence.variant_key");
   if (profile === "gundam@1" && variantKey === null) {
     throw new Error("Gundam Printing evidence requires an exact variant key or suffix.");
@@ -374,7 +377,8 @@ export function parseReconciliationObservation(
     variantKey,
     artworkFingerprint,
     artworkIdentityExplicit:
-      !artworkFingerprint.startsWith("official-artwork:") || typeof artworkIdentity?.artwork_id === "string",
+      identityEvidence.artwork_identity_explicit !== false &&
+      (!artworkFingerprint.startsWith("official-artwork:") || typeof artworkIdentity?.artwork_id === "string"),
     printedFieldsDigest: requiredString(
       identityEvidence.printed_fields_digest,
       "identity_evidence.printed_fields_digest",

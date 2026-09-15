@@ -50,6 +50,7 @@ export type D1RecoveryProvider = Readonly<{
       expectedRevisionId: string;
       expectedSchemaMigrationLevel: number;
       expected: CatalogueVerificationEvidence;
+      sourceEvidenceObjects?: R2Bucket;
     }>,
   ): Promise<RestoredCatalogueVerification>;
 }>;
@@ -440,7 +441,7 @@ export async function verifyCatalogueRecovery(
   recoveryId: string,
   input: VerifyCatalogueRecoveryInput,
   provider: D1RecoveryProvider = cloudflareD1RecoveryProvider,
-  artifacts?: { catalogue: R2Bucket; images: R2Bucket },
+  artifacts?: { catalogue: R2Bucket; images: R2Bucket; evidence?: R2Bucket },
 ): Promise<Record<string, unknown>> {
   assertOpaqueId(input.idempotencyKey, "idempotency_key");
   assertSha256(input.targetDigest, "target_digest");
@@ -490,6 +491,7 @@ export async function verifyCatalogueRecovery(
       expectedRevisionId: row.target_revision_id,
       expectedSchemaMigrationLevel: row.expected_schema_migration_level,
       expected: JSON.parse(row.expected_verification_json) as CatalogueVerificationEvidence,
+      sourceEvidenceObjects: artifacts?.evidence,
     });
     assertCompleteVerification(verification);
     const changed = await recoveryStatements

@@ -131,3 +131,9 @@ Known gaps remain explicit:
 Run the offline lifecycle with `pnpm run test:acceptance scryfall-catalogue`.
 Runtime-free adapter checks are in `test/domain/scryfall-source.spec.ts`; synthetic
 migration/identity regressions are distinct from real-source evidence.
+
+## Bulk regression records
+
+The [bulk record selection](bulk/README.md) retains exact records from the pinned
+Printing-bearing gzip JSONL source for #327. It extends parser coverage while the
+complete import and its capacity/publication/restore evidence remain separate work.

@@ -1,3 +1,8 @@
+import { putImmutableEvidenceBytes } from "./source-evidence-object";
+import { decodeArchiveBatch } from "./source-archive-decode";
+import { parseArchiveBatch } from "./source-archive-parse";
+import { SourceArchiveFailure } from "../shared";
+import { sourceParseAuthorityGuard, type SourceParseAuthority } from "./source-parse-authority-repository";
 import { retainSourceRecordManifest } from "./source-record-manifest";
 import { retainExtractedSourceRecords, verifiedSnapshotChunks } from "./source-record-intake";
 import { sealSourceRecords } from "./source-record-repository";
@@ -46,6 +51,7 @@ type ParseOperationRow = {
 type ParseIntent = {
   intent: "collection" | "reparse";
   idempotencyKey: string;
+  workflowAttempt?: SourceParseAuthority["workflowAttempt"];
 };
 
 export async function parseSnapshot(
@@ -55,6 +61,30 @@ export async function parseSnapshot(
   adapterVersion: string,
   parseIntent: ParseIntent,
 ): Promise<ObservationSetRow> {
+  const result = await parseSnapshotBatch(database, evidenceObjects, snapshotId, adapterVersion, parseIntent);
+  if ("kind" in result)
+    throw new AdministrationProblem(
+      409,
+      "source_parse_in_progress",
+      "Source parsing has retained progress and requires continuation.",
+    );
+  return result;
+}
+
+type ParsePending = {
+  kind: "pending";
+  parse_operation_id: string;
+  observation_set_id: string;
+  phase: "decoding" | "normalizing";
+};
+
+export async function parseSnapshotBatch(
+  database: CatalogueStore,
+  evidenceObjects: R2Bucket,
+  snapshotId: string,
+  adapterVersion: string,
+  parseIntent: ParseIntent,
+): Promise<ObservationSetRow | ParsePending> {
   const snapshot = await sourceSnapshotForParsingStatement(database, snapshotId).first<
     SnapshotRow & { request_role: SourceRequestRole }
   >();
@@ -75,19 +105,25 @@ export async function parseSnapshot(
     gameProfileVersion: snapshot.game_profile_version,
   });
   assertAdapterRequestSurface(adapter, new URL(snapshot.request_url));
-  if (snapshot.content_byte_length > adapter.maximumSnapshotBytes) {
+  const archive =
+    snapshot.request_role === "listing" &&
+    adapter.archiveExtraction?.matches({ url: snapshot.request_url, requestId: snapshot.request_id })
+      ? adapter.archiveExtraction
+      : undefined;
+  if (snapshot.content_byte_length > (archive?.maximumSnapshotBytes ?? adapter.maximumSnapshotBytes)) {
     throw new AdministrationProblem(
       422,
       "source_parse_too_large",
       "The Source Snapshot exceeds the adapter's bounded parse limit.",
     );
   }
-  const operation = await prepareParseOperation(database, snapshot.id, adapter.adapterVersion, parseIntent);
+  const guard = archive ? () => sourceParseAuthorityGuard(database, snapshot.ingestion_run_id, parseIntent) : undefined;
+  const operation = await prepareParseOperation(database, snapshot.id, adapter.adapterVersion, parseIntent, guard);
   if (operation.state === "finalized") {
     return requiredObservationSet(database, operation.id);
   }
   if (operation.state === "uploaded") {
-    return finalizeParseOperation(database, operation.id, snapshot);
+    return finalizeParseOperation(database, operation.id, snapshot, guard);
   }
   const header = {
     contract: "card-keepr-source-observations@1",
@@ -114,65 +150,110 @@ export async function parseSnapshot(
     const image = snapshot.request_role === "image";
     if (!image && snapshot.media_type?.startsWith("image/"))
       throw new AdapterParseFailure("A catalogue document request cannot retain an image response as card facts.");
-    let extraction: Awaited<ReturnType<NonNullable<SourceAdapterRegistration["recordExtraction"]>["extract"]>>;
-    if (image) {
-      if (!snapshot.media_type?.startsWith("image/") || snapshot.content_byte_length === 0)
-        throw new AdapterParseFailure("Official Printing Image request did not retain non-empty image bytes.");
-      for await (const _chunk of verifiedSnapshotChunks(evidenceObjects, snapshot, false)) {
-        /* verify raw bytes */
-      }
-      extraction = { count: 0, pagination: null, requests: [], records: (async function* () {})() };
-    } else
-      extraction = adapter.recordExtraction?.matches(context)
-        ? await adapter.recordExtraction.extract(() => verifiedSnapshotChunks(evidenceObjects, snapshot), context)
-        : await extractBoundedAdapterPage(adapter, () => verifiedSnapshotChunks(evidenceObjects, snapshot), context);
-    observationDocument = await retainExtractedSourceRecords(database, operation.observation_set_id, header, {
-      ...extraction,
-      requests: (async function* () {
-        const inherited: unknown = JSON.parse(snapshot.request_headers_json);
-        for await (const request of extraction.requests) {
-          if (
-            !isRecord(inherited) ||
-            (request.discoveryKey === undefined && adapter.inheritDiscoveryRequestHeaders !== true)
-          ) {
-            yield request;
-            continue;
-          }
-          const headers = {
-            ...request.headers,
-            ...Object.fromEntries(
-              Object.entries(inherited).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-            ),
-          };
-          if (request.headers.accept !== undefined) headers.accept = request.headers.accept;
-          yield { ...request, headers: discoveredRequestHeaders(request, headers) };
+    if (archive) {
+      const pin = archive.pin({
+        url: snapshot.request_url,
+        requestId: snapshot.request_id,
+        compressedBytes: snapshot.content_byte_length,
+      });
+      const decoded = await decodeArchiveBatch(database, evidenceObjects, snapshot, pin, guard!);
+      if (decoded.state !== "decoded")
+        return {
+          kind: "pending",
+          parse_operation_id: operation.id,
+          observation_set_id: operation.observation_set_id,
+          phase: "decoding",
+        };
+      const document = await parseArchiveBatch(
+        database,
+        evidenceObjects,
+        operation.observation_set_id,
+        header,
+        decoded,
+        archive,
+        pin.cutoff,
+        guard!,
+      );
+      if (document === null)
+        return {
+          kind: "pending",
+          parse_operation_id: operation.id,
+          observation_set_id: operation.observation_set_id,
+          phase: "normalizing",
+        };
+      observationDocument = document;
+      observationCount = (document.record_storage as { count: number }).count;
+    } else {
+      let extraction: Awaited<ReturnType<NonNullable<SourceAdapterRegistration["recordExtraction"]>["extract"]>>;
+      if (image) {
+        if (!snapshot.media_type?.startsWith("image/") || snapshot.content_byte_length === 0)
+          throw new AdapterParseFailure("Official Printing Image request did not retain non-empty image bytes.");
+        for await (const _chunk of verifiedSnapshotChunks(evidenceObjects, snapshot, false)) {
+          /* verify raw bytes */
         }
-      })(),
-    });
-    observationCount = extraction.count;
+        extraction = { count: 0, pagination: null, requests: [], records: (async function* () {})() };
+      } else
+        extraction = adapter.recordExtraction?.matches(context)
+          ? await adapter.recordExtraction.extract(() => verifiedSnapshotChunks(evidenceObjects, snapshot), context)
+          : await extractBoundedAdapterPage(adapter, () => verifiedSnapshotChunks(evidenceObjects, snapshot), context);
+      observationDocument = await retainExtractedSourceRecords(database, operation.observation_set_id, header, {
+        ...extraction,
+        requests: (async function* () {
+          const inherited: unknown = JSON.parse(snapshot.request_headers_json);
+          for await (const request of extraction.requests) {
+            if (
+              !isRecord(inherited) ||
+              (request.discoveryKey === undefined && adapter.inheritDiscoveryRequestHeaders !== true)
+            ) {
+              yield request;
+              continue;
+            }
+            const headers = {
+              ...request.headers,
+              ...Object.fromEntries(
+                Object.entries(inherited).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+              ),
+            };
+            if (request.headers.accept !== undefined) headers.accept = request.headers.accept;
+            yield { ...request, headers: discoveredRequestHeaders(request, headers) };
+          }
+        })(),
+      });
+      observationCount = extraction.count;
+    }
   } catch (error) {
+    if (error instanceof Error && error.message.includes("source_parse_authority_superseded")) {
+      const superseded = new Error("The collection parse authority has been superseded.");
+      superseded.name = "SupersededCollectionWorkflowAttempt";
+      throw superseded;
+    }
+    if (error instanceof SourceArchiveFailure)
+      throw new AdministrationProblem(422, "source_parse_failed", error.message);
     if (!(error instanceof AdapterParseFailure) || error.category !== "source-contract") throw error;
     throw new AdministrationProblem(422, "source_parse_failed", error.message);
   }
   {
     const observationBytes = utf8(canonicalJson(observationDocument));
     const digest = await sha256(observationBytes);
-    await retainSourceRecordManifest(database, operation.observation_set_id, observationDocument);
+    await retainSourceRecordManifest(database, operation.observation_set_id, observationDocument, guard);
     const writeToken = crypto.randomUUID();
-    const observedToken = await putImmutableBytes(
+    const observedToken = await putImmutableEvidenceBytes(
       evidenceObjects,
       operation.content_object_key,
       observationBytes,
       digest,
       writeToken,
       async () => {
-        await beginEvidenceObjectWrite(
-          database,
-          writeToken,
-          snapshot.ingestion_run_id,
-          operation.content_object_key,
-          new Date().toISOString(),
-        ).run();
+        await database.batch([
+          ...(guard ? [guard()] : []),
+          beginEvidenceObjectWrite(
+            database,
+            writeToken,
+            snapshot.ingestion_run_id,
+            operation.content_object_key,
+            new Date().toISOString(),
+          ),
+        ]);
       },
     );
     if (observedToken && observedToken !== writeToken)
@@ -184,14 +265,17 @@ export async function parseSnapshot(
         new Date().toISOString(),
       ).run();
     await completeEvidenceObjectWrite(database, writeToken, new Date().toISOString()).run();
-    await uploadedParseStatement(database, {
-      digest: digest,
-      byteLength: observationBytes.byteLength,
-      observationCount,
-      operationId: operation.id,
-    }).run();
+    await database.batch([
+      ...(guard ? [guard()] : []),
+      uploadedParseStatement(database, {
+        digest: digest,
+        byteLength: observationBytes.byteLength,
+        observationCount,
+        operationId: operation.id,
+      }),
+    ]);
   }
-  return finalizeParseOperation(database, operation.id, snapshot);
+  return finalizeParseOperation(database, operation.id, snapshot, guard);
 }
 
 function discoveredRequestHeaders(
@@ -219,12 +303,13 @@ export async function reparseSnapshot(
   adapterVersion: string,
   idempotencyKey: string,
 ): Promise<Record<string, unknown>> {
-  return publicObservationSet(
-    await parseSnapshot(database, evidenceObjects, snapshotId, adapterVersion, {
-      intent: "reparse",
-      idempotencyKey,
-    }),
-  );
+  const result = await parseSnapshotBatch(database, evidenceObjects, snapshotId, adapterVersion, {
+    intent: "reparse",
+    idempotencyKey,
+  });
+  return "kind" in result
+    ? { source_snapshot_id: snapshotId, adapter_version: adapterVersion, ...result }
+    : publicObservationSet(result);
 }
 
 async function prepareParseOperation(
@@ -232,6 +317,7 @@ async function prepareParseOperation(
   snapshotId: string,
   adapterVersion: string,
   parseIntent: ParseIntent,
+  guard?: () => D1PreparedStatement,
 ): Promise<ParseOperationRow> {
   const digest = await sha256(
     utf8(
@@ -245,16 +331,19 @@ async function prepareParseOperation(
   );
   const id = `srcparse_${digest}`;
   const observationSetId = `srcobsset_${digest}`;
-  await createParseOperationStatement(database, {
-    operationId: id,
-    snapshotId: snapshotId,
-    adapterVersion: adapterVersion,
-    intent: parseIntent.intent,
-    idempotencyKey: parseIntent.idempotencyKey,
-    observationSetId: observationSetId,
-    objectKey: `source-observations/${observationSetId}.json`,
-    parsedAt: new Date().toISOString(),
-  }).run();
+  await database.batch([
+    ...(guard ? [guard()] : []),
+    createParseOperationStatement(database, {
+      operationId: id,
+      snapshotId: snapshotId,
+      adapterVersion: adapterVersion,
+      intent: parseIntent.intent,
+      idempotencyKey: parseIntent.idempotencyKey,
+      observationSetId: observationSetId,
+      objectKey: `source-observations/${observationSetId}.json`,
+      parsedAt: new Date().toISOString(),
+    }),
+  ]);
   return requiredParseOperation(database, id);
 }
 
@@ -262,6 +351,7 @@ async function finalizeParseOperation(
   database: CatalogueStore,
   operationId: string,
   snapshot: SnapshotRow,
+  guard?: () => D1PreparedStatement,
 ): Promise<ObservationSetRow> {
   const operation = await requiredParseOperation(database, operationId);
   if (operation.state === "finalized") {
@@ -276,6 +366,7 @@ async function finalizeParseOperation(
     throw new Error("Parse operation upload metadata is incomplete");
   }
   await database.batch([
+    ...(guard ? [guard()] : []),
     finalizedObservationSetStatement(database, {
       observationSetId: operation.observation_set_id,
       operationId: operation.id,
@@ -306,39 +397,4 @@ async function requiredObservationSet(database: CatalogueStore, operationId: str
   const stored = await observationSetByParseOperationStatement(database, operationId).first<ObservationSetRow>();
   if (stored === null) throw new Error("Source Observation Set disappeared");
   return stored;
-}
-
-async function putImmutableBytes(
-  bucket: R2Bucket,
-  key: string,
-  bytes: Uint8Array,
-  digest: string,
-  writeToken: string,
-  registerWriter: () => Promise<void>,
-): Promise<string | undefined> {
-  const existing = await bucket.head(key);
-  if (existing !== null) {
-    assertMatchingObject(existing, bytes, digest);
-    return existing.customMetadata?.cleanup_writer_token;
-  }
-  await registerWriter();
-  const stored = await bucket.put(key, bytes, {
-    onlyIf: { etagDoesNotMatch: "*" },
-    httpMetadata: {
-      contentType: "application/json",
-      cacheControl: "private, max-age=31536000, immutable",
-    },
-    customMetadata: { sha256: digest, cleanup_writer_token: writeToken },
-  });
-  if (stored !== null) return writeToken;
-  const concurrent = await bucket.head(key);
-  if (concurrent === null) throw new Error("Immutable evidence write conflict");
-  assertMatchingObject(concurrent, bytes, digest);
-  return concurrent.customMetadata?.cleanup_writer_token;
-}
-
-function assertMatchingObject(object: R2Object, bytes: Uint8Array, digest: string): void {
-  if (object.size !== bytes.byteLength || object.customMetadata?.sha256 !== digest) {
-    throw new Error("Immutable evidence object key collision");
-  }
 }

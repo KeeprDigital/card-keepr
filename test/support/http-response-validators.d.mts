@@ -80,4 +80,5 @@ export function response78(value: unknown): boolean;
 export function response79(value: unknown): boolean;
 export function response80(value: unknown): boolean;
 export function response81(value: unknown): boolean;
+export function response82(value: unknown): boolean;
 export const responseValidators: Record<string, string>;

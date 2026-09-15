@@ -1,4 +1,5 @@
 import {
+  sourceAdmissionEvidence,
   catalogueCard,
   cataloguePrinting,
   record,
@@ -19,6 +20,7 @@ import {
 } from "./document-validators.mjs";
 
 const validators = {
+  sourceAdmissionEvidence,
   catalogueCard,
   cataloguePrinting,
   record,

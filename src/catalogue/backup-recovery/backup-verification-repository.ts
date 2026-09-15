@@ -16,6 +16,7 @@ export function catalogueVerificationQuery(input: CatalogueVerificationQuery): {
   if (
     input.kind === "composition-schema" ||
     input.kind === "composition-accepted-roots" ||
+    input.kind === "composition-source-artifacts" ||
     input.kind === "composition-state" ||
     input.kind === "composition-columns" ||
     input.kind === "composition-page" ||

@@ -135,6 +135,13 @@ Printing's identified Card. Curated Revisions correct existing facts. Admission,
 identity resolution and correction decisions do not publish a candidate.
 [Admission decision](https://github.com/KeeprDigital/card-keepr/issues/211#issuecomment-5556519627).
 
+Scryfall records whose physical faces cannot establish the required logical Card
+parts retain their exact source claims and private image evidence as separate
+Entity Proposals for each declared finish. They contribute no Card or Printing
+while that structure remains unresolved. A decision about one finish does not
+decide another, and another printing's rules text cannot fill the source's gap.
+[Magic source assembly](https://github.com/KeeprDigital/card-keepr/issues/327).
+
 The accepted admission direction automatically admits unambiguous, sufficiently
 evidenced Cards and Printings from designated authorities after their adapters
 have demonstrated reliable identity handling. Ambiguous identities and new Cards
@@ -171,6 +178,16 @@ private R2 retains exact source bytes, partitioned artifacts, images and backups
 An R2 object alone proves neither publication nor recovery. D1 receipts and
 verified reference closure must agree with its bytes. Reconciliation uses
 retained evidence rather than silently fetching a changed source.
+
+Archive intake retains the original compressed Source Snapshot and verified
+decoded blocks, with resumable record and finish progress. Only a sealed Source
+Observation Set adopts those blocks as retained interpretation evidence. Permanent
+proposal decisions pin their source and image dependencies atomically. Backup
+verification follows retained archive and image identities independently of a
+request's current snapshot pointer, requires every receipt for a shared physical
+key to agree, and verifies those bytes again against the restored database.
+This storage foundation leaves the registered Magic pilot scope unchanged; the
+complete declared import remains [separate launch work](https://github.com/KeeprDigital/card-keepr/issues/327).
 
 Collection scheduling reads a bounded page containing the next pending shard
 for each hostname. It retains Workflow identities only for dispatched shards;

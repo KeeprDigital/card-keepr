@@ -30,6 +30,7 @@ type Environment = {
   BACKUPS: R2Bucket;
   CATALOGUE_EXPORTS: R2Bucket;
   PRINTING_IMAGES: R2Bucket;
+  EVIDENCE_OBJECTS: R2Bucket;
   CATALOGUE_BACKUP_WORKFLOW: Parameters<typeof startOrObserveCatalogueBackupWorkflow>[1];
   CATALOGUE_D1_DATABASE_ID: string;
   CATALOGUE_DB: CatalogueStore;
@@ -102,7 +103,7 @@ export const backupRecoveryRoutes: Route<Context>[] = [
         verificationToken: env.D1_VERIFICATION_TOKEN,
       },
       undefined,
-      { catalogue: env.CATALOGUE_EXPORTS, images: env.PRINTING_IMAGES },
+      { catalogue: env.CATALOGUE_EXPORTS, images: env.PRINTING_IMAGES, evidence: env.EVIDENCE_OBJECTS },
     );
     return c.json(retainedWireValue(recoverySchema, document), 200, { "Cache-Control": "no-store" });
   }),

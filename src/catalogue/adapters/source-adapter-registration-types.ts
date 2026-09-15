@@ -52,6 +52,24 @@ export type SourceAdapterRegistration = Readonly<{
   gameProfileVersion: string;
   parserContract: string;
   maximumSnapshotBytes: number;
+  /** A larger exact archive transport never widens ordinary document/image bodies. */
+  archiveExtraction?: {
+    matches: (context: { url: string; requestId?: string }) => boolean;
+    pin: (context: { url: string; requestId: string; compressedBytes: number }) => {
+      cutoff: string;
+      limits: { compressedBytes: number; decompressedBytes: number; recordBytes: number; records: number };
+    };
+    record: (
+      bytes: Uint8Array,
+      cutoff: string,
+    ) => {
+      sourceKey: string;
+      exclusion: string | null;
+      observations: readonly { sourceKey: string; value: unknown }[];
+      requests: readonly ExtractedSourceRequest[];
+    };
+    maximumSnapshotBytes: number;
+  };
   requestCapacity: number;
   /** Retained access-policy floor after HTTP 429; longer Retry-After remains binding. */
   minimumRateLimitBackoffMilliseconds?: number;

@@ -1,4 +1,5 @@
 // Generated validator signatures.
+export function sourceAdmissionEvidence(value: unknown): boolean;
 export function catalogueCard(value: unknown): boolean;
 export function cataloguePrinting(value: unknown): boolean;
 export function curatedField(value: unknown): boolean;

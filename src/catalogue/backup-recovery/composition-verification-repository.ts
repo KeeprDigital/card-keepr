@@ -5,7 +5,19 @@ export const maximumSnapshotPageRows = 128;
 export const maximumSnapshotPageBytes = 1_048_576;
 export const maximumSchemaSnapshotPageRows = 32;
 export const maximumSchemaSnapshotPageBytes = 1_048_576;
+export const compositionSourceSnapshotTables = [
+  "source_capture_operations",
+  "source_parse_operations",
+  "source_record_pages",
+  "source_record_progress",
+  "source_record_auxiliary",
+  "source_archive_decodes",
+  "source_archive_blocks",
+  "source_archive_parse_progress",
+  "source_archive_record_receipts",
+] as const;
 export const compositionSnapshotTables = [
+  ...compositionSourceSnapshotTables,
   "catalogue_revisions",
   "catalogue_exports",
   "catalogue_export_deletion_plans",
@@ -91,8 +103,56 @@ export type CompositionVerificationQuery =
   | { kind: "composition-page"; table: CompositionSnapshotTable; after: number; columns: readonly string[] }
   | { kind: "composition-schema"; after: string }
   | { kind: "composition-accepted-roots" }
+  | { kind: "composition-source-artifacts"; after: string }
   | { kind: "foreign-keys" };
+export type CompositionQuery = (query: CompositionVerificationQuery) => Promise<Record<string, unknown>[]>;
 export function compositionVerificationQuery(input: CompositionVerificationQuery) {
+  if (input.kind === "composition-source-artifacts")
+    return {
+      sql: `WITH retained_snapshots AS (
+      SELECT snapshot_id FROM evidence_cleanup_retained_snapshots
+      -- Reverse ownership comes from literal stored keys, never an inherited
+      -- cleanup closure that could map an ancestor key onto its descendants.
+      UNION SELECT snapshot.id FROM evidence_object_references pin
+        JOIN source_snapshots snapshot ON snapshot.content_object_key=pin.object_key
+      UNION SELECT parse.source_snapshot_id FROM evidence_object_references pin
+        JOIN source_parse_operations parse ON parse.content_object_key=pin.object_key
+      UNION SELECT block.source_snapshot_id FROM evidence_object_references pin
+        JOIN source_archive_blocks block ON block.object_key=pin.object_key
+    ), archive_roots AS (
+      SELECT archive.source_snapshot_id AS snapshot_id FROM source_archive_decodes archive
+        JOIN retained_snapshots retained ON retained.snapshot_id=archive.source_snapshot_id
+    ), required_snapshots AS (
+      SELECT snapshot_id FROM archive_roots
+      UNION SELECT image.id FROM archive_roots root
+        JOIN source_snapshots archive ON archive.id=root.snapshot_id
+        JOIN source_requests parent ON parent.ingestion_run_id=archive.ingestion_run_id
+          AND parent.request_id=archive.request_id
+        JOIN source_requests child ON child.ingestion_run_id=parent.ingestion_run_id
+          AND child.discovered_from_request_id=parent.request_id AND child.request_role='image'
+        -- Retained snapshots outlive each request's mutable current pointer.
+        JOIN source_snapshots image ON image.ingestion_run_id=child.ingestion_run_id
+          AND image.request_id=child.request_id
+        JOIN retained_snapshots retained ON retained.snapshot_id=image.id
+    ), artifacts AS (
+      SELECT s.content_object_key AS object_key,s.content_digest AS sha256,s.content_byte_length AS byte_length,'raw' AS kind
+        FROM source_snapshots s JOIN required_snapshots r ON r.snapshot_id=s.id
+      UNION SELECT s.content_object_key,s.content_digest,s.content_byte_length,'observations'
+        FROM source_observation_sets s JOIN required_snapshots r ON r.snapshot_id=s.source_snapshot_id
+      UNION SELECT b.object_key,b.sha256,b.byte_length,'derived'
+        FROM source_archive_blocks b JOIN required_snapshots r ON r.snapshot_id=b.source_snapshot_id
+        JOIN source_archive_decodes d ON d.source_snapshot_id=b.source_snapshot_id AND d.state='decoded'
+        WHERE b.state='retained' AND EXISTS(SELECT 1 FROM source_observation_sets s WHERE s.source_snapshot_id=b.source_snapshot_id)
+    ) SELECT object_key,
+      CASE WHEN MIN(sha256)=MAX(sha256) AND MIN(byte_length)=MAX(byte_length) AND MIN(kind)=MAX(kind)
+        THEN MIN(sha256) ELSE NULL END AS sha256,
+      MIN(byte_length) AS byte_length,MIN(kind) AS kind
+      FROM artifacts WHERE object_key>?
+      -- Validate every receipt for the physical key before the page boundary:
+      -- otherwise a contradictory 65th row could disappear behind the cursor.
+      GROUP BY object_key ORDER BY object_key LIMIT 64`,
+      params: [input.after],
+    };
   if (input.kind === "composition-accepted-roots") return acceptedEvidenceArtifactRootsQuery();
   if (input.kind === "composition-schema")
     return {

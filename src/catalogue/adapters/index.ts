@@ -17,16 +17,10 @@ export {
   type OfficialSourceContract,
   type SourceAdapterRegistration,
 } from "./source-adapters";
-export type { ListingReconciliationTraits } from "./source-adapter-registration-types";
-export {
-  requiredOfficialSourceScope,
-  type OfficialSourceScope,
-} from "./official-source-scope";
+export type { ExtractedSourceRequest, ListingReconciliationTraits } from "./source-adapter-registration-types";
+export { requiredOfficialSourceScope, type OfficialSourceScope } from "./official-source-scope";
 export { officialSourceDiscoveryRequests } from "./product-release-source-adapters";
-export {
-  parsedOfficialArtworkIdentity,
-  type OfficialArtworkIdentity,
-} from "./official-artwork-identity";
+export { parsedOfficialArtworkIdentity, type OfficialArtworkIdentity } from "./official-artwork-identity";
 export { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html";
 
 export { AdapterParseFailure } from "./adapter-parse-failure";

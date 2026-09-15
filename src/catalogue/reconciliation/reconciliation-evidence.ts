@@ -53,8 +53,15 @@ import {
   reconciliationSnapshotEvidenceStatement,
 } from "./reconciliation-evidence-repository";
 import { parseReconciliationObservation } from "./reconciliation-model";
+import {
+  parseSourceAdmissionEvidence,
+  retainSourceAdmissionEvidence,
+  type NormalizedSourceAdmissionEvidence,
+} from "./source-admission-evidence";
 
-export type NormalizedReconciliationObservation = ReturnType<typeof parseReconciliationObservation> & {
+export type NormalizedReconciliationObservation = (
+  ReturnType<typeof parseReconciliationObservation> | NormalizedSourceAdmissionEvidence
+) & {
   sourceObservationSetId: string;
   sourceSnapshotId: string;
   sourceCapturedAt: string;
@@ -311,7 +318,35 @@ async function collectRetainedReconciliationObservation(
         evidenceObjects,
         row.plan_origin === "production",
       );
-      let parsed = parseReconciliationObservation(wrapped.id, retained.value, retained.images);
+      const adapter = sourceAdapterForCoverage(
+        requiredSourceAdapter(row.adapter_version),
+        selectedPlans.find((plan) => plan.source_lineage === row.source_lineage)?.coverage?.subset,
+      );
+      let parsed: ReturnType<typeof parseReconciliationObservation> | NormalizedSourceAdmissionEvidence;
+      if (isRecord(retained.value) && retained.value.observation_type === "source_admission_evidence") {
+        // Validate the retained source claims; authenticated image metadata
+        // travels separately in retained.images and is checked during intake.
+        const review = parseSourceAdmissionEvidence(wrapped.value, adapter);
+        if (
+          review.game !== row.supported_game ||
+          review.source_lineage !== row.source_lineage ||
+          adapter.reconciliationCapability !== "catalogue" ||
+          !adapterReconciliationAreas(adapter).includes("catalogue")
+        )
+          throw new Error("Review-required source evidence conflicts with its retained authority.");
+        parsed = await retainSourceAdmissionEvidence(
+          database,
+          runId,
+          review,
+          {
+            sourceObservationId: wrapped.id,
+            sourceObservationSetId: row.observation_set_id,
+            sourceSnapshotId: row.source_snapshot_id,
+          },
+          retained.images,
+          row.retrieved_at,
+        );
+      } else parsed = parseReconciliationObservation(wrapped.id, retained.value, retained.images);
       if (parsed.kind === "card_printing") {
         const references = [];
         for (const image of parsed.printingImages)
@@ -326,10 +361,6 @@ async function collectRetainedReconciliationObservation(
           );
         parsed = { ...parsed, printingImages: references };
       }
-      const adapter = sourceAdapterForCoverage(
-        requiredSourceAdapter(row.adapter_version),
-        selectedPlans.find((plan) => plan.source_lineage === row.source_lineage)?.coverage?.subset,
-      );
       assertObservationAuthority(parsed, adapter, sourceSurface);
       await writes.retain(
         wrapped.id,
@@ -638,7 +669,7 @@ async function attachRetainedPrintingImages(
 }
 
 function assertObservationAuthority(
-  observation: ReturnType<typeof parseReconciliationObservation>,
+  observation: ReturnType<typeof parseReconciliationObservation> | NormalizedSourceAdmissionEvidence,
   adapter: ReturnType<typeof requiredSourceAdapter>,
   sourceSurface: string | undefined,
 ): void {
@@ -651,7 +682,7 @@ function assertObservationAuthority(
     (coverage.includes("errata") || adapter.reconciliationAreas === undefined);
   if (
     (observation.kind === "official_erratum" ? !errataOnly && !catalogueErratum : errataOnly) ||
-    (observation.kind === "card_printing" && !coverage.includes("catalogue"))
+    (observation.kind !== "official_erratum" && !coverage.includes("catalogue"))
   ) {
     throw new Error("Retained Erratum authority conflicts with its exact Source Adapter coverage.");
   }

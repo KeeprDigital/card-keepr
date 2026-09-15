@@ -1,4 +1,12 @@
 import { createHash } from "node:crypto";
+import { magicFaceRoles, magicLayouts } from "../shared";
+import type { SourceAdmissionEvidenceObservation } from "./adapter-observations";
+import {
+  scryfallArchiveLimits,
+  scryfallBulkMetadataUrl,
+  scryfallBulkPin,
+  scryfallCapturedBulkPin,
+} from "./scryfall-bulk";
 import type { SourceAdapterRegistration, SourcePrintingIdentityEvidence } from "./source-adapter-registration-types";
 import { AdapterParseFailure, adapterUrl, decodeAdapterUtf8, withAdapterParseFailure } from "./adapter-parse-failure";
 
@@ -106,8 +114,8 @@ const outsideScopeFields = new Set([
   "flavor_text",
 ]);
 const surfaceUrl = (surface: string) => {
-  if (!selectedRecords.some((id) => id === surface))
-    throw new AdapterParseFailure("Unknown Scryfall pilot record surface.", { category: "configuration" });
+  if (!uuidPattern.test(surface))
+    throw new AdapterParseFailure("Invalid Scryfall record surface.", { category: "configuration" });
   return `${api}/cards/${surface}`;
 };
 const coverage = {
@@ -124,6 +132,52 @@ export const scryfallSourceAdapterRegistration: SourceAdapterRegistration = {
   gameProfileVersion: "magic@1",
   parserContract: "scryfall-magic-card-pilot@1",
   maximumSnapshotBytes: 2 * 1024 * 1024,
+  archiveExtraction: {
+    matches: ({ url }) => /^https:\/\/data\.scryfall\.io\/default-cards\/default-cards-\d{14}\.jsonl\.gz$/u.test(url),
+    maximumSnapshotBytes: scryfallArchiveLimits.compressedBytes,
+    pin: scryfallCapturedBulkPin,
+    record(bytes, cutoff) {
+      const card = object(withAdapterParseFailure(() => JSON.parse(decodeAdapterUtf8(bytes))));
+      const id = uuid(card.id);
+      if (card.object !== "card" || card.uri !== surfaceUrl(id))
+        throw new AdapterParseFailure("Scryfall bulk record identity is invalid.");
+      const language = text(card.lang);
+      const games = list(card.games).map(text);
+      if (typeof card.digital !== "boolean")
+        throw new AdapterParseFailure("Scryfall physical availability is missing.");
+      const release = issuedDate(card.released_at);
+      const exclusion =
+        language !== "en"
+          ? "non_english"
+          : !games.includes("paper")
+            ? "not_paper"
+            : card.digital
+              ? "digital"
+              : release > cutoff
+                ? "preview"
+                : card.layout === "front_card"
+                  ? "incidental_deck_indicator"
+                  : null;
+      if (exclusion !== null) return { sourceKey: id, exclusion, observations: [], requests: [] };
+      const parsed = assembleScryfallRecord(bytes, surfaceUrl(id), cutoff);
+      return {
+        sourceKey: id,
+        exclusion: null,
+        observations:
+          parsed.kind === "requires_review"
+            ? [{ sourceKey: id, value: parsed.observations[0] }]
+            : parsed.observations.map((value) => ({
+                sourceKey: `${id}:${value.identity_evidence.variant_key}`,
+                value,
+              })),
+        requests: parsed.images.map((image) => ({
+          role: "image",
+          url: image.source_url,
+          headers: { accept: "image/jpeg", "user-agent": userAgent },
+        })),
+      };
+    },
+  },
   requestCapacity: 10,
   minimumRateLimitBackoffMilliseconds: 30_000,
   origin: "production",
@@ -136,7 +190,7 @@ export const scryfallSourceAdapterRegistration: SourceAdapterRegistration = {
     return (
       qualifiesDesign(evidence) &&
       evidence.observedCardAndPrinting.printing?.game_data?.profile === "magic@1" &&
-      ["nonfoil", "foil"].includes(evidence.variantKey ?? "") &&
+      ["nonfoil", "foil", "etched"].includes(evidence.variantKey ?? "") &&
       attributes?.finish === evidence.variantKey &&
       typeof attributes.set_code === "string" &&
       typeof attributes.collector_number === "string" &&
@@ -149,11 +203,30 @@ export const scryfallSourceAdapterRegistration: SourceAdapterRegistration = {
   coverageContracts: { "representative-english-paper": coverage },
   parseBytes(bytes, context) {
     if (context.mediaType?.startsWith("image/")) return [];
-    return parseRecord(bytes, context.url).observations;
+    if (context.url === scryfallBulkMetadataUrl) {
+      scryfallBulkPin(bytes);
+      return [];
+    }
+    return assembleScryfallRecord(bytes, context.url).observations;
   },
   discoverRequests(bytes, context) {
     if (context.mediaType?.startsWith("image/")) return [];
-    return parseRecord(bytes, context.url).images.map((image) => ({
+    if (context.url === scryfallBulkMetadataUrl) {
+      const pin = scryfallBulkPin(bytes);
+      return [
+        {
+          role: "listing",
+          discoveryKey: `bulk-${pin.timestamp}-${pin.compressedBytes}`,
+          url: pin.url,
+          headers: {
+            accept: "application/gzip, application/octet-stream;q=0.9",
+            "accept-encoding": "identity",
+            "user-agent": userAgent,
+          },
+        },
+      ];
+    }
+    return assembleScryfallRecord(bytes, context.url).images.map((image) => ({
       role: "image",
       url: image.source_url,
       headers: { accept: "image/jpeg", "user-agent": userAgent },
@@ -168,11 +241,12 @@ function qualifiesDesign(evidence: SourcePrintingIdentityEvidence) {
     typeof evidence.cardDesignKey === "string" &&
     evidence.cardDesignKey.startsWith("oracle:") &&
     uuidPattern.test(evidence.cardDesignKey.slice("oracle:".length)) &&
-    selectedRecords.some((id) => id === evidence.locator)
+    typeof evidence.locator === "string" &&
+    uuidPattern.test(evidence.locator)
   );
 }
 
-function parseRecord(bytes: Uint8Array, sourceUrl: string) {
+function assembleScryfallRecord(bytes: Uint8Array, sourceUrl: string, cutoff = "2026-09-14") {
   const card = object(withAdapterParseFailure(() => JSON.parse(decodeAdapterUtf8(bytes))));
   const id = uuid(card.id);
   if (sourceUrl !== surfaceUrl(id) || card.uri !== sourceUrl || card.object !== "card")
@@ -181,42 +255,57 @@ function parseRecord(bytes: Uint8Array, sourceUrl: string) {
     throw new AdapterParseFailure("Scryfall pilot requires explicit English physical availability.");
   // The pilot's issue evidence predates this cutoff. Never use parser wall time
   // to silently turn a preview into an issued Printing on replay.
-  if (
-    typeof card.released_at !== "string" ||
-    !/^\d{4}-\d{2}-\d{2}$/u.test(card.released_at) ||
-    card.released_at > "2026-09-14"
-  )
+  if (issuedDate(card.released_at) > cutoff)
     throw new AdapterParseFailure("Scryfall pilot requires retained issued-card release evidence.");
-  const releaseTime = Date.parse(`${card.released_at}T00:00:00.000Z`);
-  if (!Number.isFinite(releaseTime) || new Date(releaseTime).toISOString().slice(0, 10) !== card.released_at)
-    throw new AdapterParseFailure("Scryfall issued-card release date is invalid.");
-  const oracle = uuid(card.oracle_id);
   const layout = text(card.layout);
-  if (!["normal", "transform", "art_series", "token"].includes(layout))
-    throw new AdapterParseFailure("Scryfall layout has no qualified pilot mapping.");
   const art = layout === "art_series";
-  const token = layout === "token";
-  const category = art ? "art" : token ? "token" : "gameplay";
+  const token = layout === "token" || layout === "double_faced_token";
   if (
-    (token && (card.set_type !== "token" || !text(card.type_line).startsWith("Token "))) ||
+    (layout === "token" && !/^Token(?: |$)/u.test(text(card.type_line))) ||
     (art && (card.set_type !== "memorabilia" || card.type_line !== "Card // Card"))
   )
     throw new AdapterParseFailure("Scryfall Card category evidence is contradictory.");
   const faces = card.card_faces === undefined ? [card] : list(card.card_faces).map(object);
-  if (faces.length !== (layout === "transform" || art ? 2 : 1))
-    throw new AdapterParseFailure("Scryfall layout and physical faces disagree.");
+  let roles: ("front" | "back")[];
+  try {
+    roles = magicFaceRoles(layout, faces.length);
+  } catch (error) {
+    throw new AdapterParseFailure("Scryfall layout and physical faces disagree.", { cause: error });
+  }
+  const twoSided = roles.includes("back");
+  const faceRole = (index: number) => roles[index]!;
+  const reversible = layout === "reversible_card";
+  const oracle = uuid(reversible ? faces[0]!.oracle_id : card.oracle_id);
+  const design = reversible ? faces[0]! : card;
+  const designFaces = reversible ? [design] : faces;
+  const category = art ? "art" : token || (reversible && design.layout === "token") ? "token" : "gameplay";
+  if (
+    reversible &&
+    (card.oracle_id !== undefined ||
+      faces.some((face) => uuid(face.oracle_id) !== oracle || face.layout !== design.layout))
+  )
+    throw new AdapterParseFailure("Reversible sides with different designs require explicit identity handling.");
   const finishes = list(card.finishes).map(text);
   if (
     !finishes.length ||
     new Set(finishes).size !== finishes.length ||
-    finishes.some((finish) => !["nonfoil", "foil"].includes(finish)) ||
+    finishes.some((finish) => !["nonfoil", "foil", "etched"].includes(finish)) ||
     card.foil !== finishes.includes("foil") ||
     card.nonfoil !== finishes.includes("nonfoil")
   )
     throw new AdapterParseFailure("Scryfall finish availability is incomplete or contradictory.");
-  const fingerprint = `scryfall:illustration:${uuid(faces[0]!.illustration_id)}`;
-  const images = faces.map((face, index) => {
-    const role = index === 0 ? "front" : "back";
+  const setCode = text(card.set);
+  const collectorNumber = text(card.collector_number);
+  const rarity = text(card.rarity);
+  const colourIdentity = colours(card.color_identity);
+  const illustration = card.illustration_id ?? faces[0]!.illustration_id;
+  // A missing illustration is an unresolved locator, never artwork equivalence
+  // or qualification. This keeps the observation available for explicit review.
+  const fingerprint =
+    illustration == null ? `scryfall:unresolved-artwork:${id}` : `scryfall:illustration:${uuid(illustration)}`;
+  const images = (twoSided ? faces : [card]).flatMap((face, index) => {
+    if (face.image_uris === undefined) return [];
+    const role = faceRole(index);
     const url = adapterUrl(text(object(face.image_uris).normal));
     if (
       url.origin !== "https://cards.scryfall.io" ||
@@ -227,39 +316,92 @@ function parseRecord(bytes: Uint8Array, sourceUrl: string) {
       url.hash
     )
       throw new AdapterParseFailure("Scryfall whole-card image is outside the returned record/face authority.");
-    return { role, source_url: url.href, artwork_fingerprint: fingerprint };
+    return [{ role, source_url: url.href, artwork_fingerprint: fingerprint }];
   });
+  if (reversible) {
+    const designLayout = text(design.layout);
+    if (!magicLayouts.some((known) => known === designLayout))
+      throw new AdapterParseFailure("Scryfall reversible design layout is unsupported.");
+    for (const face of faces) {
+      if (face.object !== "card_face") throw new AdapterParseFailure("Scryfall face object is invalid.");
+      text(face.name);
+      text(face.type_line);
+      optionalText(face.mana_cost);
+      optionalText(face.oracle_text);
+      optionalText(face.power);
+      optionalText(face.toughness);
+      optionalText(face.printed_text);
+      if (face.colors !== undefined) colours(face.colors);
+    }
+    // Physical front/back entries do not supply a complete logical design
+    // when that design itself requires multiple parts. Preserve the source
+    // claims for review instead of duplicating or borrowing missing parts.
+    let logicalPartsComplete = true;
+    try {
+      magicFaceRoles(designLayout, designFaces.length);
+    } catch {
+      // Only this known layout/count mismatch becomes reviewable evidence.
+      // Source identity, field structure and image-authority checks still fail.
+      logicalPartsComplete = false;
+    }
+    if (!logicalPartsComplete) {
+      const observation: SourceAdmissionEvidenceObservation = {
+        observation_type: "source_admission_evidence",
+        game: "magic",
+        source_lineage: lineage,
+        locator: id,
+        declared_finishes: finishes,
+        issues: [{ code: "logical_parts_unresolved", source_paths: ["card_faces.0.layout", "card_faces.1.layout"] }],
+        appearance_evidence: { images },
+        source_sidecar: { source_record_json: JSON.stringify(card) },
+        completeness: {
+          structurally_complete: true,
+          required_surfaces_complete: true,
+          partitions_complete: true,
+          declared_record_count: 1,
+          parsed_record_count: 1,
+        },
+      };
+      return { kind: "requires_review" as const, observations: [observation], images };
+    }
+  }
   const cardAttributes = art
     ? {}
     : {
-        layout,
-        type_line: text(card.type_line),
-        colour_identity: list(card.color_identity).map(text),
-        faces: faces.map((face, index) => ({
-          role: index === 0 ? "front" : "back",
+        layout: reversible ? text(design.layout) : layout,
+        type_line: text(design.type_line),
+        colour_identity: colourIdentity,
+        faces: designFaces.map((face, index) => ({
+          role: reversible ? "front" : faceRole(index),
           name: text(face.name),
           mana_cost: optionalText(face.mana_cost),
-          type_line: text(face.type_line),
-          colours: list(face.colors).map(text),
+          type_line: optionalText(face.type_line),
+          colours: face.colors === undefined ? null : colours(face.colors),
           oracle_text: optionalText(face.oracle_text),
           power: optionalText(face.power),
           toughness: optionalText(face.toughness),
         })),
       };
   const printedFaces = faces.map((face, index) => ({
-    role: index === 0 ? "front" : "back",
+    role: faceRole(index),
     name: text(face.name),
     printed_rules_text: art ? null : optionalText(face.printed_text),
   }));
   const observations = finishes.map((finish) => {
     const attributes = {
-      set_code: text(card.set),
-      collector_number: text(card.collector_number),
+      set_code: setCode,
+      collector_number: collectorNumber,
       finish,
       layout,
       faces: printedFaces,
-      artists: [...new Set(faces.map((face) => text(face.artist)))],
-      reverse_face: faces.length === 2 ? text(faces[1]!.name) : null,
+      artists: [
+        ...new Set(
+          (twoSided ? faces : [card]).flatMap((face) =>
+            face.artist == null || face.artist === "" ? [] : [text(face.artist)],
+          ),
+        ),
+      ],
+      reverse_face: twoSided ? text(faces[1]!.name) : null,
       // The record supplies one scan set shared by its finishes, not a scan of
       // each physical finish. Retain that limitation even when bytes are present.
       finish_image: null,
@@ -277,10 +419,10 @@ function parseRecord(bytes: Uint8Array, sourceUrl: string) {
         category,
         gameplay_applicability: art ? "inapplicable" : "applicable",
         official_identity: { kind: "unknown", value: null },
-        name: text(card.name),
+        name: text(design.name),
         effective_rules_text: art
           ? null
-          : faces
+          : designFaces
               .map((face) => optionalText(face.oracle_text))
               .filter(Boolean)
               .join("\n") || null,
@@ -288,7 +430,7 @@ function parseRecord(bytes: Uint8Array, sourceUrl: string) {
       },
       card_identity_evidence: { source_design_key: `oracle:${oracle}` },
       printing: {
-        rarity: { raw: text(card.rarity), normalized: text(card.rarity) },
+        rarity: { raw: rarity, normalized: rarity },
         printed_rules_text:
           art || printedFaces.some((face) => face.printed_rules_text === null)
             ? null
@@ -310,11 +452,12 @@ function parseRecord(bytes: Uint8Array, sourceUrl: string) {
         locator: id,
         variant_key: finish,
         artwork_fingerprint: fingerprint,
+        ...(illustration == null ? { artwork_identity_explicit: false } : {}),
         printed_fields_digest: createHash("sha256")
           .update(
             JSON.stringify({
               ...attributes,
-              illustrations: faces.map((face) => uuid(face.illustration_id)),
+              illustrations: faces.map((face) => (face.illustration_id == null ? null : uuid(face.illustration_id))),
               frame: card.frame,
               border_color: card.border_color,
               full_art: card.full_art,
@@ -324,14 +467,17 @@ function parseRecord(bytes: Uint8Array, sourceUrl: string) {
           .digest("hex"),
         treatment: finish,
         demonstrably_novel: card.image_status === "highres_scan",
-        novelty_basis: {
-          kind: "source_printing_image",
-          source_url: images[0]!.source_url,
-          artwork_fingerprint: fingerprint,
-        },
+        novelty_basis:
+          illustration == null || images[0] === undefined
+            ? null
+            : {
+                kind: "source_printing_image",
+                source_url: images[0]!.source_url,
+                artwork_fingerprint: fingerprint,
+              },
       },
       appearance_evidence: { images },
-      memberships: { products: [], distribution_contexts: [], source_buckets: [text(card.set)] },
+      memberships: { products: [], distribution_contexts: [], source_buckets: [setCode] },
       source_sidecar: {
         source_record_json: JSON.stringify(card),
         unmapped_optional_fields: [
@@ -351,15 +497,15 @@ function parseRecord(bytes: Uint8Array, sourceUrl: string) {
         ],
         face_identifiers: faces.map((face, index) => ({
           parent_record_id: id,
-          role: index === 0 ? "front" : "back",
+          role: faceRole(index),
           id: face === card ? null : (face.id ?? null),
           oracle_id: face === card ? null : (face.oracle_id ?? null),
-          illustration_id: uuid(face.illustration_id),
+          illustration_id: face.illustration_id == null ? null : uuid(face.illustration_id),
         })),
       },
     };
   });
-  return { observations, images };
+  return { kind: "assembled" as const, observations, images };
 }
 
 function object(value: unknown): Record<string, unknown> {
@@ -367,6 +513,13 @@ function object(value: unknown): Record<string, unknown> {
     throw new AdapterParseFailure("Scryfall required object is missing.");
   return value as Record<string, unknown>;
 }
+function colours(value: unknown): string[] {
+  const values = list(value).map(text);
+  if (new Set(values).size !== values.length || values.some((colour) => !["W", "U", "B", "R", "G"].includes(colour)))
+    throw new AdapterParseFailure("Scryfall colours must be unique Magic colour symbols.");
+  return values;
+}
+
 function list(value: unknown): unknown[] {
   if (!Array.isArray(value)) throw new AdapterParseFailure("Scryfall required list is missing.");
   return value;
@@ -378,6 +531,14 @@ function text(value: unknown): string {
 function optionalText(value: unknown): string | null {
   if (value === undefined || value === null) return null;
   if (typeof value !== "string") throw new AdapterParseFailure("Scryfall optional text is invalid.");
+  return value;
+}
+function issuedDate(value: unknown): string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(value))
+    throw new AdapterParseFailure("Scryfall issued-card release date is invalid.");
+  const time = Date.parse(`${value}T00:00:00.000Z`);
+  if (!Number.isFinite(time) || new Date(time).toISOString().slice(0, 10) !== value)
+    throw new AdapterParseFailure("Scryfall issued-card release date is invalid.");
   return value;
 }
 function uuid(value: unknown) {

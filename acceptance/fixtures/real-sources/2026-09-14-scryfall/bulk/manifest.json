@@ -1,0 +1,295 @@
+{
+  "archive_sha256": "ea81f17a3c15d64dff75f4b1d012657358c6505f254df8a0d032edb34cd27ca4",
+  "archive_url": "https://data.scryfall.io/default-cards/default-cards-20260914090527.jsonl.gz",
+  "records": [
+    {
+      "file": "split-three.json",
+      "id": "097165ee-f959-49e3-a5c1-f78043e538d9",
+      "line": 4446,
+      "decompressed_offset": 23809698,
+      "byte_length": 5224,
+      "sha256": "1a5fec6e7d7e4059998c84e8ae017982c4e4d27fd54866065a57182a3f215c4a"
+    },
+    {
+      "file": "split-five.json",
+      "id": "8987644d-5a31-4a4e-9a8a-3d6260ed0fd6",
+      "line": 63272,
+      "decompressed_offset": 338217912,
+      "byte_length": 5620,
+      "sha256": "48478e63f98b614688dd57558663a01b29e6c9035fd532c5de73585972974299"
+    },
+    {
+      "file": "normal.json",
+      "id": "0000419b-0bba-4488-8f7a-6194544ce91e",
+      "line": 1,
+      "decompressed_offset": 0,
+      "byte_length": 5130,
+      "sha256": "a9bc045e0d3f4fb192dc564d9f56e050c6b965de754b6763f0e2aa9c4050fbcb"
+    },
+    {
+      "file": "token.json",
+      "id": "0000a54c-a511-4925-92dc-01b937f9afad",
+      "line": 4,
+      "decompressed_offset": 15141,
+      "byte_length": 21666,
+      "sha256": "5e9f8683eff86d8e210b26084b7358269426a52f168598298ce563a9c9a96b4c"
+    },
+    {
+      "file": "adventure.json",
+      "id": "0001e77a-7fff-49d2-a55c-42f6fdf6db08",
+      "line": 9,
+      "decompressed_offset": 57100,
+      "byte_length": 6261,
+      "sha256": "acdb180d56385d32d8e6f13d94dcd1fa2dbf4dc71e3ee9b42e214cec582e5017"
+    },
+    {
+      "file": "art_series.json",
+      "id": "000225fc-9bc3-4eb3-905e-02c19c873b0b",
+      "line": 12,
+      "decompressed_offset": 73889,
+      "byte_length": 6317,
+      "sha256": "22bb2e32c525942d6b4f1f42e5fe8ce909cf5a5aa6c3b23bfc9af153007c1ed1"
+    },
+    {
+      "file": "transform.json",
+      "id": "001e9f20-5b15-41cb-bf82-46172decc235",
+      "line": 71,
+      "decompressed_offset": 372537,
+      "byte_length": 7189,
+      "sha256": "90096a3801d685c137128d8b753d9d512290f25a385114be9a8f5a23da1364a2"
+    },
+    {
+      "file": "split.json",
+      "id": "00320106-ce51-46a9-b0f9-79b3baf4e505",
+      "line": 99,
+      "decompressed_offset": 518943,
+      "byte_length": 5553,
+      "sha256": "bb87723c0b77ac173cae8cf6eb4ae4110a7f01a11f0b7d907b6606aefb10238b"
+    },
+    {
+      "file": "mutate.json",
+      "id": "004237f7-1099-4422-9ce9-6065a803e230",
+      "line": 131,
+      "decompressed_offset": 683231,
+      "byte_length": 5247,
+      "sha256": "5d4a56a140f46431441e1a8c193d6184ad652721add24de07d9ed632e07fbe4e"
+    },
+    {
+      "file": "saga.json",
+      "id": "00546117-018a-4286-bc20-b5446c5be56f",
+      "line": 174,
+      "decompressed_offset": 923480,
+      "byte_length": 5215,
+      "sha256": "5a4400c77b3c0bce57a66525e11904939f90b0ceafe854d306dd24dfff19205a"
+    },
+    {
+      "file": "double_faced_token.json",
+      "id": "006f53ab-e200-4242-9e8f-494f8d574826",
+      "line": 225,
+      "decompressed_offset": 1299422,
+      "byte_length": 5937,
+      "sha256": "8f75433dec6e96e4065331d76c8315167c9be67d4d79d4a1e4af77f404e25f1c"
+    },
+    {
+      "file": "planar.json",
+      "id": "00832a47-dec8-411e-9708-b3ebbd3a2dfc",
+      "line": 259,
+      "decompressed_offset": 1479922,
+      "byte_length": 4801,
+      "sha256": "ba7dd9020e51784dea50085aee52f9bee24e6c66b23757450464303df1f4ff6a"
+    },
+    {
+      "file": "modal_dfc.json",
+      "id": "014027c4-7f9d-4096-b308-ea4be574c0d4",
+      "line": 605,
+      "decompressed_offset": 3340945,
+      "byte_length": 6798,
+      "sha256": "ebdc384467fce0db88af1e594683a9abf544d6f00b4d598c6e07aac6122ac635"
+    },
+    {
+      "file": "emblem.json",
+      "id": "014c0557-11b8-49da-8486-0dd14b919338",
+      "line": 630,
+      "decompressed_offset": 3491453,
+      "byte_length": 5325,
+      "sha256": "fd305cf3ac0ff4b1e1fe4495769f38fce3279884e470b31abb587e16672b802d"
+    },
+    {
+      "file": "meld.json",
+      "id": "01c5bafe-c995-4cef-90fb-7ccb95858511",
+      "line": 845,
+      "decompressed_offset": 4691639,
+      "byte_length": 6043,
+      "sha256": "7a2f8f6afae725c9ed92b2d4cca5dfef99e0238d988927b8584ed7a2b2df3c72"
+    },
+    {
+      "file": "vanguard.json",
+      "id": "02f6b17c-89bd-47e1-9963-69260d5f2838",
+      "line": 1385,
+      "decompressed_offset": 7496956,
+      "byte_length": 5053,
+      "sha256": "6da7f62897ca2e7efdcf5d318fd8b10ae6e2a34805381df46f981dc9f903d370"
+    },
+    {
+      "file": "scheme.json",
+      "id": "034530f2-0a63-4b9e-a043-948507b45faa",
+      "line": 1530,
+      "decompressed_offset": 8255092,
+      "byte_length": 5021,
+      "sha256": "2a8ca56425d8f82c10970259eb547b692a4c42aefe87d41472668a66bfd68652"
+    },
+    {
+      "file": "prepare.json",
+      "id": "03e664cd-c3a6-4263-b2d8-dd99058fb8ec",
+      "line": 1810,
+      "decompressed_offset": 9732035,
+      "byte_length": 5588,
+      "sha256": "e15d8e364ab422d27900e4e45202f8f906451f6a3207c8cb12abcd5546e67b69"
+    },
+    {
+      "file": "class.json",
+      "id": "0727f65b-cfbe-47d5-87c6-239cf8d93ca6",
+      "line": 3355,
+      "decompressed_offset": 18078930,
+      "byte_length": 5404,
+      "sha256": "fbb53c72a42a206e99316b96ae7a79f22d29635ef28a259e383f8fbc155e52bd"
+    },
+    {
+      "file": "augment.json",
+      "id": "07e1f7bd-972a-4e76-93eb-8c8acfa6ec43",
+      "line": 3681,
+      "decompressed_offset": 19802681,
+      "byte_length": 4910,
+      "sha256": "e736dc613fb13ed118b7c7029278c766f4b7dd1c9a03f66c2622589cf87af795"
+    },
+    {
+      "file": "case.json",
+      "id": "0862bf07-8a76-4e80-bba2-20d22f8eee30",
+      "line": 3949,
+      "decompressed_offset": 21201182,
+      "byte_length": 5243,
+      "sha256": "2eb8e01918252643ab6a0749c9d8b89c0e06b3bcb223a3d6cf5790de22fe9c33"
+    },
+    {
+      "file": "flip.json",
+      "id": "0b61d772-2d8b-4acf-9dd2-b2e8b03538c8",
+      "line": 5385,
+      "decompressed_offset": 28947420,
+      "byte_length": 5628,
+      "sha256": "f0ac1cd7056f08268ced5996fa0f513eda901d3bbcba6bd35809c462bc768887"
+    },
+    {
+      "file": "host.json",
+      "id": "0d79ba7e-82a8-44ec-b72d-3cdd81126bfa",
+      "line": 6373,
+      "decompressed_offset": 34269960,
+      "byte_length": 4948,
+      "sha256": "50314fc266a383b0fe8117a239f0cb92396de2327c412c0905f796a1a6ca87c2"
+    },
+    {
+      "file": "leveler.json",
+      "id": "0ff68d2f-6758-45ee-8109-4e8909f49de8",
+      "line": 7542,
+      "decompressed_offset": 40523474,
+      "byte_length": 5030,
+      "sha256": "8e56ef54b806d3579c2a26cbfd3decf5284ad54045056a63de156d0937aac5e1"
+    },
+    {
+      "file": "prototype.json",
+      "id": "1b6ef5f5-4058-4f89-a573-9e2da87a9f2e",
+      "line": 12812,
+      "decompressed_offset": 68583764,
+      "byte_length": 5213,
+      "sha256": "8cfcab43a022ff2fae8b07df3b01da11419f4fcb9a18ed9c783d953eb8a1f043"
+    },
+    {
+      "file": "etched.json",
+      "id": "006d1cf4-bdf2-4ed3-8583-38309807ce93",
+      "line": 219,
+      "decompressed_offset": 1268757,
+      "byte_length": 5321,
+      "sha256": "867d231afc127ee397dc53c3fb02f4f576e4fdc34cbfb38625f31ac4b728b7cb"
+    },
+    {
+      "file": "front_card.json",
+      "id": "00897bb3-a246-40b4-890c-d4d9a3ba375a",
+      "line": 271,
+      "decompressed_offset": 1546842,
+      "byte_length": 4651,
+      "sha256": "8519fb905189555a54ebf2c98be5ba6d9c2d0f21c51f231b1209823a8295aa55"
+    },
+    {
+      "file": "missing-image.json",
+      "id": "0131ba2a-9cea-4c4b-b15e-5f527be565e3",
+      "line": 567,
+      "decompressed_offset": 3150094,
+      "byte_length": 3866,
+      "sha256": "30277e51d341d92d93c6909bec20dc485b3542091ba9fea40523f32ea26ca040"
+    },
+    {
+      "file": "reversible_card.json",
+      "id": "018830b2-dff9-45f3-9cc2-dc5b2eec0e54",
+      "line": 731,
+      "decompressed_offset": 4006447,
+      "byte_length": 8110,
+      "sha256": "4616264271e3415cdbf9d12d986391f16759c4a5c458422b275d941d98efda26"
+    },
+    {
+      "file": "printed-text.json",
+      "id": "031c71f7-37a7-4b64-ac18-01f587525df1",
+      "line": 1454,
+      "decompressed_offset": 7869860,
+      "byte_length": 4986,
+      "sha256": "3bb0f5ffa77d99659c924bc388969baa27719db35910c57177b414e77751b418"
+    },
+    {
+      "file": "reversible-design.json",
+      "id": "43bb8a14-28b5-425f-a9f5-8ab4b291d300",
+      "line": 31178,
+      "decompressed_offset": 166408297,
+      "byte_length": 5856,
+      "sha256": "0063500803a38adc6c834ff2b187fbe658c280bda3ea0c9a0018b7b40190e2b0"
+    },
+    {
+      "file": "unknown-illustration.json",
+      "id": "0017051f-bb7d-4f78-b214-02d08a542400",
+      "line": 60,
+      "decompressed_offset": 316176,
+      "byte_length": 5090,
+      "sha256": "bdd53ba4376611a24d003b3afcda99c23beef9deade7c7e298d1309eacd0bee7"
+    },
+    {
+      "file": "copy-token.json",
+      "id": "00560d67-5299-4681-952b-d153d82bedaf",
+      "line": 177,
+      "decompressed_offset": 939027,
+      "byte_length": 89767,
+      "sha256": "3fa4ce2b87d86d39495e177f0cee949c6d51872ff6fbe19e869606a63cd82a4a"
+    },
+    {
+      "file": "minigame.json",
+      "id": "0508086d-d80f-4793-b50c-dacf6a2630e0",
+      "line": 2325,
+      "decompressed_offset": 12375009,
+      "byte_length": 7097,
+      "sha256": "9ed97c5496ed27c60f8ff81707358f54f64522a2339874cddf8b551d4fdd8c7c"
+    },
+    {
+      "file": "reversible-token.json",
+      "id": "5d02dee4-2071-448f-9fd3-58d63635d712",
+      "line": 42866,
+      "decompressed_offset": 229037152,
+      "byte_length": 7370,
+      "sha256": "e1a2422889892994e7982614b246f8626fe806ac2e18888189a6dbd8de1b53de"
+    },
+    {
+      "file": "reversible-adventure.json",
+      "id": "081f2de5-251a-41c9-a62f-11487f54d355",
+      "line": 3790,
+      "decompressed_offset": null,
+      "byte_length": 6877,
+      "sha256": "40f0c3ff92ed43d77b7fc7c1358a7abc0295eef94d444cd20805bc88b8692a87",
+      "extraction": "Exact original newline-terminated record from independently hash-verified retained exception subset; decoded byte offset was not recorded."
+    }
+  ]
+}
