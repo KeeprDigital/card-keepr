@@ -105,6 +105,8 @@ export type SourceAdapterRegistration = Readonly<{
   reconciliationAreas?: readonly ("catalogue" | "errata")[];
   inheritDiscoveryRequestHeaders?: boolean;
   retainedParentContext?: Readonly<{ maximumDepth: number; maximumTotalBytes: number }>;
+  /** These discovered roles bind one parent; another parent is conflicting source evidence. */
+  singleDiscoveryParentRoles?: readonly ExtractedSourceRequest["role"][];
   listingReconciliation?: ListingReconciliationTraits;
   recordExtraction?: {
     matches: (context: { mediaType: string | null; url: string }) => boolean;

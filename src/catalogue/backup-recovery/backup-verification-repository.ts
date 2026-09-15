@@ -18,6 +18,7 @@ export function catalogueVerificationQuery(input: CatalogueVerificationQuery): {
     input.kind === "composition-accepted-roots" ||
     input.kind === "composition-source-artifacts" ||
     input.kind === "composition-parent-context-artifacts" ||
+    input.kind === "composition-proposal-artifacts" ||
     input.kind === "composition-state" ||
     input.kind === "composition-columns" ||
     input.kind === "composition-page" ||

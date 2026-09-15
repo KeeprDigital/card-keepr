@@ -13,6 +13,7 @@ import {
 } from "./composition-verification-repository";
 import { captureCompositionSourceArtifacts, type CompositionSourceEvidence } from "./composition-source-artifacts";
 import { captureParentContextArtifacts, type ParentContextEvidence } from "./composition-parent-context-artifacts";
+import { captureProposalArtifacts, type ProposalEvidence } from "./composition-proposal-artifacts";
 
 export type CompositionSnapshotEvidence = {
   revision_id: string;
@@ -23,6 +24,7 @@ export type CompositionSnapshotEvidence = {
   accepted_evidence_roots?: AcceptedEvidenceArtifactRoot[];
   source_evidence?: CompositionSourceEvidence;
   parent_context_evidence?: ParentContextEvidence;
+  proposal_evidence?: ProposalEvidence;
   members: number;
   schema_sha256: string;
   tables: { table: string; rows: number; sha256: string }[];
@@ -31,6 +33,14 @@ export type { CompositionQuery } from "./composition-verification-repository";
 export async function captureCompositionSnapshot(
   query: CompositionQuery,
   revisionId: string,
+): Promise<CompositionSnapshotEvidence | null> {
+  return captureSnapshot(query, revisionId, true);
+}
+
+async function captureSnapshot(
+  query: CompositionQuery,
+  revisionId: string,
+  includeProposalEvidence: boolean,
 ): Promise<CompositionSnapshotEvidence | null> {
   const [state] = await query({ kind: "composition-state", revisionId });
   if (!state?.publication_operation_id) return null;
@@ -146,11 +156,15 @@ export async function captureCompositionSnapshot(
     tables,
     ...(hasSourceArchives ? { source_evidence: await captureCompositionSourceArtifacts(query) } : {}),
     ...(parentContextTables ? { parent_context_evidence: await captureParentContextArtifacts(query) } : {}),
+    ...(hasSourceArchives && includeProposalEvidence
+      ? { proposal_evidence: await captureProposalArtifacts(query) }
+      : {}),
   };
 }
 export async function verifyCompositionSnapshot(query: CompositionQuery, expected: CompositionSnapshotEvidence) {
   if ((await query({ kind: "foreign-keys" })).length) throw new Error("Restored composition foreign keys failed.");
-  const actual = await captureCompositionSnapshot(query, expected.revision_id);
+  // Historical snapshots retain their original optional receipt set, even at the same schema level.
+  const actual = await captureSnapshot(query, expected.revision_id, Object.hasOwn(expected, "proposal_evidence"));
   if (!actual || canonicalJson(actual) !== canonicalJson(expected))
     throw new Error("Restored composition snapshot differs.");
 }

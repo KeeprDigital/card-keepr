@@ -20,6 +20,11 @@ export function reviewImageSnapshots(db: CatalogueStore) {
     JOIN source_requests request ON request.ingestion_run_id=snapshot.ingestion_run_id AND request.request_id=snapshot.request_id
     WHERE snapshot.ingestion_run_id=? AND request.request_role=? ORDER BY snapshot.request_url`);
 }
+export function reviewSnapshotObservationObjects(db: CatalogueStore) {
+  return repositoryStatements(db).prepare(
+    "SELECT content_object_key FROM source_observation_sets WHERE source_snapshot_id=? ORDER BY id",
+  );
+}
 export function reviewProposals(db: CatalogueStore) {
   return repositoryStatements(db).prepare("SELECT * FROM entity_proposals WHERE source_lineage=? ORDER BY reference");
 }

@@ -110,15 +110,42 @@ export type CardObservation = CatalogueObservation & {
 };
 
 /** Structurally valid source claims that cannot yet form a publishable Card. */
-export type SourceAdmissionEvidenceObservation = {
+export type SourceAdmissionEvidenceObservation =
+  ScryfallSourceAdmissionEvidenceObservation | TcgdexSourceAdmissionEvidenceObservation;
+
+export type ScryfallSourceAdmissionEvidenceObservation = {
   observation_type: "source_admission_evidence";
-  game: SupportedGame;
-  source_lineage: string;
+  game: "magic";
+  source_lineage: "scryfall-magic-en";
   locator: string;
   declared_finishes: readonly string[];
   issues: readonly { code: "logical_parts_unresolved" | "category_unresolved"; source_paths: readonly string[] }[];
   appearance_evidence: {
     images: readonly { role: "front" | "back"; source_url: string; artwork_fingerprint: string }[];
+  };
+  source_sidecar: { source_record_json: string };
+  completeness: ObservationCompleteness;
+};
+
+export type TcgdexSourceAdmissionEvidenceObservation = {
+  observation_type: "source_admission_evidence";
+  game: "pokemon";
+  source_lineage: "tcgdex-pokemon-en";
+  locator: string;
+  source_membership: { set_id: string; local_id: string };
+  target: { kind: "unresolved_record" };
+  issues: readonly {
+    code: "category_unresolved" | "card_identity_unresolved" | "printing_treatment_unresolved";
+    source_paths: readonly string[];
+  }[];
+  appearance_evidence: {
+    images: readonly {
+      association: "source_record";
+      role: "front" | "back";
+      source_url: string;
+      artwork_fingerprint: string;
+      content_sha256?: string;
+    }[];
   };
   source_sidecar: { source_record_json: string };
   completeness: ObservationCompleteness;
