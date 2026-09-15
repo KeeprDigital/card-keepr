@@ -240,8 +240,8 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
       ...adapter,
       coverageLossThreshold: { absolute: 25, fraction: 0.2 },
       requestCapacity:
-        "requestCapacity" in adapter
-          ? adapter.requestCapacity
+        adapter.adapterVersion === scryfallArchiveCappedAdapter.adapterVersion
+          ? scryfallArchiveCappedAdapter.requestCapacity
           : adapter.adapterVersion === "fixture-fusion-world-json-large@1"
             ? 15_000
             : 5_000,
