@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { tcgdexCardContent } from "./tcgdex-card-content";
 import { AdapterParseFailure, adapterUrl, decodeAdapterUtf8, withAdapterParseFailure } from "./adapter-parse-failure";
 import type { SourceAdapterRegistration, SourcePrintingIdentityEvidence } from "./source-adapter-registration-types";
 
@@ -47,35 +48,8 @@ function observations(bytes: Uint8Array, sourceUrl: string) {
     )
       throw new AdapterParseFailure("TCGdex image is outside its English asset surface.");
   }
-  const attributes = {
-    card_type: "pokemon",
-    hp: integer(card.hp),
-    types: list(card.types).map(text),
-    stage: optionalText(card.stage),
-    evolves_from: optionalText(card.evolveFrom),
-    abilities: optionalList(card.abilities).map((entry) => {
-      const ability = record(entry);
-      return { kind: optionalText(ability.type), name: text(ability.name), text: text(ability.effect) };
-    }),
-    attacks: optionalList(card.attacks).map((entry) => {
-      const attack = record(entry);
-      return {
-        name: text(attack.name),
-        cost: list(attack.cost).map(text),
-        damage:
-          attack.damage === undefined
-            ? null
-            : typeof attack.damage === "number"
-              ? String(integer(attack.damage))
-              : text(attack.damage),
-        text: optionalText(attack.effect),
-      };
-    }),
-    weaknesses: relations(card.weaknesses),
-    resistances: relations(card.resistances),
-    retreat_cost: card.retreat === undefined ? null : integer(card.retreat),
-    regulation_mark: optionalText(card.regulationMark),
-  };
+  const content = tcgdexCardContent(card);
+  const attributes = content.attributes;
   const seen = new Set<string>();
   return variants.map((entry) => {
     const variant = record(entry);
@@ -117,11 +91,7 @@ function observations(bytes: Uint8Array, sourceUrl: string) {
         category: "gameplay",
         official_identity: { kind: "unknown", value: null },
         name: text(card.name),
-        effective_rules_text:
-          [
-            ...attributes.abilities.map((ability) => `${ability.name}: ${ability.text}`),
-            ...attributes.attacks.map((attack) => `${attack.name}${attack.text === null ? "" : `: ${attack.text}`}`),
-          ].join("\n") || null,
+        effective_rules_text: content.effectiveRulesText,
         game_data: { profile: "pokemon@1", attributes },
       },
       card_identity_evidence: { source_design_key: id },
@@ -272,18 +242,6 @@ function text(value: unknown): string {
 function optionalText(value: unknown) {
   return value === undefined ? null : text(value);
 }
-function integer(value: unknown): number {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0)
-    throw new AdapterParseFailure("TCGdex required integer is invalid.");
-  return value;
-}
-function relations(value: unknown) {
-  return optionalList(value).map((entry) => {
-    const relation = record(entry);
-    return { type: text(relation.type), value: text(relation.value) };
-  });
-}
-
 function unknownFields(card: Record<string, unknown>) {
   const known = new Set([
     "category",

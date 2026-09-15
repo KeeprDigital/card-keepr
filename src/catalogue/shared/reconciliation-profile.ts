@@ -31,6 +31,14 @@ export type ProfileWarning = Readonly<{
   detail: string;
 }>;
 
+type ObjectCase = Readonly<{
+  required: readonly string[];
+  absent: readonly string[];
+  inapplicable: Readonly<Record<string, null | readonly never[]>>;
+  minimumItems?: Readonly<Record<string, number>>;
+}>;
+type ObjectConditions = Readonly<{ field: string; cases: Readonly<Record<string, ObjectCase>> }>;
+
 type Schema =
   | { kind: "string"; nullable?: boolean; minimumLength?: number }
   | { kind: "integer"; nullable?: boolean; minimum?: number }
@@ -48,6 +56,7 @@ type Schema =
       kind: "object";
       required: readonly string[];
       properties: Readonly<Record<string, Schema>>;
+      conditions?: ObjectConditions;
     };
 
 type ProfileContract = Readonly<{
@@ -79,6 +88,34 @@ const digimonText = object(["kind", "text"], {
   ]),
   text: string(),
 });
+
+const pokemonCreatureFields = {
+  types: [],
+  stage: null,
+  evolves_from: null,
+  abilities: [],
+  attacks: [],
+  weaknesses: [],
+  resistances: [],
+  retreat_cost: null,
+};
+const pokemonCardCases: Readonly<Record<string, ObjectCase>> = {
+  pokemon: {
+    required: [],
+    absent: ["trainer_type", "effect_text", "energy_kind", "provided_energy"],
+    inapplicable: {},
+  },
+  trainer: {
+    required: ["trainer_type", "effect_text"],
+    absent: ["energy_kind", "provided_energy"],
+    inapplicable: pokemonCreatureFields,
+  },
+  energy: {
+    required: ["energy_kind", "provided_energy", "effect_text"],
+    absent: ["trainer_type"],
+    inapplicable: { hp: null, ...pokemonCreatureFields },
+  },
+};
 
 const profileContracts: Readonly<Record<string, ProfileContract>> = {
   "magic@1": {
@@ -150,6 +187,23 @@ const profileContracts: Readonly<Record<string, ProfileContract>> = {
       ],
       {
         card_type: enumeration(["pokemon", "trainer", "energy"]),
+        trainer_type: nullableText,
+        effect_text: nullableText,
+        energy_kind: enumeration(["basic", "special", "unknown"]),
+        provided_energy: object(
+          ["state", "units"],
+          {
+            state: enumeration(["fixed", "unknown"]),
+            units: array(string(false, 1)),
+          },
+          {
+            field: "state",
+            cases: {
+              fixed: { required: [], absent: [], inapplicable: {}, minimumItems: { units: 1 } },
+              unknown: { required: [], absent: [], inapplicable: { units: [] } },
+            },
+          },
+        ),
         hp: nullableInteger,
         types: strings,
         stage: nullableText,
@@ -170,6 +224,7 @@ const profileContracts: Readonly<Record<string, ProfileContract>> = {
         retreat_cost: nullableInteger,
         regulation_mark: nullableText,
       },
+      { field: "card_type", cases: pokemonCardCases },
     ),
     printing: object(
       ["set_code", "collector_number", "finish", "edition", "size", "stamps", "artists", "reverse_face"],
@@ -561,6 +616,28 @@ function exportedSchema(schema: Schema): Record<string, unknown> {
     type: "object",
     additionalProperties: false,
     required: schema.required,
+    ...(schema.conditions
+      ? {
+          allOf: Object.entries(schema.conditions.cases).map(([value, rule]) => ({
+            if: { properties: { [schema.conditions!.field]: { const: value } }, required: [schema.conditions!.field] },
+            then: {
+              required: rule.required,
+              properties: {
+                ...Object.fromEntries(
+                  Object.entries(rule.inapplicable).map(([field, empty]) => [field, { const: empty }]),
+                ),
+                ...Object.fromEntries(rule.absent.map((field) => [field, false])),
+                ...Object.fromEntries(
+                  Object.entries(rule.minimumItems ?? {}).map(([field, minItems]) => [
+                    field,
+                    { type: "array", minItems },
+                  ]),
+                ),
+              },
+            },
+          })),
+        }
+      : {}),
     properties: Object.fromEntries(
       Object.entries(schema.properties).map(([field, child]) => [field, exportedSchema(child)]),
     ),
@@ -666,14 +743,30 @@ function sanitize(
   if (missing.length > 0) {
     throw new Error(`Retained ${profile} evidence at ${path} is incomplete: ${missing.join(", ")}.`);
   }
+  if (schema.conditions) {
+    const rule = schema.conditions.cases[String(result[schema.conditions.field])];
+    if (
+      !rule ||
+      rule.required.some((field) => !Object.hasOwn(result, field)) ||
+      rule.absent.some((field) => Object.hasOwn(result, field)) ||
+      Object.entries(rule.inapplicable).some(
+        ([field, empty]) => canonicalJson(result[field]) !== canonicalJson(empty),
+      ) ||
+      Object.entries(rule.minimumItems ?? {}).some(
+        ([field, count]) => !Array.isArray(result[field]) || result[field].length < count,
+      )
+    )
+      throw new Error(`Retained ${profile} evidence at ${path} contradicts field applicability.`);
+  }
   return result;
 }
 
 function object(
   required: readonly string[],
   properties: Readonly<Record<string, Schema>>,
+  conditions?: ObjectConditions,
 ): Extract<Schema, { kind: "object" }> {
-  return { kind: "object", required, properties };
+  return { kind: "object", required, properties, ...(conditions ? { conditions } : {}) };
 }
 
 function array(

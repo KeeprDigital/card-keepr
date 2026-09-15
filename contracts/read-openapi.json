@@ -817,199 +817,426 @@
                               ]
                             },
                             "attributes": {
-                              "type": "object",
-                              "properties": {
-                                "card_type": {
-                                  "type": "string",
-                                  "enum": [
-                                    "pokemon",
-                                    "trainer",
-                                    "energy"
-                                  ]
-                                },
-                                "hp": {
-                                  "type": [
-                                    "integer",
-                                    "null"
-                                  ],
-                                  "minimum": 0
-                                },
-                                "types": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "string",
-                                    "minLength": 0
-                                  },
-                                  "minItems": 0,
-                                  "maxItems": 9007199254740991
-                                },
-                                "stage": {
-                                  "type": [
-                                    "string",
-                                    "null"
-                                  ],
-                                  "minLength": 0
-                                },
-                                "evolves_from": {
-                                  "type": [
-                                    "string",
-                                    "null"
-                                  ],
-                                  "minLength": 0
-                                },
-                                "abilities": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "object",
-                                    "properties": {
-                                      "kind": {
-                                        "type": [
-                                          "string",
-                                          "null"
-                                        ],
-                                        "minLength": 0
-                                      },
-                                      "name": {
-                                        "type": "string",
-                                        "minLength": 1
-                                      },
-                                      "text": {
-                                        "type": [
-                                          "string",
-                                          "null"
-                                        ],
-                                        "minLength": 0
-                                      }
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "card_type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "pokemon"
+                                      ]
                                     },
-                                    "required": [
-                                      "kind",
-                                      "name",
-                                      "text"
-                                    ],
-                                    "additionalProperties": false
-                                  },
-                                  "minItems": 0,
-                                  "maxItems": 9007199254740991
-                                },
-                                "attacks": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "object",
-                                    "properties": {
-                                      "name": {
+                                    "hp": {
+                                      "type": [
+                                        "integer",
+                                        "null"
+                                      ],
+                                      "minimum": 0
+                                    },
+                                    "types": {
+                                      "type": "array",
+                                      "items": {
                                         "type": "string",
-                                        "minLength": 1
+                                        "minLength": 0
                                       },
-                                      "cost": {
-                                        "type": "array",
-                                        "items": {
-                                          "type": "string",
-                                          "minLength": 0
+                                      "minItems": 0,
+                                      "maxItems": 9007199254740991
+                                    },
+                                    "stage": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ],
+                                      "minLength": 0
+                                    },
+                                    "evolves_from": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ],
+                                      "minLength": 0
+                                    },
+                                    "abilities": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "type": [
+                                              "string",
+                                              "null"
+                                            ],
+                                            "minLength": 0
+                                          },
+                                          "name": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "text": {
+                                            "type": [
+                                              "string",
+                                              "null"
+                                            ],
+                                            "minLength": 0
+                                          }
                                         },
-                                        "minItems": 0,
-                                        "maxItems": 9007199254740991
-                                      },
-                                      "damage": {
-                                        "type": [
-                                          "string",
-                                          "null"
+                                        "required": [
+                                          "kind",
+                                          "name",
+                                          "text"
                                         ],
-                                        "minLength": 0
+                                        "additionalProperties": false
                                       },
-                                      "text": {
-                                        "type": [
-                                          "string",
-                                          "null"
+                                      "minItems": 0,
+                                      "maxItems": 9007199254740991
+                                    },
+                                    "attacks": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "name": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "cost": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 0
+                                            },
+                                            "minItems": 0,
+                                            "maxItems": 9007199254740991
+                                          },
+                                          "damage": {
+                                            "type": [
+                                              "string",
+                                              "null"
+                                            ],
+                                            "minLength": 0
+                                          },
+                                          "text": {
+                                            "type": [
+                                              "string",
+                                              "null"
+                                            ],
+                                            "minLength": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "name",
+                                          "cost",
+                                          "damage",
+                                          "text"
                                         ],
-                                        "minLength": 0
-                                      }
-                                    },
-                                    "required": [
-                                      "name",
-                                      "cost",
-                                      "damage",
-                                      "text"
-                                    ],
-                                    "additionalProperties": false
-                                  },
-                                  "minItems": 0,
-                                  "maxItems": 9007199254740991
-                                },
-                                "weaknesses": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "object",
-                                    "properties": {
-                                      "type": {
-                                        "type": "string",
-                                        "minLength": 1
+                                        "additionalProperties": false
                                       },
-                                      "value": {
-                                        "type": "string",
-                                        "minLength": 1
-                                      }
+                                      "minItems": 0,
+                                      "maxItems": 9007199254740991
                                     },
-                                    "required": [
-                                      "type",
-                                      "value"
-                                    ],
-                                    "additionalProperties": false
-                                  },
-                                  "minItems": 0,
-                                  "maxItems": 9007199254740991
-                                },
-                                "resistances": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "object",
-                                    "properties": {
-                                      "type": {
-                                        "type": "string",
-                                        "minLength": 1
+                                    "weaknesses": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "type": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "value": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          }
+                                        },
+                                        "required": [
+                                          "type",
+                                          "value"
+                                        ],
+                                        "additionalProperties": false
                                       },
-                                      "value": {
-                                        "type": "string",
-                                        "minLength": 1
-                                      }
+                                      "minItems": 0,
+                                      "maxItems": 9007199254740991
                                     },
-                                    "required": [
-                                      "type",
-                                      "value"
-                                    ],
-                                    "additionalProperties": false
+                                    "resistances": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "type": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          },
+                                          "value": {
+                                            "type": "string",
+                                            "minLength": 1
+                                          }
+                                        },
+                                        "required": [
+                                          "type",
+                                          "value"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      "minItems": 0,
+                                      "maxItems": 9007199254740991
+                                    },
+                                    "retreat_cost": {
+                                      "type": [
+                                        "integer",
+                                        "null"
+                                      ],
+                                      "minimum": 0
+                                    },
+                                    "regulation_mark": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ],
+                                      "minLength": 0
+                                    }
                                   },
-                                  "minItems": 0,
-                                  "maxItems": 9007199254740991
-                                },
-                                "retreat_cost": {
-                                  "type": [
-                                    "integer",
-                                    "null"
+                                  "required": [
+                                    "card_type",
+                                    "hp",
+                                    "types",
+                                    "stage",
+                                    "evolves_from",
+                                    "abilities",
+                                    "attacks",
+                                    "weaknesses",
+                                    "resistances",
+                                    "retreat_cost",
+                                    "regulation_mark"
                                   ],
-                                  "minimum": 0
+                                  "additionalProperties": false
                                 },
-                                "regulation_mark": {
-                                  "type": [
-                                    "string",
-                                    "null"
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "card_type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "trainer"
+                                      ]
+                                    },
+                                    "trainer_type": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ],
+                                      "minLength": 0
+                                    },
+                                    "effect_text": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ],
+                                      "minLength": 0
+                                    },
+                                    "hp": {
+                                      "type": [
+                                        "integer",
+                                        "null"
+                                      ],
+                                      "minimum": 0
+                                    },
+                                    "types": {
+                                      "type": "array",
+                                      "items": {},
+                                      "maxItems": 0
+                                    },
+                                    "stage": {
+                                      "type": "null"
+                                    },
+                                    "evolves_from": {
+                                      "type": "null"
+                                    },
+                                    "abilities": {
+                                      "type": "array",
+                                      "items": {},
+                                      "maxItems": 0
+                                    },
+                                    "attacks": {
+                                      "type": "array",
+                                      "items": {},
+                                      "maxItems": 0
+                                    },
+                                    "weaknesses": {
+                                      "type": "array",
+                                      "items": {},
+                                      "maxItems": 0
+                                    },
+                                    "resistances": {
+                                      "type": "array",
+                                      "items": {},
+                                      "maxItems": 0
+                                    },
+                                    "retreat_cost": {
+                                      "type": "null"
+                                    },
+                                    "regulation_mark": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ],
+                                      "minLength": 0
+                                    }
+                                  },
+                                  "required": [
+                                    "card_type",
+                                    "trainer_type",
+                                    "effect_text",
+                                    "hp",
+                                    "types",
+                                    "stage",
+                                    "evolves_from",
+                                    "abilities",
+                                    "attacks",
+                                    "weaknesses",
+                                    "resistances",
+                                    "retreat_cost",
+                                    "regulation_mark"
                                   ],
-                                  "minLength": 0
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "card_type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "energy"
+                                      ]
+                                    },
+                                    "effect_text": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ],
+                                      "minLength": 0
+                                    },
+                                    "energy_kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "basic",
+                                        "special",
+                                        "unknown"
+                                      ]
+                                    },
+                                    "provided_energy": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "state": {
+                                              "type": "string",
+                                              "enum": [
+                                                "fixed"
+                                              ]
+                                            },
+                                            "units": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "minItems": 1
+                                            }
+                                          },
+                                          "required": [
+                                            "state",
+                                            "units"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "state": {
+                                              "type": "string",
+                                              "enum": [
+                                                "unknown"
+                                              ]
+                                            },
+                                            "units": {
+                                              "type": "array",
+                                              "items": {},
+                                              "maxItems": 0
+                                            }
+                                          },
+                                          "required": [
+                                            "state",
+                                            "units"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      ]
+                                    },
+                                    "hp": {
+                                      "type": "null"
+                                    },
+                                    "types": {
+                                      "type": "array",
+                                      "items": {},
+                                      "maxItems": 0
+                                    },
+                                    "stage": {
+                                      "type": "null"
+                                    },
+                                    "evolves_from": {
+                                      "type": "null"
+                                    },
+                                    "abilities": {
+                                      "type": "array",
+                                      "items": {},
+                                      "maxItems": 0
+                                    },
+                                    "attacks": {
+                                      "type": "array",
+                                      "items": {},
+                                      "maxItems": 0
+                                    },
+                                    "weaknesses": {
+                                      "type": "array",
+                                      "items": {},
+                                      "maxItems": 0
+                                    },
+                                    "resistances": {
+                                      "type": "array",
+                                      "items": {},
+                                      "maxItems": 0
+                                    },
+                                    "retreat_cost": {
+                                      "type": "null"
+                                    },
+                                    "regulation_mark": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ],
+                                      "minLength": 0
+                                    }
+                                  },
+                                  "required": [
+                                    "card_type",
+                                    "effect_text",
+                                    "energy_kind",
+                                    "provided_energy",
+                                    "hp",
+                                    "types",
+                                    "stage",
+                                    "evolves_from",
+                                    "abilities",
+                                    "attacks",
+                                    "weaknesses",
+                                    "resistances",
+                                    "retreat_cost",
+                                    "regulation_mark"
+                                  ],
+                                  "additionalProperties": false
                                 }
-                              },
-                              "required": [
-                                "card_type",
-                                "hp",
-                                "types",
-                                "stage",
-                                "evolves_from",
-                                "abilities",
-                                "attacks",
-                                "weaknesses",
-                                "resistances",
-                                "retreat_cost",
-                                "regulation_mark"
-                              ],
-                              "additionalProperties": false
+                              ]
                             }
                           },
                           "required": [
@@ -2678,199 +2905,426 @@
                             ]
                           },
                           "attributes": {
-                            "type": "object",
-                            "properties": {
-                              "card_type": {
-                                "type": "string",
-                                "enum": [
-                                  "pokemon",
-                                  "trainer",
-                                  "energy"
-                                ]
-                              },
-                              "hp": {
-                                "type": [
-                                  "integer",
-                                  "null"
-                                ],
-                                "minimum": 0
-                              },
-                              "types": {
-                                "type": "array",
-                                "items": {
-                                  "type": "string",
-                                  "minLength": 0
-                                },
-                                "minItems": 0,
-                                "maxItems": 9007199254740991
-                              },
-                              "stage": {
-                                "type": [
-                                  "string",
-                                  "null"
-                                ],
-                                "minLength": 0
-                              },
-                              "evolves_from": {
-                                "type": [
-                                  "string",
-                                  "null"
-                                ],
-                                "minLength": 0
-                              },
-                              "abilities": {
-                                "type": "array",
-                                "items": {
-                                  "type": "object",
-                                  "properties": {
-                                    "kind": {
-                                      "type": [
-                                        "string",
-                                        "null"
-                                      ],
-                                      "minLength": 0
-                                    },
-                                    "name": {
-                                      "type": "string",
-                                      "minLength": 1
-                                    },
-                                    "text": {
-                                      "type": [
-                                        "string",
-                                        "null"
-                                      ],
-                                      "minLength": 0
-                                    }
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "card_type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "pokemon"
+                                    ]
                                   },
-                                  "required": [
-                                    "kind",
-                                    "name",
-                                    "text"
-                                  ],
-                                  "additionalProperties": false
-                                },
-                                "minItems": 0,
-                                "maxItems": 9007199254740991
-                              },
-                              "attacks": {
-                                "type": "array",
-                                "items": {
-                                  "type": "object",
-                                  "properties": {
-                                    "name": {
+                                  "hp": {
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ],
+                                    "minimum": 0
+                                  },
+                                  "types": {
+                                    "type": "array",
+                                    "items": {
                                       "type": "string",
-                                      "minLength": 1
+                                      "minLength": 0
                                     },
-                                    "cost": {
-                                      "type": "array",
-                                      "items": {
-                                        "type": "string",
-                                        "minLength": 0
+                                    "minItems": 0,
+                                    "maxItems": 9007199254740991
+                                  },
+                                  "stage": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "minLength": 0
+                                  },
+                                  "evolves_from": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "minLength": 0
+                                  },
+                                  "abilities": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ],
+                                          "minLength": 0
+                                        },
+                                        "name": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "text": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ],
+                                          "minLength": 0
+                                        }
                                       },
-                                      "minItems": 0,
-                                      "maxItems": 9007199254740991
-                                    },
-                                    "damage": {
-                                      "type": [
-                                        "string",
-                                        "null"
+                                      "required": [
+                                        "kind",
+                                        "name",
+                                        "text"
                                       ],
-                                      "minLength": 0
+                                      "additionalProperties": false
                                     },
-                                    "text": {
-                                      "type": [
-                                        "string",
-                                        "null"
+                                    "minItems": 0,
+                                    "maxItems": 9007199254740991
+                                  },
+                                  "attacks": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "cost": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string",
+                                            "minLength": 0
+                                          },
+                                          "minItems": 0,
+                                          "maxItems": 9007199254740991
+                                        },
+                                        "damage": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ],
+                                          "minLength": 0
+                                        },
+                                        "text": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ],
+                                          "minLength": 0
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "cost",
+                                        "damage",
+                                        "text"
                                       ],
-                                      "minLength": 0
-                                    }
-                                  },
-                                  "required": [
-                                    "name",
-                                    "cost",
-                                    "damage",
-                                    "text"
-                                  ],
-                                  "additionalProperties": false
-                                },
-                                "minItems": 0,
-                                "maxItems": 9007199254740991
-                              },
-                              "weaknesses": {
-                                "type": "array",
-                                "items": {
-                                  "type": "object",
-                                  "properties": {
-                                    "type": {
-                                      "type": "string",
-                                      "minLength": 1
+                                      "additionalProperties": false
                                     },
-                                    "value": {
-                                      "type": "string",
-                                      "minLength": 1
-                                    }
+                                    "minItems": 0,
+                                    "maxItems": 9007199254740991
                                   },
-                                  "required": [
-                                    "type",
-                                    "value"
-                                  ],
-                                  "additionalProperties": false
-                                },
-                                "minItems": 0,
-                                "maxItems": 9007199254740991
-                              },
-                              "resistances": {
-                                "type": "array",
-                                "items": {
-                                  "type": "object",
-                                  "properties": {
-                                    "type": {
-                                      "type": "string",
-                                      "minLength": 1
+                                  "weaknesses": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "value": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "value"
+                                      ],
+                                      "additionalProperties": false
                                     },
-                                    "value": {
-                                      "type": "string",
-                                      "minLength": 1
-                                    }
+                                    "minItems": 0,
+                                    "maxItems": 9007199254740991
                                   },
-                                  "required": [
-                                    "type",
-                                    "value"
-                                  ],
-                                  "additionalProperties": false
+                                  "resistances": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "value": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "value"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    "minItems": 0,
+                                    "maxItems": 9007199254740991
+                                  },
+                                  "retreat_cost": {
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ],
+                                    "minimum": 0
+                                  },
+                                  "regulation_mark": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "minLength": 0
+                                  }
                                 },
-                                "minItems": 0,
-                                "maxItems": 9007199254740991
-                              },
-                              "retreat_cost": {
-                                "type": [
-                                  "integer",
-                                  "null"
+                                "required": [
+                                  "card_type",
+                                  "hp",
+                                  "types",
+                                  "stage",
+                                  "evolves_from",
+                                  "abilities",
+                                  "attacks",
+                                  "weaknesses",
+                                  "resistances",
+                                  "retreat_cost",
+                                  "regulation_mark"
                                 ],
-                                "minimum": 0
+                                "additionalProperties": false
                               },
-                              "regulation_mark": {
-                                "type": [
-                                  "string",
-                                  "null"
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "card_type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "trainer"
+                                    ]
+                                  },
+                                  "trainer_type": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "minLength": 0
+                                  },
+                                  "effect_text": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "minLength": 0
+                                  },
+                                  "hp": {
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ],
+                                    "minimum": 0
+                                  },
+                                  "types": {
+                                    "type": "array",
+                                    "items": {},
+                                    "maxItems": 0
+                                  },
+                                  "stage": {
+                                    "type": "null"
+                                  },
+                                  "evolves_from": {
+                                    "type": "null"
+                                  },
+                                  "abilities": {
+                                    "type": "array",
+                                    "items": {},
+                                    "maxItems": 0
+                                  },
+                                  "attacks": {
+                                    "type": "array",
+                                    "items": {},
+                                    "maxItems": 0
+                                  },
+                                  "weaknesses": {
+                                    "type": "array",
+                                    "items": {},
+                                    "maxItems": 0
+                                  },
+                                  "resistances": {
+                                    "type": "array",
+                                    "items": {},
+                                    "maxItems": 0
+                                  },
+                                  "retreat_cost": {
+                                    "type": "null"
+                                  },
+                                  "regulation_mark": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "minLength": 0
+                                  }
+                                },
+                                "required": [
+                                  "card_type",
+                                  "trainer_type",
+                                  "effect_text",
+                                  "hp",
+                                  "types",
+                                  "stage",
+                                  "evolves_from",
+                                  "abilities",
+                                  "attacks",
+                                  "weaknesses",
+                                  "resistances",
+                                  "retreat_cost",
+                                  "regulation_mark"
                                 ],
-                                "minLength": 0
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "card_type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "energy"
+                                    ]
+                                  },
+                                  "effect_text": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "minLength": 0
+                                  },
+                                  "energy_kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "basic",
+                                      "special",
+                                      "unknown"
+                                    ]
+                                  },
+                                  "provided_energy": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "state": {
+                                            "type": "string",
+                                            "enum": [
+                                              "fixed"
+                                            ]
+                                          },
+                                          "units": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "minItems": 1
+                                          }
+                                        },
+                                        "required": [
+                                          "state",
+                                          "units"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "state": {
+                                            "type": "string",
+                                            "enum": [
+                                              "unknown"
+                                            ]
+                                          },
+                                          "units": {
+                                            "type": "array",
+                                            "items": {},
+                                            "maxItems": 0
+                                          }
+                                        },
+                                        "required": [
+                                          "state",
+                                          "units"
+                                        ],
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  },
+                                  "hp": {
+                                    "type": "null"
+                                  },
+                                  "types": {
+                                    "type": "array",
+                                    "items": {},
+                                    "maxItems": 0
+                                  },
+                                  "stage": {
+                                    "type": "null"
+                                  },
+                                  "evolves_from": {
+                                    "type": "null"
+                                  },
+                                  "abilities": {
+                                    "type": "array",
+                                    "items": {},
+                                    "maxItems": 0
+                                  },
+                                  "attacks": {
+                                    "type": "array",
+                                    "items": {},
+                                    "maxItems": 0
+                                  },
+                                  "weaknesses": {
+                                    "type": "array",
+                                    "items": {},
+                                    "maxItems": 0
+                                  },
+                                  "resistances": {
+                                    "type": "array",
+                                    "items": {},
+                                    "maxItems": 0
+                                  },
+                                  "retreat_cost": {
+                                    "type": "null"
+                                  },
+                                  "regulation_mark": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "minLength": 0
+                                  }
+                                },
+                                "required": [
+                                  "card_type",
+                                  "effect_text",
+                                  "energy_kind",
+                                  "provided_energy",
+                                  "hp",
+                                  "types",
+                                  "stage",
+                                  "evolves_from",
+                                  "abilities",
+                                  "attacks",
+                                  "weaknesses",
+                                  "resistances",
+                                  "retreat_cost",
+                                  "regulation_mark"
+                                ],
+                                "additionalProperties": false
                               }
-                            },
-                            "required": [
-                              "card_type",
-                              "hp",
-                              "types",
-                              "stage",
-                              "evolves_from",
-                              "abilities",
-                              "attacks",
-                              "weaknesses",
-                              "resistances",
-                              "retreat_cost",
-                              "regulation_mark"
-                            ],
-                            "additionalProperties": false
+                            ]
                           }
                         },
                         "required": [
@@ -7312,6 +7766,18 @@
             },
             "required": false,
             "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.energy_kind",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
             "name": "attribute.evolves_from",
             "in": "query"
           },
@@ -7612,6 +8078,30 @@
             },
             "required": false,
             "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.provided_energy.state",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.provided_energy.units",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
             "name": "attribute.regulation_mark",
             "in": "query"
           },
@@ -7769,6 +8259,18 @@
             "required": false,
             "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
             "name": "attribute.text_sections.text",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.trainer_type",
             "in": "query"
           },
           {

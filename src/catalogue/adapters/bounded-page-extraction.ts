@@ -2,7 +2,7 @@ import { adapterObjectMembers } from "./adapter-object-members";
 import { Tokenizer, TokenizerMode, type TokenHandler } from "parse5";
 import { resumableObjectMembers, ObjectMemberParseFailure, utf8 } from "../shared";
 import { AdapterParseFailure } from "./adapter-parse-failure";
-import type { SourceAdapterRegistration } from "./source-adapter-registration-types";
+import type { SourceAdapterRegistration, SourceAdapterParseContext } from "./source-adapter-registration-types";
 
 const maximumDecodedCharacters = 2097152;
 const maximumHtmlTags = 32768;
@@ -11,7 +11,7 @@ const maximumHtmlTags = 32768;
 async function extractPage(
   adapter: SourceAdapterRegistration,
   source: () => AsyncIterable<string>,
-  context: { url: string; mediaType: string | null; requestId?: string },
+  context: SourceAdapterParseContext,
 ) {
   if (adapter.parseBytes === undefined) return extractJsonRecords(adapter, source);
   let html = "",
