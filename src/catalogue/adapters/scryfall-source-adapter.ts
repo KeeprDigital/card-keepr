@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { magicFaceRoles, magicLayouts } from "../shared";
-import type { SourceAdmissionEvidenceObservation } from "./adapter-observations";
+import type { ScryfallSourceAdmissionEvidenceObservation } from "./adapter-observations";
 import {
   scryfallArchiveLimits,
   scryfallBulkMetadataUrl,
@@ -319,7 +319,7 @@ function assembleScryfallRecord(bytes: Uint8Array, sourceUrl: string, cutoff = "
     return [{ role, source_url: url.href, artwork_fingerprint: fingerprint }];
   };
   const images = (twoSided ? faces : [card]).flatMap((face, index) => sourceImage(face, faceRole(index)));
-  const issues: SourceAdmissionEvidenceObservation["issues"][number][] = [];
+  const issues: ScryfallSourceAdmissionEvidenceObservation["issues"][number][] = [];
   if (categoryUnresolved) issues.push({ code: "category_unresolved", source_paths: ["layout", "type_line"] });
   if (categoryUnresolved || reversible) {
     // Reviewable meaning never bypasses validation of the retained source claims.
@@ -360,7 +360,7 @@ function assembleScryfallRecord(bytes: Uint8Array, sourceUrl: string, cutoff = "
       issues.push({ code: "logical_parts_unresolved", source_paths: ["card_faces.0.layout", "card_faces.1.layout"] });
   }
   if (issues.length) {
-    const observation: SourceAdmissionEvidenceObservation = {
+    const observation: ScryfallSourceAdmissionEvidenceObservation = {
       observation_type: "source_admission_evidence",
       game: "magic",
       source_lineage: lineage,

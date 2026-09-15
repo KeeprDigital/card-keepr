@@ -2,9 +2,13 @@ import { AdapterParseFailure, decodeAdapterUtf8, withAdapterParseFailure } from 
 import type { ExtractedSourceRequest, SourceAdapterParseContext } from "./source-adapter-registration-types";
 import { tcgdexEnglishSetInventory, tcgdexScopeInventory } from "./tcgdex-scope";
 
-const englishUrl = "https://api.tcgdex.net/v2/en/sets";
+export const tcgdexEnglishSetsUrl = "https://api.tcgdex.net/v2/en/sets";
 const pocketUrl = "https://api.tcgdex.net/v2/en/series/tcgp";
 const headers = { accept: "application/json" };
+
+export function isTcgdexInventoryUrl(url: string) {
+  return url === tcgdexEnglishSetsUrl || url === pocketUrl || url.startsWith(`${tcgdexEnglishSetsUrl}/`);
+}
 
 /** The Pocket endpoint is a declared inventory root, not a link claimed to occur in the English body. */
 export function tcgdexDiscoveryRequests(
@@ -13,19 +17,19 @@ export function tcgdexDiscoveryRequests(
 ): ExtractedSourceRequest[] {
   const parents = context.parents ?? [];
   if (bytes.byteLength > 1024 * 1024) throw new AdapterParseFailure("TCGdex discovery response exceeds 1 MiB.");
-  if (context.url === englishUrl) {
+  if (context.url === tcgdexEnglishSetsUrl) {
     if (parents.length !== 0) throw new AdapterParseFailure("TCGdex English inventory must be a discovery root.");
     tcgdexEnglishSetInventory(bytes);
     return [{ role: "listing", url: pocketUrl, headers }];
   }
   if (context.url === pocketUrl) {
     const english = parents[0];
-    if (parents.length !== 1 || !english || english.url !== englishUrl || english.role !== "surface")
+    if (parents.length !== 1 || !english || english.url !== tcgdexEnglishSetsUrl || english.role !== "surface")
       throw new AdapterParseFailure("TCGdex Pocket inventory requires its exact retained English inventory context.");
     const scope = tcgdexScopeInventory(english.bytes, bytes, english.retrievedAt.slice(0, 10));
     return scope.sets.map((set) => ({ role: "listing", url: set.url, headers }));
   }
-  if (context.url.startsWith(`${englishUrl}/`)) {
+  if (context.url.startsWith(`${tcgdexEnglishSetsUrl}/`)) {
     const [pocket, english] = parents;
     if (
       parents.length !== 2 ||
@@ -33,7 +37,7 @@ export function tcgdexDiscoveryRequests(
       pocket.url !== pocketUrl ||
       pocket.role !== "listing" ||
       !english ||
-      english.url !== englishUrl ||
+      english.url !== tcgdexEnglishSetsUrl ||
       english.role !== "surface"
     )
       throw new AdapterParseFailure("TCGdex set detail requires both exact retained inventory ancestors.");
@@ -57,7 +61,7 @@ export function qualifiedTcgdexCard(bytes: Uint8Array, context: SourceAdapterPar
     pocket.url !== pocketUrl ||
     pocket.role !== "listing" ||
     !english ||
-    english.url !== englishUrl ||
+    english.url !== tcgdexEnglishSetsUrl ||
     english.role !== "surface"
   )
     throw new AdapterParseFailure("TCGdex Card requires its complete bounded retained set and inventory context.");

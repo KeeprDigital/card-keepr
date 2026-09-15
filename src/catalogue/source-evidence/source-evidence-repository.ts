@@ -42,7 +42,7 @@ import {
 
 export type { IngestionEvidenceRow } from "./ingestion-run-repository";
 
-import { globalEmergencySourceRequestCeiling } from "../adapters";
+import { globalEmergencySourceRequestCeiling, requiredSourceAdapter } from "../adapters";
 import { curatedRevisionPinStatementsForNewRun, curatedRevisionSetForRun } from "../curated";
 import { boundedEvidenceDetail, collectionInspection, type PacingConfiguration } from "./collection-inspection";
 import {
@@ -546,6 +546,7 @@ export async function appendDiscoveredEvidenceRequests(
   guard?: () => D1PreparedStatement,
 ): Promise<readonly EvidenceRequestRow[]> {
   const plan = evidencePlanForRequest(run, parent.request_id);
+  const singleParentRoles = requiredSourceAdapter(plan.adapter_version).singleDiscoveryParentRoles ?? [];
   const normalizedById = new Map<
     string,
     {
@@ -664,9 +665,11 @@ export async function appendDiscoveredEvidenceRequests(
                    json_extract(proposed.value, '$.representation_fingerprint')
               OR retained.request_role <>
                    json_extract(proposed.value, '$.role')
+              OR (retained.request_role IN (SELECT value FROM json_each(?))
+                  AND retained.parent_request_id <> ?)
          ) THEN json('source_discovery_identity_collision') ELSE 1 END`,
         )
-        .bind(json, run.id),
+        .bind(json, run.id, JSON.stringify(singleParentRoles), parent.request_id),
       repositoryStatements(database)
         .prepare(
           `INSERT OR IGNORE INTO source_discovery_request_plans (
@@ -725,6 +728,8 @@ export async function appendDiscoveredEvidenceRequests(
       planRequestIds,
       proposedRequestIds,
       capacityPolicy,
+      parent.request_id,
+      singleParentRoles,
     );
   }
   const retainedResults = await database.batch<EvidenceRequestRow>(
@@ -746,6 +751,12 @@ export async function appendDiscoveredEvidenceRequests(
   const inserted: EvidenceRequestRow[] = [];
   for (const expected of normalized) {
     const retained = retainedById.get(expected.id);
+    if (
+      retained &&
+      singleParentRoles.includes(expected.role) &&
+      retained.discovered_from_request_id !== parent.request_id
+    )
+      throw conflictingDiscoveryParent();
     if (
       retained === null ||
       retained === undefined ||
@@ -777,6 +788,8 @@ async function mappedDiscoveryAdmissionError(
   planRequestIds: string,
   proposedRequestIds: string,
   capacityPolicy: RunCapacityPolicy,
+  parentRequestId: string,
+  singleParentRoles: readonly DiscoveredEvidenceRequest["role"][],
 ): Promise<unknown> {
   if (!/malformed JSON/iu.test(errorMessage(error))) return error;
   const recounted = await admittedLineageCapacityFacts(
@@ -789,7 +802,27 @@ async function mappedDiscoveryAdmissionError(
   if (recounted === null || recounted.admitted > capacityPolicy.request_capacity) {
     return recountedRequestCapacityProblem(sourceLineage, capacityPolicy, recounted, proposedRequestIds);
   }
+  if (
+    singleParentRoles.length &&
+    (await repositoryStatements(database)
+      .prepare(
+        `SELECT 1 FROM source_discovery_request_plans
+      WHERE ingestion_run_id=? AND request_id IN (SELECT value FROM json_each(?))
+        AND request_role IN (SELECT value FROM json_each(?)) AND parent_request_id<>? LIMIT 1`,
+      )
+      .bind(runId, proposedRequestIds, JSON.stringify(singleParentRoles), parentRequestId)
+      .first())
+  )
+    return conflictingDiscoveryParent();
   return new Error("Discovered Source Request identity collided with different immutable evidence.");
+}
+
+function conflictingDiscoveryParent() {
+  return new AdministrationProblem(
+    422,
+    "source_discovery_failed",
+    "The Source Request has conflicting discovery parent evidence.",
+  );
 }
 
 // The unique Source Request identities the Source Lineage would hold if the

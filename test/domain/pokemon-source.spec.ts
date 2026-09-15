@@ -8,6 +8,11 @@ import type { SourceAdapterRegistration } from "../../src/catalogue/adapters/sou
 
 const fixture = new URL("../../acceptance/fixtures/real-sources/2026-09-14-pokemon/raw/", import.meta.url);
 
+function pilotObservation(value: ReturnType<typeof tcgdexPokemonSourceAdapterRegistration.parseBytes>[number]) {
+  if (!("card" in value)) throw new Error("Expected the existing qualified pilot observation");
+  return value;
+}
+
 test("TCGdex qualification binds the selected source Card and treatment while keeping image proof separate", async () => {
   const adapter: SourceAdapterRegistration = tcgdexPokemonSourceAdapterRegistration;
   expect(adapter.printingAdmission).toBe("source_qualification");
@@ -34,10 +39,12 @@ test("TCGdex qualification binds the selected source Card and treatment while ke
 });
 
 test("retained TCGdex Snorlax treatments stay distinct and its shared catalogue image does not depict the stamp", () => {
-  const observations = tcgdexPokemonSourceAdapterRegistration.parseBytes(
-    readFileSync(new URL("tcgdex-snorlax-svp-051.body", fixture)),
-    { url: "https://api.tcgdex.net/v2/en/cards/svp-051", mediaType: "application/json" },
-  );
+  const observations = tcgdexPokemonSourceAdapterRegistration
+    .parseBytes(readFileSync(new URL("tcgdex-snorlax-svp-051.body", fixture)), {
+      url: "https://api.tcgdex.net/v2/en/cards/svp-051",
+      mediaType: "application/json",
+    })
+    .map(pilotObservation);
   expect(observations).toHaveLength(2);
   const [plain, stamped] = observations;
   expect(plain!.card).toMatchObject({
@@ -126,10 +133,12 @@ test("the Pokémon Game Profile represents playable full-art Snorlax without inv
 });
 
 test("the real duplicate marketplace IDs do not merge first-edition and unstamped shadowless Charizard", () => {
-  const observations = tcgdexPokemonSourceAdapterRegistration.parseBytes(
-    readFileSync(new URL("tcgdex-charizard-base1-4.body", fixture)),
-    { url: "https://api.tcgdex.net/v2/en/cards/base1-4", mediaType: "application/json" },
-  );
+  const observations = tcgdexPokemonSourceAdapterRegistration
+    .parseBytes(readFileSync(new URL("tcgdex-charizard-base1-4.body", fixture)), {
+      url: "https://api.tcgdex.net/v2/en/cards/base1-4",
+      mediaType: "application/json",
+    })
+    .map(pilotObservation);
   expect(observations.map((o) => o.printing.game_data.attributes)).toMatchObject([
     { finish: "holo", edition: "unlimited", stamps: [] },
     { finish: "holo", edition: "shadowless", stamps: ["1st-edition"] },

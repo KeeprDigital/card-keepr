@@ -259,46 +259,94 @@ const proposalFieldTarget = {
   properties: { ...curatedFieldTarget.properties, entity_id: proposalIdentity },
 };
 export const documentSchemas = {
-  sourceAdmissionEvidence: object({
-    observation_type: { const: "source_admission_evidence" },
-    game: { const: "magic" },
-    source_lineage: { const: "scryfall-magic-en" },
-    locator: {
-      ...string,
-      pattern:
-        "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
-    },
-    declared_finishes: array({ enum: ["nonfoil", "foil", "etched"] }, { minItems: 1, maxItems: 3, uniqueItems: true }),
-    issues: array(
+  sourceAdmissionEvidence: {
+    anyOf: [
       object({
-        code: { enum: ["logical_parts_unresolved", "category_unresolved"] },
-        source_paths: array({ ...string, minLength: 1, maxLength: 256 }, { minItems: 1, maxItems: 16 }),
-      }),
-      { minItems: 1, maxItems: 3 },
-    ),
-    appearance_evidence: object({
-      images: array(
-        object(
-          {
-            role: { enum: ["front", "back"] },
-            source_url: { ...string, maxLength: 2048 },
-            artwork_fingerprint: { ...string, minLength: 1, maxLength: 256 },
-            content_sha256: digest,
-          },
-          ["role", "source_url", "artwork_fingerprint"],
+        observation_type: { const: "source_admission_evidence" },
+        game: { const: "magic" },
+        source_lineage: { const: "scryfall-magic-en" },
+        locator: {
+          ...string,
+          pattern:
+            "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$",
+        },
+        declared_finishes: array(
+          { enum: ["nonfoil", "foil", "etched"] },
+          { minItems: 1, maxItems: 3, uniqueItems: true },
         ),
-        { maxItems: 2 },
-      ),
-    }),
-    source_sidecar: object({ source_record_json: { ...string, minLength: 1 } }),
-    completeness: object({
-      structurally_complete: { const: true },
-      required_surfaces_complete: { const: true },
-      partitions_complete: { const: true },
-      declared_record_count: { const: 1 },
-      parsed_record_count: { const: 1 },
-    }),
-  }),
+        issues: array(
+          object({
+            code: { enum: ["logical_parts_unresolved", "category_unresolved"] },
+            source_paths: array({ ...string, minLength: 1, maxLength: 256 }, { minItems: 1, maxItems: 16 }),
+          }),
+          { minItems: 1, maxItems: 3 },
+        ),
+        appearance_evidence: object({
+          images: array(
+            object(
+              {
+                role: { enum: ["front", "back"] },
+                source_url: { ...string, maxLength: 2048 },
+                artwork_fingerprint: { ...string, minLength: 1, maxLength: 256 },
+                content_sha256: digest,
+              },
+              ["role", "source_url", "artwork_fingerprint"],
+            ),
+            { maxItems: 2 },
+          ),
+        }),
+        source_sidecar: object({ source_record_json: { ...string, minLength: 1 } }),
+        completeness: object({
+          structurally_complete: { const: true },
+          required_surfaces_complete: { const: true },
+          partitions_complete: { const: true },
+          declared_record_count: { const: 1 },
+          parsed_record_count: { const: 1 },
+        }),
+      }),
+      object({
+        observation_type: { const: "source_admission_evidence" },
+        game: { const: "pokemon" },
+        source_lineage: { const: "tcgdex-pokemon-en" },
+        locator: { ...string, minLength: 1, maxLength: 256 },
+        source_membership: object({
+          set_id: { ...string, minLength: 1, maxLength: 256 },
+          local_id: { ...string, minLength: 1, maxLength: 256 },
+        }),
+        target: object({ kind: { const: "unresolved_record" } }),
+        issues: array(
+          object({
+            code: { enum: ["category_unresolved", "card_identity_unresolved", "printing_treatment_unresolved"] },
+            source_paths: array({ ...string, minLength: 1, maxLength: 256 }, { minItems: 1, maxItems: 16 }),
+          }),
+          { minItems: 1, maxItems: 3 },
+        ),
+        appearance_evidence: object({
+          images: array(
+            object(
+              {
+                association: { const: "source_record" },
+                role: { enum: ["front", "back"] },
+                source_url: { ...string, minLength: 1, maxLength: 2048 },
+                artwork_fingerprint: { ...string, minLength: 1, maxLength: 256 },
+                content_sha256: digest,
+              },
+              ["association", "role", "source_url", "artwork_fingerprint"],
+            ),
+            { maxItems: 2 },
+          ),
+        }),
+        source_sidecar: object({ source_record_json: { ...string, minLength: 1, maxLength: 1024 * 1024 } }),
+        completeness: object({
+          structurally_complete: { const: true },
+          required_surfaces_complete: { const: true },
+          partitions_complete: { const: true },
+          declared_record_count: { const: 1 },
+          parsed_record_count: { const: 1 },
+        }),
+      }),
+    ],
+  },
   catalogueCard: card,
   cataloguePrinting: printing,
   curatedField: curatedFieldDocumentSchema,

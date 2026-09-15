@@ -1,4 +1,5 @@
 import { type CatalogueStore, repositoryStatements, registeredSupportedGames } from "../shared";
+import { proposalArtifactsQuery } from "./composition-proposal-artifacts-repository";
 
 // Pages bound database snapshot metadata independently of consumer export envelopes.
 export const maximumSnapshotPageRows = 128;
@@ -107,9 +108,11 @@ export type CompositionVerificationQuery =
   | { kind: "composition-accepted-roots" }
   | { kind: "composition-source-artifacts"; after: string }
   | { kind: "composition-parent-context-artifacts"; after: string }
+  | { kind: "composition-proposal-artifacts"; after: string }
   | { kind: "foreign-keys" };
 export type CompositionQuery = (query: CompositionVerificationQuery) => Promise<Record<string, unknown>[]>;
 export function compositionVerificationQuery(input: CompositionVerificationQuery) {
+  if (input.kind === "composition-proposal-artifacts") return proposalArtifactsQuery(input.after);
   if (input.kind === "composition-source-artifacts")
     return {
       sql: `WITH retained_snapshots AS (
