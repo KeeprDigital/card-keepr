@@ -48,7 +48,12 @@ export async function runCatalogueBackupWorkflow(
           failedAttemptDigest: params.failed_attempt_digest,
         },
         undefined,
-        { terminalFailure: false, publicationArtifacts: env.CATALOGUE_EXPORTS, printingImages: env.PRINTING_IMAGES },
+        {
+          terminalFailure: false,
+          publicationArtifacts: env.CATALOGUE_EXPORTS,
+          printingImages: env.PRINTING_IMAGES,
+          sourceEvidenceObjects: env.EVIDENCE_OBJECTS,
+        },
       );
     });
     return {

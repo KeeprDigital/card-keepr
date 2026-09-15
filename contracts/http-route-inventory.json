@@ -154,6 +154,7 @@
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
       "apps/ingestion/test/reconciliation-observed-erratum-recovery.spec.ts",
       "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/source-archive-backup.spec.ts",
       "cli/keepr.mjs",
       "cli/staging-release.mjs"
     ]
@@ -320,6 +321,7 @@
       "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
       "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/source-archive-backup.spec.ts",
       "cli/curated-revisions.mjs",
       "cli/staging-release.mjs"
     ]
@@ -386,6 +388,7 @@
       "apps/ingestion/test/reconciliation-curated-conflicts.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
       "apps/ingestion/test/reconciliation-progress.spec.ts",
+      "apps/ingestion/test/source-archive-backup.spec.ts",
       "cli/curated-revisions.mjs",
       "cli/staging-release.mjs"
     ]
@@ -428,6 +431,7 @@
       "apps/ingestion/test/reconciliation-progress.spec.ts",
       "apps/ingestion/test/reviewed-printing-matches.spec.ts",
       "apps/ingestion/test/riftbound-admission.spec.ts",
+      "apps/ingestion/test/scryfall-assembly-reconciliation.spec.ts",
       "apps/ingestion/test/source-design-identity.spec.ts",
       "apps/ingestion/test/source-refresh-publication.spec.ts",
       "cli/entity-proposals.mjs"
@@ -457,6 +461,7 @@
       "apps/ingestion/test/reconciliation-progress.spec.ts",
       "apps/ingestion/test/reviewed-printing-matches.spec.ts",
       "apps/ingestion/test/riftbound-admission.spec.ts",
+      "apps/ingestion/test/scryfall-assembly-reconciliation.spec.ts",
       "apps/ingestion/test/source-design-identity.spec.ts",
       "apps/ingestion/test/source-refresh-publication.spec.ts",
       "cli/entity-proposals.mjs"
@@ -478,6 +483,7 @@
       "apps/ingestion/test/game-reconciliation-fences.spec.ts",
       "apps/ingestion/test/identity-http-contract.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "apps/ingestion/test/scryfall-assembly-reconciliation.spec.ts",
       "apps/ingestion/test/source-design-identity.spec.ts",
       "cli/staging-release.mjs"
     ]
@@ -2058,6 +2064,7 @@
       "apps/ingestion/test/curated-revisions.spec.ts",
       "apps/ingestion/test/reconciliation-progress.spec.ts",
       "apps/ingestion/test/runtime-workflow-collection.spec.ts",
+      "apps/ingestion/test/source-archive-backup.spec.ts",
       "apps/ingestion/test/source-http-contract.spec.ts"
     ]
   },

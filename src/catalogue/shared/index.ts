@@ -191,5 +191,6 @@ export {
   validateStagingOutcome,
   type StagingOutcome,
 } from "./staging-validation.mjs";
-
 export { sourceValue, retainedSourceObject } from "./http-source-value";
+export { magicLayouts, magicFaceRoles } from "./magic-layout";
+export { gzipJsonlRecords, gzipJsonlBlocks, SourceArchiveFailure, type SourceArchiveLimits } from "./gzip-jsonl";

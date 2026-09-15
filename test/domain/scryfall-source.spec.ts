@@ -5,6 +5,172 @@ import { requiredSourceAdapter } from "../../src/catalogue/adapters/source-adapt
 import { parseReconciliationObservation } from "../../src/catalogue/reconciliation/reconciliation-observation";
 
 const fixture = new URL("../../acceptance/fixtures/real-sources/2026-09-14-scryfall/raw/", import.meta.url);
+const bulkFixture = new URL("../bulk/", fixture);
+
+test("a reversible token keeps its token design category and both printed faces", async () => {
+  const adapter = requiredSourceAdapter("scryfall-magic-en@1");
+  const bytes = readFileSync(new URL("reversible-token.json", bulkFixture));
+  const source = JSON.parse(bytes.toString());
+  const [value] = await adapter.parseBytes!(bytes, { url: source.uri, mediaType: "application/json" });
+  const parsed = parseReconciliationObservation("reversible-token", value);
+  if (parsed.kind !== "card_printing") throw new Error("Expected Card/Printing evidence");
+  expect(parsed.observedCardAndPrinting.card!.category).toBe("token");
+  expect(parsed.observedCardAndPrinting.card!.game_data.attributes.layout).toBe("token");
+  expect(parsed.observedCardAndPrinting.printing!.game_data!.attributes.faces).toMatchObject([
+    { role: "front" },
+    { role: "back" },
+  ]);
+});
+
+test.each(["unknown-illustration", "copy-token", "minigame"])(
+  "retained %s keeps explicit source unknowns reviewable",
+  async (file) => {
+    const adapter = requiredSourceAdapter("scryfall-magic-en@1");
+    const bytes = readFileSync(new URL(`${file}.json`, bulkFixture));
+    const source = JSON.parse(bytes.toString());
+    const [value] = await adapter.parseBytes!(bytes, { url: source.uri, mediaType: "application/json" });
+    const parsed = parseReconciliationObservation(file, value);
+    if (parsed.kind !== "card_printing") throw new Error("Expected Card/Printing evidence");
+    if (file === "copy-token") expect(parsed.observedCardAndPrinting.card!.category).toBe("token");
+    else {
+      expect(parsed.artworkIdentityExplicit).toBe(false);
+      expect(adapter.qualifiesPrintingIdentity?.(parsed)).toBe(false);
+      expect(parsed.observedCardAndPrinting.printing!.game_data!.attributes.artists).toEqual([]);
+    }
+    if (file === "minigame")
+      expect(parsed.observedCardAndPrinting.card!.game_data.attributes.faces).toMatchObject([
+        { role: "front", type_line: "Card" },
+        { role: "back", type_line: null },
+      ]);
+  },
+);
+
+test("etched source finish is preserved without claiming a finish-specific scan", async () => {
+  const adapter = requiredSourceAdapter("scryfall-magic-en@1");
+  const bytes = readFileSync(new URL("etched.json", bulkFixture));
+  const source = JSON.parse(bytes.toString());
+  const values = await adapter.parseBytes!(bytes, { url: source.uri, mediaType: "application/json" });
+  expect(values).toHaveLength(1);
+  const parsed = parseReconciliationObservation("etched", values[0]);
+  if (parsed.kind !== "card_printing") throw new Error("Expected Card/Printing evidence");
+  expect(parsed.variantKey).toBe("etched");
+  expect(parsed.observedCardAndPrinting.printing!.game_data!.attributes).toMatchObject({
+    finish: "etched",
+    finish_image: null,
+  });
+  expect(adapter.qualifiesPrintingIdentity?.(parsed)).toBe(true);
+  expect(parsed.noveltyProofComplete).toBe(false);
+});
+
+test("retained missing images do not erase an art Card or invent physical proof", async () => {
+  const adapter = requiredSourceAdapter("scryfall-magic-en@1");
+  const bytes = readFileSync(new URL("missing-image.json", bulkFixture));
+  const source = JSON.parse(bytes.toString());
+  const [value] = await adapter.parseBytes!(bytes, { url: source.uri, mediaType: "application/json" });
+  const parsed = parseReconciliationObservation("missing-image", value);
+  if (parsed.kind !== "card_printing") throw new Error("Expected Card/Printing evidence");
+  expect(parsed.observedCardAndPrinting.card!.category).toBe("art");
+  expect(parsed.observedCardAndPrinting.card!.gameplay_applicability).toBe("inapplicable");
+  expect(parsed.noveltyProofComplete).toBe(false);
+  expect(parsed.printingImages).toEqual([]);
+  expect(adapter.discoverRequests!(bytes, { url: source.uri, mediaType: "application/json" })).toEqual([]);
+});
+
+test("reversible appearances with the same evidenced design retain one Oracle Card and both physical sides", async () => {
+  const adapter = requiredSourceAdapter("scryfall-magic-en@1");
+  const observations = [];
+  for (const file of ["reversible_card", "reversible-design"]) {
+    const bytes = readFileSync(new URL(`${file}.json`, bulkFixture));
+    const source = JSON.parse(bytes.toString());
+    const [value] = await adapter.parseBytes!(bytes, { url: source.uri, mediaType: "application/json" });
+    const parsed = parseReconciliationObservation(file, value);
+    if (parsed.kind !== "card_printing") throw new Error("Expected Card/Printing evidence");
+    observations.push(parsed);
+  }
+  expect(observations[0]!.cardDesignKey).toBe("oracle:61fbaaf2-4286-4e9a-b9cb-aa31262b596a");
+  expect(observations[0]!.cardDesignKey).toBe(observations[1]!.cardDesignKey);
+  expect(observations[0]!.observedCardAndPrinting.card).toEqual(observations[1]!.observedCardAndPrinting.card);
+  expect(observations[0]!.observedCardAndPrinting.printing!.game_data!.attributes).toMatchObject({
+    layout: "reversible_card",
+    faces: [{ role: "front" }, { role: "back" }],
+    reverse_face: "Jinnie Fay, Jetmir's Second",
+  });
+});
+
+test.each([
+  "normal",
+  "token",
+  "art_series",
+  "transform",
+  "saga",
+  "adventure",
+  "planar",
+  "split",
+  "modal_dfc",
+  "emblem",
+  "double_faced_token",
+  "scheme",
+  "mutate",
+  "prepare",
+  "class",
+  "meld",
+  "leveler",
+  "flip",
+  "prototype",
+  "vanguard",
+  "host",
+  "case",
+  "augment",
+])("retained %s maps its physical sides independently of logical gameplay faces", async (layout) => {
+  const adapter = requiredSourceAdapter("scryfall-magic-en@1");
+  const bytes = readFileSync(new URL(`${layout}.json`, bulkFixture));
+  const source = JSON.parse(bytes.toString());
+  const values = await adapter.parseBytes!(bytes, { url: source.uri, mediaType: "application/json" });
+  const parsed = parseReconciliationObservation(layout, values[0]);
+  if (parsed.kind !== "card_printing") throw new Error("Expected Card/Printing evidence");
+  const twoSided = ["transform", "modal_dfc", "art_series", "double_faced_token"].includes(layout);
+  const requests = adapter.discoverRequests!(bytes, { url: source.uri, mediaType: "application/json" });
+  expect(requests).toHaveLength(twoSided ? 2 : 1);
+  expect(parsed.observedCardAndPrinting.printing!.game_data!.attributes).toMatchObject({
+    layout,
+    reverse_face: twoSided ? source.card_faces[1].name : null,
+    finish_image: null,
+  });
+  if (layout === "art_series") {
+    expect(parsed.observedCardAndPrinting.card!.game_data.attributes).toEqual({});
+  } else {
+    expect(parsed.observedCardAndPrinting.card!.game_data.attributes.faces).toHaveLength(
+      source.card_faces?.length ?? 1,
+    );
+    expect(parsed.observedCardAndPrinting.card!.game_data.attributes.layout).toBe(layout);
+  }
+  if (layout === "double_faced_token") {
+    expect(parsed.artworkIdentityExplicit).toBe(false);
+    expect(adapter.qualifiesPrintingIdentity?.(parsed)).toBe(false);
+    expect(parsed.noveltyProofComplete).toBe(false);
+  }
+});
+
+test.each([
+  { file: "split-three", names: ["Smelt", "Herd", "Saw"] },
+  { file: "split-five", names: ["Who", "What", "When", "Where", "Why"] },
+])("retained $file logical faces share one physical front image", async ({ file, names }) => {
+  const adapter = requiredSourceAdapter("scryfall-magic-en@1");
+  const bytes = readFileSync(new URL(`${file}.json`, bulkFixture));
+  const source = JSON.parse(bytes.toString());
+  const values = await adapter.parseBytes!(bytes, { url: source.uri, mediaType: "application/json" });
+  const parsed = parseReconciliationObservation(file, values[0]);
+  if (parsed.kind !== "card_printing") throw new Error("Expected Card/Printing evidence");
+  expect(parsed.observedCardAndPrinting.card!.game_data.attributes.faces).toEqual(
+    names.map((name) => expect.objectContaining({ name, role: "front", colours: null })),
+  );
+  expect(parsed.observedCardAndPrinting.printing!.game_data!.attributes.reverse_face).toBeNull();
+  expect(parsed.observedCardAndPrinting.printing!.printed_rules_text).toBeNull();
+  expect(adapter.discoverRequests!(bytes, { url: source.uri, mediaType: "application/json" })).toEqual([
+    expect.objectContaining({ role: "image", url: source.image_uris.normal }),
+  ]);
+  expect(adapter.qualifiesCardDesignIdentity?.(parsed)).toBe(true);
+});
 
 test("retained English physical Scryfall designs expand finishes while keeping art and gameplay distinct", async () => {
   const adapter = requiredSourceAdapter("scryfall-magic-en@1");
@@ -118,7 +284,7 @@ test.each([
   { label: "unreleased", patch: { released_at: "2026-12-01" } },
   { label: "invalid release date", patch: { released_at: "2026-02-31" } },
   { label: "foreign", patch: { lang: "ja" } },
-  { label: "unsupported layout", patch: { layout: "meld" } },
+  { label: "unsupported layout", patch: { layout: "unknown_future_layout" } },
   { label: "contradictory finishes", patch: { finishes: ["nonfoil"], foil: true } },
 ])("Scryfall rejects $label evidence rather than enlarging its qualified scope", async ({ patch }) => {
   const adapter = requiredSourceAdapter("scryfall-magic-en@1");

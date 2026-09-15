@@ -63,7 +63,11 @@ export function verifyNativeBackup(
       ...(retry ? { failedAttemptId: retry.id, failedAttemptDigest: retry.digest } : {}),
     },
     cloudflareD1BackupProvider,
-    { publicationArtifacts: artifacts, printingImages: testEnv.PRINTING_IMAGES },
+    {
+      publicationArtifacts: artifacts,
+      printingImages: testEnv.PRINTING_IMAGES,
+      sourceEvidenceObjects: testEnv.EVIDENCE_OBJECTS,
+    },
   );
 }
 

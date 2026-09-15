@@ -16,6 +16,7 @@ export async function retainSourceRecordText(
   db: CatalogueStore,
   set: string,
   input: unknown,
+  guard?: () => D1PreparedStatement,
 ): Promise<SourceRecordEnvelope> {
   const parts: TextPart[] = [];
   let nodes = 0;
@@ -38,7 +39,10 @@ export async function retainSourceRecordText(
         pending: SourceAuxiliaryRow[] = [];
       const flush = async () => {
         if (!pending.length) return;
-        await db.batch(pending.map((row) => retainSourceAuxiliary(db, set, "text", digest, row)));
+        await db.batch([
+          ...(guard ? [guard()] : []),
+          ...pending.map((row) => retainSourceAuxiliary(db, set, "text", digest, row)),
+        ]);
         const retained = (
           await sourceAuxiliaryPage(
             db,
@@ -92,7 +96,7 @@ export async function retainSourceRecordText(
   return { contract: "card-keepr-source-record-envelope@1", value: await visit(input, []), text_parts: parts };
 }
 function* textChunks(value: string) {
-  for (let offset = 0; offset < value.length; ) {
+  for (let offset = 0; offset < value.length;) {
     let end = Math.min(offset + 16384, value.length);
     const last = value.charCodeAt(end - 1);
     if (end < value.length && last >= 0xd800 && last <= 0xdbff) end--;

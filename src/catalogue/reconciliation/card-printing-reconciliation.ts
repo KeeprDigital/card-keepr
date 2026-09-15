@@ -694,19 +694,21 @@ export async function reconcileRetainedCardPrintingEvidence(
         if (observation.kind === "card_printing" && observation.errata.length > 8)
           throw new Error("reconciliation_capacity_exceeded: one observation contains more than eight Errata.");
         const work =
-          observation.kind === "card_printing" &&
-          (observation.sourceWarnings.length > 1 ||
-            observation.errata.length > 0 ||
-            retained.hasCardErrata === true ||
-            observation.observedCardAndPrinting.card?.official_identity.kind === "unknown")
-            ? 16
-            : observation.kind === "card_printing" && observation.observedCardAndPrinting.card !== null
-              ? observation.observedCardAndPrinting.printing === null
-                ? observation.sourceWarnings.length
-                  ? 3
-                  : 2
-                : 8
-              : 1;
+          observation.kind === "source_admission_evidence"
+            ? 1 + observation.proposalIds.length
+            : observation.kind === "card_printing" &&
+                (observation.sourceWarnings.length > 1 ||
+                  observation.errata.length > 0 ||
+                  retained.hasCardErrata === true ||
+                  observation.observedCardAndPrinting.card?.official_identity.kind === "unknown")
+              ? 16
+              : observation.kind === "card_printing" && observation.observedCardAndPrinting.card !== null
+                ? observation.observedCardAndPrinting.printing === null
+                  ? observation.sourceWarnings.length
+                    ? 3
+                    : 2
+                  : 8
+                : 1;
         if (inUnit > 0 && (inUnit + work > 16 || bytes + byteLength > 512000)) {
           const next = await saveReduction(after, false);
           if (yieldAtCheckpoint) return next;
@@ -716,6 +718,17 @@ export async function reconcileRetainedCardPrintingEvidence(
         const resumingWarnings = pendingSourceWarning !== null;
         observationUnit: {
           if (resumingWarnings) break observationUnit;
+          if (observation.kind === "source_admission_evidence") {
+            for (const proposalId of observation.proposalIds)
+              await sourceWarnings.push({
+                code: "entity_proposal_excluded",
+                game: observation.supportedGame,
+                proposal_id: proposalId,
+                source_observation_id: observation.sourceObservationId,
+                detail: `Entity Proposal ${proposalId} retains unresolved source claims for owner review; this observation contributes no Card or Printing.`,
+              });
+            break observationUnit;
+          }
           if (observation.kind !== "card_printing") break observationUnit;
           productGames.add(observation.supportedGame);
           for (const index of [
@@ -1646,7 +1659,7 @@ export async function reconcileRetainedCardPrintingEvidence(
         }
         processedObservations++;
         if (observation.kind === "official_erratum") dedicatedErrata++;
-        else if (observation.withdrawal !== null) hasWithdrawals = true;
+        else if (observation.kind === "card_printing" && observation.withdrawal !== null) hasWithdrawals = true;
         after = cursor;
         inUnit += work;
         bytes += byteLength;

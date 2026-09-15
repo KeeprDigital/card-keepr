@@ -101,9 +101,25 @@ export type SurfaceEvidenceObservation = {
 
 // Existing wire shapes discriminate through kind, observation_type, or the
 // product_release_catalogue field. No synthetic tag is added to retained output.
-export type OfficialSourceObservation = CatalogueObservation | OfficialErratumObservation | SurfaceEvidenceObservation;
+export type OfficialSourceObservation =
+  CatalogueObservation | OfficialErratumObservation | SurfaceEvidenceObservation | SourceAdmissionEvidenceObservation;
 
 export type CardObservation = CatalogueObservation & {
   card: NonNullable<CatalogueObservation["card"]>;
   memberships: NonNullable<CatalogueObservation["memberships"]>;
+};
+
+/** Structurally valid source claims that cannot yet form a publishable Card. */
+export type SourceAdmissionEvidenceObservation = {
+  observation_type: "source_admission_evidence";
+  game: SupportedGame;
+  source_lineage: string;
+  locator: string;
+  declared_finishes: readonly string[];
+  issues: readonly { code: "logical_parts_unresolved"; source_paths: readonly string[] }[];
+  appearance_evidence: {
+    images: readonly { role: "front" | "back"; source_url: string; artwork_fingerprint: string }[];
+  };
+  source_sidecar: { source_record_json: string };
+  completeness: ObservationCompleteness;
 };
