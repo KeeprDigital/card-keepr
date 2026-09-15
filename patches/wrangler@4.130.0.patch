@@ -1,12 +1,17 @@
 diff --git a/wrangler-dist/cli.js b/wrangler-dist/cli.js
-index a1aaf3a51515c1eb8d5b03d46ecef41286293e61..fdb7be1c17240267bcdefefd7c2ea0b90959d5e9 100644
+index a1aaf3a51515c1eb8d5b03d46ecef41286293e61..319c801279a2b26d6258db4448633845a0fd7225 100644
 --- a/wrangler-dist/cli.js
 +++ b/wrangler-dist/cli.js
-@@ -223821,12 +223821,19 @@ function splitSqlIntoStatements(sql) {
-     if (compoundStatementStack[0]?.(str + char)) {
+@@ -223818,15 +223818,23 @@ function splitSqlIntoStatements(sql) {
+   let next = iterator.next();
+   while (!next.done) {
+     const char = next.value;
+-    if (compoundStatementStack[0]?.(str + char)) {
++    const compoundBoundary = str.slice(-6) + char;
++    if (compoundStatementStack[0]?.(compoundBoundary)) {
        compoundStatementStack.shift();
      }
-+    if (isCompoundStatementStart(str + char)) {
++    if (isCompoundStatementStart(compoundBoundary)) {
 +      compoundStatementStack.unshift(isCompoundStatementEnd);
 +    }
      switch (char) {
@@ -22,7 +27,7 @@ index a1aaf3a51515c1eb8d5b03d46ecef41286293e61..fdb7be1c17240267bcdefefd7c2ea0b9
        case `$`: {
          const dollarQuote = "$" + consumeWhile(iterator, isDollarQuoteIdentifier);
          str += dollarQuote;
-@@ -223849,6 +223856,7 @@ function splitSqlIntoStatements(sql) {
+@@ -223849,6 +223857,7 @@ function splitSqlIntoStatements(sql) {
          next = iterator.next();
          if (!next.done && next.value === "*") {
            consumeUntilMarker(iterator, "*/");
@@ -30,7 +35,7 @@ index a1aaf3a51515c1eb8d5b03d46ecef41286293e61..fdb7be1c17240267bcdefefd7c2ea0b9
            break;
          } else {
            str += char;
-@@ -223866,9 +223874,6 @@ function splitSqlIntoStatements(sql) {
+@@ -223866,9 +223875,6 @@ function splitSqlIntoStatements(sql) {
          str += char;
          break;
      }
@@ -40,7 +45,7 @@ index a1aaf3a51515c1eb8d5b03d46ecef41286293e61..fdb7be1c17240267bcdefefd7c2ea0b9
      next = iterator.next();
    }
    statements.push(str);
-@@ -223904,10 +223909,10 @@ function isDollarQuoteIdentifier(str) {
+@@ -223904,10 +223910,10 @@ function isDollarQuoteIdentifier(str) {
    );
  }
  function isCompoundStatementStart(str) {

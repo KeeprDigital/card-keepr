@@ -32,12 +32,19 @@ before retained data activated the original recovery fence during import.
 The patch recognizes punctuation while excluding identifier characters and
 parameter prefixes. Block comments remain whitespace separators, and square-bracket
 identifiers are consumed as quoted tokens, so each keyword is counted once. It
-does not replace text in SQL literals. Native recovery
-exports restore data before installing the original indexes and triggers.
+does not replace text in SQL literals. Keyword checks use only the final six
+preceding code units plus the next character: `BEGIN` is the longest keyword
+(five), so this retains its preceding identifier boundary and following
+character without repeatedly scanning the whole accumulated statement. Native recovery
+exports restore data and views before installing the original indexes and triggers.
+A [#329](https://github.com/KeeprDigital/card-keepr/issues/329) export also placed
+a guard trigger before the view it queried; preserving that ordering rejected
+retained rows with a missing-view error. The regression keeps the original guard
+active for writes after import.
 
 Keep this patch, `pnpm-workspace.yaml` and the lockfile together. Remove the patch
 when the pinned upstream splitter handles both opener and closer boundaries.
 Validate the whole `native-recovery-export` acceptance file, which covers native
 restore and retained fences, paired CASE syntax, quoted/comment text, long
-records and virtual-table rejection, then the complete backup/recovery owner
-journey before broader suites.
+records, a later guard view and virtual-table rejection, then the whole
+`publication-backup-transport` acceptance file before broader suites.

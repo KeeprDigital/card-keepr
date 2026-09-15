@@ -110,7 +110,7 @@ overrides:
 
 patchedDependencies:
   '@cloudflare/vitest-plugin@1.1.6': 81c7621de3c68d8ee39c26412448ead76baa12cc11e79c2e9b58f329292c71cf
-  wrangler@4.130.0: f9ffdccf498c5325098c2779249414b2d3455b8dc1719d83a3f3a8518b21d93f
+  wrangler@4.130.0: 537751556e2ad7dd1bd19a5bf856c6b46ae20b47693d770ef58fa6cdbef0dd6f
 
 importers:
 
@@ -215,7 +215,7 @@ importers:
         version: 4.1.11(@types/node@26.5.0)(vite@8.2.2(@types/node@26.5.0)(esbuild@0.28.2)(yaml@2.9.0))
       wrangler:
         specifier: ^4.130.0
-        version: 4.130.0(patch_hash=f9ffdccf498c5325098c2779249414b2d3455b8dc1719d83a3f3a8518b21d93f)
+        version: 4.130.0(patch_hash=537751556e2ad7dd1bd19a5bf856c6b46ae20b47693d770ef58fa6cdbef0dd6f)
 
 packages:
 
@@ -2421,7 +2421,7 @@ snapshots:
       esbuild: 0.28.1
       miniflare: 5.20260908.0-alpha
       vitest: 4.1.11(@types/node@26.5.0)(vite@8.2.2(@types/node@26.5.0)(esbuild@0.28.2)(yaml@2.9.0))
-      wrangler: 4.130.0(patch_hash=f9ffdccf498c5325098c2779249414b2d3455b8dc1719d83a3f3a8518b21d93f)
+      wrangler: 4.130.0(patch_hash=537751556e2ad7dd1bd19a5bf856c6b46ae20b47693d770ef58fa6cdbef0dd6f)
       zod: 4.4.3
     transitivePeerDependencies:
       - '@cloudflare/workers-types'
@@ -4174,7 +4174,7 @@ snapshots:
       '@cloudflare/workerd-linux-arm64': 1.20260908.1
       '@cloudflare/workerd-windows-64': 1.20260908.1
 
-  wrangler@4.130.0(patch_hash=f9ffdccf498c5325098c2779249414b2d3455b8dc1719d83a3f3a8518b21d93f):
+  wrangler@4.130.0(patch_hash=537751556e2ad7dd1bd19a5bf856c6b46ae20b47693d770ef58fa6cdbef0dd6f):
     dependencies:
       '@cloudflare/kv-asset-handler': 0.5.0
       '@cloudflare/unenv-preset': 2.16.1(unenv@2.0.0-rc.24)(workerd@1.20260908.1)

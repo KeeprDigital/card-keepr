@@ -21,3 +21,15 @@ export function retainedSplitValues(database) {
 export function retainedBracketValue(database) {
   return database.prepare("SELECT [END] FROM split_values");
 }
+
+export function retainedParseIds(database) {
+  return database.prepare("SELECT parse_operation_id FROM source_parse_contexts");
+}
+
+export function insertParseContext(database) {
+  return database.prepare("INSERT INTO source_parse_contexts VALUES (?)");
+}
+
+export function retainedKeywordSuffixValues(database) {
+  return database.prepare("SELECT long_prefix_BEGIN, éCASE, long_prefix_END FROM keyword_suffix_values");
+}

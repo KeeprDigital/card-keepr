@@ -10,6 +10,38 @@ import { nativeRecoveryCloudflare } from "./helpers/native-recovery-cloudflare.m
 import { nativeRecoveryExportSql } from "./helpers/native-recovery-export.mjs";
 import * as recoveryQueries from "./helpers/query-helpers/native-recovery-export.mjs";
 
+test("native recovery restores rows when their guard reads a later view and preserves the guard", () => {
+  // Minimal export shape from #329: a retained row precedes the guard's view.
+  const laterViewGuardExport = `
+  CREATE TABLE source_parse_contexts (parse_operation_id TEXT PRIMARY KEY);
+  CREATE TRIGGER handoff_fence_source_parse_contexts_insert BEFORE INSERT ON source_parse_contexts
+    WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+    BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+  INSERT INTO source_parse_contexts VALUES('retained-parse');
+  CREATE VIEW fresh_baseline_mutation_fence AS SELECT 1 AS blocked;
+`;
+  const original = new DatabaseSync(":memory:");
+  const restored = new DatabaseSync(":memory:");
+  try {
+    assert.throws(() => original.exec(laterViewGuardExport), /no such table: main.fresh_baseline_mutation_fence/u);
+    restored.exec(nativeRecoveryExportSql(laterViewGuardExport));
+    assert.deepEqual(
+      recoveryQueries
+        .retainedParseIds(restored)
+        .all()
+        .map((row) => row.parse_operation_id),
+      ["retained-parse"],
+    );
+    assert.throws(
+      () => recoveryQueries.insertParseContext(restored).run("later-parse"),
+      /fresh_baseline_mutation_fenced/u,
+    );
+  } finally {
+    original.close();
+    restored.close();
+  }
+});
+
 async function fixture(t, virtual = false) {
   const directory = await mkdtemp(join(tmpdir(), "native-export-check-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -197,6 +229,25 @@ test("native SQL splitter preserves square-bracket keyword identifiers inside a 
   try {
     for (const statement of statements) database.exec(statement);
     assert.equal(recoveryQueries.retainedBracketValue(database).get().END, "ok");
+  } finally {
+    database.close();
+  }
+});
+
+test("native SQL splitter preserves long and Unicode identifiers ending in compound keywords", () => {
+  const statements = unstable_splitSqlQuery(`
+    CREATE TABLE keyword_suffix_values (long_prefix_BEGIN TEXT, éCASE TEXT, long_prefix_END TEXT);
+    CREATE TRIGGER preserve_keyword_suffixes AFTER INSERT ON keyword_suffix_values BEGIN
+      UPDATE keyword_suffix_values SET long_prefix_BEGIN='begin', éCASE='case', long_prefix_END='end';
+    END;
+    INSERT INTO keyword_suffix_values VALUES ('initial', 'initial', 'initial');
+  `);
+  assert.equal(statements.length, 3);
+  const database = new DatabaseSync(":memory:");
+  try {
+    for (const statement of statements) database.exec(statement);
+    const row = recoveryQueries.retainedKeywordSuffixValues(database).get();
+    assert.deepEqual([row.long_prefix_BEGIN, row.éCASE, row.long_prefix_END], ["begin", "case", "end"]);
   } finally {
     database.close();
   }

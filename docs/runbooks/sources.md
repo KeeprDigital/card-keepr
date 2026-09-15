@@ -79,6 +79,17 @@ selects four issued English paper records and their declared finishes/faces.
 Its [retained evidence and limitations](../../acceptance/fixtures/real-sources/2026-09-14-scryfall/README.md)
 define acquisition bounds, qualification and the remaining full-import scope.
 
+The [Scryfall bulk plan](../examples/scryfall-magic-bulk-plan.json) selects the
+default complete Source Coverage. Its single metadata root pins one dated
+`default_cards` gzip JSONL archive and its advertised compressed length. Collection
+derives current normal JPEG requests from issued English, paper, nondigital
+records through the archive's date, excluding incidental deck indicators. The
+named four-card pilot remains separate and keeps its existing request identities.
+The registration's finite capacity uses the retained dated image-location census;
+it does not establish full-import throughput, image bytes, publication or recovery.
+Inspect any capacity pause before choosing an extension. The remaining full-scope
+evidence is tracked in [#327](https://github.com/KeeprDigital/card-keepr/issues/327).
+
 `source show` reports coverage, request counts, successful check time and actual
 content capture time. A partial check never advances successful freshness. A
 complete named check can report a Printing no longer observed without deleting it.
