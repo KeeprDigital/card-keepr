@@ -130,7 +130,7 @@ test("a CLI mutation paces its confirmation and write before the next administra
     response.writeHead(200, { "content-type": "application/json" });
     response.end(
       JSON.stringify(
-        request.url.startsWith("/v1/status")
+        request.url === "/v1/administration-targets/resolve"
           ? { resolved_target: { confirmation: "synthetic-confirmation" } }
           : { code: "curated_revision_created" },
       ),
@@ -176,7 +176,7 @@ test("a CLI mutation paces its confirmation and write before the next administra
   assert.equal(cli.code, 0, cli.stdout + cli.stderr);
   assert.deepEqual(
     arrivals.map(({ path }) => path),
-    ["/v1/status", "/v1/curated-revisions", "/v1/after-mutation"],
+    ["/v1/administration-targets/resolve", "/v1/curated-revisions", "/v1/after-mutation"],
   );
   for (let i = 1; i < arrivals.length; i++)
     assert.ok(arrivals[i].at - arrivals[i - 1].at >= 75, JSON.stringify(arrivals));
