@@ -11,14 +11,20 @@ import { nativeRecoveryExportSql } from "./helpers/native-recovery-export.mjs";
 import * as recoveryQueries from "./helpers/query-helpers/native-recovery-export.mjs";
 
 test("native recovery restores rows when their guard reads a later view and preserves the guard", () => {
+  // Minimal export shape from #329: a retained row precedes the guard's view.
+  const laterViewGuardExport = `
+  CREATE TABLE source_parse_contexts (parse_operation_id TEXT PRIMARY KEY);
+  CREATE TRIGGER handoff_fence_source_parse_contexts_insert BEFORE INSERT ON source_parse_contexts
+    WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
+    BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
+  INSERT INTO source_parse_contexts VALUES('retained-parse');
+  CREATE VIEW fresh_baseline_mutation_fence AS SELECT 1 AS blocked;
+`;
   const original = new DatabaseSync(":memory:");
   const restored = new DatabaseSync(":memory:");
   try {
-    assert.throws(
-      () => original.exec(recoveryQueries.laterViewGuardExport),
-      /no such table: main.fresh_baseline_mutation_fence/u,
-    );
-    restored.exec(nativeRecoveryExportSql(recoveryQueries.laterViewGuardExport));
+    assert.throws(() => original.exec(laterViewGuardExport), /no such table: main.fresh_baseline_mutation_fence/u);
+    restored.exec(nativeRecoveryExportSql(laterViewGuardExport));
     assert.deepEqual(
       recoveryQueries
         .retainedParseIds(restored)

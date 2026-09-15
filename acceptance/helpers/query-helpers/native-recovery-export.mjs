@@ -22,16 +22,6 @@ export function retainedBracketValue(database) {
   return database.prepare("SELECT [END] FROM split_values");
 }
 
-// Minimal export shape from #329: a retained row precedes the guard's view.
-export const laterViewGuardExport = `
-  CREATE TABLE source_parse_contexts (parse_operation_id TEXT PRIMARY KEY);
-  CREATE TRIGGER handoff_fence_source_parse_contexts_insert BEFORE INSERT ON source_parse_contexts
-    WHEN EXISTS(SELECT 1 FROM fresh_baseline_mutation_fence)
-    BEGIN SELECT RAISE(ABORT,'fresh_baseline_mutation_fenced'); END;
-  INSERT INTO source_parse_contexts VALUES('retained-parse');
-  CREATE VIEW fresh_baseline_mutation_fence AS SELECT 1 AS blocked;
-`;
-
 export function retainedParseIds(database) {
   return database.prepare("SELECT parse_operation_id FROM source_parse_contexts");
 }
