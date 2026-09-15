@@ -71725,7 +71725,7 @@
             }
           },
           "202": {
-            "description": "The exact deletion attempt is still executing.",
+            "description": "Original pending attempt acknowledgement, including exact replay after execution finishes. Use GET /v1/catalogue-export-deletions/{deletion} for current state.",
             "headers": {
               "Cache-Control": {
                 "required": true,
@@ -72316,7 +72316,7 @@
             }
           },
           "202": {
-            "description": "The exact deletion attempt is still executing.",
+            "description": "Original pending attempt acknowledgement, including exact replay after execution finishes. Use GET /v1/catalogue-export-deletions/{deletion} for current state.",
             "headers": {
               "Cache-Control": {
                 "required": true,

@@ -60,7 +60,10 @@ const attemptResponses = {
     exportDeletionTerminalSchema,
     "Original terminal attempt receipt, including exact replay after a later retry.",
   ),
-  202: response(exportDeletionPendingSchema, "The exact deletion attempt is still executing."),
+  202: response(
+    exportDeletionPendingSchema,
+    "Original pending attempt acknowledgement, including exact replay after execution finishes. Use GET /v1/catalogue-export-deletions/{deletion} for current state.",
+  ),
   ...problemResponses,
 };
 export const planExportDeletionRoute = createRoute({

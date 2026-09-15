@@ -492,9 +492,11 @@ prepared --confirm exact bindings--> deleting → deleted
 ```
 
 Plan creation returns 201 and is not idempotent: reusing a plan ID conflicts.
-Confirmation/retry returns 202 while executing and 200 for its original terminal
-attempt, even when a later retry changed current status. GET status returns current
-state. A plan expires after 15 minutes. It always warns that Catalogue Consumers may
+Confirmation/retry returns 202 for its original pending attempt acknowledgement
+or 200 for its original terminal receipt. Exact replay preserves that response
+even after execution finishes or a later retry changes current status. GET
+`/v1/catalogue-export-deletions/{deletion}` returns current state.
+A plan expires after 15 minutes. It always warns that Catalogue Consumers may
 depend on the immutable bytes and that known URLs will return
 `catalogue_export_deleted`. The current Catalogue Revision is a blocking
 dependency: its verified Catalogue Export cannot be deleted.
