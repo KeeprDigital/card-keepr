@@ -57,9 +57,11 @@ export function setOperationStateActiveIngestionRunIdForAuthenticatedCatalogueEx
   runId = "run_retained_export",
 ): D1PreparedStatement {
   return database
-    .prepare(`UPDATE operation_state
+    .prepare(
+      `UPDATE operation_state
        SET active_ingestion_run_id = ?
-       WHERE singleton = 1`)
+       WHERE singleton = 1`,
+    )
     .bind(runId);
 }
 
@@ -152,13 +154,15 @@ export function setIngestionRunsStatePublishedRevisionId(database: D1Database): 
   return runEventStatement(store, {
     event,
     statement: database
-      .prepare(`UPDATE ingestion_run_current
+      .prepare(
+        `UPDATE ingestion_run_current
        SET ${runEventIdentitySql}, state = 'published',
            published_revision_id = 'catrev_api_context',
            resulting_revision_id = 'catrev_api_context',
            publication_outcome = 'revision',
            terminal_at = '2026-01-01T00:00:00.000Z'
-       WHERE ingestion_run_id = 'run_api_context'`)
+       WHERE ingestion_run_id = 'run_api_context'`,
+      )
       .bind(event.eventId),
   });
 }
@@ -223,13 +227,15 @@ export function setIngestionRunsStatePublishedRevisionIdForAuthenticatedCardPrin
   return runEventStatement(store, {
     event,
     statement: database
-      .prepare(`UPDATE ingestion_run_current
+      .prepare(
+        `UPDATE ingestion_run_current
        SET ${runEventIdentitySql}, state = 'published',
            published_revision_id = 'catrev_errata_read',
            resulting_revision_id = 'catrev_errata_read',
            publication_outcome = 'revision',
            terminal_at = '2026-07-01T00:00:00.000Z'
-       WHERE ingestion_run_id = 'run_errata_read'`)
+       WHERE ingestion_run_id = 'run_errata_read'`,
+      )
       .bind(event.eventId),
   });
 }
@@ -282,13 +288,15 @@ export function setIngestionRunsStatePublishedRevisionIdForSeedApiRevision(datab
     return runEventStatement(store, {
       event,
       statement: database
-        .prepare(`UPDATE ingestion_run_current
+        .prepare(
+          `UPDATE ingestion_run_current
        SET ${runEventIdentitySql}, state = 'published',
            published_revision_id = ?,
            resulting_revision_id = ?,
            publication_outcome = 'revision',
            terminal_at = '2026-07-20T00:00:00.000Z'
-       WHERE ingestion_run_id = ?`)
+       WHERE ingestion_run_id = ?`,
+        )
         .bind(event.eventId, ...values),
     });
   });
@@ -667,9 +675,11 @@ export function setIngestionRunsStatePublishedRevisionIdForSeedDeletionExport(
     return runEventStatement(store, {
       event,
       statement: database
-        .prepare(`UPDATE ingestion_run_current SET ${runEventIdentitySql}, state = 'published', published_revision_id = ?,
+        .prepare(
+          `UPDATE ingestion_run_current SET ${runEventIdentitySql}, state = 'published', published_revision_id = ?,
          resulting_revision_id = ?, publication_outcome = 'revision', terminal_at = ?
-       WHERE ingestion_run_id = ?`)
+       WHERE ingestion_run_id = ?`,
+        )
         .bind(event.eventId, ...values),
     });
   });
@@ -926,8 +936,7 @@ export function countAdministrationIdempotencyClaims(database: D1Database): D1Pr
         WHERE idempotency_key = ?) AS claims,
        (SELECT COUNT(*) FROM administration_idempotency
         WHERE idempotency_key = ?
-          AND operation = 'approve_ingestion_run'
-          AND outcome = 'problem') AS outcomes,
+          AND operation = 'approve_ingestion_run') AS outcomes,
        (SELECT active_ingestion_run_id FROM operation_state
         WHERE singleton = 1) AS active_ingestion_run_id`);
 }

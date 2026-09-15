@@ -1,7 +1,25 @@
+import {
+  retainedReconciliationActionRoutes,
+  retainedReconciliationStatusSchema,
+  retainedReconciliationStatusRoute,
+  retainedReconciliationStartRoute,
+  retainedWorkflowSchema,
+  pendingRetainedWorkflowSchema,
+  retainedInputListRoute,
+  retainedInputListSchema,
+  retainedInputRoute,
+  retainedInputSchema,
+  retainedPartitionListRoute,
+  retainedPartitionListSchema,
+  retainedPartitionRoute,
+  retainedPartitionSchema,
+  retainedTextRoute,
+  retainedTextSchema,
+} from "./retained-run-http-contract";
 import { cleanupSchema, captureCleanupRoute, stagingCleanupRoute, retryCleanupRoute } from "../source-evidence";
 import { identityRoutes } from "./identity-routes";
 import { gameCandidateRoutes } from "./game-candidate-routes";
-import { httpRoute } from "../../http/openapi";
+import { httpRoute, retainedWireValue } from "../../http/openapi";
 import {
   advancePublicationPreparationRoute,
   publicationPreparationSchema,
@@ -50,8 +68,7 @@ import {
   inspectReconciliationProgress,
   inspectReconciliationText,
 } from "./reconciliation-progress";
-import { assertOnlyFields, readAdministrationBody, requiredString } from "../../http/administration";
-import { type RouteContext, route } from "../../http/routes";
+import { type Route, type RouteContext } from "../../http/routes";
 import { type CatalogueStore } from "../shared";
 import { resumeReconciliationWorkflow, startOrObserveReconciliationWorkflow } from "./reconciliation-workflow";
 
@@ -63,7 +80,7 @@ type Environment = {
 };
 type Context = RouteContext<Environment> & { observedAt: string };
 
-export const reconciliationRoutes = [
+export const reconciliationRoutes: Route<Context>[] = [
   httpRoute<Context>()(stagingCleanupRoute, async (c) => {
     const input = c.req.valid("json");
     return c.json(
@@ -238,71 +255,104 @@ export const reconciliationRoutes = [
       );
     }),
   ),
-  route<Context>("GET", "/v1/ingestion-runs/:run/reconciliation/text/:digest/:ordinal", async ({ env }, params) =>
-    Response.json(await inspectReconciliationText(env.CATALOGUE_DB, params.run!, params.digest!, params.ordinal!)),
-  ),
-  route<Context>("GET", "/v1/ingestion-runs/:run/reconciliation/inputs", async ({ env, request }, params) =>
-    Response.json(
-      await inspectReconciliationInputs(env.CATALOGUE_DB, params.run!, new URL(request.url).searchParams.get("after")),
-    ),
-  ),
-  route<Context>("GET", "/v1/ingestion-runs/:run/reconciliation/inputs/:ordinal", async ({ env }, params) =>
-    Response.json(await inspectReconciliationInput(env.CATALOGUE_DB, params.run!, params.ordinal!)),
-  ),
-  route<Context>("GET", "/v1/ingestion-runs/:run/reconciliation/partitions/:ordinal", async ({ env }, params) =>
-    Response.json(await inspectReconciliationPartition(env.CATALOGUE_DB, params.run!, params.ordinal!)),
-  ),
-  ...(["pause", "resume", "abandon"] as const).map((action) =>
-    route<Context>(
-      "POST",
-      `/v1/ingestion-runs/:run/reconciliation/${action}`,
-      async ({ env, request, observedAt }, params) => {
-        const body = await readAdministrationBody(request);
-        assertOnlyFields(body, ["generation", "idempotency_key"]);
-        const result = await changeReconciliationProgress(
-          env.CATALOGUE_DB,
-          params.run!,
-          action,
-          {
-            generation: Number(body.generation),
-            idempotency_key: requiredString(body, "idempotency_key"),
-          },
-          observedAt,
-        );
-        if (action === "resume")
-          await resumeReconciliationWorkflow(env.CATALOGUE_DB, env.RECONCILIATION_WORKFLOW, params.run!);
-        return Response.json(result);
-      },
-    ),
-  ),
-  route<Context>("GET", "/v1/ingestion-runs/:run/reconciliation/partitions", async ({ env, request }, params) => {
-    return Response.json(
-      await inspectReconciliationPartitions(
-        env.CATALOGUE_DB,
-        params.run!,
-        new URL(request.url).searchParams.get("after"),
+  httpRoute<Context>()(retainedTextRoute, async (c) => {
+    const { run, digest, ordinal } = c.req.valid("param");
+    return c.json(
+      retainedWireValue(
+        retainedTextSchema,
+        await inspectReconciliationText(c.env.env.CATALOGUE_DB, run, digest, ordinal),
       ),
+      200,
+      { "Cache-Control": "no-store" },
     );
   }),
-  route<Context>("GET", "/v1/ingestion-runs/:run/reconciliation", async ({ env }, params) => {
-    return Response.json(await inspectReconciliationProgress(env.CATALOGUE_DB, params.run!));
-  }),
+  httpRoute<Context>()(retainedInputListRoute, async (c) =>
+    c.json(
+      retainedWireValue(
+        retainedInputListSchema,
+        await inspectReconciliationInputs(
+          c.env.env.CATALOGUE_DB,
+          c.req.valid("param").run,
+          c.req.valid("query").after ?? null,
+        ),
+      ),
+      200,
+      { "Cache-Control": "no-store" },
+    ),
+  ),
+  httpRoute<Context>()(retainedInputRoute, async (c) =>
+    c.json(
+      retainedWireValue(
+        retainedInputSchema,
+        await inspectReconciliationInput(
+          c.env.env.CATALOGUE_DB,
+          c.req.valid("param").run,
+          c.req.valid("param").ordinal,
+        ),
+      ),
+      200,
+      { "Cache-Control": "no-store" },
+    ),
+  ),
+  httpRoute<Context>()(retainedPartitionRoute, async (c) =>
+    c.json(
+      retainedWireValue(
+        retainedPartitionSchema,
+        await inspectReconciliationPartition(
+          c.env.env.CATALOGUE_DB,
+          c.req.valid("param").run,
+          c.req.valid("param").ordinal,
+        ),
+      ),
+      200,
+      { "Cache-Control": "no-store" },
+    ),
+  ),
+  ...retainedReconciliationActionRoutes.map(({ action, definition }) =>
+    httpRoute<Context>()(definition, async (c) => {
+      const { env, observedAt } = c.env;
+      const run = c.req.valid("param").run;
+      const result = await changeReconciliationProgress(env.CATALOGUE_DB, run, action, c.req.valid("json"), observedAt);
+      if (action === "resume") await resumeReconciliationWorkflow(env.CATALOGUE_DB, env.RECONCILIATION_WORKFLOW, run);
+      return c.json(retainedWireValue(retainedReconciliationStatusSchema, result), 200, {
+        "Cache-Control": "no-store",
+      });
+    }),
+  ),
+  httpRoute<Context>()(retainedPartitionListRoute, async (c) =>
+    c.json(
+      retainedWireValue(
+        retainedPartitionListSchema,
+        await inspectReconciliationPartitions(
+          c.env.env.CATALOGUE_DB,
+          c.req.valid("param").run,
+          c.req.valid("query").after ?? null,
+        ),
+      ),
+      200,
+      { "Cache-Control": "no-store" },
+    ),
+  ),
+  httpRoute<Context>()(retainedReconciliationStatusRoute, async (c) =>
+    c.json(
+      retainedWireValue(
+        retainedReconciliationStatusSchema,
+        await inspectReconciliationProgress(c.env.env.CATALOGUE_DB, c.req.valid("param").run),
+      ),
+      200,
+      { "Cache-Control": "no-store" },
+    ),
+  ),
   ...identityRoutes,
-  route<Context>("POST", "/v1/ingestion-runs/:run/reconciliation", async ({ request, env, observedAt }, params) => {
-    const body = await readAdministrationBody(request);
-    assertOnlyFields(body, ["expected_current_revision_id", "idempotency_key"]);
+  httpRoute<Context>()(retainedReconciliationStartRoute, async (c) => {
     const result = await startOrObserveReconciliationWorkflow(
-      env.CATALOGUE_DB,
-      env.RECONCILIATION_WORKFLOW,
-      {
-        ingestion_run_id: params.run!,
-        expected_current_revision_id: requiredString(body, "expected_current_revision_id"),
-        idempotency_key: requiredString(body, "idempotency_key"),
-      },
-      observedAt,
+      c.env.env.CATALOGUE_DB,
+      c.env.env.RECONCILIATION_WORKFLOW,
+      { ingestion_run_id: c.req.valid("param").run, ...c.req.valid("json") },
+      c.env.observedAt,
     );
-    return Response.json(result.document, {
-      status: result.created && result.document.status !== "complete" ? 202 : 200,
-    });
+    return result.created && result.document.status !== "complete"
+      ? c.json(retainedWireValue(pendingRetainedWorkflowSchema, result.document), 202, { "Cache-Control": "no-store" })
+      : c.json(retainedWireValue(retainedWorkflowSchema, result.document), 200, { "Cache-Control": "no-store" });
   }),
 ];

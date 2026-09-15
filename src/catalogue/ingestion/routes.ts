@@ -1,4 +1,16 @@
 import {
+  retainedRunRoute,
+  retainedRunInspectionSchema,
+  retainedCandidateRoute,
+  retainedCandidateInspectionSchema,
+  retainedApprovalRoute,
+  retainedRejectionRoute,
+  retainedRetryRoute,
+  retainedCleanupRoute,
+  retainedRunSchema,
+  retainedAdministrationOperationSchema,
+} from "./retained-run-http-contract";
+import {
   administrationStatusRoute,
   resolveAdministrationTargetRoute,
   administrationTargetSchema,
@@ -21,14 +33,9 @@ import { httpRoute, retainedWireValue } from "../../http/openapi";
 import { advancePublicationExportsRoute, publicationExportPreparationSchema } from "./publication-http-contract";
 import { environmentNames } from "../../http/environment-target.mjs";
 import { validatedEnvironmentTarget } from "../../http/production-target.mjs";
-import {
-  administrationResultStatus,
-  assertOnlyFields,
-  readAdministrationBody,
-  requiredString,
-} from "../../http/administration";
+import { administrationResultStatus } from "../../http/administration";
 import { absoluteDocumentLinks } from "../../http/public-base";
-import { type RouteContext, route } from "../../http/routes";
+import { type Route, type RouteContext } from "../../http/routes";
 import {
   publicationBackupReservation,
   startOrObserveCatalogueBackupWorkflow,
@@ -71,7 +78,7 @@ export type PublicationBackupWaiter = (
 ) => Promise<void>;
 type Context = RouteContext<Environment> & { observedAt: string; publicationBackupWaiter?: PublicationBackupWaiter };
 
-export const ingestionRoutes = [
+export const ingestionRoutes: Route<Context>[] = [
   httpRoute<Context>()(stagingReleaseRoute, async (c) => {
     const { env, observedAt } = c.env;
     if ((env.KEEPR_ENVIRONMENT ?? "production") !== "production")
@@ -198,129 +205,118 @@ export const ingestionRoutes = [
       { "Cache-Control": "no-store" },
     );
   }),
-  route<Context>("GET", "/v1/ingestion-runs/:run/candidate", async ({ env, observedAt }, params) => {
-    return Response.json(await inspectCandidate(env.CATALOGUE_DB, env.CATALOGUE_EXPORTS, params.run!, observedAt));
-  }),
-  route<Context>(
-    "POST",
-    "/v1/ingestion-runs/:run/approval",
-    async ({ request, env, requestId, base, observedAt, publicationBackupWaiter }, params) => {
-      const body = await readAdministrationBody(request);
-      assertOnlyFields(body, ["candidate_digest", "expected_current_revision_id", "idempotency_key"]);
-      const result = await observeHistoricalRunApproval(
-        env.CATALOGUE_DB,
-        env.CATALOGUE_EXPORTS,
-        params.run!,
-        {
-          candidate_digest: requiredString(body, "candidate_digest"),
-          expected_current_revision_id: requiredString(body, "expected_current_revision_id"),
-          idempotency_key: requiredString(body, "idempotency_key"),
-        },
-        observedAt,
-      );
-      if (result.publication_outcome === "revision" && typeof result.resulting_revision_id === "string") {
-        const reservation = await publicationBackupReservation(result.resulting_revision_id);
-        const observe = async () =>
-          (
-            await startOrObserveCatalogueBackupWorkflow(
-              env.CATALOGUE_DB,
-              env.CATALOGUE_BACKUP_WORKFLOW,
-              {
-                expected_current_revision_id: result.resulting_revision_id as string,
-                idempotency_key: reservation.idempotencyKey,
-              },
-              observedAt,
-            )
-          ).document;
-        // Publication already committed its pending dispatch. An observation
-        // outage must not turn that successful approval into an HTTP failure.
-        try {
-          const dispatched = await observe();
-          await publicationBackupWaiter?.(dispatched, observe);
-        } catch {
-          console.error(
-            JSON.stringify({
-              contract: "card-keepr-operational-log@1",
-              event: "workflow.failed",
-              runtime: "ingestion",
-              failure_code: "catalogue_backup_dispatch_observation_failed",
-              request_id: requestId,
-              workflow_step: "catalogue_backup_dispatch",
-              catalogue_revision_id: result.resulting_revision_id,
-              retry_classification: "retryable",
-            }),
-          );
-        }
-      }
-      return Response.json(absoluteDocumentLinks(result, base), {
-        status: administrationResultStatus(result, 200),
-      });
-    },
+  httpRoute<Context>()(retainedCandidateRoute, async (c) =>
+    c.json(
+      retainedWireValue(
+        retainedCandidateInspectionSchema,
+        await inspectCandidate(
+          c.env.env.CATALOGUE_DB,
+          c.env.env.CATALOGUE_EXPORTS,
+          c.req.valid("param").run,
+          c.env.observedAt,
+        ),
+      ),
+      200,
+      { "Cache-Control": "no-store" },
+    ),
   ),
-  route<Context>("POST", "/v1/ingestion-runs/:run/rejection", async ({ request, env, base, observedAt }, params) => {
-    const body = await readAdministrationBody(request);
-    assertOnlyFields(body, ["candidate_digest", "idempotency_key"]);
+  httpRoute<Context>()(retainedApprovalRoute, async (c) => {
+    const { env, requestId, base, observedAt, publicationBackupWaiter } = c.env;
+    const result = await observeHistoricalRunApproval(
+      env.CATALOGUE_DB,
+      env.CATALOGUE_EXPORTS,
+      c.req.valid("param").run,
+      c.req.valid("json"),
+      observedAt,
+    );
+    if (result.publication_outcome === "revision" && typeof result.resulting_revision_id === "string") {
+      const reservation = await publicationBackupReservation(result.resulting_revision_id);
+      const observe = async () =>
+        (
+          await startOrObserveCatalogueBackupWorkflow(
+            env.CATALOGUE_DB,
+            env.CATALOGUE_BACKUP_WORKFLOW,
+            {
+              expected_current_revision_id: result.resulting_revision_id as string,
+              idempotency_key: reservation.idempotencyKey,
+            },
+            observedAt,
+          )
+        ).document;
+      // Publication already committed its pending dispatch. An observation
+      // outage must not turn that successful approval into an HTTP failure.
+      try {
+        const dispatched = await observe();
+        await publicationBackupWaiter?.(dispatched, observe);
+      } catch {
+        console.error(
+          JSON.stringify({
+            contract: "card-keepr-operational-log@1",
+            event: "workflow.failed",
+            runtime: "ingestion",
+            failure_code: "catalogue_backup_dispatch_observation_failed",
+            request_id: requestId,
+            workflow_step: "catalogue_backup_dispatch",
+            catalogue_revision_id: result.resulting_revision_id,
+            retry_classification: "retryable",
+          }),
+        );
+      }
+    }
+    const document = absoluteDocumentLinks(result, base);
+    return administrationResultStatus(result, 200) === 202
+      ? c.json(retainedWireValue(retainedAdministrationOperationSchema, document), 202, { "Cache-Control": "no-store" })
+      : c.json(retainedWireValue(retainedRunSchema, document), 200, { "Cache-Control": "no-store" });
+  }),
+  httpRoute<Context>()(retainedRejectionRoute, async (c) => {
+    const { env, base, observedAt } = c.env;
     const result = await rejectRun(
       env.CATALOGUE_DB,
       env.CATALOGUE_EXPORTS,
-      params.run!,
-      {
-        candidate_digest: requiredString(body, "candidate_digest"),
-        idempotency_key: requiredString(body, "idempotency_key"),
-      },
+      c.req.valid("param").run,
+      c.req.valid("json"),
       observedAt,
     );
-    return Response.json(absoluteDocumentLinks(result, base), {
-      status: administrationResultStatus(result, 200),
-    });
+    const document = absoluteDocumentLinks(result, base);
+    return administrationResultStatus(result, 200) === 202
+      ? c.json(retainedWireValue(retainedAdministrationOperationSchema, document), 202, { "Cache-Control": "no-store" })
+      : c.json(retainedWireValue(retainedRunSchema, document), 200, { "Cache-Control": "no-store" });
   }),
-  route<Context>(
-    "POST",
-    "/v1/ingestion-runs/:run/retry",
-    async ({ request, env, requestId, base, observedAt }, params) => {
-      const body = await readAdministrationBody(request);
-      assertOnlyFields(body, ["idempotency_key"]);
-      const result = await retryRun(
-        env.CATALOGUE_DB,
-        env.CATALOGUE_EXPORTS,
-        params.run!,
-        {
-          idempotency_key: requiredString(body, "idempotency_key"),
-          operational_request_id: requestId,
-        },
-        observedAt,
-      );
-      return Response.json(absoluteDocumentLinks(result, base), {
-        status: administrationResultStatus(result, 201),
-      });
-    },
-  ),
-  route<Context>(
-    "POST",
-    "/v1/ingestion-runs/:run/publication-cleanup",
-    async ({ request, env, base, observedAt }, params) => {
-      const body = await readAdministrationBody(request);
-      assertOnlyFields(body, ["idempotency_key"]);
-      const result = await retryPublicationCleanup(
-        env.CATALOGUE_DB,
-        env.CATALOGUE_EXPORTS,
-        params.run!,
-        {
-          idempotency_key: requiredString(body, "idempotency_key"),
-        },
-        observedAt,
-      );
-      return Response.json(absoluteDocumentLinks(result, base), {
-        status: administrationResultStatus(result, 200),
-      });
-    },
-  ),
-  route<Context>("GET", "/v1/ingestion-runs/:run", async ({ env, observedAt }, params) => {
-    const runId = params.run!;
-    if (await hasEvidencePlan(env.CATALOGUE_DB, runId)) {
-      return Response.json(await showEvidenceRun(env.CATALOGUE_DB, runId, evidenceInspectionOptions(env)));
-    }
-    return Response.json(await showRun(env.CATALOGUE_DB, env.CATALOGUE_EXPORTS, runId, observedAt));
+  httpRoute<Context>()(retainedRetryRoute, async (c) => {
+    const { env, base, observedAt, requestId } = c.env;
+    const result = await retryRun(
+      env.CATALOGUE_DB,
+      env.CATALOGUE_EXPORTS,
+      c.req.valid("param").run,
+      { ...c.req.valid("json"), operational_request_id: requestId },
+      observedAt,
+    );
+    const document = absoluteDocumentLinks(result, base);
+    return administrationResultStatus(result, 201) === 202
+      ? c.json(retainedWireValue(retainedAdministrationOperationSchema, document), 202, { "Cache-Control": "no-store" })
+      : c.json(retainedWireValue(retainedRunSchema, document), 201, { "Cache-Control": "no-store" });
+  }),
+  httpRoute<Context>()(retainedCleanupRoute, async (c) => {
+    const { env, base, observedAt } = c.env;
+    const result = await retryPublicationCleanup(
+      env.CATALOGUE_DB,
+      env.CATALOGUE_EXPORTS,
+      c.req.valid("param").run,
+      c.req.valid("json"),
+      observedAt,
+    );
+    const document = absoluteDocumentLinks(result, base);
+    return administrationResultStatus(result, 200) === 202
+      ? c.json(retainedWireValue(retainedAdministrationOperationSchema, document), 202, { "Cache-Control": "no-store" })
+      : c.json(retainedWireValue(retainedRunSchema, document), 200, { "Cache-Control": "no-store" });
+  }),
+  httpRoute<Context>()(retainedRunRoute, async (c) => {
+    const { env, observedAt } = c.env;
+    const run = c.req.valid("param").run;
+    const result = (await hasEvidencePlan(env.CATALOGUE_DB, run))
+      ? await showEvidenceRun(env.CATALOGUE_DB, run, evidenceInspectionOptions(env))
+      : await showRun(env.CATALOGUE_DB, env.CATALOGUE_EXPORTS, run, observedAt);
+    return c.json(retainedWireValue(retainedRunInspectionSchema, result), 200, { "Cache-Control": "no-store" });
   }),
 ];
 

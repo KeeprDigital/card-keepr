@@ -179,6 +179,7 @@ const commandRoutes = {
       `reconciliation-${action}`,
       {
         path: `/v1/ingestion-runs/{run-id}/reconciliation/${action}`,
+        integers: ["generation"],
         fields: { generation: "generation", idempotency_key: "idempotency-key" },
         production: `Reconciliation ${action}`,
       },

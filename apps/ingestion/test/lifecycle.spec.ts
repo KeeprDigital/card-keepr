@@ -32,6 +32,7 @@ import {
 import * as ingestionQueries from "./query-helpers/ingestion";
 import { disableExportTransitionTriggers } from "./query-helpers/maintenance-guards";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import { seedRunFixtureStatement } from "./query-helpers/run-events";
 import { collect } from "./reconciliation-helpers";
 import { installWorkflowIsolation } from "./workflow-isolation";
 
@@ -352,6 +353,11 @@ test("an orphaned retry claim returns stable progress before its lease and resum
   });
   const pendingReplay = await startRun(key);
   expect(pendingReplay.document).toEqual(pending.document);
+  const sourceId = JSON.parse(requestJson).source_run_id as string;
+  const pendingHttp = await administrationRequest(`/v1/ingestion-runs/${sourceId}/retry`, { idempotency_key: key });
+  expect(pendingHttp.response.status).toBe(202);
+  expect(pendingHttp.document).toMatchObject({ claimed_at: claimedAt, operation: "retry_ingestion_run" });
+  expect(pendingHttp.document).not.toHaveProperty("run_id");
   const changed = await administrationRequest("/v1/ingestion-runs/another-retained-source/retry", {
     idempotency_key: key,
   });
@@ -479,6 +485,10 @@ test("rejection is terminal and retry creates a fresh linked run", async () => {
   const runId = requiredDocumentString(started.document, "id");
   const digest = requiredDocumentString(started.document, "candidate_digest");
   const expectedRevision = requiredDocumentString(started.document, "expected_current_revision_id");
+  const refusedBody = { candidate_digest: "0".repeat(64), idempotency_key: "reject-wrong-digest" };
+  const refused = await administrationRequest(`/v1/ingestion-runs/${runId}/rejection`, refusedBody);
+  expect(refused.response.status).toBe(409);
+  expect(refused.document.code).toBe("candidate_digest_mismatch");
   const rejected = await administrationRequest(`/v1/ingestion-runs/${runId}/rejection`, {
     candidate_digest: digest,
     idempotency_key: "reject-exact",
@@ -555,6 +565,27 @@ test("rejection is terminal and retry creates a fresh linked run", async () => {
     idempotency_key: "retry-rejected",
   });
   expect(replay.document).toEqual(retry.document);
+  const childId = requiredDocumentString(retry.document, "id");
+  const childRejected = await administrationRequest(`/v1/ingestion-runs/${childId}/rejection`, {
+    candidate_digest: retry.document.candidate_digest,
+    idempotency_key: "reject-retry-child",
+  });
+  expect(childRejected.document.state).toBe("rejected");
+  testObservedAt = new Date(Date.parse(requiredDocumentString(retry.document, "approval_deadline")) + 1).toISOString();
+  const originalChildReceipt = await administrationRequest(`/v1/ingestion-runs/${runId}/retry`, {
+    idempotency_key: "retry-rejected",
+  });
+  expect(originalChildReceipt.response.status).toBe(201);
+  expect(originalChildReceipt.document).toEqual(retry.document);
+  expect((await showRun(childId)).document.state).toBe("rejected");
+  const originalRejection = await administrationRequest(`/v1/ingestion-runs/${runId}/rejection`, {
+    candidate_digest: digest,
+    idempotency_key: "reject-exact",
+  });
+  expect(originalRejection.document).toEqual(rejected.document);
+  const originalProblem = await administrationRequest(`/v1/ingestion-runs/${runId}/rejection`, refusedBody);
+  expect(originalProblem.response.status).toBe(409);
+  expect(originalProblem.document).toMatchObject({ code: refused.document.code, detail: refused.document.detail });
 });
 
 test("a candidate expires at its exact seven-day boundary and releases the run lock", async () => {
@@ -918,6 +949,44 @@ test.each([true, false])(
       const changedReplay = await approve(changedRun!, changedDigest!, changedPredecessor!, approvalKey);
       expect(changedReplay.response.status).toBe(409);
       expect(changedReplay.document).toMatchObject({ code: "idempotency_key_reused" });
+    }
+    if (!retainedClaim) {
+      // A later unchanged historical run can predate modern outcome storage.
+      // Seed its accepted event path against the catalogue just published above.
+      const legacyId = "run_historical_no_outcome";
+      const legacyKey = "approval_historical_no_outcome";
+      const legacyApproval = { ...approval, expected_current_revision_id: revisionId };
+      await seedRunFixtureStatement(testEnv.CATALOGUE_DB, {
+        id: legacyId,
+        state: "published",
+        started_at: reconcileAfter,
+        terminal_at: reconcileAfter,
+        expected_current_revision_id: revisionId,
+        linked_run_id: runId,
+        candidate_json: canonicalJson(candidate.candidate),
+        candidate_digest: digest,
+        candidate_catalogue_digest: digest,
+        candidate_created_at: reconcileAfter,
+        approval_deadline: "2026-08-05T01:05:00.000Z",
+        approval_json: canonicalJson({ ...legacyApproval, approved_at: reconcileAfter }),
+        approval_history_json: canonicalJson([{ ...legacyApproval, approved_at: reconcileAfter }]),
+        approval_idempotency_key: legacyKey,
+        publication_outcome: "no_change",
+        resulting_revision_id: revisionId,
+        freshness_checked_at: reconcileAfter,
+      }).run();
+      const legacy = await showRun(legacyId);
+      const legacyReplay = await approve(legacyId, digest, revisionId, legacyKey);
+      expect(legacyReplay.response.status).toBe(200);
+      expect(legacyReplay.document).toEqual(legacy.document);
+      expect((await approve(legacyId, digest, revisionId, legacyKey)).document).toEqual(legacy.document);
+      expect(
+        await ingestionQueries
+          .countAdministrationIdempotencyClaims(testEnv.CATALOGUE_DB)
+          .bind(legacyKey, legacyKey)
+          .first(),
+      ).toMatchObject({ claims: 0, outcomes: 0 });
+      expect((await approve(legacyId, "0".repeat(64), revisionId, legacyKey)).response.status).toBe(409);
     }
   },
 );
@@ -1986,6 +2055,14 @@ async function administrationRequest(
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
   );
+  if (/^\/v1\/ingestion-runs\/[^/]+(?:\/(?:candidate|approval|rejection|retry|publication-cleanup))?$/.test(pathname)) {
+    await assertHttpResponse(
+      httpDocument,
+      pathname.replace(/(\/v1\/ingestion-runs\/)[^/]+/, "$1{run}"),
+      body === undefined ? "get" : "post",
+      response,
+    );
+  }
   if (pathname.startsWith("/v1/catalogue-export-deletion")) {
     const registered = pathname.replace(/(\/v1\/catalogue-export-deletions\/)[^/]+/, "$1{deletion}");
     await assertHttpResponse(httpDocument, registered, body === undefined ? "get" : "post", response);
@@ -2014,6 +2091,14 @@ async function administrationRequestWithEnv(
     }),
     requestEnv,
   );
+  if (/^\/v1\/ingestion-runs\/[^/]+(?:\/(?:candidate|approval|rejection|retry|publication-cleanup))?$/.test(pathname)) {
+    await assertHttpResponse(
+      httpDocument,
+      pathname.replace(/(\/v1\/ingestion-runs\/)[^/]+/, "$1{run}"),
+      body === undefined ? "get" : "post",
+      response,
+    );
+  }
   if (pathname.startsWith("/v1/catalogue-export-deletion")) {
     const registered = pathname.replace(/(\/v1\/catalogue-export-deletions\/)[^/]+/, "$1{deletion}");
     await assertHttpResponse(httpDocument, registered, body === undefined ? "get" : "post", response);

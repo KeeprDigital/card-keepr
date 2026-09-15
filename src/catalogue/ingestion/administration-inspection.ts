@@ -1,3 +1,4 @@
+import { candidateGamesForInspection } from "./candidate-codec";
 import { outstandingBackupDispatches } from "../backup-recovery";
 import { curatedRevisionInspectionForRun } from "../curated";
 import { cardSearchFtsQuery, cardSearchText, compositionSmokeTargets, sourceFreshnessFromStorage } from "../read";
@@ -242,6 +243,7 @@ export async function inspectCandidate(
       "The Ingestion Run does not have an inspectable reconciliation candidate.",
     );
   }
+  candidateGamesForInspection(row);
   const candidate = JSON.parse(
     await retainedPayload(database, row.id, "candidate", row.candidate_json),
   ) as CatalogueCandidate;

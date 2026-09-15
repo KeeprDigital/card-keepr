@@ -5,9 +5,10 @@ The catalogue-read interface is fully registered through Hono under
 [#315](https://github.com/KeeprDigital/card-keepr/issues/315) pilot and
 [#312](https://github.com/KeeprDigital/card-keepr/issues/312) direction. The generated
 [read OpenAPI](read-openapi.json) covers all consumer routes, API health/liveness
-and CORS preflight. The [administration OpenAPI](admin-openapi.json) remains
-partial while its families migrate; `x-unmigrated-operations` inventories the
-remaining operations. Documentation hosting belongs to the later HTTP tickets.
+and CORS preflight. The [administration OpenAPI](admin-openapi.json) now covers all
+inventoried administration families, with no `x-unmigrated-operations` remaining.
+Documentation hosting and final cutover belong to
+[#325](https://github.com/KeeprDigital/card-keepr/issues/325).
 
 ## Published discovery and reads
 
@@ -218,6 +219,23 @@ new dispatch from exact replay, and current recovery documents from their
 immutable decision bindings. The [operator procedure](../docs/runbooks/backup-recovery.md)
 retains actual restore, verification, replacement binding and explicit owner
 acceptance as separate steps.
+
+## Retained run administration
+
+[#324](https://github.com/KeeprDigital/card-keepr/issues/324) registers all 16
+retained run operations under explicit historical tags. The ingestion and
+reconciliation modules own their schemas; the ordinary per-game preparation and
+whole-candidate publication interfaces remain separate. The
+[historical administration protocol](ADMINISTRATION.md#historical-run-operations)
+defines retired approval, immutable receipt replay and current Workflow observations.
+
+Inspection reuses the evidence-backed run schema or the historical `publicRun`
+shape as appropriate. Historical candidate inspection verifies its retained digest
+and header without imposing current Card and Printing definitions. Reconciliation
+inputs and partitions share named record schemas with native preparation; status
+preserves SQL flags, serialized definition pins and phase-owned JSON cursor keys.
+The CLI sends numeric reconciliation generations, matching the numeric intent
+already retained by historical actions.
 
 ## Migrating a family
 
