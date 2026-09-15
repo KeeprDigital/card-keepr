@@ -1,3 +1,4 @@
+import { phaseAsync, phaseSync } from "./owner-phase-diagnostics.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { open, readdir } from "node:fs/promises";
@@ -58,8 +59,10 @@ export function nativeRecoveryCloudflare({ databaseDirectory, directory, sourceD
           faults.exportFailures--;
           return Response.json({ success: false, errors: [{ message: "Injected SQL export failure" }] });
         }
-        exported = await nativeSqliteExport(await sourceFile(), join(directory, "native-export.sql"));
-        exported = nativeRecoveryExportSql(exported);
+        exported = await phaseAsync("provider-dump", "sqlite-export", async () =>
+          nativeSqliteExport(await sourceFile(), join(directory, "native-export.sql")),
+        );
+        exported = phaseSync("provider-normalization", "exported-sql", () => nativeRecoveryExportSql(exported));
         snapshots.push(exported);
         await hooks.afterExport?.();
         return success({
@@ -77,7 +80,7 @@ export function nativeRecoveryCloudflare({ databaseDirectory, directory, sourceD
         // retained row adds filesystem sync work unrelated to provider verification.
         target.exec("PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE;");
         try {
-          target.exec(uploaded);
+          phaseSync("provider-import", "bulk-upload", () => target.exec(uploaded));
           target.exec("COMMIT;");
         } catch (error) {
           target.exec("ROLLBACK;");

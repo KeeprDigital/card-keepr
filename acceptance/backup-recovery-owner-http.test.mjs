@@ -1,3 +1,4 @@
+import { phaseAsync, ownerStage, ownerComplete, childPhaseEnvironment } from "./helpers/owner-phase-diagnostics.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -11,11 +12,11 @@ import { readWorkerConfig } from "../cli/lib/config.mjs";
 import * as validators from "../test/support/http-response-validators.mjs";
 import { reconciliationSourceDocument } from "../test/support/fake-publisher/reconciliation-documents.ts";
 import {
-  applyMigrations,
+  applyMigrations as originalApplyMigrations,
   persistedDatabaseDirectory,
-  runCli,
-  startWorker,
-  stopWorker,
+  runCli as originalRunCli,
+  startWorker as originalStartWorker,
+  stopWorker as originalStopWorker,
   waitForAdministrationDocument,
   waitForHealth,
 } from "./helpers/acceptance-runtime.mjs";
@@ -23,6 +24,14 @@ import { nativeRecoveryCloudflare } from "./helpers/native-recovery-cloudflare.m
 import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs";
 import { isNativeCheckpointRequest } from "./helpers/native-checkpoint-hosts.mjs";
 import { withNativeRequestPacing } from "./helpers/native-request-pacing.mjs";
+
+const applyMigrations = (...args) => phaseAsync("migration-setup", "catalogue", () => originalApplyMigrations(...args));
+const startWorker = (...args) => phaseAsync("bundle-and-boot", "ingestion", () => originalStartWorker(...args));
+const stopWorker = (...args) => phaseAsync("worker-stop", "ingestion", () => originalStopWorker(...args));
+const runCli = (args, environment, ...rest) =>
+  phaseAsync("owner-cli", "command", () =>
+    originalRunCli(args, { ...environment, ...childPhaseEnvironment() }, ...rest),
+  );
 
 const specification = JSON.parse(await readFile(new URL("../contracts/admin-openapi.json", import.meta.url), "utf8"));
 const ajv = new Ajv2020({ strict: false, allErrors: true, inlineRefs: false });
@@ -37,6 +46,7 @@ function check(path, method, status, document, media = "application/json") {
 // Small synthetic publisher input; real owner CLI/HTTP, D1/R2, Workflows,
 // production provider requests and independent SQL export/import databases.
 test("owner backs up, retries, restores, verifies and explicitly accepts with immutable and current HTTP replay", async (t) => {
+  ownerStage("setup");
   const directory = await mkdtemp(join(tmpdir(), "keepr-backup-owner-"));
   const statePath = join(directory, "state");
   const config = await readWorkerConfig("apps/ingestion/wrangler.jsonc");
@@ -153,7 +163,9 @@ test("owner backs up, retries, restores, verifies and explicitly accepts with im
     assert.equal(response.status, 200, await response.clone().text());
     return response.json();
   };
+  ownerStage("first-publication");
   const { published } = await publish("first");
+  ownerStage("initial-wire-validation");
   const revision = published.resulting_revision_id;
   const initialBackups = await call(`/v1/catalogue-revisions/${revision}/backups`, {
     schemaPath: "/v1/catalogue-revisions/{revision}/backups",
@@ -163,6 +175,7 @@ test("owner backs up, retries, restores, verifies and explicitly accepts with im
   const failedKey = "owner failed backup / " + "x".repeat(220);
   const original = { expected_current_revision_id: revision, idempotency_key: failedKey };
   await call("/v1/backups", { body: { ...original, failed_attempt_id: "missing-pair" }, status: 422 });
+  ownerStage("failed-backup");
   cloudflare.faults.exportFailures = 100;
   const failedArgs = ["backup", "create", "--expected-current-revision", revision, "--idempotency-key", failedKey];
   await call("/v1/backups", { body: original, status: 202 });
@@ -170,6 +183,7 @@ test("owner backs up, retries, restores, verifies and explicitly accepts with im
   assert.equal(failed.state, "failed");
   check("/v1/backups/{attempt}", "get", 200, failed);
   assert.deepEqual(await cli(["backup", "status", "--attempt-id", failedKey]), failed);
+  ownerStage("retry-backup");
   cloudflare.faults.exportFailures = 0;
   const retry = {
     expected_current_revision_id: revision,
@@ -240,6 +254,7 @@ test("owner backs up, retries, restores, verifies and explicitly accepts with im
     expected_current_revision_id: revision,
     idempotency_key: "owner-recovery-begin",
   };
+  ownerStage("recovery-begin");
   const recovery = await call("/v1/recoveries", { body: begin, status: 201 });
   assert.equal(recovery.state, "validating");
   assert.equal(recovery.verification, null);
@@ -274,6 +289,7 @@ test("owner backs up, retries, restores, verifies and explicitly accepts with im
     "--idempotency-key",
     "owner-recovery-verify",
   ];
+  ownerStage("recovery-verify");
   const verified = await mutate(verifyArgs);
   check("/v1/recoveries/{recovery}/verification", "post", 200, verified);
   assert.equal(verified.state, "awaiting_acceptance");
@@ -292,6 +308,7 @@ test("owner backs up, retries, restores, verifies and explicitly accepts with im
     (await call(acceptancePath, { body: acceptance, status: 409, schemaPath: acceptanceSchemaPath })).code,
     "recovery_database_not_bound",
   );
+  ownerStage("replacement-binding");
   const restoredConfig = {
     ...config,
     d1_databases: [{ ...config.d1_databases[0], database_id: recovery.restored_database_id }],
@@ -340,13 +357,16 @@ test("owner backs up, retries, restores, verifies and explicitly accepts with im
     "--idempotency-key",
     acceptance.idempotency_key,
   ];
+  ownerStage("recovery-accept");
   const accepted = await mutate(acceptArgs, [0], true);
   check(acceptanceSchemaPath, "post", 200, accepted);
   assert.equal(accepted.state, "accepted");
   assert.ok(accepted.restored_work.some((row) => row.classification === "published_retained"));
   assert.deepEqual(await cli(["recovery", "inspect", "--recovery-id", begin.recovery_id]), accepted);
+  ownerStage("later-publication");
   const later = await publish("later", revision);
   assert.notEqual(later.published.resulting_revision_id, revision);
+  ownerStage("acknowledged-replay");
   // The original decisions remain addressable after a later real publication.
   assert.deepEqual(await mutate(acceptArgs, [0], true), accepted);
   assert.deepEqual(await mutate(retryArgs), verifiedBackup);
@@ -372,8 +392,10 @@ test("owner backs up, retries, restores, verifies and explicitly accepts with im
   ];
   assert.deepEqual(await mutate(beginArgs), accepted);
   assert.deepEqual(await mutate(verifyArgs), accepted);
+  ownerStage("final-status");
   const finalStatus = await cli(["status"]);
   assert.equal(finalStatus.safe_state.current_revision_id, later.published.resulting_revision_id);
   assert.equal(finalStatus.safe_state.recovery_health, "healthy");
   assert.equal(finalStatus.safe_state.active_recovery_id, null);
+  ownerComplete();
 });

@@ -1,3 +1,4 @@
+import { phaseAsync, phaseSync } from "./owner-phase-diagnostics.mjs";
 import { readWorkerConfig } from "../../cli/lib/config.mjs";
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
@@ -302,7 +303,8 @@ async function withDatabase(statePath, config, callback) {
 
 export function executeInprocessSql(statePath, file, config) {
   return withDatabase(statePath, config, async (database) => {
-    const sql = unstable_splitSqlQuery(await readFile(file, "utf8"));
+    const input = await readFile(file, "utf8");
+    const sql = phaseSync("sql-file-split", "fixture-file", () => unstable_splitSqlQuery(input));
     await database.batch(sql.map((statement) => database.prepare(statement)));
   });
 }
@@ -315,11 +317,14 @@ export function applyInprocessMigrations(statePath, config, testMigrations = [])
     const applied = new Set((await appliedMigrations(database).all()).results.map((row) => row.name));
     for (const name of (await readdir(directory)).filter((entry) => entry.endsWith(".sql")).sort()) {
       if (applied.has(name)) continue;
-      const statements = unstable_splitSqlQuery(await readFile(join(directory, name), "utf8"));
-      await database.batch([
-        ...statements.map((statement) => database.prepare(statement)),
-        recordMigration(database, name),
-      ]);
+      const input = await readFile(join(directory, name), "utf8");
+      const statements = phaseSync("migration-split", name, () => unstable_splitSqlQuery(input));
+      await phaseAsync("migration-apply", name, () =>
+        database.batch([
+          ...statements.map((statement) => database.prepare(statement)),
+          recordMigration(database, name),
+        ]),
+      );
     }
     for (const migration of testMigrations) {
       if (applied.has(migration.name)) continue;
