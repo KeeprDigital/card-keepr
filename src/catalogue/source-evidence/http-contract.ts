@@ -1,4 +1,7 @@
 import {
+  acquisitionBudgetSchema,
+  acquisitionExtensionInputSchema,
+  acquisitionExtensionSchema,
   coverageSchema,
   evidenceInputSchema,
   evidenceAcceptanceSchema,
@@ -226,7 +229,13 @@ export const retryEvidenceRoute = createRoute({
   operationId: "retryEvidenceCollection",
   security: secured,
   middleware: [privateResponse, boundedJson],
-  request: { params: runParams, body: { required: true, content: { "application/json": { schema: intentSchema } } } },
+  request: {
+    params: runParams,
+    body: {
+      required: true,
+      content: { "application/json": { schema: intentSchema.extend({ acquisition_budget: acquisitionBudgetSchema }) } },
+    },
+  },
   responses: {
     201: {
       description:
@@ -522,6 +531,26 @@ export const observationContentRoute = createRoute({
       description: "Exact retained JSON streamed from evidence storage, including historical adapter-owned fields.",
       headers: retainedHeaders,
       content: { "application/json": { schema: observationContentSchema } },
+    },
+    ...problemResponses,
+  },
+});
+
+export const extendAcquisitionRoute = createRoute({
+  method: "post",
+  path: "/v1/ingestion-runs/{run}/acquisition-budget/extension",
+  operationId: "extendSourceAcquisitionBudget",
+  security: secured,
+  middleware: [privateResponse, boundedJson],
+  request: {
+    params: runParams,
+    body: { required: true, content: { "application/json": { schema: acquisitionExtensionInputSchema } } },
+  },
+  responses: {
+    200: {
+      description: "Checked acquisition budget extension; collection stays paused.",
+      headers: jsonHeaders,
+      content: { "application/json": { schema: acquisitionExtensionSchema } },
     },
     ...problemResponses,
   },

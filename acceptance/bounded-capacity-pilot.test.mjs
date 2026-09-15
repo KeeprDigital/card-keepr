@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./helpers/acquisition-budget.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -167,6 +168,8 @@ test(
       const run = await cli([
         "source",
         "collect",
+        "--budget-file",
+        fixtureAcquisitionBudgetPath,
         "--plan-file",
         planFile,
         "--idempotency-key",

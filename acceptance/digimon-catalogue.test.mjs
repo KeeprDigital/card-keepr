@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./helpers/acquisition-budget.mjs";
 import { readWorkerConfig } from "../cli/lib/config.mjs";
 import {
   inspectNativeCollection,
@@ -79,7 +80,17 @@ test("native publication: the owner publishes a complete Digimon catalogue consu
   };
 
   const maliciousCollected = await runCli(
-    ["source", "collect", "--plan-file", planPath, "--idempotency-key", "digimon-malicious-root-collect", "--json"],
+    [
+      "source",
+      "collect",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
+      "--plan-file",
+      planPath,
+      "--idempotency-key",
+      "digimon-malicious-root-collect",
+      "--json",
+    ],
     cliEnvironment,
   );
   assert.equal(maliciousCollected.code, 0, maliciousCollected.stderr);
@@ -98,7 +109,17 @@ test("native publication: the owner publishes a complete Digimon catalogue consu
   );
   await writeFile(planPath, JSON.stringify(digimonPlan("complete-no-errata")), { mode: 0o600 });
   const noErrataCollected = await runCli(
-    ["source", "collect", "--plan-file", planPath, "--idempotency-key", "digimon-no-errata-collect", "--json"],
+    [
+      "source",
+      "collect",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
+      "--plan-file",
+      planPath,
+      "--idempotency-key",
+      "digimon-no-errata-collect",
+      "--json",
+    ],
     cliEnvironment,
   );
   assert.equal(noErrataCollected.code, 0, noErrataCollected.stderr);
@@ -128,7 +149,17 @@ test("native publication: the owner publishes a complete Digimon catalogue consu
   });
 
   const collected = await runCli(
-    ["source", "collect", "--plan-file", planPath, "--idempotency-key", "digimon-complete-collect", "--json"],
+    [
+      "source",
+      "collect",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
+      "--plan-file",
+      planPath,
+      "--idempotency-key",
+      "digimon-complete-collect",
+      "--json",
+    ],
     cliEnvironment,
   );
   assert.equal(collected.code, 0, collected.stderr);

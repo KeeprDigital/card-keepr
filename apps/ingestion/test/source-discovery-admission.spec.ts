@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudget } from "../../../test/support/fixture-evidence-plan";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import { catalogueStore } from "../../../src/catalogue/shared";
@@ -23,6 +24,7 @@ installRuntimeSuite();
 test("an immutable collision in a later discovery chunk rolls back every earlier sibling", async () => {
   const db = catalogueStore(env.CATALOGUE_DB);
   const started = await startEvidenceRun(db, {
+    acquisition_budget: fixtureAcquisitionBudget,
     supported_game: "magic",
     source_lineage: "scryfall-magic-en",
     adapter_version: "scryfall-magic-en@1",

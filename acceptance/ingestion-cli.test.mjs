@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath, fixtureAcquisitionBudget } from "./helpers/acquisition-budget.mjs";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createServer } from "./helpers/cli-http.mjs";
@@ -1395,7 +1396,16 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
   );
   assert.equal(cleaned.code, 0, cleaned.stderr);
   const sourceRetried = await runCli(
-    ["source", "retry", "--run-id", "run_cli_demo", "--idempotency-key", "source-retry-cli-demo"],
+    [
+      "source",
+      "retry",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
+      "--run-id",
+      "run_cli_demo",
+      "--idempotency-key",
+      "source-retry-cli-demo",
+    ],
     environment,
   );
   assert.equal(sourceRetried.code, 0, sourceRetried.stderr);
@@ -1461,7 +1471,7 @@ test("CLI lifecycle commands expose safe diagnostics and exact mutation requests
     {
       method: "POST",
       path: "/v1/ingestion-runs/run_cli_demo/collection/retry",
-      body: { idempotency_key: "source-retry-cli-demo" },
+      body: { idempotency_key: "source-retry-cli-demo", acquisition_budget: fixtureAcquisitionBudget },
     },
     {
       method: "POST",

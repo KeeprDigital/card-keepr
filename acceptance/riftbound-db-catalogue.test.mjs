@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./helpers/acquisition-budget.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -108,7 +109,16 @@ test("Riftbound DB retains unresolved real promos and links the Riot overlap thr
   const collect = async (plan, idempotency) => {
     const path = join(directory, `${idempotency}.json`);
     await writeFile(path, JSON.stringify(plan));
-    const run = await cli(["source", "collect", "--plan-file", path, "--idempotency-key", idempotency]);
+    const run = await cli([
+      "source",
+      "collect",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
+      "--plan-file",
+      path,
+      "--idempotency-key",
+      idempotency,
+    ]);
     await cli(["source", "resume", "--run-id", run.id]);
     const collection = await waitForAdministrationDocument(
       `/v1/ingestion-runs/${run.id}/game-candidates`,

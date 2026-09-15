@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./helpers/acquisition-budget.mjs";
 import { readWorkerConfig } from "../cli/lib/config.mjs";
 import {
   inspectNativeCollection,
@@ -116,7 +117,17 @@ test("native publication: the owner publishes a complete Gundam catalogue from b
   };
 
   const collected = await runCli(
-    ["source", "collect", "--plan-file", planPath, "--idempotency-key", "gundam-complete-collect", "--json"],
+    [
+      "source",
+      "collect",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
+      "--plan-file",
+      planPath,
+      "--idempotency-key",
+      "gundam-complete-collect",
+      "--json",
+    ],
     cliEnvironment,
   );
   assert.equal(collected.code, 0, `${collected.stdout}\n${collected.stderr}\n${ingestion.getOutput()}`);

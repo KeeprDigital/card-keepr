@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./helpers/acquisition-budget.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, writeFile, readdir, rm } from "node:fs/promises";
@@ -84,7 +85,16 @@ test("the real Pokémon pilot preserves treatments and official correction throu
   };
   const planPath = join(directory, "cards-products.json");
   await writeFile(planPath, await readFile("docs/examples/pokemon-card-product-plan.json"));
-  const run = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", "pokemon-pilot-capture"]);
+  const run = await cli([
+    "source",
+    "collect",
+    "--budget-file",
+    fixtureAcquisitionBudgetPath,
+    "--plan-file",
+    planPath,
+    "--idempotency-key",
+    "pokemon-pilot-capture",
+  ]);
   await cli(["source", "resume", "--run-id", run.id]);
   const collection = await waitForAdministrationDocument(
     `/v1/ingestion-runs/${run.id}/game-candidates`,
@@ -217,6 +227,8 @@ test("the real Pokémon pilot preserves treatments and official correction throu
   const correctionRun = await cli([
     "source",
     "collect",
+    "--budget-file",
+    fixtureAcquisitionBudgetPath,
     "--plan-file",
     correctionPath,
     "--idempotency-key",

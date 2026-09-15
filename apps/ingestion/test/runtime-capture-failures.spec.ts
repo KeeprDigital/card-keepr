@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudget } from "../../../test/support/fixture-evidence-plan";
 import { syntheticAdapterRegistrations } from "../../../test/support/source-adapters";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
@@ -673,11 +674,17 @@ test("initial Evidence Plans admit 500 bounded requests in one native transactio
       })),
     })),
   };
-  const run = await startEvidenceRun(catalogueStore(env.CATALOGUE_DB), request);
+  const run = await startEvidenceRun(catalogueStore(env.CATALOGUE_DB), {
+    ...request,
+    acquisition_budget: fixtureAcquisitionBudget,
+  });
   expect(typeof run.id).toBe("string");
   await expect(
     sourceEvidenceQueries.countSourceRequestsCount(env.CATALOGUE_DB).bind(run.id).first(),
   ).resolves.toMatchObject({ count: 500 });
-  const replay = await startEvidenceRun(catalogueStore(env.CATALOGUE_DB), request);
+  const replay = await startEvidenceRun(catalogueStore(env.CATALOGUE_DB), {
+    ...request,
+    acquisition_budget: fixtureAcquisitionBudget,
+  });
   expect(replay.id).toBe(run.id);
 });

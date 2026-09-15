@@ -314,6 +314,11 @@ async function collectResumeAndShow(
   directory,
 ) {
   const planFile = join(directory, `${idempotencyKey}.json`);
+  const budgetFile = join(directory, `${idempotencyKey}-budget.json`);
+  await writeFile(
+    budgetFile,
+    JSON.stringify({ max_dispatches: 1000, max_source_bytes: 2 ** 30, dispatch_deadline: "2099-01-01T00:00:00.000Z" }),
+  );
   const requests = exactOnePieceRequests();
   if (transportOutcome !== null) {
     requests[0].headers = {
@@ -334,7 +339,17 @@ async function collectResumeAndShow(
     }),
   );
   const collected = await runCli(
-    ["source", "collect", "--plan-file", planFile, "--idempotency-key", idempotencyKey, "--json"],
+    [
+      "source",
+      "collect",
+      "--budget-file",
+      budgetFile,
+      "--plan-file",
+      planFile,
+      "--idempotency-key",
+      idempotencyKey,
+      "--json",
+    ],
     environment,
   );
   assert.equal(collected.code, 0, `${collected.stdout}\n${collected.stderr}\n${ingestion.getOutput()}`);

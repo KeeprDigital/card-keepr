@@ -311,9 +311,19 @@ const commandRoutes = {
   },
   retryEvidenceCollection: {
     path: "/v1/ingestion-runs/{run-id}/collection/retry",
+    fields: { idempotency_key: "idempotency-key", acquisition_budget: "budget-file" },
+    jsonFiles: ["acquisition_budget"],
+  },
+  extendSourceAcquisitionBudget: {
+    path: "/v1/ingestion-runs/{run-id}/acquisition-budget/extension",
     fields: {
       idempotency_key: "idempotency-key",
+      expected_generation: "expected-generation",
+      expected_budget: "expected-budget-file",
+      acquisition_budget: "budget-file",
     },
+    integers: ["expected_generation"],
+    jsonFiles: ["expected_budget", "acquisition_budget"],
   },
   reparseSourceSnapshot: {
     path: "/v1/source-snapshots/{snapshot-id}/observations",
@@ -359,6 +369,13 @@ async function routeCommand(name, arguments_, environment, json) {
           ...(definition.bodyEnvironment ? { environment: environment.KEEPR_TARGET ?? "production" } : {}),
           ...mapped(definition.fields),
         };
+  for (const field of definition.jsonFiles ?? []) {
+    try {
+      body[field] = JSON.parse(await readFile(body[field], "utf8"));
+    } catch {
+      return usageFailure(json);
+    }
+  }
   for (const field of definition.integers ?? []) {
     if (body?.[field] === undefined) continue;
     if (!/^(0|[1-9]\d*)$/.test(body[field]) || !Number.isSafeInteger(Number(body[field])))
@@ -526,6 +543,10 @@ export async function main(arguments_, environment) {
 
   if (arguments_[0] === "catalogue-export" && arguments_[1] === "deletion") {
     return catalogueExportDeletion(arguments_[2], arguments_.slice(3), environment, json);
+  }
+
+  if (arguments_[0] === "source" && arguments_[1] === "budget" && arguments_[2] === "extend") {
+    return routeCommand("extendSourceAcquisitionBudget", arguments_.slice(3), environment, json);
   }
 
   if (arguments_[0] === "source" && arguments_[1] === "capacity" && arguments_[2] === "extend") {
@@ -891,10 +912,17 @@ async function collectSource(arguments_, environment, json) {
     "--request-id",
     "--url",
     "--plan-file",
+    "--budget-file",
     "--participation",
     "--subset",
     "--idempotency-key",
   ]);
+  let acquisitionBudget;
+  try {
+    acquisitionBudget = JSON.parse(await readFile(options.values["--budget-file"], "utf8"));
+  } catch {
+    return usageFailure(json);
+  }
   const planFile = options.values["--plan-file"];
   const idempotencyKey = options.values["--idempotency-key"];
   if (
@@ -921,6 +949,7 @@ async function collectSource(arguments_, environment, json) {
     }
     return administrationRequest(environment, json, "/v1/ingestion-runs/evidence", "POST", {
       plans: planDocument.plans,
+      acquisition_budget: acquisitionBudget,
       idempotency_key: idempotencyKey,
     });
   }
@@ -944,6 +973,7 @@ async function collectSource(arguments_, environment, json) {
   return administrationRequest(environment, json, "/v1/ingestion-runs/evidence", "POST", {
     ...(options.values["--participation"] === undefined ? {} : { participation: options.values["--participation"] }),
     ...(options.values["--subset"] === undefined ? {} : { subset: options.values["--subset"] }),
+    acquisition_budget: acquisitionBudget,
     supported_game: game,
     source_lineage: lineage,
     adapter_version: adapter,
@@ -1102,7 +1132,7 @@ function usageFailure(json) {
     {
       code: "usage_error",
       detail:
-        "Usage: keepr docs catalogue | docs administration | release staging | release staging-status | release production | identity-correction validate | identity-correction create | identity-correction inspect | identity-correction list | entity-proposal list | entity-proposal inspect | entity-proposal create | entity-proposal admit | entity-proposal link | entity-proposal reject | entity-proposal reconsider | identity inspect | identity reviews | identity resolve | health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | game-candidate prepare | game-candidate pause | game-candidate resume | game-candidate abandon | game-candidate list | game-candidate show | game-candidate inspect | game-candidate evidence | game-candidate partitions | game-candidate partition | reconciliation status | reconciliation text | reconciliation inputs | reconciliation input | reconciliation partitions | reconciliation partition | reconciliation pause | reconciliation resume | reconciliation abandon | publication-preparation start | publication-preparation status | publication-preparation artifacts | publication-preparation resume | publication approve | publication status | publication resume | run reject | run retry | run cleanup | staging-cleanup start | evidence-cleanup start | evidence-cleanup status | evidence-cleanup objects | evidence-cleanup retry | source registry | source authorities | source designate | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
+        "Usage: keepr docs catalogue | docs administration | release staging | release staging-status | release production | identity-correction validate | identity-correction create | identity-correction inspect | identity-correction list | entity-proposal list | entity-proposal inspect | entity-proposal create | entity-proposal admit | entity-proposal link | entity-proposal reject | entity-proposal reconsider | identity inspect | identity reviews | identity resolve | health | status | cards search | catalogue search repair | catalogue-export deletion prepare | catalogue-export deletion confirm | catalogue-export deletion status | catalogue-export deletion retry | backup create | backup status | backup retry | recovery begin | recovery inspect | recovery verify | recovery accept | run show | candidate inspect | run reconcile | game-candidate prepare | game-candidate pause | game-candidate resume | game-candidate abandon | game-candidate list | game-candidate show | game-candidate inspect | game-candidate evidence | game-candidate partitions | game-candidate partition | reconciliation status | reconciliation text | reconciliation inputs | reconciliation input | reconciliation partitions | reconciliation partition | reconciliation pause | reconciliation resume | reconciliation abandon | publication-preparation start | publication-preparation status | publication-preparation artifacts | publication-preparation resume | publication approve | publication status | publication resume | run reject | run retry | run cleanup | staging-cleanup start | evidence-cleanup start | evidence-cleanup status | evidence-cleanup objects | evidence-cleanup retry | source registry | source authorities | source designate | source collect | source show | source pause | source resume | source terminate | source retry | source capacity extend | source budget extend | snapshot reparse | curated-revision validate | curated-revision list | curated-revision show | curated-revision create | curated-revision reaffirm | curated-revision supersede | curated-revision retire",
     },
     2,
   );

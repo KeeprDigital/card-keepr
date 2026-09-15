@@ -1,3 +1,4 @@
+import { extendAcquisitionBudget } from "./acquisition-budget";
 import type { HttpRoute } from "../../http/openapi";
 import {
   cleanupSchema,
@@ -19,6 +20,7 @@ import {
   pauseEvidenceRoute,
   terminateEvidenceRoute,
   extendCapacityRoute,
+  extendAcquisitionRoute,
   resumeEvidenceRoute,
   lifecycleRoute,
   lifecycleSchema,
@@ -39,6 +41,7 @@ import {
   collectionTerminationSchema,
   collectionResumeSchema,
   capacityExtensionSchema,
+  acquisitionExtensionSchema,
 } from "./http-evidence-schema";
 import { publicUrl } from "../../http/public-base";
 import { httpRoute, streamingHttpRoute } from "../../http/openapi";
@@ -76,6 +79,14 @@ type Environment = {
 type Context = RouteContext<Environment> & { observedAt: string };
 
 export const sourceEvidenceRoutes: HttpRoute<Context>[] = [
+  httpRoute<Context>()(extendAcquisitionRoute, async (c) =>
+    c.json(
+      acquisitionExtensionSchema.parse(
+        await extendAcquisitionBudget(c.env.env.CATALOGUE_DB, c.req.valid("param").run, c.req.valid("json")),
+      ),
+      200,
+    ),
+  ),
   httpRoute<Context>()(importRecordsRoute, async (c) =>
     c.json(
       importedRecordsSchema.parse(
@@ -218,6 +229,7 @@ export const sourceEvidenceRoutes: HttpRoute<Context>[] = [
       c.req.valid("param").run,
       c.req.valid("json").idempotency_key,
       c.env.requestId,
+      c.req.valid("json").acquisition_budget,
     );
     const receipt = evidenceAcceptance(result, c.env.base);
     c.header("Location", receipt.links.status);

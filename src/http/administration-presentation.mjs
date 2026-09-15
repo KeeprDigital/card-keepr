@@ -93,6 +93,7 @@ function formatAdministrationResult(document) {
     const lines = [`Ingestion Run ${document.id} evidence: ${document.state}`, ...formatEvidenceVolume(document)];
     lines.push(...formatEvidencePause(document.pause));
     lines.push(...formatEvidenceTermination(document.termination));
+    lines.push(...formatAcquisition(document.acquisition));
     lines.push(...formatCollectionProgress(document.collection));
     lines.push(...formatEvidenceWorkflow(document.workflow));
     lines.push(...formatEvidenceActions(document.actions ?? document.pause?.actions));
@@ -708,4 +709,28 @@ function safeDiagnosticPath(value) {
 
 function safeDiagnosticMethod(value) {
   return value === "GET" || value === "POST" ? value : null;
+}
+
+function formatAcquisition(acquisition) {
+  if (acquisition === null) return ["Acquisition accounting: unavailable"];
+  if (acquisition === undefined) return [];
+  const counts = [
+    acquisition.generation,
+    acquisition.charged_dispatches,
+    acquisition.charged_source_bytes,
+    acquisition.reserved_source_bytes,
+    acquisition.remaining_dispatches,
+    acquisition.remaining_source_bytes,
+  ].map(safeDiagnosticCount);
+  if (counts.some((value) => value === "unknown")) return [];
+  const [generation, dispatches, charged, reserved, remainingDispatches, remainingBytes] = counts;
+  const lines = [
+    `Acquisition generation ${generation}: ${dispatches} charged dispatches; ${charged} charged raw-source bytes; ${reserved} reserved bytes; ${remainingDispatches} dispatches and ${remainingBytes} bytes remaining`,
+  ];
+  if (acquisition.historical_dispatches_unknown) lines.push("Earlier dispatch usage: unknown");
+  const deadline = safeDiagnosticReference(acquisition.budget?.dispatch_deadline);
+  if (deadline !== null) lines.push(`New dispatch admission deadline: ${deadline}`);
+  const dimension = safeMachineCode(acquisition.limiting_dimension);
+  if (dimension !== null) lines.push(`Acquisition limit: ${dimension}`);
+  return lines;
 }

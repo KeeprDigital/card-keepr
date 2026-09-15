@@ -64,6 +64,18 @@ _Avoid_: Fetch attempt, Source Snapshot, request URL
 The bound each exact Source Adapter Version owns on the unique source request identities one Source Lineage may hold within an Ingestion Run, counted across initial and dynamically discovered roles. A larger global emergency ceiling constrains every Request Capacity; from Go-Live it is immutable and changing it requires registering a new Source Adapter Version, while one capacity-paused Ingestion Run's effective capacity may be raised exceptionally through a Capacity Extension.
 _Avoid_: Cloudflare platform limit, mutable quota, rate limit
 
+**Acquisition Budget**:
+An explicitly selected, finite allowance for one Ingestion Run's potential physical source dispatches and raw-source body exposure, with a deadline for admitting new dispatches. Its charges survive pauses, retries and recovery; it does not measure wire traffic, account storage or money, and a prospective legacy allowance does not establish historical usage.
+_Avoid_: Request Capacity, billing cap, rate limit
+
+**Dispatch Reservation**:
+Durable authority for at most one potential physical source retrieval, charged against an Acquisition Budget before that authority can escape. It retains the maximum possible raw-source body exposure until the exact retrieval and writer are settled; uncertainty remains charged.
+_Avoid_: Source Request, fetch attempt, reusable permit
+
+**Acquisition Pause**:
+The non-terminal pause that preserves an Ingestion Run's work when its Acquisition Budget cannot admit the next dispatch or its prior physical ownership remains unresolved. An owner may extend the budget through a checked action, with collection returning only through separate resume.
+_Avoid_: Failed image, terminal source error, cancelled request
+
 **Capacity Pause**:
 The non-terminal paused condition an Ingestion Run enters when admitting a dynamically discovered request batch would exceed its Request Capacity. Every retained observation, pending Source Request, the run's collection reservation, and the run identity survive unchanged, and the run cannot parse, reconcile, await approval, or publish until the owner acts. It records nothing as failed and is distinct from a Cloudflare Workflow instance's own paused status.
 _Avoid_: Failed run, cancelled run, Workflow instance pause
@@ -73,7 +85,7 @@ An owner-initiated, idempotent, compare-and-set administration action that raise
 _Avoid_: Mutable quota, adapter capacity change, resumed run
 
 **Retry Pause**:
-The non-terminal paused condition an Ingestion Run enters when one Source Request exhausts its bounded transport or storage retries while retrying that exact request remains semantically safe. Nothing is recorded as failed: the request stays pending with its append-only attempt history, and resuming the same run opens that request's next bounded retry generation without deleting or renumbering earlier attempts. Source-contract violations and evidence-integrity failures remain terminal instead of pausing, and a Printing Image request never pauses or fails the run: whether it exhausts its transport retries or meets a terminal outcome (a missing or redirected file, a rejected revalidation, a body-contract violation), the failure is tolerated and recorded on that request alone under a class-specific code while collection continues and reconciliation publishes the Printing without the image, naming the gap explicitly.
+The non-terminal paused condition an Ingestion Run enters when one Source Request exhausts its bounded transport or storage retries while retrying that exact request remains semantically safe. Nothing is recorded as failed: the request stays pending with its append-only attempt history, and resuming the same run opens that request's next bounded retry generation without deleting or renumbering earlier attempts. Source-contract violations and evidence-integrity failures remain terminal instead of pausing; Printing Image transport and source-contract failures (including missing or redirected files, rejected revalidation and body-contract violations) are tolerated on that request under a class-specific code, so reconciliation can publish the Printing with an explicit image gap; storage and Acquisition Pauses still preserve the whole run.
 _Avoid_: Failed request, Capacity Pause, linked retry run
 
 **Workflow Attempt**:
@@ -85,7 +97,7 @@ The non-terminal paused condition an Ingestion Run enters when its collection Wo
 _Avoid_: Failed run, Capacity Pause, Retry Pause, Workflow instance pause
 
 **Collection Termination**:
-The owner's explicit, idempotent decision to abandon a paused Ingestion Run. It is the only path from paused to terminal: the run keeps every retained observation, pause record, and Workflow Attempt as audit evidence, can never resume, extend capacity, parse, reconcile, or publish, and releases that run's collection reservation.
+The owner's explicit, idempotent decision to abandon a paused Ingestion Run. It is the only path from paused to terminal: the run keeps every retained observation, pause record, and Workflow Attempt as audit evidence, can never resume, extend capacity or its Acquisition Budget, parse, reconcile, or publish, and releases that run's collection reservation.
 _Avoid_: Cancelled run, deleted run, Workflow instance termination, linked retry
 
 **Curated Revision**:

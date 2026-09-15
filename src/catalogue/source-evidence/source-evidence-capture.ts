@@ -1,4 +1,5 @@
 import { indexedOfficialCollectionRequests } from "./source-record-discovery";
+import { reserveAcquisitionDispatch, settleAcquisitionDispatch } from "./acquisition-budget";
 import { discoveredSourceRecordRequests } from "./source-record-intake";
 import {
   beginEvidenceObjectWrite,
@@ -364,6 +365,22 @@ export async function capturePreparedAttempt(
   )
     return { kind: "done", failure_code: null, request_made: false };
   let response: Response | null = null;
+  const capturingAdapter = requiredSourceAdapter(evidencePlan.adapter_version);
+  const archive =
+    request.request_role === "listing" &&
+    capturingAdapter.archiveExtraction?.matches({ url: request.url, requestId: request.request_id })
+      ? capturingAdapter.archiveExtraction
+      : undefined;
+  const maximumBytes = archive?.maximumSnapshotBytes ?? capturingAdapter.maximumSnapshotBytes;
+  const dispatchId = await reserveAcquisitionDispatch(database, {
+    runId: run.id,
+    requestId: request.request_id,
+    captureId: operation.attempt_id,
+    objectKey: operation.content_object_key,
+    maximumBytes,
+    workflow: workflowAttempt,
+  });
+  if (dispatchId === null) return { kind: "done", failure_code: null, request_made: false };
   let networkError: string | null = null;
   let fetchFailureOutcome: "network_failure" | "body_failure" = "network_failure";
   try {
@@ -404,6 +421,7 @@ export async function capturePreparedAttempt(
       });
     }
     if (response.body !== null) await response.body.cancel();
+    await settleAcquisitionDispatch(database, dispatchId, operation.attempt_id, 0);
     await revalidatedCaptureStatement(database, {
       completedAt: completedAt,
       requestHeadersJson: canonicalJson(requestHeaders),
@@ -433,6 +451,7 @@ export async function capturePreparedAttempt(
     const retryAfterMs =
       rateLimitFloor === undefined ? reportedRetryAfterMs : Math.max(rateLimitFloor, reportedRetryAfterMs ?? 0);
     if (response.body !== null) await response.body.cancel();
+    await settleAcquisitionDispatch(database, dispatchId, operation.attempt_id, 0);
     return recordRejectedAttempt(database, run, request, operation, {
       outcome: redirect ? "redirect" : "http_failure",
       completedAt,
@@ -458,19 +477,13 @@ export async function capturePreparedAttempt(
     attemptId: operation.attempt_id,
   }).run();
   operation = await requiredCaptureOperation(database, operation.attempt_id);
-  const writeToken = crypto.randomUUID();
+  const writeToken = dispatchId;
   try {
-    const capturingAdapter = requiredSourceAdapter(evidencePlan.adapter_version);
-    const archive =
-      request.request_role === "listing" &&
-      capturingAdapter.archiveExtraction?.matches({ url: request.url, requestId: request.request_id })
-        ? capturingAdapter.archiveExtraction
-        : undefined;
     const content = await streamSnapshotToR2(
       evidenceObjects,
       operation.content_object_key,
       response,
-      archive?.maximumSnapshotBytes ?? capturingAdapter.maximumSnapshotBytes,
+      maximumBytes,
       async (upload) => {
         await retainEvidenceMultipart(database, writeToken, upload).run();
       },
@@ -494,6 +507,7 @@ export async function capturePreparedAttempt(
       byteLength: content.byteLength,
       attemptId: operation.attempt_id,
     }).run();
+    await settleAcquisitionDispatch(database, dispatchId, operation.attempt_id, content.byteLength);
     return {
       kind: "uploaded",
       attempt_id: operation.attempt_id,
