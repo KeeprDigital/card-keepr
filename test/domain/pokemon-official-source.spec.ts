@@ -16,6 +16,22 @@ import {
 
 const fixture = new URL("../../acceptance/fixtures/real-sources/2026-09-14-pokemon/raw/", import.meta.url);
 
+test("the official Card parser rejects missing, partial or changed Dragonblade energy costs", () => {
+  const html = readFileSync(new URL("official-garchomp-card.html", fixture), "utf8");
+  expect(pokemonOfficialGarchomp(new TextEncoder().encode(html)).card.game_data.attributes.attacks[0]?.cost).toEqual([
+    "Water",
+    "Fighting",
+  ]);
+  for (const changed of [
+    html.replace(/data-energy-type=/gu, "data-changed-energy-type="),
+    html.replace('data-energy-type="Water"', 'data-changed-energy-type="Water"'),
+    html.replace('data-energy-type="Fighting"', 'data-changed-energy-type="Fighting"'),
+    html.replace('data-energy-type="Fighting"', 'data-energy-type="Water"'),
+    html.replace('data-energy-type="Water"', 'data-energy-type="Fire"'),
+  ])
+    expect(() => pokemonOfficialGarchomp(new TextEncoder().encode(changed))).toThrow(AdapterParseFailure);
+});
+
 test("the official Card parser rejects changed or missing physical content instead of inventing an empty value", () => {
   const html = readFileSync(new URL("official-garchomp-card.html", fixture), "utf8");
   for (const changed of [

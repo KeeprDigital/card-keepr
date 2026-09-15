@@ -72,6 +72,14 @@ export function pokemonOfficialGarchomp(bytes: Uint8Array) {
   const ability = field(/<div>Sonic Slip<\/div>\s*<\/h3>\s*<p>([\s\S]*?)<\/p>/u, "Sonic Slip text");
   const attack = field(/<pre>([\s\S]*?)<\/pre>/u, "Dragonblade text");
   const attackName = field(/<h4 class="left label">([^<]+)<\/h4>/u, "attack name");
+  const attackCostMarkup = requiredHtmlMatch(
+    html,
+    /<ul class="left">([\s\S]*?)<\/ul>\s*<h4 class="left label">Dragonblade<\/h4>/u,
+    "Pokémon Dragonblade energy cost",
+  )[1]!;
+  const attackCost = [...attackCostMarkup.matchAll(/data-energy-type="([^"]*)"/gu)].map((match) => match[1]!);
+  if (attackCost.length !== 2 || !attackCost.includes("Water") || !attackCost.includes("Fighting"))
+    throw new AdapterParseFailure("The selected original Garchomp Dragonblade energy cost changed.");
   if (
     attackName !== "Dragonblade" ||
     [...html.matchAll(/<div class="ability">/gu)].length !== 2 ||
@@ -91,7 +99,7 @@ export function pokemonOfficialGarchomp(bytes: Uint8Array) {
     attacks: [
       {
         name: attackName,
-        cost: [...html.matchAll(/data-energy-type="([^"]+)"/gu)].map((match) => match[1]!),
+        cost: attackCost,
         damage: field(/<span class="right plus">([^<]+)<\/span>/u, "attack damage"),
         text: attack,
       },
