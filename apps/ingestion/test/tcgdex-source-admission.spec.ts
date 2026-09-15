@@ -32,6 +32,11 @@ import type { SnapshotRow } from "../../../src/catalogue/source-evidence/source-
 import { decideEntityProposal, inspectEntityProposal } from "../../../src/catalogue/reconciliation/entity-admission";
 import { beginEvidenceCleanup, advanceEvidenceCleanup } from "../../../src/catalogue/source-evidence/evidence-cleanup";
 import { failedReconciliationWorkflowStatement } from "../../../src/catalogue/reconciliation/reconciliation-state-repository";
+import {
+  cloudflareD1BackupProvider,
+  createVerifiedCatalogueBackup,
+  type D1BackupProvider,
+} from "../../../src/catalogue/backup-recovery";
 
 installReconciliationSuite({ directPreparation: true });
 
@@ -87,6 +92,110 @@ async function collectedRecord(key: string) {
   expect(contexts.map((context) => context.dependency_count)).toEqual([0, 1, 2, 3]);
   return { db, runId, imageUrl, contexts };
 }
+
+test.each(
+  (["restored", "fenced"] as const).flatMap((phase) =>
+    (["raw", "observations", "image"] as const).flatMap((kind) =>
+      (["missing", "corrupt"] as const).map((failure) => ({ phase, kind, failure })),
+    ),
+  ),
+)("actual $phase backup rejects $failure ordinary proposal $kind bytes", async ({ phase, kind, failure }) => {
+  const key = `pokemon-proposal-${phase}-${kind}-${failure}`;
+  const { db, runId } = await collectedRecord(key);
+  const candidate = await prepareNativeEvidence({
+    runId,
+    game: "pokemon",
+    predecessor: "catrev_spine_000",
+    key: `${key}-candidate`,
+  });
+  expect((await reviewProposals(db).bind("tcgdex-pokemon-en").all()).results).toHaveLength(1);
+  expect(
+    (
+      await post(`/v1/game-candidates/${candidate.id}/abandon`, {
+        generation: candidate.generation,
+        idempotency_key: `${key}-abandon`,
+      })
+    ).response.status,
+  ).toBe(202);
+  const control = await collect("/reconciliation/repeatable", `${key}-control`);
+  const controlCandidate = await prepareNativeCandidate(
+    control.id,
+    "one-piece",
+    "catrev_spine_000",
+    `${key}-control-candidate`,
+  );
+  const published = await approveNativeCandidate(controlCandidate, `${key}-publication`);
+  const revision = requiredString(published.document, "resulting_revision_id");
+  const leaf = await reviewQueries
+    .reviewImageSnapshots(db)
+    .bind(runId, kind === "image" ? "image" : "detail")
+    .first<SnapshotRow>();
+  expect(leaf).not.toBeNull();
+  const objectKey =
+    kind === "observations"
+      ? (await reviewQueries
+          .reviewSnapshotObservationObjects(db)
+          .bind(leaf!.id)
+          .first<{ content_object_key: string }>())!.content_object_key
+      : leaf!.content_object_key;
+  const damage = async () => {
+    if (failure === "missing") await testEnv.EVIDENCE_OBJECTS.delete(objectKey);
+    else {
+      const object = await testEnv.EVIDENCE_OBJECTS.get(objectKey);
+      expect(object).not.toBeNull();
+      const bytes = new Uint8Array(await object!.arrayBuffer());
+      bytes[0]! ^= 1;
+      await testEnv.EVIDENCE_OBJECTS.put(objectKey, bytes, {
+        httpMetadata: object!.httpMetadata,
+        customMetadata: object!.customMetadata,
+      });
+    }
+  };
+  let imported = false;
+  let exported = false;
+  if (phase === "fenced") await damage();
+  const provider: D1BackupProvider = {
+    ...cloudflareD1BackupProvider,
+    async exportSql(input) {
+      exported = true;
+      return cloudflareD1BackupProvider.exportSql(input);
+    },
+    async restoreSql(input) {
+      await cloudflareD1BackupProvider.restoreSql(input);
+      imported = true;
+      if (phase === "restored") await damage();
+    },
+  };
+  await expect(
+    createVerifiedCatalogueBackup(
+      db,
+      testEnv.BACKUPS,
+      {
+        expectedCurrentRevisionId: revision,
+        idempotencyKey: `${key}-manual`,
+        observedAt: new Date().toISOString(),
+        cloudflareAccountId: testEnv.CLOUDFLARE_ACCOUNT_ID,
+        catalogueDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
+        disposableDatabaseId: testEnv.DISPOSABLE_D1_DATABASE_ID,
+        exportToken: testEnv.D1_EXPORT_TOKEN,
+        verificationToken: testEnv.D1_VERIFICATION_TOKEN,
+      },
+      provider,
+      {
+        publicationArtifacts: testEnv.CATALOGUE_EXPORTS,
+        printingImages: testEnv.PRINTING_IMAGES,
+        sourceEvidenceObjects: testEnv.EVIDENCE_OBJECTS,
+      },
+    ),
+  ).rejects.toThrow(
+    failure === "missing"
+      ? "Required proposal evidence is missing"
+      : "Required proposal evidence failed digest verification",
+  );
+  expect(imported).toBe(phase === "restored");
+  expect(exported).toBe(phase === "restored");
+  expect((await get(`/v1/backups/${key}-manual`)).document.state).toBe("failed");
+});
 
 test("a completed single-record fixture retains its source image through proposal response loss, replay, owner decision and cleanup with zero canonical contribution", async () => {
   const { db, runId, imageUrl, contexts } = await collectedRecord("pokemon-record-proposal-fixture");
@@ -290,6 +399,18 @@ test("a completed single-record fixture retains its source image through proposa
   expect(snapshot.parent_context_evidence).toMatchObject({
     objects: 12,
     sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+  });
+  expect(snapshot.proposal_evidence).toMatchObject({
+    contract: "card-keepr-composition-proposal-evidence@1",
+    // Each capture owns Card raw/observations and image raw/empty observations.
+    objects: 8,
+    sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+  });
+  expect(snapshot.source_evidence).toEqual({
+    contract: "card-keepr-composition-source-evidence@1",
+    objects: 0,
+    bytes: 0,
+    sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   });
   expect(snapshot.tables).toEqual(
     expect.arrayContaining([

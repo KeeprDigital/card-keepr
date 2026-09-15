@@ -156,6 +156,9 @@ or transferring its decision to a separately qualified target. These records
 contribute no Card or Printing. Collection must close its actual discovered graph
 before native preparation; registered Request Capacity still applies. The named
 pilot's identities and qualified image associations remain unchanged.
+Card detail discovery rejects a competing Set parent for the same opaque full
+Card ID before deduplication; replay retains one request and shared images remain
+independently deduplicated.
 [Pokémon source assembly](https://github.com/KeeprDigital/card-keepr/issues/329).
 
 The accepted admission direction automatically admits unambiguous, sufficiently
@@ -226,6 +229,10 @@ uses this opt-in. A proposal pins its source-record image bytes independently of
 Printing qualification; cleanup and backup follow the same source, ancestor and
 image closure. Bounded retained-byte proofs do not establish complete declared
 capture or physical treatment coverage.
+New backups record a separate proposal-evidence receipt for retained source and
+literal image dependencies and verify their bytes before export and after restore.
+Historical snapshots retain their original optional receipt set; archive and
+ancestor receipt digests keep their original meanings.
 [Pokémon source assembly](https://github.com/KeeprDigital/card-keepr/issues/329).
 
 Collection scheduling reads a bounded page containing the next pending shard

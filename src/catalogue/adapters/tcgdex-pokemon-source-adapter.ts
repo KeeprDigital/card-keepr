@@ -171,6 +171,7 @@ export const tcgdexPokemonSourceAdapterRegistration = {
   maximumSnapshotBytes: 1024 * 1024,
   requestCapacity: 4,
   retainedParentContext: { maximumDepth: 3, maximumTotalBytes: 3 * 1024 * 1024 },
+  singleDiscoveryParentRoles: ["detail"],
   origin: "production",
   requestSurface: { kind: "credential-free-https" },
   reconciliationCapability: "catalogue",

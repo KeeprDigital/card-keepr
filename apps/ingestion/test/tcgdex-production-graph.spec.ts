@@ -15,6 +15,7 @@ import {
   resumePausedEvidenceRun,
   recordWorkflowIds,
   parentWorkflowAttemptId,
+  appendDiscoveredEvidenceRequests,
 } from "../../../src/catalogue/source-evidence";
 import { readSourceObservation } from "../../../src/catalogue/reconciliation/reconciliation-source-observation";
 import { tcgdexPokemonSourceAdapterRegistration } from "../../../src/catalogue/adapters/tcgdex-pokemon-source-adapter";
@@ -24,6 +25,106 @@ import { retainedTcgdexContexts } from "./query-helpers/tcgdex-retained-graph";
 import { installRuntimeSuite } from "./runtime-helpers";
 
 installRuntimeSuite();
+
+test("production rejects competing Set/local claims for one opaque Card ID while replay and shared images keep one request", async () => {
+  const api = "https://api.tcgdex.net/v2/en";
+  const cardCount = { total: 1, official: 1 };
+  const bodies = new Map<string, unknown>([
+    [
+      `${api}/sets`,
+      [
+        { id: "a", cardCount },
+        { id: "a-b", cardCount },
+      ],
+    ],
+    [`${api}/series/tcgp`, { id: "tcgp", sets: [] }],
+    ...[
+      ["a", "b-1"],
+      ["a-b", "1"],
+    ].map(
+      ([id, localId]) =>
+        [
+          `${api}/sets/${id}`,
+          { id, cardCount, serie: { id: "base" }, releaseDate: "1999-01-09", cards: [{ id: "a-b-1", localId }] },
+        ] as [string, unknown],
+    ),
+    [`${api}/cards/a-b-1`, { id: "a-b-1", localId: "b-1", set: { id: "a" }, name: "Test Energy", category: "Energy" }],
+  ]);
+  const fetched: string[] = [];
+  const transport = {
+    async fetch(input: RequestInfo | URL) {
+      const url = new Request(input).url;
+      expect(bodies.has(url)).toBe(true);
+      fetched.push(url);
+      return Response.json(bodies.get(url));
+    },
+  } as Fetcher;
+  const database = catalogueStore(env.CATALOGUE_DB);
+  const started = await startEvidenceRun(database, {
+    supported_game: "pokemon",
+    source_lineage: "tcgdex-pokemon-en",
+    adapter_version: "tcgdex-pokemon-en@1",
+    subset: "english-declared-catalogue",
+    idempotency_key: "production-competing-membership",
+    requests: [
+      { id: "tcgdex-pokemon-en:english-set-inventory", url: `${api}/sets`, headers: { accept: "application/json" } },
+    ],
+  });
+  const runId = String(started.id);
+  await recordWorkflowIds(database, runId, parentWorkflowAttemptId(runId, 1), []);
+  const collect = async (request: Awaited<ReturnType<typeof pendingEvidenceRequests>>[number]) =>
+    collectSourceRequestBatch({
+      database,
+      evidenceObjects: env.EVIDENCE_OBJECTS,
+      officialSourceTransport: transport,
+      runId,
+      hostname: "api.tcgdex.net",
+      pacingMode: "immediate",
+      pacingIntervalMilliseconds: 0,
+      requests: [request],
+    });
+  await collect((await pendingEvidenceRequests(database, runId))[0]!);
+  await collect((await pendingEvidenceRequests(database, runId))[0]!);
+  const sets = await pendingEvidenceRequests(database, runId);
+  expect(sets.map(({ url }) => url)).toEqual([`${api}/sets/a`, `${api}/sets/a-b`]);
+  await collect(sets[0]!);
+  expect((await requiredEvidenceRun(database, runId)).state).toBe("paused");
+  await extendRunRequestCapacity(database, runId, {
+    expected_request_capacity: 4,
+    expected_capacity_generation: 1,
+    request_capacity: 6,
+    idempotency_key: "production-competing-membership-extension",
+  });
+  await resumePausedEvidenceRun(database, runId);
+  await collect(sets[0]!);
+  const run = await requiredEvidenceRun(database, runId);
+  const detail = { role: "detail" as const, url: `${api}/cards/a-b-1`, headers: { accept: "application/json" } };
+  const admitted = await appendDiscoveredEvidenceRequests(database, run, sets[0]!, [detail, detail]);
+  expect(admitted).toHaveLength(1);
+  expect(admitted[0]!.discovered_from_request_id).toBe(sets[0]!.request_id);
+  await collect(admitted[0]!);
+  await collect(admitted[0]!);
+  expect(fetched.filter((url) => url === detail.url)).toHaveLength(1);
+  const image = { role: "image" as const, url: "https://assets.tcgdex.net/en/base/base1/98/high.png", headers: {} };
+  const shared = await appendDiscoveredEvidenceRequests(database, run, sets[0]!, [image]);
+  expect(await appendDiscoveredEvidenceRequests(database, run, sets[1]!, [image, image])).toEqual(shared);
+  await collect(sets[1]!);
+  expect(await productionGraphCounts(env.CATALOGUE_DB).bind(runId).first()).toEqual({
+    planned: 6,
+    captured: 5,
+    pending: 1,
+    failed: 1,
+  });
+  await expect(appendDiscoveredEvidenceRequests(database, run, sets[1]!, [detail])).rejects.toMatchObject({
+    code: "source_discovery_failed",
+  });
+  expect((await appendDiscoveredEvidenceRequests(database, run, sets[0]!, [detail]))[0]).toMatchObject({
+    request_id: admitted[0]!.request_id,
+    discovered_from_request_id: sets[0]!.request_id,
+  });
+  expect(fetched).toEqual([`${api}/sets`, `${api}/series/tcgp`, `${api}/sets/a`, detail.url, `${api}/sets/a-b`]);
+  expect(tcgdexPokemonSourceAdapterRegistration.requestCapacity).toBe(4);
+});
 
 test("production TCGdex preserves exact retained graph evidence through both capacity pauses and interrupted leaf storage", async () => {
   const captures = [
