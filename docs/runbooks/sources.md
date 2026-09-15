@@ -33,6 +33,17 @@ completeness is confined to those named source scopes, not the entire game.
 Use only subsets declared by the installed registry. Set each source's `required`
 or `optional` participation before starting; retry preserves the plan.
 
+The [five-Card One Piece plan](../examples/one-piece-five-card-plan.json) extends
+those complete scopes with ST01-001, OP16-002, OP16-019 and OP16-021. It selects
+all linked Limitless variants and original fronts, the complete Bandai searches,
+and the existing P-001 event corroboration. The retained
+[evidence and image comparisons](../../acceptance/fixtures/real-sources/2026-09-15-limitless/README.md)
+establish the same-name Leader, Counter, Event/Trigger and Stage differences.
+Bandai retains all three Source Authority areas. Both adapters require explicit
+owner admission or linking; the serial Luffy appearance needs its own reviewed
+supplementary-only admission. These named scopes do not select the full Products
+and Promos indexes or establish token/art Card coverage.
+
 The Pokémon [Card and Product plan](../examples/pokemon-card-product-plan.json)
 checks the complete detailed treatment inventories of TCGdex Snorlax `svp-051`
 and Charizard `base1-4`, plus the selected official Garchomp card and 151 Pokémon

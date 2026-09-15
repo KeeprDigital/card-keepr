@@ -1,0 +1,21 @@
+Date: Tue, 15 Sep 2026 20:47:40 GMT
+Content-Type: image/webp
+Content-Length: 127514
+Connection: close
+Accept-Ranges: bytes
+last-modified: Fri, 29 May 2026 21:39:29 GMT
+x-rgw-object-type: Normal
+etag: "f661b53400ec5b5cbd8ee35453f04748"
+x-amz-request-id: tx0000050191c4180b90830-006a7a401e-62460a64-nyc3b
+vary: Origin, Access-Control-Request-Headers, Access-Control-Request-Method
+strict-transport-security: max-age=15552000; includeSubDomains; preload
+x-do-cdn-uuid: 5aad77e6-6e39-4e39-8c67-95657b2afc3f
+cache-control: max-age=86400
+set-cookie: 
+ __cf_bm=QiRUQ1.u2D6QpCcZbLcDnqLLmitEYx1H_YMiTNGf6N4-1789505260.7045074-1.0.1.1-cNMDCjBBZrZ1gbrrDY2N54jCRpAWc18DkRvWmW2NlocX_KqkiWGSUIdmjMWyFnCaQUDuVhc5ImiOZxyNlSW5F3QEmi8Okgq5yknoKls97uBoXnpvC6CsJqCj0hRIJj93;
+ HttpOnly; SameSite=None; Secure; Path=/; Domain=digitaloceanspaces.com;
+ Expires=Tue, 15 Sep 2026 21:17:40 GMT
+cf-cache-status: HIT
+Server: cloudflare
+CF-RAY: a3ba7ce76c79f0d9-MEL
+
