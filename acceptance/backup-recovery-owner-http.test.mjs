@@ -39,6 +39,26 @@ function check(path, method, status, document, media = "application/json") {
 // production provider requests and independent SQL export/import databases.
 test("owner backs up, retries, restores, verifies and explicitly accepts with immutable and current HTTP replay", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "keepr-backup-owner-"));
+  const workers = [];
+  let cloudflare;
+  let releaseImport;
+  t.after(async () => {
+    const failures = [];
+    const cleanups = [
+      () => releaseImport?.(),
+      ...workers.map((worker) => () => stopWorker(worker)),
+      () => cloudflare?.close(),
+      () => rm(directory, { recursive: true, force: true }),
+    ];
+    for (const cleanup of cleanups) {
+      try {
+        await cleanup();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    if (failures.length) throw new AggregateError(failures, "Owner recovery fixture cleanup failed");
+  });
   const statePath = join(directory, "state");
   const config = await readWorkerConfig("apps/ingestion/wrangler.jsonc");
   delete config.$schema;
@@ -56,19 +76,11 @@ test("owner backs up, retries, restores, verifies and explicitly accepts with im
   });
   const { syntheticSourceAdapterMigration } = await import(pathToFileURL(migrationModule).href);
   await applyMigrations(statePath, configPath, [syntheticSourceAdapterMigration]);
-  let cloudflare = nativeRecoveryCloudflare({
+  cloudflare = nativeRecoveryCloudflare({
     databaseDirectory: await persistedDatabaseDirectory(statePath),
     directory,
   });
   const key = crypto.randomUUID();
-  const workers = [];
-  let releaseImport;
-  t.after(async () => {
-    releaseImport?.();
-    for (const worker of workers) await stopWorker(worker);
-    cloudflare.close();
-    await rm(directory, { recursive: true, force: true });
-  });
   const outboundService = (request) => {
     if (isNativeCheckpointRequest(request)) return cloudflare.fetch(request);
     const url = new URL(request.url);

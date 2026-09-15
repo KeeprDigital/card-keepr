@@ -76673,6 +76673,25 @@
               }
             }
           },
+          "502": {
+            "description": "Recovery failed; Catalogue mutation remains blocked. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
           "503": {
             "description": "Request, authorization, domain conflict or service failure. See code and detail.",
             "headers": {

@@ -134,6 +134,7 @@
       "apps/ingestion/test/backup-recovery.spec.ts",
       "apps/ingestion/test/composed-recovery.spec.ts",
       "apps/ingestion/test/reconciliation-scale-and-recovery.spec.ts",
+      "apps/ingestion/test/recovery.spec.ts",
       "cli/keepr.mjs",
       "test/support/http-response-validators.admin.mjs"
     ]

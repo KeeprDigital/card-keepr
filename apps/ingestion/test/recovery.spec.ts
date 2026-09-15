@@ -11,7 +11,8 @@ import * as publishedCatalogueQueries from "./query-helpers/published-catalogue"
 import * as backupRecoveryQueries from "./query-helpers/backup-recovery";
 import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
+import worker from "../src/index";
 import adminDocument from "../../../contracts/admin-openapi.json";
 import { assertHttpResponse } from "../../../test/support/http-contract";
 import {
@@ -656,7 +657,7 @@ test.each(["revision", "backup"])(
   },
 );
 
-test("inspect observes a paused restore without mutation and a second begin reports recovery_exists", async () => {
+test("inspect and HTTP confirmation preserve a paused restore while a second begin reports recovery_exists", async () => {
   let markRestoreStarted: () => void = () => {};
   const restoreStarted = new Promise<void>((resolve) => {
     markRestoreStarted = resolve;
@@ -678,35 +679,79 @@ test("inspect observes a paused restore without mutation and a second begin repo
     recoveryInput("recovery-paused", "begin-paused"),
     provider,
   );
-  await restoreStarted;
-  await expect(
-    inspectCatalogueRecovery(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, "recovery-paused"),
-  ).resolves.toMatchObject({ state: "restoring", failure: null });
-  await expect(
-    beginCatalogueRecovery(
-      catalogueStore(testEnv.CATALOGUE_DB),
-      testEnv.BACKUPS,
-      recoveryInput("recovery-paused", "begin-paused"),
-      provider,
-    ),
-  ).resolves.toMatchObject({ state: "restoring", failure: null });
-  expect(restoreCalls).toBe(1);
-  await expect(
-    beginCatalogueRecovery(
-      catalogueStore(testEnv.CATALOGUE_DB),
-      testEnv.BACKUPS,
-      recoveryInput("recovery-second-unlinked", "begin-second-unlinked"),
-      recoveryProvider(),
-    ),
-  ).rejects.toMatchObject({ code: "recovery_exists" });
-  await expect(
-    backupRecoveryQueries.readCatalogueRecoveryOperationsStateFailureCode(testEnv.CATALOGUE_DB).first(),
-  ).resolves.toEqual({ state: "restoring", failure_code: null });
-  releaseRestore?.({
-    bookmark: "bookmark-restored",
-    previousBookmark: "bookmark-undo",
-  });
-  await beginning;
+  try {
+    await restoreStarted;
+    await expect(
+      inspectCatalogueRecovery(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, "recovery-paused"),
+    ).resolves.toMatchObject({ state: "restoring", failure: null });
+    await expect(
+      beginCatalogueRecovery(
+        catalogueStore(testEnv.CATALOGUE_DB),
+        testEnv.BACKUPS,
+        recoveryInput("recovery-paused", "begin-paused"),
+        provider,
+      ),
+    ).resolves.toMatchObject({ state: "restoring", failure: null });
+    expect(restoreCalls).toBe(1);
+    await expect(
+      beginCatalogueRecovery(
+        catalogueStore(testEnv.CATALOGUE_DB),
+        testEnv.BACKUPS,
+        recoveryInput("recovery-second-unlinked", "begin-second-unlinked"),
+        recoveryProvider(),
+      ),
+    ).rejects.toMatchObject({ code: "recovery_exists" });
+    await expect(
+      backupRecoveryQueries.readCatalogueRecoveryOperationsStateFailureCode(testEnv.CATALOGUE_DB).first(),
+    ).resolves.toEqual({ state: "restoring", failure_code: null });
+    const journalKey = "recovery-journals/recovery-paused.json";
+    const journalBefore = await (await testEnv.BACKUPS.get(journalKey))?.text();
+    expect(journalBefore).toBeDefined();
+    const fenceBefore = await ingestionQueries
+      .readOperationStateRecoveryHealthActiveRecoveryId(testEnv.CATALOGUE_DB)
+      .first();
+    const targetPath = "/v1/administration-targets/resolve";
+    const preview = await exports.default.fetch(
+      new Request(`https://card-keepr.invalid${targetPath}`, {
+        method: "POST",
+        headers: { authorization: "Bearer vitest-administration-key", "content-type": "application/json" },
+        body: JSON.stringify({
+          recovery: {
+            action: "begin",
+            input: {
+              environment: "production",
+              recovery_id: "recovery-paused",
+              method: "time_travel",
+              target_revision_id: "catrev_spine_000",
+              target_bookmark: "bookmark-target",
+              target_digest: digest,
+              backup_attempt_id: "recovery-source",
+              expected_current_revision_id: "catrev_spine_000",
+              idempotency_key: "begin-paused-preview-unused",
+            },
+          },
+        }),
+      }),
+    );
+    expect(preview.status, await preview.clone().text()).toBe(200);
+    await assertHttpResponse(adminDocument, targetPath, "post", preview);
+    await expect(
+      backupRecoveryQueries.readCatalogueRecoveryOperationsStateFailureCode(testEnv.CATALOGUE_DB).first(),
+    ).resolves.toEqual({ state: "restoring", failure_code: null });
+    expect(await (await testEnv.BACKUPS.get(journalKey))?.text()).toBe(journalBefore);
+    await expect(
+      ingestionQueries.readOperationStateRecoveryHealthActiveRecoveryId(testEnv.CATALOGUE_DB).first(),
+    ).resolves.toEqual(fenceBefore);
+    expect(restoreCalls).toBe(1);
+  } finally {
+    releaseRestore?.({
+      bookmark: "bookmark-restored",
+      previousBookmark: "bookmark-undo",
+    });
+    // Settle the original restore even when a preview assertion fails.
+    await beginning.catch(() => undefined);
+  }
+  await expect(beginning).resolves.toMatchObject({ state: "validating", failure: null });
   await verifyCatalogueRecovery(
     catalogueStore(testEnv.CATALOGUE_DB),
     testEnv.BACKUPS,
@@ -728,6 +773,70 @@ test("inspect observes a paused restore without mutation and a second begin repo
     observedAt: "2026-08-05T09:46:00.000Z",
     boundDatabaseId: testEnv.CATALOGUE_D1_DATABASE_ID,
   });
+});
+
+test("recovery HTTP declares provider failure and keeps subsequent mutation fenced", async () => {
+  const providerBase = `https://api.cloudflare.com/client/v4/accounts/${testEnv.CLOUDFLARE_ACCOUNT_ID}/d1/database/${testEnv.CATALOGUE_D1_DATABASE_ID}/time_travel`;
+  let restoreCalls = 0;
+  // Control only the provider HTTP response; the Worker, D1 and R2 stay real.
+  const provider = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    if (input === `${providerBase}/bookmark` && init?.method === "GET")
+      return Response.json({ success: true, result: { bookmark: "bookmark-current" } });
+    if (input === `${providerBase}/restore?bookmark=bookmark-target` && init?.method === "POST") {
+      restoreCalls += 1;
+      return Response.json({ success: false, errors: [{ code: 9000 }] }, { status: 503 });
+    }
+    throw new Error("Unexpected recovery provider request");
+  });
+  const send = (path: string, body: Record<string, unknown>) =>
+    worker.fetch(
+      new Request(`https://card-keepr.invalid${path}`, {
+        method: "POST",
+        headers: { authorization: "Bearer vitest-administration-key", "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      testEnv,
+    );
+  try {
+    const response = await send("/v1/recoveries", {
+      environment: "production",
+      recovery_id: "recovery-http-failure",
+      method: "time_travel",
+      target_revision_id: "catrev_spine_000",
+      target_bookmark: "bookmark-target",
+      target_digest: digest,
+      backup_attempt_id: "recovery-source",
+      expected_current_revision_id: "catrev_spine_000",
+      idempotency_key: "begin-http-failure",
+    });
+    expect(response.status, await response.clone().text()).toBe(502);
+    expect(await response.clone().json()).toMatchObject({ status: 502, code: "recovery_failed" });
+    expect(response.headers.get("content-type")).toBe("application/problem+json");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(restoreCalls).toBe(1);
+    await expect(
+      inspectCatalogueRecovery(catalogueStore(testEnv.CATALOGUE_DB), testEnv.BACKUPS, "recovery-http-failure"),
+    ).resolves.toMatchObject({ state: "failed", failure: { code: "recovery_failed" } });
+    await expect(
+      ingestionQueries.readOperationStateRecoveryHealthActiveRecoveryId(testEnv.CATALOGUE_DB).first(),
+    ).resolves.toEqual({
+      recovery_health: "blocked",
+      active_recovery_id: "recovery-http-failure",
+      recovery_restore_guard: "blocked",
+    });
+    const blocked = await send("/v1/backups", {
+      expected_current_revision_id: "catrev_spine_000",
+      idempotency_key: "backup-after-http-recovery-failure",
+    });
+    expect(blocked.status).toBe(409);
+    expect(await blocked.clone().json()).toMatchObject({ code: "backup_in_progress" });
+    await assertHttpResponse(adminDocument, "/v1/backups", "post", blocked);
+    expect(restoreCalls).toBe(1);
+    await assertHttpResponse(adminDocument, "/v1/recoveries", "post", response);
+  } finally {
+    provider.mockRestore();
+    await resetMaintenanceOperation(testEnv.CATALOGUE_DB).run();
+  }
 });
 
 test("an ambiguous Time Travel response rehydrates a fail-closed journal", async () => {

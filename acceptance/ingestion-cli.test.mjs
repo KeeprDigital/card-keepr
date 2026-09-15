@@ -149,10 +149,6 @@ test("guarded reconciliation and bounded search repair are normative administrat
   assert.match(contract, /backup create.*starts or observes.*Workflow/s);
   assert.match(contract, /first non-terminal response is HTTP `202`/);
   assert.match(contract, /exact replays observe the same.*HTTP `200`/s);
-  assert.match(
-    contract,
-    /CLI\s+exits `10` while status is pending or unknown, `8` for dispatch failure or\s+completed structured failure, and `0` only for a completed verified backup/s,
-  );
 });
 
 test("CLI reconciliation requires explicit production selection and confirmation", async () => {

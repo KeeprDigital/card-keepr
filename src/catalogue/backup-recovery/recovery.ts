@@ -185,13 +185,14 @@ async function retainedRecoveryBegin(
   backups: R2Bucket,
   input: CatalogueRecoveryBeginIntent,
   requestJson: string,
+  ambiguousRestoringIsFailure: boolean,
 ): Promise<RecoveryRow | null> {
   let replay = await recoveryByIdempotency(database, input.idempotencyKey);
   if (replay !== null) {
     if (replay.request_json !== requestJson) throw idempotencyReused();
     return replay;
   }
-  await hydrateRetainedRecoveryIfPresent(database, backups, input.recoveryId, true);
+  await hydrateRetainedRecoveryIfPresent(database, backups, input.recoveryId, ambiguousRestoringIsFailure);
   replay = await recoveryByIdempotency(database, input.idempotencyKey);
   if (replay !== null) {
     if (replay.request_json !== requestJson) throw idempotencyReused();
@@ -205,7 +206,7 @@ export async function acknowledgedCatalogueRecoveryBegin(
   backups: R2Bucket,
   input: CatalogueRecoveryBeginIntent,
 ): Promise<boolean> {
-  return (await retainedRecoveryBegin(database, backups, input, beginRequestJson(input))) !== null;
+  return (await retainedRecoveryBegin(database, backups, input, beginRequestJson(input), false)) !== null;
 }
 
 export async function beginCatalogueRecovery(
@@ -216,7 +217,7 @@ export async function beginCatalogueRecovery(
 ): Promise<Record<string, unknown>> {
   validateBeginInput(input);
   const requestJson = beginRequestJson(input);
-  const replay = await retainedRecoveryBegin(database, backups, input, requestJson);
+  const replay = await retainedRecoveryBegin(database, backups, input, requestJson, true);
   if (replay !== null) return recoveryDocument(database, replay);
   const identity = await recoveryRow(database, input.recoveryId);
   if (identity !== null) {

@@ -1,5 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { boundedJson, digest, identifier, problemResponses, secured } from "../../http/openapi";
+import { boundedJson, digest, identifier, problemResponses, problemSchema, secured } from "../../http/openapi";
 
 const count = z.number().int().nonnegative();
 const time = z.string().datetime();
@@ -288,6 +288,11 @@ export const recoveryBeginRoute = createRoute({
       "Begins recovery of the exact verified backup. Exact replay returns the current recovery document with its original decision and schema binding, even after verification or acceptance.",
     ),
     ...problemResponses,
+    502: {
+      description: "Recovery failed; Catalogue mutation remains blocked. See code and detail.",
+      headers: { "Cache-Control": { required: true, schema: { type: "string", const: "no-store" } } },
+      content: { "application/problem+json": { schema: problemSchema } },
+    },
   },
 });
 export const recoveryVerifyRoute = createRoute({
