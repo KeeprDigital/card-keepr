@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { unstable_splitSqlQuery } from "wrangler";
 import { nativeSqliteExport } from "./native-sqlite-export.mjs";
+import { retainPokemonImportFailure } from "./retain-pokemon-import-failure.mjs";
 
 // Only the Cloudflare control-plane boundary is simulated. SQL export/import
 // and every verification query execute against actual independent SQLite files.
@@ -97,6 +98,33 @@ export function nativeRecoveryCloudflare({ databaseDirectory, directory }) {
           target.exec("COMMIT;");
         } catch (error) {
           target.exec("ROLLBACK;");
+          if (process.env.KEEPR_POKEMON_IMPORT_DIAGNOSTICS === "1") {
+            try {
+              await retainPokemonImportFailure({
+                uploaded,
+                exported,
+                metadata: {
+                  source_head: "0a68ad040c7426d687a4ff6bb4a7dfbeb14ced3e",
+                  diagnostic_head: process.env.GITHUB_SHA,
+                  workflow_run: process.env.GITHUB_RUN_ID,
+                  test_file: "acceptance/pokemon-catalogue.test.mjs",
+                  generation,
+                  target_id: targetId,
+                  snapshot_count: snapshots.length,
+                  error: {
+                    name: error.name,
+                    message: error.message,
+                    code: error.code,
+                    errcode: error.errcode,
+                    errstr: error.errstr,
+                    stack: error.stack,
+                  },
+                },
+              });
+            } catch (captureError) {
+              console.error("[DEBUG-329-import] Capture failed:", String(captureError).slice(0, 1024));
+            }
+          }
           throw error;
         } finally {
           target.exec("PRAGMA foreign_keys=ON;");
