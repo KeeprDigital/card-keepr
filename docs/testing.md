@@ -30,6 +30,19 @@ listing boots no services. `acceptance/helpers/test-tiers.mjs` owns membership;
 new acceptance files enter routine coverage by default. Routine acceptance runs
 at most two files concurrently and partitions exactly once across three CI shards.
 
+## HTTP contract alignment
+
+Required `check:generated` compares both complete OpenAPI documents and compiled
+validators with executable registrations. The independent required-operation
+inventory catches a route removed from both registration and output. Existing
+Worker tests validate actual response bodies, status/media branches and declared
+header values; utilities include HEAD/204/304 body absence and degraded readiness.
+Streaming tests retain byte, range and digest checks without buffering in the
+validator. Generated request tests retain rejection cases and explicit historical
+responses retain their own schemas. Add cases at the responsible boundary when a
+route or Game Profile changes, then regenerate in that same slice. Documentation
+Worker/CLI and release-smoke tests are part of the ordinary full gate.
+
 ## Test transitions, then wiring
 
 | Boundary           | Exercise for real                                      | Control or omit                            |

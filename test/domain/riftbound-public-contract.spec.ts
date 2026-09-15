@@ -79,7 +79,7 @@ test("active manifest accepts Riftbound components and five-game membership whil
   ).toThrow();
 });
 
-test("active API and administration schema definitions include Riftbound but stay closed", () => {
+test("current API and historical administration schemas include Riftbound but stay closed", () => {
   const ajv = new Ajv2020({ strict: false });
   addFormats(ajv);
   const schema = JSON.parse(readFileSync("contracts/schemas/administration.schema.json", "utf8"));

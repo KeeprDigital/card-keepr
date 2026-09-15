@@ -7,6 +7,7 @@ export function environmentNames(environment = "production") {
   return {
     environment,
     host,
+    publicBases: { api: `https://${host}/api`, ingestion: `https://${host}/ingest` },
     workers: [name("card-keepr-api"), name("card-keepr-ingestion")],
     catalogue: name("card-keepr-catalogue"),
     disposable: name("card-keepr-disposable-verification"),

@@ -1,3 +1,4 @@
+import { documentationResponse } from "./helpers/documentation.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -68,6 +69,7 @@ for (const scenario of ["success", "validation failure", "wrong active version"]
     const byName = Object.fromEntries(Object.values(configs).map((config) => [config.name, config]));
     const github = globalThis.fetch;
     const requests = [];
+    const documentationRequests = [];
     globalThis.fetch = async (input, options = {}) => {
       const url = new URL(input);
       if (["api.github.com", "token.actions.githubusercontent.com"].includes(url.hostname))
@@ -79,6 +81,11 @@ for (const scenario of ["success", "validation failure", "wrong active version"]
           CATALOGUE_DB: production.database,
         });
       if (url.hostname === "card-staging.keepr.digital") {
+        const documentation = documentationResponse(input, options);
+        if (documentation) {
+          documentationRequests.push(url.pathname);
+          return documentation;
+        }
         if (url.pathname.endsWith("/outcome"))
           return handleStagingOutcome(new Request(input, options), env, owner.release_id);
         if (url.pathname.endsWith("/staging-deployments"))
@@ -184,6 +191,12 @@ for (const scenario of ["success", "validation failure", "wrong active version"]
     if (scenario === "success")
       assert.equal((await runStagingRelease(input, executeCommand, runValidation)).state, "succeeded");
     else await assert.rejects(runStagingRelease(input, executeCommand, runValidation), /staging_release_failed/u);
+    assert.deepEqual(
+      documentationRequests,
+      scenario === "wrong active version"
+        ? []
+        : ["/api/docs", "/api/openapi.json", "/ingest/docs", "/ingest/openapi.json"],
+    );
     const retained = await showStagingDeployment(staging.database, owner.release_id);
     assert.equal(retained.outcome.state, scenario === "success" ? "succeeded" : "failed");
     assert.equal(retained.outcome.deployment.state, scenario === "wrong active version" ? "failed" : "succeeded");

@@ -4,6 +4,8 @@ import { inspectWorkflowInstance } from "../../../src/catalogue/shared";
 import { checkWorkflows, probeTimeoutMilliseconds } from "../../../src/http/health-checks";
 import ingestionWorker from "../src/index";
 import { installRuntimeSuite } from "./runtime-helpers";
+import { assertHttpResponse } from "../../../test/support/http-contract";
+import contract from "../../../contracts/admin-openapi.json";
 
 installRuntimeSuite();
 
@@ -60,6 +62,7 @@ test("an unexpected readiness rejection returns a sanitized administration failu
     }),
   );
   expect(response.status).toBe(500);
+  await assertHttpResponse(contract, "/health", "get", response);
   const body = await response.text();
   expect(body).not.toContain(secret);
   expect(JSON.parse(body)).toMatchObject({ status: 500, code: "internal_error" });
@@ -69,6 +72,7 @@ test("liveness answers without an administration key and reports only status and
   const response = await anonymous("/healthz");
   expect(response.status).toBe(200);
   expect(response.headers.get("cache-control")).toBe("no-store");
+  await assertHttpResponse(contract, "/healthz", "get", response);
   await expect(response.json()).resolves.toEqual({
     status: "ok",
     runtime: "ingestion",
@@ -127,11 +131,16 @@ test("liveness answers under the public mount, on its own rate limit, off the re
     }),
   );
   expect(limited.status).toBe(429);
+  await assertHttpResponse(contract, "/healthz", "get", limited);
+  const head = await anonymous("/healthz", { method: "HEAD" });
+  expect(head.status).toBe(200);
+  await assertHttpResponse(contract, "/healthz", "head", head);
 });
 
 test("readiness proves the database, every bucket, every Workflow binding, the public base, and the version", async () => {
   const response = await authenticated("/health");
   expect(response.status).toBe(200);
+  await assertHttpResponse(contract, "/health", "get", response);
   const document = await response.json<Record<string, unknown>>();
   expect(document).toMatchObject({
     contract: "card-keepr-runtime-health@1",
@@ -191,6 +200,7 @@ test("a broken Workflow binding turns readiness degraded for that binding only",
     }),
   );
   expect(response.status).toBe(503);
+  await assertHttpResponse(contract, "/health", "get", response);
   const text = await response.text();
   expect(JSON.parse(text)).toMatchObject({
     status: "degraded",
@@ -210,6 +220,7 @@ test("a broken Workflow binding turns readiness degraded for that binding only",
 
   const missing = await authenticated("/health", withOverrides({ EVIDENCE_HOST_WORKFLOW: undefined }));
   expect(missing.status).toBe(503);
+  await assertHttpResponse(contract, "/health", "get", missing);
   await expect(missing.json()).resolves.toMatchObject({
     checks: {
       workflows: {
@@ -238,6 +249,7 @@ test("a broken database or bucket binding turns readiness degraded", async () =>
   });
   const database = await authenticated("/health", withOverrides({ CATALOGUE_DB: brokenDatabase }));
   expect(database.status).toBe(503);
+  await assertHttpResponse(contract, "/health", "get", database);
   const databaseText = await database.text();
   expect(JSON.parse(databaseText)).toMatchObject({
     status: "degraded",
@@ -260,6 +272,7 @@ test("a broken database or bucket binding turns readiness degraded", async () =>
     }),
   );
   expect(bucket.status).toBe(503);
+  await assertHttpResponse(contract, "/health", "get", bucket);
   await expect(bucket.json()).resolves.toMatchObject({
     status: "degraded",
     checks: {
@@ -277,6 +290,7 @@ test("a broken database or bucket binding turns readiness degraded", async () =>
 test("readiness fails when the configured catalogue database id is absent", async () => {
   const response = await authenticated("/health", withOverrides({ CATALOGUE_D1_DATABASE_ID: "" }));
   expect(response.status).toBe(503);
+  await assertHttpResponse(contract, "/health", "get", response);
   await expect(response.json()).resolves.toMatchObject({
     status: "degraded",
     checks: {
@@ -303,6 +317,7 @@ test("readiness accepts absent Workflow probes without creating an instance", as
     }),
   );
   expect(response.status).toBe(200);
+  await assertHttpResponse(contract, "/health", "get", response);
   await expect(response.json()).resolves.toMatchObject({
     checks: {
       workflows: {

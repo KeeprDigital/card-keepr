@@ -1,10 +1,33 @@
 [
   {
     "worker": "admin",
+    "family": "documentation",
+    "method": "GET",
+    "path": "/docs",
+    "contract": "generated",
+    "slice": "Complete HTTP documentation",
+    "treatment": "owner-documentation",
+    "named_cli": "docs administration",
+    "callers": [
+      "acceptance/documentation-cli.test.mjs",
+      "acceptance/helpers/documentation.mjs",
+      "acceptance/production-release-smoke.test.mjs",
+      "acceptance/staging-execution.test.mjs",
+      "apps/api/test/documentation.spec.ts",
+      "apps/ingestion/test/documentation.spec.ts",
+      "cli/documentation.mjs",
+      "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "readiness",
     "method": "GET",
     "path": "/health",
-    "contract": "platform",
+    "contract": "generated",
+    "slice": "Runtime utilities",
     "treatment": "authenticated-readiness",
+    "named_cli": null,
     "callers": [
       "acceptance/backup-recovery-owner-http.test.mjs",
       "acceptance/bounded-capacity-pilot.test.mjs",
@@ -51,16 +74,18 @@
       "apps/ingestion/test/runtime-health.spec.ts",
       "apps/ingestion/test/runtime-public-mount.spec.ts",
       "cli/keepr.mjs",
-      "scripts/http-contracts.mjs",
       "scripts/production-smoke.mjs"
     ]
   },
   {
     "worker": "admin",
+    "family": "liveness",
     "method": "GET",
     "path": "/healthz",
-    "contract": "platform",
+    "contract": "generated",
+    "slice": "Runtime utilities",
     "treatment": "unauthenticated-liveness",
+    "named_cli": null,
     "callers": [
       "acceptance/maintenance-owner-http.test.mjs",
       "acceptance/operational-diagnostics-leak.test.mjs",
@@ -69,16 +94,18 @@
       "apps/api/test/health.spec.ts",
       "apps/api/test/runtime.spec.ts",
       "apps/ingestion/test/runtime-health.spec.ts",
-      "scripts/http-contracts.mjs",
       "scripts/production-smoke.mjs"
     ]
   },
   {
     "worker": "admin",
+    "family": "liveness",
     "method": "HEAD",
     "path": "/healthz",
-    "contract": "platform",
+    "contract": "generated",
+    "slice": "Runtime utilities",
     "treatment": "unauthenticated-liveness",
+    "named_cli": null,
     "callers": [
       "acceptance/maintenance-owner-http.test.mjs",
       "acceptance/operational-diagnostics-leak.test.mjs",
@@ -87,7 +114,25 @@
       "apps/api/test/health.spec.ts",
       "apps/api/test/runtime.spec.ts",
       "apps/ingestion/test/runtime-health.spec.ts",
-      "scripts/http-contracts.mjs",
+      "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "documentation",
+    "method": "GET",
+    "path": "/openapi.json",
+    "contract": "generated",
+    "slice": "Complete HTTP documentation",
+    "treatment": "owner-documentation",
+    "named_cli": "docs administration --json",
+    "callers": [
+      "acceptance/documentation-cli.test.mjs",
+      "acceptance/production-release-smoke.test.mjs",
+      "acceptance/staging-execution.test.mjs",
+      "apps/api/test/documentation.spec.ts",
+      "apps/ingestion/test/documentation.spec.ts",
+      "cli/documentation.mjs",
       "scripts/production-smoke.mjs"
     ]
   },
@@ -409,16 +454,19 @@
   },
   {
     "worker": "admin",
+    "family": "platform",
     "method": "POST",
     "path": "/v1/dev-deployments",
-    "contract": "platform",
-    "treatment": "dev-only signed workflow identity",
+    "contract": "generated",
+    "slice": "Signed Workflow deployment",
+    "treatment": "signed-workflow-deployment",
+    "named_cli": null,
     "callers": [
       "acceptance/composition-smoke-targets.test.mjs",
       "acceptance/dev-deployment.test.mjs",
       "acceptance/helpers/native-fresh-baseline.mjs",
       "apps/api/test/collection-contract.spec.ts",
-      "scripts/http-contracts.mjs"
+      "apps/ingestion/test/platform-contract.spec.ts"
     ]
   },
   {
@@ -1384,6 +1432,7 @@
     "slice": "Retained runs",
     "named_cli": "reconciliationStatus",
     "callers": [
+      "acceptance/ingestion-cli.test.mjs",
       "acceptance/retained-run-owner-http.test.mjs",
       "apps/ingestion/test/entity-admission.spec.ts",
       "apps/ingestion/test/errata-rules-text.spec.ts",
@@ -1412,6 +1461,7 @@
     "slice": "Retained runs",
     "named_cli": "reconcileRun",
     "callers": [
+      "acceptance/ingestion-cli.test.mjs",
       "acceptance/retained-run-owner-http.test.mjs",
       "apps/ingestion/test/entity-admission.spec.ts",
       "apps/ingestion/test/errata-rules-text.spec.ts",
@@ -1652,9 +1702,12 @@
       "acceptance/helpers/native-fresh-baseline.mjs",
       "acceptance/production-release-cli.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
+      "apps/api/test/documentation.spec.ts",
+      "apps/ingestion/test/documentation.spec.ts",
       "apps/ingestion/test/production-release-bootstrap.spec.ts",
       "apps/ingestion/test/production-release-preparation.spec.ts",
-      "cli/production-release.mjs"
+      "cli/production-release.mjs",
+      "scripts/production-smoke.mjs"
     ]
   },
   {
@@ -2120,17 +2173,20 @@
   },
   {
     "worker": "admin",
+    "family": "platform",
     "method": "POST",
     "path": "/v1/staging-deployments",
-    "contract": "platform",
-    "treatment": "staging-only signed manual workflow identity",
+    "contract": "generated",
+    "slice": "Signed Workflow deployment",
+    "treatment": "signed-workflow-deployment",
+    "named_cli": null,
     "callers": [
       "acceptance/composition-smoke-targets.test.mjs",
       "acceptance/helpers/native-fresh-baseline.mjs",
       "acceptance/staging-release-state.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/platform-contract.spec.ts",
       "apps/ingestion/test/staging-release-http.spec.ts",
-      "scripts/http-contracts.mjs",
       "scripts/staging-release.mjs"
     ]
   },
@@ -2151,20 +2207,27 @@
   },
   {
     "worker": "admin",
+    "family": "platform",
     "method": "POST",
     "path": "/v1/staging-deployments/{release}/outcome",
-    "contract": "platform",
-    "treatment": "staging-only signed manual workflow identity",
+    "contract": "generated",
+    "slice": "Signed Workflow deployment",
+    "treatment": "signed-workflow-deployment",
+    "named_cli": null,
     "callers": [
-      "scripts/http-contracts.mjs"
+      "acceptance/staging-release-state.test.mjs",
+      "apps/ingestion/test/platform-contract.spec.ts"
     ]
   },
   {
     "worker": "admin",
+    "family": "platform",
     "method": "POST",
     "path": "/v1/staging-release-authorizations",
-    "contract": "platform",
-    "treatment": "production-only signed manual workflow identity",
+    "contract": "generated",
+    "slice": "Signed Workflow deployment",
+    "treatment": "signed-workflow-deployment",
+    "named_cli": null,
     "callers": [
       "acceptance/composition-smoke-targets.test.mjs",
       "acceptance/helpers/native-fresh-baseline.mjs",
@@ -2172,8 +2235,8 @@
       "acceptance/staging-release-state.test.mjs",
       "acceptance/staging-workflow-gate.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
-      "apps/ingestion/test/staging-release-http.spec.ts",
-      "scripts/http-contracts.mjs"
+      "apps/ingestion/test/platform-contract.spec.ts",
+      "apps/ingestion/test/staging-release-http.spec.ts"
     ]
   },
   {
@@ -2257,6 +2320,26 @@
   },
   {
     "worker": "read",
+    "family": "documentation",
+    "method": "GET",
+    "path": "/docs",
+    "contract": "generated",
+    "slice": "Complete HTTP documentation",
+    "treatment": "public-documentation",
+    "named_cli": "docs catalogue",
+    "callers": [
+      "acceptance/documentation-cli.test.mjs",
+      "acceptance/helpers/documentation.mjs",
+      "acceptance/production-release-smoke.test.mjs",
+      "acceptance/staging-execution.test.mjs",
+      "apps/api/test/documentation.spec.ts",
+      "apps/ingestion/test/documentation.spec.ts",
+      "cli/documentation.mjs",
+      "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "read",
     "family": "readiness",
     "method": "GET",
     "path": "/health",
@@ -2310,7 +2393,6 @@
       "apps/ingestion/test/runtime-health.spec.ts",
       "apps/ingestion/test/runtime-public-mount.spec.ts",
       "cli/keepr.mjs",
-      "scripts/http-contracts.mjs",
       "scripts/production-smoke.mjs"
     ]
   },
@@ -2331,7 +2413,6 @@
       "apps/api/test/health.spec.ts",
       "apps/api/test/runtime.spec.ts",
       "apps/ingestion/test/runtime-health.spec.ts",
-      "scripts/http-contracts.mjs",
       "scripts/production-smoke.mjs"
     ]
   },
@@ -2352,7 +2433,25 @@
       "apps/api/test/health.spec.ts",
       "apps/api/test/runtime.spec.ts",
       "apps/ingestion/test/runtime-health.spec.ts",
-      "scripts/http-contracts.mjs",
+      "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "read",
+    "family": "documentation",
+    "method": "GET",
+    "path": "/openapi.json",
+    "contract": "generated",
+    "slice": "Complete HTTP documentation",
+    "treatment": "public-documentation",
+    "named_cli": "docs catalogue --json",
+    "callers": [
+      "acceptance/documentation-cli.test.mjs",
+      "acceptance/production-release-smoke.test.mjs",
+      "acceptance/staging-execution.test.mjs",
+      "apps/api/test/documentation.spec.ts",
+      "apps/ingestion/test/documentation.spec.ts",
+      "cli/documentation.mjs",
       "scripts/production-smoke.mjs"
     ]
   },
@@ -2396,7 +2495,6 @@
       "apps/ingestion/test/game-publication.spec.ts",
       "apps/ingestion/test/native-no-change-helpers.ts",
       "apps/ingestion/test/reconciliation-scale.stress.spec.ts",
-      "scripts/http-contracts.mjs",
       "scripts/production-smoke.mjs"
     ]
   },
@@ -2561,12 +2659,15 @@
     "callers": [
       "acceptance/card-categories.test.mjs",
       "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/helpers/documentation.mjs",
       "acceptance/helpers/native-fresh-baseline.mjs",
       "acceptance/pokemon-catalogue.test.mjs",
       "acceptance/scryfall-catalogue.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
+      "apps/api/test/documentation.spec.ts",
       "apps/api/test/hono-contract.spec.ts",
-      "apps/api/test/public-mount.spec.ts"
+      "apps/api/test/public-mount.spec.ts",
+      "scripts/production-smoke.mjs"
     ]
   },
   {

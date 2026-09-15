@@ -1,4 +1,5 @@
-import { type Route, type RouteContext } from "../../http/routes";
+import type { HttpRoute } from "../../http/openapi";
+import { type RouteContext } from "../../http/routes";
 import { recoveryBeginIntent, recoveryAcceptanceIntent } from "./http-input";
 import { httpRoute, retainedWireValue } from "../../http/openapi";
 import {
@@ -39,7 +40,7 @@ type Environment = {
 };
 type Context = RouteContext<Environment> & { observedAt: string };
 
-export const backupRecoveryRoutes: Route<Context>[] = [
+export const backupRecoveryRoutes: HttpRoute<Context>[] = [
   httpRoute<Context>()(backupStatusRoute, async (c) => {
     const { env } = c.env;
     const value = await catalogueBackupAttemptStatus(env.CATALOGUE_DB, c.req.valid("param").attempt);

@@ -9,15 +9,15 @@ candidate against its Game Catalogue Revision predecessor.
 The root of [administration.schema.json](schemas/administration.schema.json)
 decodes historical `card-keepr-administration@1` snapshots. Its run-owned state
 and approval definitions are retained for historical decoding, not current
-status or native approval. The named `CommandRequest` definitions describe the
-remaining unmigrated commands. Migrated HTTP inputs and responses come from the
+status or native approval. All current HTTP inputs and responses come from the
 [generated administration specification](admin-openapi.json), as described by the
 [HTTP boundary](HTTP.md). Generation and sequence are non-negative safe integers;
 each protocol below specifies its wire representation. Candidate control,
 publication approval and publication resume send JSON integer generations.
 Artifact preparation sends JSON integer generation and sequence.
 
-The repository CLI is the only initial owner interface. It talks to the
+The repository CLI is the initial owner command interface. Readable protected
+API documentation and downloads are described in [HTTP access](HTTP.md#read-or-download-documentation). It talks to the
 ingestion Worker for catalogue operations, to GitHub for a production release
 dispatch. The dev deployment endpoint receives a short-lived GitHub token only
 for read-only exact-commit checks; no Worker receives Cloudflare deployment

@@ -1,19 +1,15 @@
 import { readAdministrationBody } from "../../http/administration";
+import { retainedWireValue } from "../../http/openapi";
 import { verifyStagingWorkflow } from "../../http/dev-workflow-identity.mjs";
-import {
-  AdministrationProblem,
-  type CatalogueStore,
-  canonicalJson,
-  isReleaseDigest,
-  isReleaseIdentity,
-  sha256Text,
-} from "../shared";
+import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { showStagingRelease, type StagingIntent } from "./staging-release";
 import {
   recordStagingProtocolStatement,
   stagingIntentStartingStateGate,
   stagingRecordStatement,
 } from "./staging-release-repository";
+import { stagingIntentIdentitySchema } from "./platform-http-contract";
+import { stagingAuthorizationSchema } from "./staging-http-contract";
 
 export type StagingAuthorization = {
   contract: "card-keepr-staging-authorization@1";
@@ -69,9 +65,12 @@ export async function handleStagingAuthorization(
     );
   }
   if (existing !== null)
-    return Response.json(exactClaim(existing, identity.runId, identity.runAttempt), {
-      headers: { "cache-control": "no-store" },
-    });
+    return Response.json(
+      retainedWireValue(stagingAuthorizationSchema, exactClaim(existing, identity.runId, identity.runAttempt)),
+      {
+        headers: { "cache-control": "no-store" },
+      },
+    );
   const authorization: StagingAuthorization = {
     contract: "card-keepr-staging-authorization@1",
     intent,
@@ -99,25 +98,28 @@ export async function handleStagingAuthorization(
     const concurrent = await readClaim(env.CATALOGUE_DB, key);
     if (concurrent === null)
       throw new AdministrationProblem(409, "staging_start_changed", "Production changed before staging authorization.");
-    return Response.json(exactClaim(concurrent, identity.runId, identity.runAttempt), {
-      headers: { "cache-control": "no-store" },
-    });
+    return Response.json(
+      retainedWireValue(stagingAuthorizationSchema, exactClaim(concurrent, identity.runId, identity.runAttempt)),
+      {
+        headers: { "cache-control": "no-store" },
+      },
+    );
   }
-  return Response.json(authorization, { status: 201, headers: { "cache-control": "no-store" } });
+  return Response.json(retainedWireValue(stagingAuthorizationSchema, authorization), {
+    status: 201,
+    headers: { "cache-control": "no-store" },
+  });
 }
 
 export function stagingIntentIdentity(body: Record<string, unknown>): { releaseId: string; intentDigest: string } {
-  if (
-    Object.keys(body).sort().join("|") !== "intent_digest|release_id" ||
-    !isReleaseIdentity(body.release_id) ||
-    !isReleaseDigest(body.intent_digest)
-  )
+  const parsed = stagingIntentIdentitySchema.safeParse(body);
+  if (!parsed.success)
     throw new AdministrationProblem(
       422,
       "invalid_staging_intent",
       "The exact release identity and intent digest are required.",
     );
-  return { releaseId: body.release_id, intentDigest: body.intent_digest };
+  return { releaseId: parsed.data.release_id, intentDigest: parsed.data.intent_digest };
 }
 async function readClaim(database: CatalogueStore, key: string): Promise<StagingAuthorization | null> {
   const row = await stagingRecordStatement(database, key).first<{ operation: string; response_json: string }>();

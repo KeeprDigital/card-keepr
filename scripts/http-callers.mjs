@@ -24,8 +24,8 @@ export function operationalCallers() {
       if (ts.isStringLiteralLike(node)) value = node.text;
       else if (ts.isTemplateExpression(node))
         value = node.head.text + node.templateSpans.map((span) => `*${span.literal.text}`).join("");
-      if (value && /\/(?:v1\/|admin\/v1\/|health)/.test(value)) {
-        const start = value.search(/\/(?:v1\/|admin\/v1\/|health)/);
+      if (value && /\/(?:v1\/|admin\/v1\/|health|docs|openapi\.json)/.test(value)) {
+        const start = value.search(/\/(?:v1\/|admin\/v1\/|health|docs|openapi\.json)/);
         const path = value
           .slice(start)
           .split("?")[0]

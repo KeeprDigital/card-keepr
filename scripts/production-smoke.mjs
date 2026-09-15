@@ -31,7 +31,8 @@ export async function runBootstrapSmoke(input, fetchImpl = fetch) {
   await expectLiveness(fetchImpl, ingestionUrl("/healthz"), "ingestion");
   const catalogue = await expectJson(fetchImpl, apiUrl("/v1/catalogue"), authorized, 200, SPINE_REVISION_ID);
   if (catalogue.meta?.catalogue_revision_id !== SPINE_REVISION_ID) throw new Error("current_revision_mismatch");
-  return { contract: "card-keepr-production-bootstrap-smoke@1", revision_id: SPINE_REVISION_ID, checks: 6 };
+  await expectDocumentation(fetchImpl, input);
+  return { contract: "card-keepr-production-bootstrap-smoke@1", revision_id: SPINE_REVISION_ID, checks: 10 };
 }
 
 export async function runProductionSmoke(input, fetchImpl = fetch) {
@@ -121,12 +122,13 @@ export async function runProductionSmoke(input, fetchImpl = fetch) {
     409,
   );
   if (stale.code !== "cursor_revision_unavailable") throw new Error("stale_cursor_did_not_fail_predictably");
+  await expectDocumentation(fetchImpl, input);
   return {
     contract: "card-keepr-production-smoke@1",
     revision_id: input.currentRevisionId,
     revision_ids: input.revisions.map((item) => item.revision_id),
     stale_revision_id: input.staleRevisionId,
-    checks: 22,
+    checks: 26,
   };
 }
 
@@ -173,9 +175,14 @@ function validateInput(input) {
           item.printing_cursor,
         ].some((value) => typeof value !== "string" || value.length === 0),
     ) ||
-    [input.apiUrl, input.apiKey, input.printingImageId, input.staleCursor, input.staleRevisionId].some(
-      (value) => typeof value !== "string" || value.length === 0,
-    ) ||
+    [
+      input.apiUrl,
+      input.ingestionUrl,
+      input.apiKey,
+      input.printingImageId,
+      input.staleCursor,
+      input.staleRevisionId,
+    ].some((value) => typeof value !== "string" || value.length === 0) ||
     input.revisions.some((item) => item.revision_id === input.staleRevisionId)
   )
     throw new Error("invalid_smoke_input");
@@ -197,6 +204,33 @@ function assertRevisionCollection(document, revision, expectedId, kind) {
     !document.data.some((item) => item?.id === expectedId)
   )
     throw new Error(`${kind}_revision_fixture_mismatch`);
+}
+
+async function expectDocumentation(fetchImpl, input) {
+  const page = await expectStatus(fetchImpl, runtimeUrl(input.apiUrl, "/docs"), {}, 200);
+  if (
+    page.headers.get("content-type")?.split(";")[0] !== "text/html" ||
+    !(await page.text()).includes(String(runtimeUrl(input.apiUrl, "/openapi.json")))
+  )
+    throw new Error("smoke_documentation_page_invalid");
+  const response = await expectStatus(fetchImpl, runtimeUrl(input.apiUrl, "/openapi.json"), {}, 200);
+  if (response.headers.get("content-type")?.split(";")[0] !== "application/json")
+    throw new Error("smoke_documentation_media_invalid");
+  const spec = await response.json();
+  if (
+    spec.openapi !== "3.1.0" ||
+    spec.servers?.length !== 1 ||
+    spec.servers[0].url !== String(input.apiUrl).replace(/\/+$/u, "") ||
+    !spec.paths?.["/v1/games"]?.get?.security?.length ||
+    spec.paths?.["/docs"]?.get?.security?.length !== 0 ||
+    spec.paths?.["/v1/production-releases"]
+  )
+    throw new Error("smoke_documentation_contract_invalid");
+  for (const path of ["/docs", "/openapi.json"]) {
+    const denied = await expectJson(fetchImpl, runtimeUrl(input.ingestionUrl, path), {}, 401);
+    if (denied.code !== "authentication_required")
+      throw new Error("ingestion_documentation_authentication_not_enforced");
+  }
 }
 
 async function expectStatus(fetchImpl, url, headers, status, revision) {

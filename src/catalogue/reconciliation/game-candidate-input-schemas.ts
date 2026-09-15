@@ -145,7 +145,7 @@ const inputSchemas = {
 const namedInputs = Object.fromEntries(
   Object.entries(inputSchemas)
     .filter(([kind]) => kind !== "observations")
-    .map(([kind, schema]) => [kind, schema.openapi(`ReconciliationInput_${kind}`)]),
+    .map(([kind, schema]) => [kind, schema.openapi(`ReconciliationInput_${kind === "$metadata" ? "metadata" : kind}`)]),
 );
 const observations = {
   categories: z.union([cardObservation, erratumObservation]).openapi("ReconciliationCategoryObservations"),

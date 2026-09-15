@@ -1,14 +1,21 @@
 import { readFileSync } from "node:fs";
 import Ajv2020 from "ajv/dist/2020.js";
+import addFormats from "ajv-formats";
 import type { ValidateFunction } from "ajv";
 import { expect, test } from "vitest";
 
-const schema = JSON.parse(readFileSync("contracts/schemas/administration.schema.json", "utf8"));
+const schema = JSON.parse(readFileSync("contracts/admin-openapi.json", "utf8"));
 const ajv = new Ajv2020({ strict: false });
-ajv.addSchema(schema);
+addFormats(ajv);
+ajv.addSchema(schema, "administration");
+function requestValidator(path: string): ValidateFunction {
+  return ajv.compile({
+    $ref: `administration#/paths/${path.replaceAll("/", "~1")}/post/requestBody/content/application~1json/schema`,
+  });
+}
 
 test("native approval requires the exact whole candidate, manifest, game predecessor and generation", () => {
-  const validate = ajv.getSchema(`${schema.$id}#/$defs/PublicationApprovalCommandRequest`);
+  const validate = requestValidator("/v1/publications");
   expect(validate).toBeDefined();
   const request = {
     candidate_id: "candidate_approved",
@@ -32,7 +39,7 @@ test("native approval requires the exact whole candidate, manifest, game predece
 
 test.each([
   [
-    "PublicationPreparationCommandRequest",
+    "/v1/game-candidates/{candidate}/publication-preparation",
     {
       manifest_digest: "b".repeat(64),
       generation: 0,
@@ -40,9 +47,9 @@ test.each([
       idempotency_key: "artifacts@1",
     },
   ],
-  ["PublicationResumeCommandRequest", { generation: 0, idempotency_key: "resume-publication" }],
+  ["/v1/publications/{publication}/resume", { generation: 0, idempotency_key: "resume-publication" }],
 ] as const)("%s accepts its complete native intent and rejects incomplete or extra bindings", (name, request) => {
-  const validate = ajv.getSchema(`${schema.$id}#/$defs/${name}`);
+  const validate = requestValidator(name);
   expect(validate).toBeDefined();
   expectCompleteRequest(validate!, request);
   expect(validate!({ ...request, expected_current_revision_id: "catrev_global" })).toBe(false);
@@ -56,7 +63,7 @@ test.each([
 });
 
 test.each(["dev", "staging", "production"])("recovery accepts the complete %s environment intent", (environment) => {
-  const validate = ajv.getSchema(`${schema.$id}#/$defs/CatalogueRecoveryBeginCommandRequest`)!;
+  const validate = requestValidator("/v1/recoveries");
   const request = {
     environment,
     recovery_id: "recovery_exact_backup",

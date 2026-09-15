@@ -1,3 +1,4 @@
+import type { HttpRoute } from "../../http/openapi";
 import {
   retainedRunRoute,
   retainedRunInspectionSchema,
@@ -35,7 +36,7 @@ import { environmentNames } from "../../http/environment-target.mjs";
 import { validatedEnvironmentTarget } from "../../http/production-target.mjs";
 import { administrationResultStatus } from "../../http/administration";
 import { absoluteDocumentLinks } from "../../http/public-base";
-import { type Route, type RouteContext } from "../../http/routes";
+import { type RouteContext } from "../../http/routes";
 import {
   publicationBackupReservation,
   startOrObserveCatalogueBackupWorkflow,
@@ -78,7 +79,7 @@ export type PublicationBackupWaiter = (
 ) => Promise<void>;
 type Context = RouteContext<Environment> & { observedAt: string; publicationBackupWaiter?: PublicationBackupWaiter };
 
-export const ingestionRoutes: Route<Context>[] = [
+export const ingestionRoutes: HttpRoute<Context>[] = [
   httpRoute<Context>()(stagingReleaseRoute, async (c) => {
     const { env, observedAt } = c.env;
     if ((env.KEEPR_ENVIRONMENT ?? "production") !== "production")

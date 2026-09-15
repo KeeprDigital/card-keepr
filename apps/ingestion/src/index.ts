@@ -1,31 +1,25 @@
 import { Hono } from "hono";
-import {
-  administrationRoutes,
-  handleDevDeployment,
-  handleStagingAuthorization,
-  handleStagingDeployment,
-  handleStagingOutcome,
-} from "../../../src/catalogue/ingestion";
+import { administrationRoutes, platformRoutes } from "../../../src/catalogue/ingestion";
 import { enforceRecoveryRestoreGuard } from "../../../src/catalogue/backup-recovery";
 import { enforceFreshBaselineMutationGuard, type PublicationBackupWaiter } from "../../../src/catalogue/ingestion";
-import {
-  type CatalogueStore,
-  catalogueEnvironment,
-  catalogueStore,
-  inspectWorkflowInstance,
-} from "../../../src/catalogue/shared";
+import { type CatalogueStore, catalogueEnvironment, catalogueStore } from "../../../src/catalogue/shared";
 import { authenticateBearer } from "../../../src/http/authentication";
-import { isLivenessRequest, livenessRequest, readinessResponse } from "../../../src/http/health";
+import { isLivenessRequest } from "../../../src/http/health";
 import { withOperationalRequestLog } from "../../../src/http/operational-log";
 import { problemResponse } from "../../../src/http/problem";
 import { mountedRequest, type PublicBase, publicBase, routePath } from "../../../src/http/public-base";
 import { rateLimitFailure } from "../../../src/http/rate-limit";
 import { httpDispatch } from "../../../src/http/openapi";
 import { type RouteContext, routeSegments } from "../../../src/http/routes";
-import { ingestionCapabilities } from "../../../src/runtime-capabilities.mjs";
 import { ingestionProblemResponse } from "./problem";
 import { administrationObservedAt, publicationBackupWaiter } from "./request-clock";
+import { administrationDocumentationRoutes } from "./documentation-routes";
 
+import { administrationReadinessRoutes, administrationLivenessRoutes } from "./utility-routes";
+
+const dispatchReadiness = httpDispatch(administrationReadinessRoutes);
+const dispatchLiveness = httpDispatch(administrationLivenessRoutes);
+const dispatchPlatform = httpDispatch(platformRoutes);
 const routes = administrationRoutes;
 const dispatch = httpDispatch<
   RouteContext<Omit<Env, "CATALOGUE_DB"> & { CATALOGUE_DB: CatalogueStore }> & {
@@ -33,7 +27,10 @@ const dispatch = httpDispatch<
     publicationBackupWaiter: PublicationBackupWaiter;
   }
 >(routes);
-const logOptions = { routeSegments: routeSegments(routes, ["/health", "/healthz"]) };
+const dispatchDocumentation = httpDispatch(administrationDocumentationRoutes);
+const logOptions = {
+  routeSegments: routeSegments([...routes, ...administrationDocumentationRoutes], ["/health", "/healthz"]),
+};
 
 export { CatalogueBackupWorkflow } from "./backup-workflow";
 export { EvidenceHostWorkflow, EvidenceIngestionWorkflow } from "./evidence-workflows";
@@ -49,16 +46,14 @@ administrationHttp.use("*", async (c, next) => {
   const rateLimited = await rateLimitFailure(request, env.ADMINISTRATION_RATE_LIMIT, requestId);
   if (rateLimited !== null) return rateLimited;
 
-  if (new URL(request.url).pathname === "/v1/dev-deployments")
-    return await handleDevDeployment(request, catalogueEnvironment(env));
   const platformPath = new URL(request.url).pathname;
-  if (platformPath === "/v1/staging-release-authorizations")
-    return await handleStagingAuthorization(request, catalogueEnvironment(env));
-  if (platformPath === "/v1/staging-deployments" && request.method === "POST")
-    return await handleStagingDeployment(request, catalogueEnvironment(env));
-  const outcome = /^\/v1\/staging-deployments\/([^/]+)\/outcome$/u.exec(platformPath);
-  if (outcome && request.method === "POST")
-    return await handleStagingOutcome(request, catalogueEnvironment(env), decodeURIComponent(outcome[1]!));
+  if (
+    platformPath === "/v1/dev-deployments" ||
+    platformPath === "/v1/staging-release-authorizations" ||
+    (request.method === "POST" &&
+      (platformPath === "/v1/staging-deployments" || /^\/v1\/staging-deployments\/[^/]+\/outcome$/u.test(platformPath)))
+  )
+    return dispatchPlatform(request.method, platformPath, { request, requestId, base, env: catalogueEnvironment(env) });
 
   const authenticationFailure = await authenticateBearer(
     request,
@@ -71,29 +66,12 @@ administrationHttp.use("*", async (c, next) => {
   );
   if (authenticationFailure !== null) return authenticationFailure;
 
+  if (request.method === "GET" && administrationDocumentationRoutes.some((route) => route.pathname === c.req.path))
+    return dispatchDocumentation(request.method, c.req.path, { request, requestId, base });
+
   const url = new URL(request.url);
-  if (request.method === "GET" && url.pathname === "/health") {
-    return await readinessResponse("ingestion", ingestionCapabilities, {
-      database: env.CATALOGUE_DB,
-      configuredDatabaseId: env.CATALOGUE_D1_DATABASE_ID,
-      buckets: {
-        EVIDENCE_OBJECTS: env.EVIDENCE_OBJECTS,
-        PRINTING_IMAGES: env.PRINTING_IMAGES,
-        CATALOGUE_EXPORTS: env.CATALOGUE_EXPORTS,
-        BACKUPS: env.BACKUPS,
-      },
-      inspectWorkflow: inspectWorkflowInstance,
-      workflows: {
-        EVIDENCE_INGESTION_WORKFLOW: env.EVIDENCE_INGESTION_WORKFLOW,
-        EVIDENCE_HOST_WORKFLOW: env.EVIDENCE_HOST_WORKFLOW,
-        RECONCILIATION_WORKFLOW: env.RECONCILIATION_WORKFLOW,
-        CATALOGUE_BACKUP_WORKFLOW: env.CATALOGUE_BACKUP_WORKFLOW,
-      },
-      publicBase: base,
-      request,
-      version: env.CF_VERSION_METADATA,
-    });
-  }
+  if (request.method === "GET" && url.pathname === "/health")
+    return dispatchReadiness(request.method, url.pathname, { env, request, base, requestId });
   const observedAt = administrationObservedAt(request, env);
   c.set("observedAt", observedAt);
   await enforceRecoveryRestoreGuard(catalogueStore(env.CATALOGUE_DB));
@@ -171,8 +149,8 @@ const ingestionWorker = {
         "ingestion",
         mounted,
         env,
-        (observedEnv, requestId) =>
-          livenessRequest(mounted, observedEnv.INGESTION_LIVENESS_RATE_LIMIT, "ingestion", requestId),
+        async (observedEnv, requestId) =>
+          dispatchLiveness(mounted.method, route, { env: observedEnv, request: mounted, base, requestId }),
         { logged: false },
       );
     }

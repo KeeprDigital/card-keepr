@@ -7,7 +7,8 @@
 //
 //   api-worker-surface   apps/api/src/** imports, out of src/, only the
 //                        `read` and `shared` cluster indexes, src/http/**,
-//                        and src/runtime-capabilities.mjs (plus its own
+//                        src/runtime-capabilities.mjs and the generated public
+//                        contracts/read-openapi.json (plus its own
 //                        files). The api worker never reaches an
 //                        administration cluster or a cluster internal.
 //   worker-cluster-index a worker entrypoint imports a catalogue cluster
@@ -66,7 +67,12 @@ const allowedImports = {
 };
 
 const apiClusterSurface = new Set(["read", "shared"]);
-const apiSharedModules = new Set([join(root, "src", "runtime-capabilities.mjs")]);
+const apiSharedModules = new Set([
+  join(root, "src", "runtime-capabilities.mjs"),
+  // The public reference is a generated read-only artifact. Administration
+  // specifications and catalogue implementation internals remain forbidden.
+  join(root, "contracts", "read-openapi.json"),
+]);
 
 function isModuleFile(name) {
   return /\.(ts|mts|mjs)$/.test(name) && !name.endsWith(".d.ts") && !name.endsWith(".d.mts");
@@ -166,7 +172,7 @@ for (const file of scannedFiles) {
           file,
           specifier,
           "api-worker-surface",
-          "the api worker imports only the read and shared cluster indexes, src/http, and src/runtime-capabilities.mjs",
+          "the api worker imports only the read and shared cluster indexes, src/http, src/runtime-capabilities.mjs and contracts/read-openapi.json",
         );
         break;
       }

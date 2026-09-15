@@ -3,12 +3,13 @@ import type { MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { readBoundedJsonObject } from "./bounded-json";
 import { problemResponse } from "./problem";
-import type { Route } from "./routes";
 
 export type HttpContext = { request: Request; requestId: string };
-export type HttpRoute<C extends object> = Route<C> & {
-  definition?: RouteConfig;
-  register?: (app: OpenAPIHono<{ Bindings: C }>) => void;
+export type HttpRoute<C extends object> = {
+  method: string;
+  pathname: string;
+  definition: RouteConfig;
+  register: <Bindings extends C>(app: OpenAPIHono<{ Bindings: Bindings }>) => void;
 };
 
 /** The registration binds validated inputs and typed JSON responses to the same wire definition. */
@@ -17,12 +18,11 @@ export function httpRoute<C extends HttpContext>() {
     method: definition.method.toUpperCase(),
     pathname: definition.path.replaceAll(/\{([^}]+)\}/g, ":$1"),
     definition,
-    register: (app) => {
-      app.openapi(definition, handler);
-    },
-    // This route is installed only by the Hono bridge; accidental legacy dispatch fails closed.
-    handler: async () => {
-      throw new Error("An HTTP contract route requires the Hono router.");
+    register: <Bindings extends C>(app: OpenAPIHono<{ Bindings: Bindings }>) => {
+      // A composed Worker supplies every binding this handler requires, plus
+      // those of sibling families. Hono's context setters are invariant; the
+      // handler still consumes the original, statically checked C contract.
+      app.openapi(definition, handler as RouteHandler<R, { Bindings: C }> & RouteHandler<R, { Bindings: Bindings }>);
     },
   });
 }
@@ -78,6 +78,21 @@ export function httpRouter<C extends HttpContext>(routes: readonly HttpRoute<C>[
     },
   });
   app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", { type: "http", scheme: "bearer" });
+  if (routes.some((route) => route.definition.security?.some((requirement) => "workflowAttestation" in requirement))) {
+    app.openAPIRegistry.registerComponent("securitySchemes", "workflowAttestation", {
+      type: "http",
+      scheme: "bearer",
+      bearerFormat: "JWT",
+      description:
+        "Signed GitHub Actions OIDC identity for the exact authorized Workflow/environment. Owner and consumer keys are not accepted.",
+    });
+    app.openAPIRegistry.registerComponent("securitySchemes", "githubWorkflowToken", {
+      type: "apiKey",
+      in: "header",
+      name: "X-GitHub-Token",
+      description: "Short-lived GitHub Workflow token used only after identity verification for exact-commit checks.",
+    });
+  }
   app.onError((error) => {
     if (error instanceof HTTPException && error.status === 400)
       throw Object.assign(new Error("The request body must be valid JSON."), { status: 400, code: "invalid_json" });
@@ -102,8 +117,7 @@ export function httpRouter<C extends HttpContext>(routes: readonly HttpRoute<C>[
     await next();
   });
   for (const entry of routes) {
-    if (entry.register) entry.register(app);
-    else app.on(entry.method, entry.pathname, async (c) => (await entry.handler(c.env, c.req.param())) ?? c.notFound());
+    entry.register(app);
   }
   return app;
 }

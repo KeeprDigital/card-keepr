@@ -64,7 +64,7 @@ const stagingReceiptFields = {
   }),
 };
 export const stagingReceiptSchema = z.strictObject(stagingReceiptFields).openapi("StagingReleaseReceipt");
-const authorization = z
+export const stagingAuthorizationSchema = z
   .strictObject({
     contract: z.literal("card-keepr-staging-authorization@1"),
     intent: stagingIntentSchema,
@@ -76,25 +76,29 @@ const authorization = z
     expires_at: timestamp,
   })
   .openapi("StagingWorkflowAuthorization");
+const authorization = stagingAuthorizationSchema;
 export const stagingInspectionSchema = z
   .strictObject({ ...stagingReceiptFields, authorization: z.union([authorization, z.null()]) })
   .openapi("StagingReleaseInspection");
 const state = z.enum(["succeeded", "failed", "not_run"]);
-const outcome = z.strictObject({
-  contract: z.literal("card-keepr-staging-outcome@1"),
-  intent_digest: digest,
-  expected_head_sha: releaseHead,
-  state: z.enum(["succeeded", "failed"]),
-  deployment: z.strictObject({ state, release_id: releaseIdentity, dispatch_digest: digest.nullable() }),
-  migration: z.strictObject({
-    state,
-    starting_level: z.number().int().min(1),
-    ending_level: z.number().int().min(1),
-    migration_digest: digest.nullable(),
-  }),
-  checks: z.array(z.strictObject({ name: identifier, state, evidence_sha256: digest.nullable() })),
-  failure_code: identifier.nullable(),
-});
+export const stagingOutcomeSchema = z
+  .strictObject({
+    contract: z.literal("card-keepr-staging-outcome@1"),
+    intent_digest: digest,
+    expected_head_sha: releaseHead,
+    state: z.enum(["succeeded", "failed"]),
+    deployment: z.strictObject({ state, release_id: releaseIdentity, dispatch_digest: digest.nullable() }),
+    migration: z.strictObject({
+      state,
+      starting_level: z.number().int().min(1),
+      ending_level: z.number().int().min(1),
+      migration_digest: digest.nullable(),
+    }),
+    checks: z.array(z.strictObject({ name: identifier, state, evidence_sha256: digest.nullable() })),
+    failure_code: identifier.nullable(),
+  })
+  .openapi("StagingOutcome");
+const outcome = stagingOutcomeSchema;
 export const stagingDeploymentSchema = z
   .union([
     z.strictObject({ release_id: releaseIdentity, authorization, outcome, recorded_at: timestamp }),

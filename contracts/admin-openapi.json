@@ -3,11 +3,17 @@
   "info": {
     "title": "Card Keepr administration API",
     "version": "1.0.0",
-    "description": "Generated administration contracts. Unmigrated operations are explicitly inventoried."
+    "description": "Complete administration reference. Owner operations and documentation require the administration bearer key; deployment operations require their separately documented signed Workflow credentials. Readiness and documentation remain available during recovery."
   },
   "servers": [
     {
       "url": "https://card.keepr.digital/ingest"
+    },
+    {
+      "url": "https://card-dev.keepr.digital/ingest"
+    },
+    {
+      "url": "https://card-staging.keepr.digital/ingest"
     }
   ],
   "components": {
@@ -15,6 +21,18 @@
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer"
+      },
+      "workflowAttestation": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Signed GitHub Actions OIDC identity for the exact authorized Workflow/environment. Owner and consumer keys are not accepted."
+      },
+      "githubWorkflowToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-GitHub-Token",
+        "description": "Short-lived GitHub Workflow token used only after identity verification for exact-commit checks."
       }
     },
     "schemas": {
@@ -489,146 +507,7 @@
                 "$ref": "#/components/schemas/StagingWorkflowAuthorization"
               },
               "outcome": {
-                "type": "object",
-                "properties": {
-                  "contract": {
-                    "type": "string",
-                    "enum": [
-                      "card-keepr-staging-outcome@1"
-                    ]
-                  },
-                  "intent_digest": {
-                    "type": "string",
-                    "pattern": "^[a-f0-9]{64}$"
-                  },
-                  "expected_head_sha": {
-                    "type": "string",
-                    "pattern": "^[0-9a-f]{40}$"
-                  },
-                  "state": {
-                    "type": "string",
-                    "enum": [
-                      "succeeded",
-                      "failed"
-                    ]
-                  },
-                  "deployment": {
-                    "type": "object",
-                    "properties": {
-                      "state": {
-                        "type": "string",
-                        "enum": [
-                          "succeeded",
-                          "failed",
-                          "not_run"
-                        ]
-                      },
-                      "release_id": {
-                        "type": "string",
-                        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
-                      },
-                      "dispatch_digest": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
-                        "pattern": "^[a-f0-9]{64}$"
-                      }
-                    },
-                    "required": [
-                      "state",
-                      "release_id",
-                      "dispatch_digest"
-                    ],
-                    "additionalProperties": false
-                  },
-                  "migration": {
-                    "type": "object",
-                    "properties": {
-                      "state": {
-                        "type": "string",
-                        "enum": [
-                          "succeeded",
-                          "failed",
-                          "not_run"
-                        ]
-                      },
-                      "starting_level": {
-                        "type": "integer",
-                        "minimum": 1
-                      },
-                      "ending_level": {
-                        "type": "integer",
-                        "minimum": 1
-                      },
-                      "migration_digest": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
-                        "pattern": "^[a-f0-9]{64}$"
-                      }
-                    },
-                    "required": [
-                      "state",
-                      "starting_level",
-                      "ending_level",
-                      "migration_digest"
-                    ],
-                    "additionalProperties": false
-                  },
-                  "checks": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "name": {
-                          "type": "string",
-                          "minLength": 1
-                        },
-                        "state": {
-                          "type": "string",
-                          "enum": [
-                            "succeeded",
-                            "failed",
-                            "not_run"
-                          ]
-                        },
-                        "evidence_sha256": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
-                          "pattern": "^[a-f0-9]{64}$"
-                        }
-                      },
-                      "required": [
-                        "name",
-                        "state",
-                        "evidence_sha256"
-                      ],
-                      "additionalProperties": false
-                    }
-                  },
-                  "failure_code": {
-                    "type": [
-                      "string",
-                      "null"
-                    ],
-                    "minLength": 1
-                  }
-                },
-                "required": [
-                  "contract",
-                  "intent_digest",
-                  "expected_head_sha",
-                  "state",
-                  "deployment",
-                  "migration",
-                  "checks",
-                  "failure_code"
-                ],
-                "additionalProperties": false
+                "$ref": "#/components/schemas/StagingOutcome"
               },
               "recorded_at": {
                 "type": "string",
@@ -684,372 +563,7 @@
                     "minLength": 1
                   },
                   "dispatch_inputs": {
-                    "oneOf": [
-                      {
-                        "type": "object",
-                        "properties": {
-                          "release_id": {
-                            "type": "string",
-                            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
-                          },
-                          "expected_account_id": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "expected_head_sha": {
-                            "type": "string",
-                            "pattern": "^[0-9a-f]{40}$"
-                          },
-                          "expected_actor": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "idempotency_key": {
-                            "type": "string",
-                            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
-                          },
-                          "dispatch_digest": {
-                            "type": "string",
-                            "pattern": "^[a-f0-9]{64}$"
-                          },
-                          "prepared_plan_json": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "expected_current_revision": {
-                            "type": "string",
-                            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
-                          },
-                          "expected_migration_level": {
-                            "type": "string",
-                            "pattern": "^[1-9][0-9]*$"
-                          },
-                          "production_target_json": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "production_target_digest": {
-                            "type": "string",
-                            "pattern": "^[a-f0-9]{64}$"
-                          },
-                          "bootstrap": {
-                            "type": "string",
-                            "enum": [
-                              "true",
-                              "false"
-                            ]
-                          },
-                          "recovery_bookmark": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "recovery_backup_attempt_id": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "smoke_targets_json": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "retained_revision_evidence_json": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "replacement_recovery_id": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "replacement_database_id": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "retained_database_id": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "replacement_target_digest": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "operation": {
-                            "type": "string",
-                            "enum": [
-                              "production_release"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "release_id",
-                          "expected_account_id",
-                          "expected_head_sha",
-                          "expected_actor",
-                          "idempotency_key",
-                          "dispatch_digest",
-                          "prepared_plan_json",
-                          "expected_current_revision",
-                          "expected_migration_level",
-                          "production_target_json",
-                          "production_target_digest",
-                          "bootstrap",
-                          "recovery_bookmark",
-                          "recovery_backup_attempt_id",
-                          "smoke_targets_json",
-                          "retained_revision_evidence_json",
-                          "replacement_recovery_id",
-                          "replacement_database_id",
-                          "retained_database_id",
-                          "replacement_target_digest",
-                          "operation"
-                        ],
-                        "additionalProperties": false
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "release_id": {
-                            "type": "string",
-                            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
-                          },
-                          "expected_account_id": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "expected_head_sha": {
-                            "type": "string",
-                            "pattern": "^[0-9a-f]{40}$"
-                          },
-                          "expected_actor": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "idempotency_key": {
-                            "type": "string",
-                            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
-                          },
-                          "dispatch_digest": {
-                            "type": "string",
-                            "pattern": "^[a-f0-9]{64}$"
-                          },
-                          "prepared_plan_json": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "expected_current_revision": {
-                            "type": "string",
-                            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
-                          },
-                          "expected_migration_level": {
-                            "type": "string",
-                            "pattern": "^[1-9][0-9]*$"
-                          },
-                          "production_target_json": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "production_target_digest": {
-                            "type": "string",
-                            "pattern": "^[a-f0-9]{64}$"
-                          },
-                          "bootstrap": {
-                            "type": "string",
-                            "enum": [
-                              "true",
-                              "false"
-                            ]
-                          },
-                          "recovery_bookmark": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "recovery_backup_attempt_id": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "smoke_targets_json": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "retained_revision_evidence_json": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "replacement_recovery_id": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "replacement_database_id": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "retained_database_id": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "replacement_target_digest": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "operation": {
-                            "type": "string",
-                            "enum": [
-                              "cancel_fresh_baseline_handoff"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "release_id",
-                          "expected_account_id",
-                          "expected_head_sha",
-                          "expected_actor",
-                          "idempotency_key",
-                          "dispatch_digest",
-                          "prepared_plan_json",
-                          "expected_current_revision",
-                          "expected_migration_level",
-                          "production_target_json",
-                          "production_target_digest",
-                          "bootstrap",
-                          "recovery_bookmark",
-                          "recovery_backup_attempt_id",
-                          "smoke_targets_json",
-                          "retained_revision_evidence_json",
-                          "replacement_recovery_id",
-                          "replacement_database_id",
-                          "retained_database_id",
-                          "replacement_target_digest",
-                          "operation"
-                        ],
-                        "additionalProperties": false
-                      },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "release_id": {
-                            "type": "string",
-                            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
-                          },
-                          "expected_account_id": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "expected_head_sha": {
-                            "type": "string",
-                            "pattern": "^[0-9a-f]{40}$"
-                          },
-                          "expected_actor": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "idempotency_key": {
-                            "type": "string",
-                            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
-                          },
-                          "dispatch_digest": {
-                            "type": "string",
-                            "pattern": "^[a-f0-9]{64}$"
-                          },
-                          "prepared_plan_json": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "expected_current_revision": {
-                            "type": "string",
-                            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
-                          },
-                          "expected_migration_level": {
-                            "type": "string",
-                            "pattern": "^[1-9][0-9]*$"
-                          },
-                          "production_target_json": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "production_target_digest": {
-                            "type": "string",
-                            "pattern": "^[a-f0-9]{64}$"
-                          },
-                          "bootstrap": {
-                            "type": "string",
-                            "enum": [
-                              "true",
-                              "false"
-                            ]
-                          },
-                          "recovery_bookmark": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "recovery_backup_attempt_id": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "smoke_targets_json": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "retained_revision_evidence_json": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "replacement_recovery_id": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "replacement_database_id": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "retained_database_id": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "replacement_target_digest": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "operation": {
-                            "type": "string",
-                            "enum": [
-                              "correct_fresh_baseline_handoff"
-                            ]
-                          },
-                          "correction_json": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "correction_digest": {
-                            "type": "string",
-                            "pattern": "^[a-f0-9]{64}$"
-                          }
-                        },
-                        "required": [
-                          "release_id",
-                          "expected_account_id",
-                          "expected_head_sha",
-                          "expected_actor",
-                          "idempotency_key",
-                          "dispatch_digest",
-                          "prepared_plan_json",
-                          "expected_current_revision",
-                          "expected_migration_level",
-                          "production_target_json",
-                          "production_target_digest",
-                          "bootstrap",
-                          "recovery_bookmark",
-                          "recovery_backup_attempt_id",
-                          "smoke_targets_json",
-                          "retained_revision_evidence_json",
-                          "replacement_recovery_id",
-                          "replacement_database_id",
-                          "retained_database_id",
-                          "replacement_target_digest",
-                          "operation",
-                          "correction_json",
-                          "correction_digest"
-                        ],
-                        "additionalProperties": false
-                      }
-                    ]
+                    "$ref": "#/components/schemas/ReleaseDispatchInputs"
                   },
                   "environment": {
                     "type": "string",
@@ -1079,6 +593,516 @@
               "authorization",
               "outcome",
               "deployment"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "StagingOutcome": {
+        "type": "object",
+        "properties": {
+          "contract": {
+            "type": "string",
+            "enum": [
+              "card-keepr-staging-outcome@1"
+            ]
+          },
+          "intent_digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "expected_head_sha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "failed"
+            ]
+          },
+          "deployment": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "succeeded",
+                  "failed",
+                  "not_run"
+                ]
+              },
+              "release_id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
+              },
+              "dispatch_digest": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "state",
+              "release_id",
+              "dispatch_digest"
+            ],
+            "additionalProperties": false
+          },
+          "migration": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "succeeded",
+                  "failed",
+                  "not_run"
+                ]
+              },
+              "starting_level": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "ending_level": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "migration_digest": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "state",
+              "starting_level",
+              "ending_level",
+              "migration_digest"
+            ],
+            "additionalProperties": false
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "succeeded",
+                    "failed",
+                    "not_run"
+                  ]
+                },
+                "evidence_sha256": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "name",
+                "state",
+                "evidence_sha256"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "failure_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [
+          "contract",
+          "intent_digest",
+          "expected_head_sha",
+          "state",
+          "deployment",
+          "migration",
+          "checks",
+          "failure_code"
+        ],
+        "additionalProperties": false
+      },
+      "ReleaseDispatchInputs": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "release_id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
+              },
+              "expected_account_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "expected_head_sha": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "expected_actor": {
+                "type": "string",
+                "minLength": 1
+              },
+              "idempotency_key": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
+              },
+              "dispatch_digest": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "prepared_plan_json": {
+                "type": "string",
+                "minLength": 1
+              },
+              "expected_current_revision": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
+              },
+              "expected_migration_level": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]*$"
+              },
+              "production_target_json": {
+                "type": "string",
+                "minLength": 1
+              },
+              "production_target_digest": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "bootstrap": {
+                "type": "string",
+                "enum": [
+                  "true",
+                  "false"
+                ]
+              },
+              "recovery_bookmark": {
+                "type": "string",
+                "minLength": 1
+              },
+              "recovery_backup_attempt_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "smoke_targets_json": {
+                "type": "string",
+                "minLength": 1
+              },
+              "retained_revision_evidence_json": {
+                "type": "string",
+                "minLength": 1
+              },
+              "replacement_recovery_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "replacement_database_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "retained_database_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "replacement_target_digest": {
+                "type": "string",
+                "minLength": 1
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "production_release"
+                ]
+              }
+            },
+            "required": [
+              "release_id",
+              "expected_account_id",
+              "expected_head_sha",
+              "expected_actor",
+              "idempotency_key",
+              "dispatch_digest",
+              "prepared_plan_json",
+              "expected_current_revision",
+              "expected_migration_level",
+              "production_target_json",
+              "production_target_digest",
+              "bootstrap",
+              "recovery_bookmark",
+              "recovery_backup_attempt_id",
+              "smoke_targets_json",
+              "retained_revision_evidence_json",
+              "replacement_recovery_id",
+              "replacement_database_id",
+              "retained_database_id",
+              "replacement_target_digest",
+              "operation"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "release_id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
+              },
+              "expected_account_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "expected_head_sha": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "expected_actor": {
+                "type": "string",
+                "minLength": 1
+              },
+              "idempotency_key": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
+              },
+              "dispatch_digest": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "prepared_plan_json": {
+                "type": "string",
+                "minLength": 1
+              },
+              "expected_current_revision": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
+              },
+              "expected_migration_level": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]*$"
+              },
+              "production_target_json": {
+                "type": "string",
+                "minLength": 1
+              },
+              "production_target_digest": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "bootstrap": {
+                "type": "string",
+                "enum": [
+                  "true",
+                  "false"
+                ]
+              },
+              "recovery_bookmark": {
+                "type": "string",
+                "minLength": 1
+              },
+              "recovery_backup_attempt_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "smoke_targets_json": {
+                "type": "string",
+                "minLength": 1
+              },
+              "retained_revision_evidence_json": {
+                "type": "string",
+                "minLength": 1
+              },
+              "replacement_recovery_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "replacement_database_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "retained_database_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "replacement_target_digest": {
+                "type": "string",
+                "minLength": 1
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "cancel_fresh_baseline_handoff"
+                ]
+              }
+            },
+            "required": [
+              "release_id",
+              "expected_account_id",
+              "expected_head_sha",
+              "expected_actor",
+              "idempotency_key",
+              "dispatch_digest",
+              "prepared_plan_json",
+              "expected_current_revision",
+              "expected_migration_level",
+              "production_target_json",
+              "production_target_digest",
+              "bootstrap",
+              "recovery_bookmark",
+              "recovery_backup_attempt_id",
+              "smoke_targets_json",
+              "retained_revision_evidence_json",
+              "replacement_recovery_id",
+              "replacement_database_id",
+              "retained_database_id",
+              "replacement_target_digest",
+              "operation"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "release_id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
+              },
+              "expected_account_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "expected_head_sha": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "expected_actor": {
+                "type": "string",
+                "minLength": 1
+              },
+              "idempotency_key": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
+              },
+              "dispatch_digest": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "prepared_plan_json": {
+                "type": "string",
+                "minLength": 1
+              },
+              "expected_current_revision": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
+              },
+              "expected_migration_level": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]*$"
+              },
+              "production_target_json": {
+                "type": "string",
+                "minLength": 1
+              },
+              "production_target_digest": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "bootstrap": {
+                "type": "string",
+                "enum": [
+                  "true",
+                  "false"
+                ]
+              },
+              "recovery_bookmark": {
+                "type": "string",
+                "minLength": 1
+              },
+              "recovery_backup_attempt_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "smoke_targets_json": {
+                "type": "string",
+                "minLength": 1
+              },
+              "retained_revision_evidence_json": {
+                "type": "string",
+                "minLength": 1
+              },
+              "replacement_recovery_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "replacement_database_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "retained_database_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "replacement_target_digest": {
+                "type": "string",
+                "minLength": 1
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "correct_fresh_baseline_handoff"
+                ]
+              },
+              "correction_json": {
+                "type": "string",
+                "minLength": 1
+              },
+              "correction_digest": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "release_id",
+              "expected_account_id",
+              "expected_head_sha",
+              "expected_actor",
+              "idempotency_key",
+              "dispatch_digest",
+              "prepared_plan_json",
+              "expected_current_revision",
+              "expected_migration_level",
+              "production_target_json",
+              "production_target_digest",
+              "bootstrap",
+              "recovery_bookmark",
+              "recovery_backup_attempt_id",
+              "smoke_targets_json",
+              "retained_revision_evidence_json",
+              "replacement_recovery_id",
+              "replacement_database_id",
+              "retained_database_id",
+              "replacement_target_digest",
+              "operation",
+              "correction_json",
+              "correction_digest"
             ],
             "additionalProperties": false
           }
@@ -1298,372 +1322,7 @@
             "minLength": 1
           },
           "dispatch_inputs": {
-            "oneOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "release_id": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
-                  },
-                  "expected_account_id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "expected_head_sha": {
-                    "type": "string",
-                    "pattern": "^[0-9a-f]{40}$"
-                  },
-                  "expected_actor": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "idempotency_key": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
-                  },
-                  "dispatch_digest": {
-                    "type": "string",
-                    "pattern": "^[a-f0-9]{64}$"
-                  },
-                  "prepared_plan_json": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "expected_current_revision": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
-                  },
-                  "expected_migration_level": {
-                    "type": "string",
-                    "pattern": "^[1-9][0-9]*$"
-                  },
-                  "production_target_json": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "production_target_digest": {
-                    "type": "string",
-                    "pattern": "^[a-f0-9]{64}$"
-                  },
-                  "bootstrap": {
-                    "type": "string",
-                    "enum": [
-                      "true",
-                      "false"
-                    ]
-                  },
-                  "recovery_bookmark": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "recovery_backup_attempt_id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "smoke_targets_json": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "retained_revision_evidence_json": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "replacement_recovery_id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "replacement_database_id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "retained_database_id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "replacement_target_digest": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "operation": {
-                    "type": "string",
-                    "enum": [
-                      "production_release"
-                    ]
-                  }
-                },
-                "required": [
-                  "release_id",
-                  "expected_account_id",
-                  "expected_head_sha",
-                  "expected_actor",
-                  "idempotency_key",
-                  "dispatch_digest",
-                  "prepared_plan_json",
-                  "expected_current_revision",
-                  "expected_migration_level",
-                  "production_target_json",
-                  "production_target_digest",
-                  "bootstrap",
-                  "recovery_bookmark",
-                  "recovery_backup_attempt_id",
-                  "smoke_targets_json",
-                  "retained_revision_evidence_json",
-                  "replacement_recovery_id",
-                  "replacement_database_id",
-                  "retained_database_id",
-                  "replacement_target_digest",
-                  "operation"
-                ],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "release_id": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
-                  },
-                  "expected_account_id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "expected_head_sha": {
-                    "type": "string",
-                    "pattern": "^[0-9a-f]{40}$"
-                  },
-                  "expected_actor": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "idempotency_key": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
-                  },
-                  "dispatch_digest": {
-                    "type": "string",
-                    "pattern": "^[a-f0-9]{64}$"
-                  },
-                  "prepared_plan_json": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "expected_current_revision": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
-                  },
-                  "expected_migration_level": {
-                    "type": "string",
-                    "pattern": "^[1-9][0-9]*$"
-                  },
-                  "production_target_json": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "production_target_digest": {
-                    "type": "string",
-                    "pattern": "^[a-f0-9]{64}$"
-                  },
-                  "bootstrap": {
-                    "type": "string",
-                    "enum": [
-                      "true",
-                      "false"
-                    ]
-                  },
-                  "recovery_bookmark": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "recovery_backup_attempt_id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "smoke_targets_json": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "retained_revision_evidence_json": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "replacement_recovery_id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "replacement_database_id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "retained_database_id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "replacement_target_digest": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "operation": {
-                    "type": "string",
-                    "enum": [
-                      "cancel_fresh_baseline_handoff"
-                    ]
-                  }
-                },
-                "required": [
-                  "release_id",
-                  "expected_account_id",
-                  "expected_head_sha",
-                  "expected_actor",
-                  "idempotency_key",
-                  "dispatch_digest",
-                  "prepared_plan_json",
-                  "expected_current_revision",
-                  "expected_migration_level",
-                  "production_target_json",
-                  "production_target_digest",
-                  "bootstrap",
-                  "recovery_bookmark",
-                  "recovery_backup_attempt_id",
-                  "smoke_targets_json",
-                  "retained_revision_evidence_json",
-                  "replacement_recovery_id",
-                  "replacement_database_id",
-                  "retained_database_id",
-                  "replacement_target_digest",
-                  "operation"
-                ],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "release_id": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
-                  },
-                  "expected_account_id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "expected_head_sha": {
-                    "type": "string",
-                    "pattern": "^[0-9a-f]{40}$"
-                  },
-                  "expected_actor": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "idempotency_key": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
-                  },
-                  "dispatch_digest": {
-                    "type": "string",
-                    "pattern": "^[a-f0-9]{64}$"
-                  },
-                  "prepared_plan_json": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "expected_current_revision": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
-                  },
-                  "expected_migration_level": {
-                    "type": "string",
-                    "pattern": "^[1-9][0-9]*$"
-                  },
-                  "production_target_json": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "production_target_digest": {
-                    "type": "string",
-                    "pattern": "^[a-f0-9]{64}$"
-                  },
-                  "bootstrap": {
-                    "type": "string",
-                    "enum": [
-                      "true",
-                      "false"
-                    ]
-                  },
-                  "recovery_bookmark": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "recovery_backup_attempt_id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "smoke_targets_json": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "retained_revision_evidence_json": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "replacement_recovery_id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "replacement_database_id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "retained_database_id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "replacement_target_digest": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "operation": {
-                    "type": "string",
-                    "enum": [
-                      "correct_fresh_baseline_handoff"
-                    ]
-                  },
-                  "correction_json": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "correction_digest": {
-                    "type": "string",
-                    "pattern": "^[a-f0-9]{64}$"
-                  }
-                },
-                "required": [
-                  "release_id",
-                  "expected_account_id",
-                  "expected_head_sha",
-                  "expected_actor",
-                  "idempotency_key",
-                  "dispatch_digest",
-                  "prepared_plan_json",
-                  "expected_current_revision",
-                  "expected_migration_level",
-                  "production_target_json",
-                  "production_target_digest",
-                  "bootstrap",
-                  "recovery_bookmark",
-                  "recovery_backup_attempt_id",
-                  "smoke_targets_json",
-                  "retained_revision_evidence_json",
-                  "replacement_recovery_id",
-                  "replacement_database_id",
-                  "retained_database_id",
-                  "replacement_target_digest",
-                  "operation",
-                  "correction_json",
-                  "correction_digest"
-                ],
-                "additionalProperties": false
-              }
-            ]
+            "$ref": "#/components/schemas/ReleaseDispatchInputs"
           }
         },
         "required": [
@@ -7941,7 +7600,8 @@
           },
           "candidate_generation": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "deadline": {
             "type": "string",
@@ -7957,7 +7617,8 @@
           },
           "generation": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "state": {
             "type": "string",
@@ -8082,7 +7743,8 @@
           },
           "candidate_generation": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "deadline": {
             "type": "string",
@@ -8098,7 +7760,8 @@
           },
           "generation": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "state": {
             "type": "string",
@@ -8208,7 +7871,8 @@
           },
           "candidate_generation": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "deadline": {
             "type": "string",
@@ -8224,7 +7888,8 @@
           },
           "generation": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "state": {
             "type": "string",
@@ -8339,7 +8004,8 @@
                             },
                             {
                               "type": "integer",
-                              "minimum": 0
+                              "minimum": 0,
+                              "maximum": 9007199254740991
                             }
                           ]
                         }
@@ -8350,11 +8016,13 @@
                       },
                       "chunks": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "maximum": 9007199254740991
                       },
                       "byte_length": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "maximum": 9007199254740991
                       }
                     },
                     "required": [
@@ -8477,11 +8145,13 @@
           },
           "generation": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "sequence": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "state": {
             "type": "string",
@@ -8503,7 +8173,8 @@
           },
           "failures": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "failure_code": {
             "type": [
@@ -8514,7 +8185,8 @@
           },
           "artifact_count": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "root_digest": {
             "type": [
@@ -8552,23 +8224,28 @@
             "properties": {
               "partition": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "record": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "subrecord": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "text": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "chunk": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "chain": {
                 "type": "string",
@@ -8576,11 +8253,13 @@
               },
               "search_offset": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "search_ordinal": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "text_hash": {
                 "type": "object",
@@ -8614,11 +8293,13 @@
               },
               "text_bytes": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "level": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "after": {
                 "type": "integer",
@@ -8626,7 +8307,8 @@
               },
               "node": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               }
             },
             "required": [
@@ -8688,7 +8370,8 @@
               "properties": {
                 "ordinal": {
                   "type": "integer",
-                  "minimum": 0
+                  "minimum": 0,
+                  "maximum": 9007199254740991
                 },
                 "object_key": {
                   "type": "string",
@@ -8700,7 +8383,8 @@
                 },
                 "byte_length": {
                   "type": "integer",
-                  "minimum": 0
+                  "minimum": 0,
+                  "maximum": 9007199254740991
                 },
                 "kind": {
                   "type": "string",
@@ -31953,7 +31637,7 @@
               "records": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/ReconciliationInput_$metadata"
+                  "$ref": "#/components/schemas/ReconciliationInput_metadata"
                 }
               },
               "text_parts": {
@@ -32559,7 +32243,7 @@
               "records": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/ReconciliationInput_$metadata"
+                  "$ref": "#/components/schemas/ReconciliationInput_metadata"
                 }
               },
               "text_parts": {
@@ -33127,7 +32811,7 @@
           }
         ]
       },
-      "ReconciliationInput_$metadata": {
+      "ReconciliationInput_metadata": {
         "type": "object",
         "properties": {
           "values": {
@@ -37014,11 +36698,13 @@
           },
           "generation": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "sequence": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "state": {
             "type": "string",
@@ -37040,7 +36726,8 @@
           },
           "failures": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "failure_code": {
             "type": [
@@ -37051,7 +36738,8 @@
           },
           "artifact_count": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "maximum": 9007199254740991
           },
           "root_digest": {
             "type": [
@@ -37089,23 +36777,28 @@
             "properties": {
               "partition": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "record": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "subrecord": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "text": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "chunk": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "chain": {
                 "type": "string",
@@ -37113,11 +36806,13 @@
               },
               "search_offset": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "search_ordinal": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "text_hash": {
                 "type": "object",
@@ -37151,11 +36846,13 @@
               },
               "text_bytes": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "level": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "after": {
                 "type": "integer",
@@ -37163,7 +36860,8 @@
               },
               "node": {
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               }
             },
             "required": [
@@ -37363,7 +37061,7 @@
               "records": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/ReconciliationInput_$metadata"
+                  "$ref": "#/components/schemas/ReconciliationInput_metadata"
                 }
               },
               "text_parts": {
@@ -37897,7 +37595,7 @@
               "records": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/ReconciliationInput_$metadata"
+                  "$ref": "#/components/schemas/ReconciliationInput_metadata"
                 }
               },
               "text_parts": {
@@ -47938,6 +47636,560 @@
           "api"
         ],
         "additionalProperties": false
+      },
+      "DevDeploymentReceipt": {
+        "type": "object",
+        "properties": {
+          "contract": {
+            "type": "string",
+            "enum": [
+              "card-keepr-production-release-request@1"
+            ]
+          },
+          "release_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "requested"
+            ]
+          },
+          "dispatch_digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "prepared_plan_json": {
+            "type": "string",
+            "minLength": 1
+          },
+          "dispatch_inputs": {
+            "$ref": "#/components/schemas/ReleaseDispatchInputs"
+          },
+          "environment": {
+            "type": "string",
+            "enum": [
+              "dev"
+            ]
+          },
+          "workflow_run_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "authorization_expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "contract",
+          "release_id",
+          "state",
+          "dispatch_digest",
+          "prepared_plan_json",
+          "dispatch_inputs",
+          "environment",
+          "workflow_run_id",
+          "authorization_expires_at"
+        ],
+        "additionalProperties": false
+      },
+      "StagingDeploymentPreparation": {
+        "type": "object",
+        "properties": {
+          "contract": {
+            "type": "string",
+            "enum": [
+              "card-keepr-production-release-request@1"
+            ]
+          },
+          "release_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "requested"
+            ]
+          },
+          "dispatch_digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "prepared_plan_json": {
+            "type": "string",
+            "minLength": 1
+          },
+          "dispatch_inputs": {
+            "$ref": "#/components/schemas/ReleaseDispatchInputs"
+          },
+          "environment": {
+            "type": "string",
+            "enum": [
+              "staging"
+            ]
+          },
+          "authorization": {
+            "$ref": "#/components/schemas/StagingWorkflowAuthorization"
+          }
+        },
+        "required": [
+          "contract",
+          "release_id",
+          "state",
+          "dispatch_digest",
+          "prepared_plan_json",
+          "dispatch_inputs",
+          "environment",
+          "authorization"
+        ],
+        "additionalProperties": false
+      },
+      "StagingOutcomeReceipt": {
+        "type": "object",
+        "properties": {
+          "release_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
+          },
+          "authorization": {
+            "$ref": "#/components/schemas/StagingWorkflowAuthorization"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/StagingOutcome"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "release_id",
+          "authorization",
+          "outcome",
+          "recorded_at"
+        ],
+        "additionalProperties": false
+      },
+      "AdministrationReadiness": {
+        "type": "object",
+        "properties": {
+          "contract": {
+            "type": "string",
+            "enum": [
+              "card-keepr-runtime-health@1"
+            ]
+          },
+          "runtime": {
+            "type": "string",
+            "enum": [
+              "ingestion"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded"
+            ]
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "catalogue:write",
+                "evidence:write",
+                "printing-image:write",
+                "export:write",
+                "backup:write"
+              ]
+            }
+          },
+          "checks": {
+            "type": "object",
+            "properties": {
+              "database": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "pass",
+                      "fail"
+                    ]
+                  },
+                  "migration_level": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "current_revision_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "configured_database_id": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "binding_missing",
+                      "query_failed",
+                      "schema_state_missing",
+                      "catalogue_state_missing",
+                      "database_id_not_configured",
+                      "timed_out"
+                    ]
+                  }
+                },
+                "required": [
+                  "status",
+                  "migration_level",
+                  "current_revision_id",
+                  "configured_database_id"
+                ],
+                "additionalProperties": false
+              },
+              "objects": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "pass",
+                      "fail"
+                    ]
+                  },
+                  "buckets": {
+                    "type": "object",
+                    "properties": {
+                      "EVIDENCE_OBJECTS": {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pass",
+                              "fail"
+                            ]
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "binding_missing",
+                              "probe_failed",
+                              "timed_out"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "PRINTING_IMAGES": {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pass",
+                              "fail"
+                            ]
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "binding_missing",
+                              "probe_failed",
+                              "timed_out"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "CATALOGUE_EXPORTS": {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pass",
+                              "fail"
+                            ]
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "binding_missing",
+                              "probe_failed",
+                              "timed_out"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "BACKUPS": {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pass",
+                              "fail"
+                            ]
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "binding_missing",
+                              "probe_failed",
+                              "timed_out"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "EVIDENCE_OBJECTS",
+                      "PRINTING_IMAGES",
+                      "CATALOGUE_EXPORTS",
+                      "BACKUPS"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "status",
+                  "buckets"
+                ],
+                "additionalProperties": false
+              },
+              "workflows": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "pass",
+                      "fail"
+                    ]
+                  },
+                  "bindings": {
+                    "type": "object",
+                    "properties": {
+                      "EVIDENCE_INGESTION_WORKFLOW": {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pass",
+                              "fail"
+                            ]
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "binding_missing",
+                              "probe_failed",
+                              "timed_out",
+                              "unexpected_instance"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "EVIDENCE_HOST_WORKFLOW": {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pass",
+                              "fail"
+                            ]
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "binding_missing",
+                              "probe_failed",
+                              "timed_out",
+                              "unexpected_instance"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "RECONCILIATION_WORKFLOW": {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pass",
+                              "fail"
+                            ]
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "binding_missing",
+                              "probe_failed",
+                              "timed_out",
+                              "unexpected_instance"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "CATALOGUE_BACKUP_WORKFLOW": {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pass",
+                              "fail"
+                            ]
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "binding_missing",
+                              "probe_failed",
+                              "timed_out",
+                              "unexpected_instance"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "EVIDENCE_INGESTION_WORKFLOW",
+                      "EVIDENCE_HOST_WORKFLOW",
+                      "RECONCILIATION_WORKFLOW",
+                      "CATALOGUE_BACKUP_WORKFLOW"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "status",
+                  "bindings"
+                ],
+                "additionalProperties": false
+              },
+              "public_base": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "pass",
+                      "fail"
+                    ]
+                  },
+                  "configured": {
+                    "type": "string"
+                  },
+                  "arrived_through_public_base": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "status",
+                  "configured",
+                  "arrived_through_public_base"
+                ],
+                "additionalProperties": false
+              },
+              "version": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "pass",
+                      "fail"
+                    ]
+                  },
+                  "id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "tag": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "timestamp": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "status",
+                  "id",
+                  "tag",
+                  "timestamp"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "database",
+              "objects",
+              "workflows",
+              "public_base",
+              "version"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "contract",
+          "runtime",
+          "status",
+          "capabilities",
+          "checks"
+        ],
+        "additionalProperties": false
       }
     },
     "parameters": {}
@@ -50674,7 +50926,11 @@
                                 "properties": {
                                   "environment": {
                                     "type": "string",
-                                    "minLength": 1
+                                    "enum": [
+                                      "dev",
+                                      "staging",
+                                      "production"
+                                    ]
                                   },
                                   "recovery_id": {
                                     "type": "string",
@@ -61778,7 +62034,8 @@
                 "properties": {
                   "generation": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "idempotency_key": {
                     "type": "string",
@@ -62153,7 +62410,8 @@
                 "properties": {
                   "generation": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   }
                 },
                 "required": [
@@ -62834,7 +63092,8 @@
                   },
                   "generation": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "idempotency_key": {
                     "type": "string",
@@ -63213,7 +63472,8 @@
                   },
                   "generation": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "idempotency_key": {
                     "type": "string",
@@ -64631,11 +64891,13 @@
                   },
                   "generation": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "sequence": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "idempotency_key": {
                     "type": "string",
@@ -70778,11 +71040,13 @@
                   },
                   "generation": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "sequence": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "idempotency_key": {
                     "type": "string",
@@ -71166,11 +71430,13 @@
                   },
                   "generation": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "sequence": {
                     "type": "integer",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "idempotency_key": {
                     "type": "string",
@@ -86091,7 +86357,11 @@
                 "properties": {
                   "environment": {
                     "type": "string",
-                    "minLength": 1
+                    "enum": [
+                      "dev",
+                      "staging",
+                      "production"
+                    ]
                   },
                   "recovery_id": {
                     "type": "string",
@@ -87225,8 +87495,3157 @@
           }
         }
       }
+    },
+    "/v1/dev-deployments": {
+      "post": {
+        "operationId": "prepareDevDeployment",
+        "security": [
+          {
+            "workflowAttestation": [],
+            "githubWorkflowToken": []
+          }
+        ],
+        "description": "Dev only. Requires a signed GitHub dev Workflow identity and its short-lived X-GitHub-Token. The exact main commit and complete CI success are verified. One preparation per Workflow attempt; replay is refused. An owner or consumer bearer key cannot authorize this operation.",
+        "requestBody": {
+          "required": true,
+          "description": "A JSON object, limited to 16 KiB by streamed bytes. Content-Type does not change decoding.",
+          "content": {
+            "*/*": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "head_sha": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40}$"
+                  },
+                  "ci_run_id": {
+                    "type": "string",
+                    "pattern": "^\\d+$"
+                  }
+                },
+                "required": [
+                  "head_sha",
+                  "ci_run_id"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Exact dev release preparation, bound to this Workflow attempt and its five-minute authorization.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevDeploymentReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/staging-release-authorizations": {
+      "post": {
+        "operationId": "authorizeStagingWorkflow",
+        "security": [
+          {
+            "workflowAttestation": [],
+            "githubWorkflowToken": []
+          }
+        ],
+        "description": "Production only. Requires a signed manual staging Workflow identity and X-GitHub-Token, the exact retained owner intent, selected commit/CI and expected actor. Exact replay returns the original claim, attempt and expiry. Another attempt or expired intent is refused. This does not grant owner administration access.",
+        "requestBody": {
+          "required": true,
+          "description": "A JSON object, limited to 16 KiB by streamed bytes. Content-Type does not change decoding.",
+          "content": {
+            "*/*": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "release_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
+                  },
+                  "intent_digest": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                },
+                "required": [
+                  "release_id",
+                  "intent_digest"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Original immutable claim on exact replay, including concurrent claims.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StagingWorkflowAuthorization"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "New signed Workflow claim with original preparation and authorization deadlines.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StagingWorkflowAuthorization"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/staging-deployments": {
+      "post": {
+        "operationId": "prepareSignedStagingDeployment",
+        "security": [
+          {
+            "workflowAttestation": [],
+            "githubWorkflowToken": []
+          }
+        ],
+        "description": "Staging only. Forwards the signed manual Workflow identity and X-GitHub-Token to production for exact authorization. Isolated staging resources, the original preparation window and immutable replay remain binding. Owner-authenticated GET inspection is a separate operation.",
+        "requestBody": {
+          "required": true,
+          "description": "A JSON object, limited to 16 KiB by streamed bytes. Content-Type does not change decoding.",
+          "content": {
+            "*/*": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "release_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
+                  },
+                  "intent_digest": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                },
+                "required": [
+                  "release_id",
+                  "intent_digest"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Original preparation returned on exact replay.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StagingDeploymentPreparation"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Staging preparation bound to the production authorization and original clock.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StagingDeploymentPreparation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/staging-deployments/{release}/outcome": {
+      "post": {
+        "operationId": "recordStagingOutcome",
+        "security": [
+          {
+            "workflowAttestation": [],
+            "githubWorkflowToken": []
+          }
+        ],
+        "description": "Staging only. Requires the same signed manual Workflow identity, X-GitHub-Token and production authorization. Validates exact release/digest, required evidence, actual deployment success and ending schema. Exact replay preserves the first recorded outcome; conflicting or expired claims are refused.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "release",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "A JSON object, limited to 16 KiB by streamed bytes. Content-Type does not change decoding.",
+          "content": {
+            "*/*": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "intent_digest": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "outcome": {
+                    "$ref": "#/components/schemas/StagingOutcome"
+                  }
+                },
+                "required": [
+                  "intent_digest",
+                  "outcome"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Original outcome returned on exact replay or an identical concurrent record.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StagingOutcomeReceipt"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "First immutable staging outcome and observation time.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StagingOutcomeReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "getAdministrationReadiness",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authenticated administration binding readiness; available during recovery.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdministrationReadiness"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Degraded readiness or unavailable authentication configuration.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdministrationReadiness"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "getAdministrationLiveness",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Independent unauthenticated liveness, behind its own rate limit.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "runtime": {
+                      "type": "string",
+                      "enum": [
+                        "ingestion"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "runtime"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "operationId": "headAdministrationLiveness",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Independent unauthenticated liveness, behind its own rate limit.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "administrationOpenApi",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Download the complete OpenAPI specification",
+        "responses": {
+          "200": {
+            "description": "Bundled OpenAPI for this deployment.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "private, no-store"
+                }
+              },
+              "X-Content-Type-Options": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "Referrer-Policy": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "Content-Security-Policy": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "openapi": {
+                      "type": "string",
+                      "enum": [
+                        "3.1.0"
+                      ]
+                    },
+                    "info": {
+                      "type": "object",
+                      "properties": {
+                        "title": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "title",
+                        "version"
+                      ]
+                    },
+                    "servers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          }
+                        },
+                        "required": [
+                          "url"
+                        ]
+                      }
+                    },
+                    "paths": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    },
+                    "components": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "openapi",
+                    "info",
+                    "servers",
+                    "paths",
+                    "components"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/docs": {
+      "get": {
+        "operationId": "administrationDocumentation",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read the API reference",
+        "responses": {
+          "200": {
+            "description": "Complete, self-contained API reference; no scripts or external assets.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "private, no-store"
+                }
+              },
+              "X-Content-Type-Options": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "nosniff"
+                }
+              },
+              "Referrer-Policy": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-referrer"
+                }
+              },
+              "Content-Security-Policy": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+                }
+              }
+            },
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
-  "webhooks": {},
-  "x-unmigrated-operations": []
+  "webhooks": {}
 }

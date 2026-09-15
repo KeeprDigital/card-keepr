@@ -1,3 +1,4 @@
+import type { HttpRoute } from "../../http/openapi";
 import {
   cleanupSchema,
   cleanupObjectsSchema,
@@ -47,7 +48,7 @@ import { inspectEvidenceCleanup, inspectEvidenceCleanupResults, advanceEvidenceC
 import { sourceLifecycleHistory, decideSourceLifecycle } from "./source-lifecycle";
 import { sourceAuthorities, selectSourceAuthority } from "./source-authority";
 import { publishers, sources, sourceLineages, gameProfileRegistrations, sourceAdapterRegistrations } from "../adapters";
-import { type Route, type RouteContext } from "../../http/routes";
+import { type RouteContext } from "../../http/routes";
 import type { CatalogueStore } from "../shared";
 import { pauseEvidenceCollection, resumeEvidenceRun, terminateEvidenceCollection } from "./evidence-administration";
 import {
@@ -74,7 +75,7 @@ type Environment = {
 };
 type Context = RouteContext<Environment> & { observedAt: string };
 
-export const sourceEvidenceRoutes: Route<Context>[] = [
+export const sourceEvidenceRoutes: HttpRoute<Context>[] = [
   httpRoute<Context>()(importRecordsRoute, async (c) =>
     c.json(
       importedRecordsSchema.parse(

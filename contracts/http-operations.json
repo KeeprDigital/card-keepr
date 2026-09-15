@@ -1,5 +1,6 @@
 [
   {
+    "worker": "admin",
     "family": "ingestion",
     "method": "POST",
     "path": "/v1/publications/:publication/export-preparation/advance",
@@ -7,6 +8,7 @@
     "cli": null
   },
   {
+    "worker": "admin",
     "family": "ingestion",
     "method": "POST",
     "path": "/v1/production-releases",
@@ -14,6 +16,7 @@
     "cli": "release production"
   },
   {
+    "worker": "admin",
     "family": "ingestion",
     "method": "POST",
     "path": "/v1/staging-releases",
@@ -21,6 +24,7 @@
     "cli": "release staging"
   },
   {
+    "worker": "admin",
     "family": "ingestion",
     "method": "GET",
     "path": "/v1/staging-releases/:release",
@@ -28,6 +32,7 @@
     "cli": "release staging-status"
   },
   {
+    "worker": "admin",
     "family": "ingestion",
     "method": "GET",
     "path": "/v1/staging-deployments/:release",
@@ -35,6 +40,7 @@
     "cli": "release staging-status"
   },
   {
+    "worker": "admin",
     "family": "ingestion",
     "method": "POST",
     "path": "/v1/catalogue-search-materialization/repair",
@@ -42,6 +48,7 @@
     "cli": "repairCatalogueSearch"
   },
   {
+    "worker": "admin",
     "family": "ingestion",
     "method": "GET",
     "path": "/v1/status",
@@ -49,6 +56,7 @@
     "cli": "status"
   },
   {
+    "worker": "admin",
     "family": "ingestion",
     "method": "GET",
     "path": "/v1/ingestion-runs/:run/candidate",
@@ -56,6 +64,7 @@
     "cli": "inspectCandidate"
   },
   {
+    "worker": "admin",
     "family": "ingestion",
     "method": "POST",
     "path": "/v1/ingestion-runs/:run/approval",
@@ -63,6 +72,7 @@
     "cli": null
   },
   {
+    "worker": "admin",
     "family": "ingestion",
     "method": "POST",
     "path": "/v1/ingestion-runs/:run/rejection",
@@ -70,6 +80,7 @@
     "cli": "rejectRun"
   },
   {
+    "worker": "admin",
     "family": "ingestion",
     "method": "POST",
     "path": "/v1/ingestion-runs/:run/retry",
@@ -77,6 +88,7 @@
     "cli": "retryRun"
   },
   {
+    "worker": "admin",
     "family": "ingestion",
     "method": "POST",
     "path": "/v1/ingestion-runs/:run/publication-cleanup",
@@ -84,6 +96,7 @@
     "cli": "cleanupRun"
   },
   {
+    "worker": "admin",
     "family": "ingestion",
     "method": "GET",
     "path": "/v1/ingestion-runs/:run",
@@ -91,6 +104,7 @@
     "cli": "showRun"
   },
   {
+    "worker": "admin",
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/source-observation-sets/:observationSet/records",
@@ -98,6 +112,7 @@
     "cli": null
   },
   {
+    "worker": "admin",
     "family": "source-evidence",
     "method": "GET",
     "path": "/v1/evidence-cleanups/:cleanup/objects",
@@ -105,6 +120,7 @@
     "cli": "evidenceCleanupObjects"
   },
   {
+    "worker": "admin",
     "family": "source-evidence",
     "method": "GET",
     "path": "/v1/evidence-cleanups/:cleanup",
@@ -112,6 +128,7 @@
     "cli": "evidenceCleanupStatus"
   },
   {
+    "worker": "admin",
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/evidence-cleanups/:cleanup/advance",
@@ -119,6 +136,7 @@
     "cli": null
   },
   {
+    "worker": "admin",
     "family": "source-evidence",
     "method": "GET",
     "path": "/v1/source-lineages/:lineage/lifecycle",
@@ -126,6 +144,7 @@
     "cli": "sourceLifecycle"
   },
   {
+    "worker": "admin",
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/source-lineages/:lineage/lifecycle",
@@ -133,6 +152,7 @@
     "cli": "decideSourceLifecycle"
   },
   {
+    "worker": "admin",
     "family": "source-evidence",
     "method": "GET",
     "path": "/v1/source-authorities",
@@ -140,6 +160,7 @@
     "cli": "sourceAuthorities"
   },
   {
+    "worker": "admin",
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/source-authorities",
@@ -147,6 +168,7 @@
     "cli": "selectSourceAuthority"
   },
   {
+    "worker": "admin",
     "family": "source-evidence",
     "method": "GET",
     "path": "/v1/source-registry",
@@ -154,6 +176,7 @@
     "cli": "sourceRegistry"
   },
   {
+    "worker": "admin",
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/ingestion-runs/evidence",
@@ -161,6 +184,7 @@
     "cli": "source collect"
   },
   {
+    "worker": "admin",
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/ingestion-runs/:run/collection/resume",
@@ -168,6 +192,7 @@
     "cli": "resumeEvidenceCollection"
   },
   {
+    "worker": "admin",
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/ingestion-runs/:run/collection/pause",
@@ -175,6 +200,7 @@
     "cli": "pauseEvidenceCollection"
   },
   {
+    "worker": "admin",
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/ingestion-runs/:run/collection/termination",
@@ -182,6 +208,7 @@
     "cli": "terminateEvidenceCollection"
   },
   {
+    "worker": "admin",
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/ingestion-runs/:run/capacity/extension",
@@ -189,6 +216,7 @@
     "cli": "source capacity extend"
   },
   {
+    "worker": "admin",
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/ingestion-runs/:run/collection/retry",
@@ -196,6 +224,7 @@
     "cli": "retryEvidenceCollection"
   },
   {
+    "worker": "admin",
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/source-snapshots/:snapshot/observations",
@@ -203,6 +232,7 @@
     "cli": "reparseSourceSnapshot"
   },
   {
+    "worker": "admin",
     "family": "source-evidence",
     "method": "GET",
     "path": "/v1/source-snapshots/:snapshot/content",
@@ -210,6 +240,7 @@
     "cli": null
   },
   {
+    "worker": "admin",
     "family": "source-evidence",
     "method": "GET",
     "path": "/v1/source-observation-sets/:observationSet/content",
@@ -217,6 +248,7 @@
     "cli": null
   },
   {
+    "worker": "admin",
     "family": "source-evidence",
     "method": "GET",
     "path": "/v1/ingestion-runs/:run/evidence",
@@ -224,6 +256,7 @@
     "cli": "showSourceEvidence"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/reconciliation-operations/:preparation/evidence-cleanup",
@@ -231,6 +264,7 @@
     "cli": "stagingCleanupStart"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/ingestion-runs/:run/evidence-cleanup",
@@ -238,6 +272,7 @@
     "cli": "evidenceCleanupStart"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/evidence-cleanups/:cleanup/retry",
@@ -245,6 +280,7 @@
     "cli": "evidenceCleanupRetry"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/publications/:publication/resume",
@@ -252,6 +288,7 @@
     "cli": "publicationOperationResume"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/publications/:publication/advance",
@@ -259,6 +296,7 @@
     "cli": null
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/publications/:publication",
@@ -266,6 +304,7 @@
     "cli": "publicationStatus"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/publications",
@@ -273,6 +312,7 @@
     "cli": null
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/publications/start",
@@ -280,6 +320,7 @@
     "cli": "publicationStart"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/:candidate/publication-preparation/query",
@@ -287,6 +328,7 @@
     "cli": null
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/publication-compositions",
@@ -294,6 +336,7 @@
     "cli": null
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/:candidate/publication-preparation",
@@ -301,6 +344,7 @@
     "cli": "publicationPreparation"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/:candidate/publication-preparation/artifacts",
@@ -308,6 +352,7 @@
     "cli": "publicationArtifacts"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/game-candidates/:candidate/publication-preparation",
@@ -315,6 +360,7 @@
     "cli": null
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/game-candidates/:candidate/publication-preparation/start",
@@ -322,6 +368,7 @@
     "cli": "publicationPrepare"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/game-candidates/:candidate/publication-preparation/resume",
@@ -329,6 +376,7 @@
     "cli": "publicationResume"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/:candidate/partitions/:ordinal/images/:record",
@@ -336,6 +384,7 @@
     "cli": null
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/:candidate/inspection/evidence/:kind",
@@ -343,6 +392,7 @@
     "cli": "gameCandidateEvidence"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/:candidate/inspection",
@@ -350,6 +400,7 @@
     "cli": "gameCandidateInspection"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/:candidate/progress",
@@ -357,6 +408,7 @@
     "cli": null
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/ingestion-runs/:run/game-candidates",
@@ -364,6 +416,7 @@
     "cli": "collectionGameCandidates"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/:candidate/text/:digest/:ordinal",
@@ -371,6 +424,7 @@
     "cli": null
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/:candidate/inputs",
@@ -378,6 +432,7 @@
     "cli": null
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/:candidate/inputs/:ordinal",
@@ -385,6 +440,7 @@
     "cli": null
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/game-candidates",
@@ -392,6 +448,7 @@
     "cli": "gameCandidatePrepare"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/game-candidates/:candidate/pause",
@@ -399,6 +456,7 @@
     "cli": "gameCandidatePause"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/game-candidates/:candidate/resume",
@@ -406,6 +464,7 @@
     "cli": "gameCandidateResume"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/game-candidates/:candidate/abandon",
@@ -413,6 +472,7 @@
     "cli": "gameCandidateAbandon"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/ingestion-runs/:run/reconciliation/text/:digest/:ordinal",
@@ -420,6 +480,7 @@
     "cli": "reconciliationText"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/:candidate",
@@ -427,6 +488,7 @@
     "cli": "gameCandidate"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/:candidate/partitions",
@@ -434,6 +496,7 @@
     "cli": "gameCandidatePartitions"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/game-candidates/:candidate/partitions/:ordinal",
@@ -441,6 +504,7 @@
     "cli": "gameCandidatePartition"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/ingestion-runs/:run/reconciliation/inputs",
@@ -448,6 +512,7 @@
     "cli": "reconciliationInputs"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/ingestion-runs/:run/reconciliation/inputs/:ordinal",
@@ -455,6 +520,7 @@
     "cli": "reconciliationInput"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/ingestion-runs/:run/reconciliation/partitions/:ordinal",
@@ -462,6 +528,7 @@
     "cli": "reconciliationPartition"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/ingestion-runs/:run/reconciliation/pause",
@@ -469,6 +536,7 @@
     "cli": "reconciliation-pause"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/ingestion-runs/:run/reconciliation/resume",
@@ -476,6 +544,7 @@
     "cli": "reconciliation-resume"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/ingestion-runs/:run/reconciliation/abandon",
@@ -483,6 +552,7 @@
     "cli": "reconciliation-abandon"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/ingestion-runs/:run/reconciliation/partitions",
@@ -490,6 +560,7 @@
     "cli": "reconciliationPartitions"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/ingestion-runs/:run/reconciliation",
@@ -497,6 +568,7 @@
     "cli": "reconciliationStatus"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/identity-corrections/validate",
@@ -504,6 +576,7 @@
     "cli": "identity-correction validate"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/identity-corrections",
@@ -511,6 +584,7 @@
     "cli": "identity-correction create"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/identity-corrections/:correction",
@@ -518,6 +592,7 @@
     "cli": "identity-correction inspect"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/identity-corrections",
@@ -525,6 +600,7 @@
     "cli": "identity-correction list"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/entity-proposals",
@@ -532,6 +608,7 @@
     "cli": "entity-proposal list"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/entity-proposals",
@@ -539,6 +616,7 @@
     "cli": "entity-proposal create"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/entity-proposals/:proposal",
@@ -546,6 +624,7 @@
     "cli": "entity-proposal inspect"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/entity-proposals/:proposal/evidence",
@@ -553,6 +632,7 @@
     "cli": "entity-proposal evidence"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/entity-proposals/:proposal/decisions",
@@ -560,6 +640,7 @@
     "cli": "entity-proposal admit/link/reject/reconsider"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/reconciliation/identity-reviews",
@@ -567,6 +648,7 @@
     "cli": "identityReviews"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/reconciliation/identity-reviews/:review/resolve",
@@ -574,6 +656,7 @@
     "cli": "identityResolve"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/reconciliation/identities/:identity",
@@ -581,6 +664,7 @@
     "cli": "identityInspect"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/ingestion-runs/:run/reconciliation",
@@ -588,6 +672,7 @@
     "cli": "reconcileRun"
   },
   {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/reconciliation/printings/:printing",
@@ -595,6 +680,7 @@
     "cli": null
   },
   {
+    "worker": "admin",
     "family": "curated",
     "method": "POST",
     "path": "/v1/curated-revisions/validate",
@@ -602,6 +688,7 @@
     "cli": "curated-revision validate"
   },
   {
+    "worker": "admin",
     "family": "curated",
     "method": "GET",
     "path": "/v1/curated-revisions",
@@ -609,6 +696,7 @@
     "cli": "curated-revision list"
   },
   {
+    "worker": "admin",
     "family": "curated",
     "method": "POST",
     "path": "/v1/curated-revisions",
@@ -616,6 +704,7 @@
     "cli": "curated-revision create"
   },
   {
+    "worker": "admin",
     "family": "curated",
     "method": "POST",
     "path": "/v1/curated-revisions/:revision/reaffirm",
@@ -623,6 +712,7 @@
     "cli": "curated-revision reaffirm"
   },
   {
+    "worker": "admin",
     "family": "curated",
     "method": "POST",
     "path": "/v1/curated-revisions/:revision/supersede",
@@ -630,6 +720,7 @@
     "cli": "curated-revision supersede"
   },
   {
+    "worker": "admin",
     "family": "curated",
     "method": "POST",
     "path": "/v1/curated-revisions/:revision/retire",
@@ -637,6 +728,7 @@
     "cli": "curated-revision retire"
   },
   {
+    "worker": "admin",
     "family": "curated",
     "method": "GET",
     "path": "/v1/curated-revisions/:revision",
@@ -644,6 +736,7 @@
     "cli": "curated-revision show"
   },
   {
+    "worker": "admin",
     "family": "export",
     "method": "POST",
     "path": "/v1/catalogue-export-deletion-plans",
@@ -651,6 +744,7 @@
     "cli": "catalogue-export deletion plan"
   },
   {
+    "worker": "admin",
     "family": "export",
     "method": "POST",
     "path": "/v1/catalogue-export-deletions",
@@ -658,6 +752,7 @@
     "cli": "catalogue-export deletion start"
   },
   {
+    "worker": "admin",
     "family": "export",
     "method": "POST",
     "path": "/v1/catalogue-export-deletions/:deletion/retry",
@@ -665,6 +760,7 @@
     "cli": "catalogue-export deletion retry"
   },
   {
+    "worker": "admin",
     "family": "export",
     "method": "GET",
     "path": "/v1/catalogue-export-deletions/:deletion",
@@ -672,6 +768,7 @@
     "cli": "catalogue-export deletion status"
   },
   {
+    "worker": "admin",
     "family": "backup-recovery",
     "method": "GET",
     "path": "/v1/backups/:attempt",
@@ -679,6 +776,7 @@
     "cli": "backup status --attempt-id"
   },
   {
+    "worker": "admin",
     "family": "backup-recovery",
     "method": "GET",
     "path": "/v1/catalogue-revisions/:revision/backups",
@@ -686,6 +784,7 @@
     "cli": "backup status --catalogue-revision"
   },
   {
+    "worker": "admin",
     "family": "backup-recovery",
     "method": "POST",
     "path": "/v1/backups",
@@ -693,6 +792,7 @@
     "cli": "createBackup"
   },
   {
+    "worker": "admin",
     "family": "backup-recovery",
     "method": "GET",
     "path": "/v1/recoveries/:recovery",
@@ -700,6 +800,7 @@
     "cli": "inspectRecovery"
   },
   {
+    "worker": "admin",
     "family": "backup-recovery",
     "method": "POST",
     "path": "/v1/recoveries",
@@ -707,6 +808,7 @@
     "cli": "beginRecovery"
   },
   {
+    "worker": "admin",
     "family": "backup-recovery",
     "method": "POST",
     "path": "/v1/recoveries/:recovery/verification",
@@ -714,6 +816,7 @@
     "cli": "verifyRecovery"
   },
   {
+    "worker": "admin",
     "family": "backup-recovery",
     "method": "POST",
     "path": "/v1/recoveries/:recovery/acceptance",
@@ -721,10 +824,243 @@
     "cli": "acceptRecovery"
   },
   {
+    "worker": "admin",
     "family": "ingestion",
     "method": "POST",
     "path": "/v1/administration-targets/resolve",
     "slice": "Maintenance and runtime operations",
     "cli": null
+  },
+  {
+    "worker": "admin",
+    "family": "documentation",
+    "method": "GET",
+    "path": "/docs",
+    "slice": "Complete HTTP documentation",
+    "cli": "docs administration"
+  },
+  {
+    "worker": "admin",
+    "family": "documentation",
+    "method": "GET",
+    "path": "/openapi.json",
+    "slice": "Complete HTTP documentation",
+    "cli": "docs administration --json"
+  },
+  {
+    "worker": "admin",
+    "family": "readiness",
+    "method": "GET",
+    "path": "/health",
+    "slice": "Runtime utilities",
+    "cli": null
+  },
+  {
+    "worker": "admin",
+    "family": "liveness",
+    "method": "GET",
+    "path": "/healthz",
+    "slice": "Runtime utilities",
+    "cli": null
+  },
+  {
+    "worker": "admin",
+    "family": "liveness",
+    "method": "HEAD",
+    "path": "/healthz",
+    "slice": "Runtime utilities",
+    "cli": null
+  },
+  {
+    "worker": "admin",
+    "family": "platform",
+    "method": "POST",
+    "path": "/v1/dev-deployments",
+    "slice": "Signed Workflow deployment",
+    "cli": null
+  },
+  {
+    "worker": "admin",
+    "family": "platform",
+    "method": "POST",
+    "path": "/v1/staging-release-authorizations",
+    "slice": "Signed Workflow deployment",
+    "cli": null
+  },
+  {
+    "worker": "admin",
+    "family": "platform",
+    "method": "POST",
+    "path": "/v1/staging-deployments",
+    "slice": "Signed Workflow deployment",
+    "cli": null
+  },
+  {
+    "worker": "admin",
+    "family": "platform",
+    "method": "POST",
+    "path": "/v1/staging-deployments/:release/outcome",
+    "slice": "Signed Workflow deployment",
+    "cli": null
+  },
+  {
+    "worker": "read",
+    "family": "preflight",
+    "method": "OPTIONS",
+    "path": "/*",
+    "slice": "Catalogue reads",
+    "cli": null
+  },
+  {
+    "worker": "read",
+    "family": "readiness",
+    "method": "GET",
+    "path": "/health",
+    "slice": "Catalogue reads",
+    "cli": null
+  },
+  {
+    "worker": "read",
+    "family": "liveness",
+    "method": "GET",
+    "path": "/healthz",
+    "slice": "Catalogue reads",
+    "cli": null
+  },
+  {
+    "worker": "read",
+    "family": "liveness",
+    "method": "HEAD",
+    "path": "/healthz",
+    "slice": "Catalogue reads",
+    "cli": null
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/cards",
+    "slice": "Catalogue reads",
+    "cli": "cards search"
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/cards/{card}",
+    "slice": "Catalogue reads",
+    "cli": null
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/catalogue",
+    "slice": "Catalogue reads",
+    "cli": null
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/catalogue-exports",
+    "slice": "Catalogue reads",
+    "cli": null
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/catalogue-exports/{revision}",
+    "slice": "Catalogue reads",
+    "cli": null
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/catalogue-exports/{revision}/components/{component}",
+    "slice": "Catalogue reads",
+    "cli": null
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "HEAD",
+    "path": "/v1/catalogue-exports/{revision}/components/{component}",
+    "slice": "Catalogue reads",
+    "cli": null
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/games",
+    "slice": "Catalogue reads",
+    "cli": null
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/printing-images/{image}/content",
+    "slice": "Catalogue reads",
+    "cli": null
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "HEAD",
+    "path": "/v1/printing-images/{image}/content",
+    "slice": "Catalogue reads",
+    "cli": null
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/printings",
+    "slice": "Catalogue reads",
+    "cli": null
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/printings/{printing}",
+    "slice": "Catalogue reads",
+    "cli": null
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/products",
+    "slice": "Catalogue reads",
+    "cli": null
+  },
+  {
+    "worker": "read",
+    "family": "read",
+    "method": "GET",
+    "path": "/v1/products/{product}",
+    "slice": "Catalogue reads",
+    "cli": null
+  },
+  {
+    "worker": "read",
+    "family": "documentation",
+    "method": "GET",
+    "path": "/docs",
+    "slice": "Complete HTTP documentation",
+    "cli": "docs catalogue"
+  },
+  {
+    "worker": "read",
+    "family": "documentation",
+    "method": "GET",
+    "path": "/openapi.json",
+    "slice": "Complete HTTP documentation",
+    "cli": "docs catalogue --json"
   }
 ]
