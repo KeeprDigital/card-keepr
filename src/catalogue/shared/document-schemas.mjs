@@ -258,6 +258,37 @@ const proposalFieldTarget = {
   ...curatedFieldTarget,
   properties: { ...curatedFieldTarget.properties, entity_id: proposalIdentity },
 };
+const sourceRecordAdmissionFields = {
+  locator: { ...string, minLength: 1, maxLength: 256 },
+  source_membership: object({
+    set_id: { ...string, minLength: 1, maxLength: 256 },
+    local_id: { ...string, minLength: 1, maxLength: 256 },
+  }),
+  target: object({ kind: { const: "unresolved_record" } }),
+  appearance_evidence: object({
+    images: array(
+      object(
+        {
+          association: { const: "source_record" },
+          role: { enum: ["front", "back"] },
+          source_url: { ...string, minLength: 1, maxLength: 2048 },
+          artwork_fingerprint: { ...string, minLength: 1, maxLength: 256 },
+          content_sha256: digest,
+        },
+        ["association", "role", "source_url", "artwork_fingerprint"],
+      ),
+      { maxItems: 2 },
+    ),
+  }),
+  source_sidecar: object({ source_record_json: { ...string, minLength: 1, maxLength: 1024 * 1024 } }),
+  completeness: object({
+    structurally_complete: { const: true },
+    required_surfaces_complete: { const: true },
+    partitions_complete: { const: true },
+    declared_record_count: { const: 1 },
+    parsed_record_count: { const: 1 },
+  }),
+};
 export const documentSchemas = {
   sourceAdmissionEvidence: {
     anyOf: [
@@ -308,12 +339,9 @@ export const documentSchemas = {
         observation_type: { const: "source_admission_evidence" },
         game: { const: "pokemon" },
         source_lineage: { const: "tcgdex-pokemon-en" },
-        locator: { ...string, minLength: 1, maxLength: 256 },
-        source_membership: object({
-          set_id: { ...string, minLength: 1, maxLength: 256 },
-          local_id: { ...string, minLength: 1, maxLength: 256 },
-        }),
-        target: object({ kind: { const: "unresolved_record" } }),
+        locator: sourceRecordAdmissionFields.locator,
+        source_membership: sourceRecordAdmissionFields.source_membership,
+        target: sourceRecordAdmissionFields.target,
         issues: array(
           object({
             code: { enum: ["category_unresolved", "card_identity_unresolved", "printing_treatment_unresolved"] },
@@ -321,40 +349,17 @@ export const documentSchemas = {
           }),
           { minItems: 1, maxItems: 3 },
         ),
-        appearance_evidence: object({
-          images: array(
-            object(
-              {
-                association: { const: "source_record" },
-                role: { enum: ["front", "back"] },
-                source_url: { ...string, minLength: 1, maxLength: 2048 },
-                artwork_fingerprint: { ...string, minLength: 1, maxLength: 256 },
-                content_sha256: digest,
-              },
-              ["association", "role", "source_url", "artwork_fingerprint"],
-            ),
-            { maxItems: 2 },
-          ),
-        }),
-        source_sidecar: object({ source_record_json: { ...string, minLength: 1, maxLength: 1024 * 1024 } }),
-        completeness: object({
-          structurally_complete: { const: true },
-          required_surfaces_complete: { const: true },
-          partitions_complete: { const: true },
-          declared_record_count: { const: 1 },
-          parsed_record_count: { const: 1 },
-        }),
+        appearance_evidence: sourceRecordAdmissionFields.appearance_evidence,
+        source_sidecar: sourceRecordAdmissionFields.source_sidecar,
+        completeness: sourceRecordAdmissionFields.completeness,
       }),
       object({
         observation_type: { const: "source_admission_evidence" },
         game: { const: "riftbound" },
         source_lineage: { const: "riftbound-db-en" },
-        locator: { ...string, minLength: 1, maxLength: 256 },
-        source_membership: object({
-          set_id: { ...string, minLength: 1, maxLength: 256 },
-          local_id: { ...string, minLength: 1, maxLength: 256 },
-        }),
-        target: object({ kind: { const: "unresolved_record" } }),
+        locator: sourceRecordAdmissionFields.locator,
+        source_membership: sourceRecordAdmissionFields.source_membership,
+        target: sourceRecordAdmissionFields.target,
         issues: array(
           object({
             code: {
@@ -364,29 +369,9 @@ export const documentSchemas = {
           }),
           { minItems: 1, maxItems: 3 },
         ),
-        appearance_evidence: object({
-          images: array(
-            object(
-              {
-                association: { const: "source_record" },
-                role: { enum: ["front", "back"] },
-                source_url: { ...string, minLength: 1, maxLength: 2048 },
-                artwork_fingerprint: { ...string, minLength: 1, maxLength: 256 },
-                content_sha256: digest,
-              },
-              ["association", "role", "source_url", "artwork_fingerprint"],
-            ),
-            { maxItems: 2 },
-          ),
-        }),
-        source_sidecar: object({ source_record_json: { ...string, minLength: 1, maxLength: 1024 * 1024 } }),
-        completeness: object({
-          structurally_complete: { const: true },
-          required_surfaces_complete: { const: true },
-          partitions_complete: { const: true },
-          declared_record_count: { const: 1 },
-          parsed_record_count: { const: 1 },
-        }),
+        appearance_evidence: sourceRecordAdmissionFields.appearance_evidence,
+        source_sidecar: sourceRecordAdmissionFields.source_sidecar,
+        completeness: sourceRecordAdmissionFields.completeness,
       }),
     ],
   },

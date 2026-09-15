@@ -103,6 +103,10 @@ function reviewRecord(card: Record<string, unknown>): RiftboundDbSourceAdmission
   };
 }
 
+function sourceRecordObservation(card: Record<string, unknown>) {
+  return card.id === eclipseHeraldSourceId ? riftboundDbEclipseObservation(card) : reviewRecord(card);
+}
+
 export const riftboundDbSourceAdapterRegistration: SourceAdapterRegistration = {
   adapterVersion: "riftbound-db-en@1",
   sourceLineage: "riftbound-db-en",
@@ -133,14 +137,12 @@ export const riftboundDbSourceAdapterRegistration: SourceAdapterRegistration = {
   },
   parseBytes(bytes, context) {
     if (context.mediaType?.startsWith("image/")) return [];
-    return sourceRecords(bytes, context.url).map((card) =>
-      card.id === eclipseHeraldSourceId ? riftboundDbEclipseObservation(card) : reviewRecord(card),
-    );
+    return sourceRecords(bytes, context.url).map(sourceRecordObservation);
   },
   discoverRequests(bytes, context) {
     if (context.mediaType?.startsWith("image/")) return [];
     return sourceRecords(bytes, context.url).flatMap((card) => {
-      const observation = card.id === eclipseHeraldSourceId ? riftboundDbEclipseObservation(card) : reviewRecord(card);
+      const observation = sourceRecordObservation(card);
       return observation.appearance_evidence.images.map((image) => ({
         role: "image" as const,
         url: image.source_url,
