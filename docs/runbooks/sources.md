@@ -44,6 +44,17 @@ with the same complete Card and Product scopes required by the selected authorit
 explain the three available scans, four missing treatment scans, overlapping
 Product text and full-import gaps. These plans do not select the whole game.
 
+The Riftbound DB [pilot plan](../examples/riftbound-db-pilot-plan.json) selects only
+the retained facet surface and first three results of each PR/Bird query, with four
+inspected original images. Its seven-request bound is not a full PR inventory.
+[Evidence and scope](../../acceptance/fixtures/real-sources/2026-09-14-riftbound-db/README.md)
+record the access limits, duplicate Bird, unresolved promo identities, existing
+Riot Eclipse Herald overlap and intended full-import gaps. Confirm the applicable
+acquisition scope before using the networked plan; source selection alone does not
+permit a full crawl. An owner may link the evidenced overlap, while the promo
+records remain proposals until qualification supplies complete intake. Riot's
+Source Authority is unchanged.
+
 Independently complete named scopes can be collected and published successively.
 Keep each scope's exact root contract and complete Card variant inventory; a
 page slice is valid only when its adapter establishes that inventory. Prepare the

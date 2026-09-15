@@ -1,0 +1,18 @@
+{
+  "plans": [
+    {
+      "supported_game": "riftbound",
+      "source_lineage": "riftbound-db-en",
+      "adapter_version": "riftbound-db-en@1",
+      "subset": "promo-overlap-pilot",
+      "requests": [
+        { "id": "riftbound-db-en:facets", "url": "https://www.riftbound-db.com/api/facets" },
+        {
+          "id": "riftbound-db-en:promo-page",
+          "url": "https://www.riftbound-db.com/api/cards?set=PR&page=1&pageSize=3"
+        },
+        { "id": "riftbound-db-en:bird-page", "url": "https://www.riftbound-db.com/api/cards?q=Bird&page=1&pageSize=3" }
+      ]
+    }
+  ]
+}

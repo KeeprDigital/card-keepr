@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+# og:image URLs for public deck pages live under /api/ — keep them crawlable
+# so Google can index deck social images (blocked og:image shows as an error
+# in Search Console).
+Allow: /api/og-deck
+Disallow: /api/
+Sitemap: https://www.riftbound-db.com/sitemap.xml
