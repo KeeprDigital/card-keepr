@@ -16,6 +16,10 @@ Each game carries its Game Profile identity, field types and explicit nullabilit
 accepted filter names, and absolute collection links pinned to that revision.
 Unpublished source registrations do not appear. The shared Game Profile definitions
 own both these descriptors and the generated Card/Printing wire schemas.
+Pokémon Card ability and attack text represents accepted rules-level facts. The
+selected Garchomp Erratum updates Sonic Slip in both `effective_rules_text` and
+`game_data.attributes.abilities`; original physical wording stays on the Printing's
+`printed_rules_text`, with the original Source Observation retained privately.
 
 Card and Printing browsing includes gameplay, token and art categories by default.
 Card relationships identify evidenced associated Cards; a Printing's `card_id`

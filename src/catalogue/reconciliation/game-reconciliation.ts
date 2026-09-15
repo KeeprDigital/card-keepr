@@ -1,4 +1,11 @@
-import { AdministrationProblem, canonicalJson, type CatalogueStore, sha256Text, workflowDriver } from "../shared";
+import {
+  registeredSupportedGames,
+  AdministrationProblem,
+  canonicalJson,
+  type CatalogueStore,
+  sha256Text,
+  workflowDriver,
+} from "../shared";
 import { assertIdentifier } from "../source-evidence";
 import { inspectGameCandidate } from "./game-candidate";
 import { synchronizeGameCandidatePauseStatement } from "./game-candidate-repository";
@@ -71,7 +78,7 @@ export async function createGameReconciliation(
   at: string,
 ) {
   for (const [field, value] of Object.entries(input)) assertIdentifier(value, field);
-  if (!["one-piece", "fusion-world", "digimon", "gundam", "riftbound", "magic"].includes(input.supported_game))
+  if (!registeredSupportedGames().some((game) => game === input.supported_game))
     throw new AdministrationProblem(422, "unsupported_game", "Select a Supported Game.");
   const requestJson = canonicalJson(input);
   const replay = await gamePreparationRequestStatement(database, input.idempotency_key).first<RequestRow>();

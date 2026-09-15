@@ -10,6 +10,7 @@ import test from "node:test";
 for (const migration of [
   { game: "riftbound", baseline: 27, level: 28, file: "0028_riftbound_catalogue.sql" },
   { game: "magic", baseline: 33, level: 34, file: "0034_scryfall_magic.sql" },
+  { game: "pokemon", baseline: 34, level: 35, file: "0035_pokemon_pilot.sql" },
 ])
   test(`${migration.game} CHECK widening preserves populated ancestors, decisions and inbound foreign keys`, async () => {
     const db = new DatabaseSync(":memory:");
@@ -77,6 +78,7 @@ for (const migration of [
       const before = tables.map((table) => queries.tableRows(db, table).all());
       const guards = queries.triggers(db).all();
       const projections = queries.indexesAndViews(db).all();
+      assert.throws(() => queries.setPrintingGame(db).run(migration.game), /CHECK constraint failed/u);
       db.exec("BEGIN");
       const migrationSql = await readFile(new URL(migration.file, root), "utf8");
       db.exec(migrationSql);

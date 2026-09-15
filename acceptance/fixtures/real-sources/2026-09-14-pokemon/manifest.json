@@ -1,0 +1,1189 @@
+{
+  "classification": "bounded-real-evidence-pokemon-pilot",
+  "captures": [
+    {
+      "id": "official-snorlax-product",
+      "url": "https://www.pokemon.com/us/pokemon-tcg/product-gallery/scarlet-violet-151-pokemon-center-elite-trainer-box",
+      "finalUrl": "https://www.pokemon.com/us/pokemon-tcg/product-gallery/scarlet-violet-151-pokemon-center-elite-trainer-box",
+      "startedAt": "2026-09-14T13:13:59.657786+00:00",
+      "status": 200,
+      "body": "raw/official-snorlax-product.html",
+      "bytes": 19709,
+      "sha256": "62ba92dcb2929f43ece1569f7a04baf2adf4aa1e1e96a50c02b2ad834821017d",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Research/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "text/html",
+        "Accept-Encoding": "identity"
+      },
+      "responseHeaders": [
+        [
+          "Content-Type",
+          "text/html;charset=UTF-8"
+        ],
+        [
+          "Transfer-Encoding",
+          "chunked"
+        ],
+        [
+          "Connection",
+          "close"
+        ],
+        [
+          "Date",
+          "Mon, 14 Sep 2026 13:14:00 GMT"
+        ],
+        [
+          "x-envoy-upstream-service-time",
+          "390"
+        ],
+        [
+          "x-powered-by",
+          "CrafterCMS"
+        ],
+        [
+          "Content-Language",
+          "en-US"
+        ],
+        [
+          "Cache-Control",
+          "max-age=60, s-maxage=300, must-revalidate"
+        ],
+        [
+          "Pragma",
+          "no-cache"
+        ],
+        [
+          "Expires",
+          "0"
+        ],
+        [
+          "strict-transport-security",
+          "max-age=31536000 ; includeSubDomains"
+        ],
+        [
+          "x-xss-protection",
+          "0"
+        ],
+        [
+          "x-frame-options",
+          "DENY"
+        ],
+        [
+          "x-content-type-options",
+          "nosniff"
+        ],
+        [
+          "referrer-policy",
+          "strict-origin-when-cross-origin"
+        ],
+        [
+          "content-security-policy-report-only",
+          "default-src * data: mediastream: blob: filesystem: about: ws: wss: 'unsafe-eval' 'wasm-unsafe-eval' 'unsafe-inline'"
+        ],
+        [
+          "x-permitted-cross-domain-policies",
+          "none"
+        ],
+        [
+          "Server",
+          "istio-envoy"
+        ],
+        [
+          "Via",
+          "1.1 26c05953458c39f3149d18defede0790.cloudfront.net (CloudFront), 1.1 47dba0d04743b52aa36de496cd43d8ec.cloudfront.net (CloudFront)"
+        ],
+        [
+          "x-amz-cf-pop",
+          "HIO52-P5"
+        ],
+        [
+          "Vary",
+          "Origin,Accept-Encoding"
+        ],
+        [
+          "X-Cache",
+          "Miss from cloudfront"
+        ],
+        [
+          "X-Amz-Cf-Pop",
+          "MEL51-P1"
+        ],
+        [
+          "X-Amz-Cf-Id",
+          "ULMmHDrLGjS83aALVrtNU4E-cwVkIciRvmC0XdvYXPXocluteQ2XOg=="
+        ],
+        [
+          "Vary",
+          "Origin"
+        ],
+        [
+          "Set-Cookie",
+          "visid_incap_2884021=xOoHrradRaScY2kv4VAYRhfzp2oAAAAAQUIPAAAAAAC8iUD4HQWUtAklbnFpARwd; expires=Mon, 13 Sep 2027 15:15:11 GMT; HttpOnly; path=/; Domain=.pokemon.com"
+        ],
+        [
+          "Set-Cookie",
+          "nlbi_2884021=8wDqBsLL8QkEPK2NJFXoLAAAAABVhSMHXFbhJDyMugBkjOZE; HttpOnly; path=/; Domain=.pokemon.com"
+        ],
+        [
+          "Set-Cookie",
+          "incap_ses_778_2884021=lOYNPOyAPhbw+lKoNAPMChjzp2oAAAAA4d8xn1eEMZP+SA5z0C66FA==; path=/; Domain=.pokemon.com"
+        ],
+        [
+          "X-CDN",
+          "Imperva"
+        ],
+        [
+          "X-Iinfo",
+          "54-206777797-206777800 NNNY CT(1 3 0) RT(1789391639892 53) q(0 1 1 4) r(6 6) U24"
+        ]
+      ],
+      "classification": "official-publication"
+    },
+    {
+      "id": "official-garchomp-erratum",
+      "url": "https://www.pokemon.com/us/pokemon-news/errata-for-garchomp-in-pokemon-tcg-sword-shield-brilliant-stars",
+      "finalUrl": "https://www.pokemon.com/us/news/errata-for-garchomp-in-pokemon-tcg-sword-shield-brilliant-stars",
+      "startedAt": "2026-09-14T13:14:01.397904+00:00",
+      "status": 200,
+      "body": "raw/official-garchomp-erratum.html",
+      "bytes": 276321,
+      "sha256": "84ce13eda2124558b23bf3e6c0a3108e8153b0ee81b180023f63180be40f0cd9",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Research/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "text/html",
+        "Accept-Encoding": "identity"
+      },
+      "responseHeaders": [
+        [
+          "Content-Type",
+          "text/html; charset=utf-8"
+        ],
+        [
+          "Connection",
+          "close"
+        ],
+        [
+          "Date",
+          "Mon, 14 Sep 2026 13:14:03 GMT"
+        ],
+        [
+          "Server",
+          "istio-envoy"
+        ],
+        [
+          "Set-Cookie",
+          "django_language=us; Path=/"
+        ],
+        [
+          "Set-Cookie",
+          "region=us; Path=/"
+        ],
+        [
+          "Link",
+          "</_assets/_next/static/media/2801417b65625cf5-s.p.woff2>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff2\", </_assets/_next/static/media/65c344bc49233072-s.p.woff2>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff2\", </_assets/_next/static/media/92eeb95d069020cc-s.p.woff2>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff2\", </_assets/_next/static/media/9e7b0a821b9dfcb4-s.p.woff2>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff2\", </_assets/_next/static/media/cb33c97a28ed04b1-s.p.woff2>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff2\", </_assets/_next/static/media/fa11b27517d5022f-s.p.woff2>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff2\", </ptc-logos/ptc-us.svg>; rel=preload; as=\"image\""
+        ],
+        [
+          "Link",
+          "</_assets/_next/static/media/2801417b65625cf5-s.p.woff2>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff2\", </_assets/_next/static/media/65c344bc49233072-s.p.woff2>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff2\", </_assets/_next/static/media/92eeb95d069020cc-s.p.woff2>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff2\", </_assets/_next/static/media/9e7b0a821b9dfcb4-s.p.woff2>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff2\", </_assets/_next/static/media/cb33c97a28ed04b1-s.p.woff2>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff2\", </_assets/_next/static/media/fa11b27517d5022f-s.p.woff2>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff2\", </ptc-logos/ptc-us.svg>; rel=preload; as=\"image\""
+        ],
+        [
+          "x-nextjs-cache",
+          "MISS"
+        ],
+        [
+          "x-nextjs-prerender",
+          "1"
+        ],
+        [
+          "x-nextjs-stale-time",
+          "60"
+        ],
+        [
+          "x-powered-by",
+          "Next.js"
+        ],
+        [
+          "Cache-Control",
+          "s-maxage=180, stale-while-revalidate=120"
+        ],
+        [
+          "ETag",
+          "\"ypdvt50f755wwp\""
+        ],
+        [
+          "x-envoy-upstream-service-time",
+          "706"
+        ],
+        [
+          "Vary",
+          "rsc,next-router-state-tree,next-router-prefetch,next-router-segment-prefetch,Accept-Encoding"
+        ],
+        [
+          "X-Cache",
+          "Miss from cloudfront"
+        ],
+        [
+          "Via",
+          "1.1 29c598d2ee06581bf2b9494334504eb2.cloudfront.net (CloudFront)"
+        ],
+        [
+          "X-Amz-Cf-Pop",
+          "MEL51-P1"
+        ],
+        [
+          "X-Amz-Cf-Id",
+          "S9iXXCzaD9QBUoVJLqmcFKlsRktHezDxSz0MLm35a6ssHHo-qWpvGw=="
+        ],
+        [
+          "Vary",
+          "Origin"
+        ],
+        [
+          "Set-Cookie",
+          "visid_incap_2884021=xOoHrradRaScY2kv4VAYRhfzp2oAAAAAQUIPAAAAAAC8iUD4HQWUtAklbnFpARwd; expires=Mon, 13 Sep 2027 15:15:11 GMT; HttpOnly; path=/; Domain=.pokemon.com"
+        ],
+        [
+          "Set-Cookie",
+          "nlbi_2884021=QUsPNIH1oWn9vzdVJFXoLAAAAADnk2/Sb2MynpJ/fdh+5Lcp; HttpOnly; path=/; Domain=.pokemon.com"
+        ],
+        [
+          "Set-Cookie",
+          "incap_ses_778_2884021=/vTHAi4pSRjw+lKoNAPMChvzp2oAAAAAtmJEVJJofPdvwXiKrR6JuQ==; path=/; Domain=.pokemon.com"
+        ],
+        [
+          "X-CDN",
+          "Imperva"
+        ],
+        [
+          "Transfer-Encoding",
+          "chunked"
+        ],
+        [
+          "X-Iinfo",
+          "54-206778223-206778234 NNNY CT(1 2 0) RT(1789391642116 17) q(0 0 0 0) r(15 15) U24"
+        ]
+      ],
+      "classification": "official-publication"
+    },
+    {
+      "id": "charizard-base1-4",
+      "url": "https://api.tcgdex.net/v2/en/cards/base1-4",
+      "finalUrl": "https://api.tcgdex.net/v2/en/cards/base1-4",
+      "startedAt": "2026-09-14T13:14:04.896647+00:00",
+      "status": 503,
+      "body": "raw/charizard-base1-4.json",
+      "bytes": 20,
+      "sha256": "7c92b4541725a7c992628f2239d389b3cd44b0e2f2ba1cc87ee93ba79d0088f1",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Research/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "responseHeaders": [
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Content-Type",
+          "text/plain; charset=utf-8"
+        ],
+        [
+          "X-Content-Type-Options",
+          "nosniff"
+        ],
+        [
+          "Date",
+          "Mon, 14 Sep 2026 13:14:05 GMT"
+        ],
+        [
+          "Content-Length",
+          "20"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "classification": "acquisition-failure"
+    },
+    {
+      "id": "snorlax-svp-051",
+      "url": "https://api.tcgdex.net/v2/en/cards/svp-051",
+      "finalUrl": "https://api.tcgdex.net/v2/en/cards/svp-051",
+      "startedAt": "2026-09-14T13:14:06.540508+00:00",
+      "status": 503,
+      "body": "raw/snorlax-svp-051.json",
+      "bytes": 20,
+      "sha256": "7c92b4541725a7c992628f2239d389b3cd44b0e2f2ba1cc87ee93ba79d0088f1",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Research/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "responseHeaders": [
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Content-Type",
+          "text/plain; charset=utf-8"
+        ],
+        [
+          "X-Content-Type-Options",
+          "nosniff"
+        ],
+        [
+          "Date",
+          "Mon, 14 Sep 2026 13:14:07 GMT"
+        ],
+        [
+          "Content-Length",
+          "20"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "classification": "acquisition-failure"
+    },
+    {
+      "id": "pocket-series",
+      "url": "https://api.tcgdex.net/v2/en/series/tcgp",
+      "finalUrl": "https://api.tcgdex.net/v2/en/series/tcgp",
+      "startedAt": "2026-09-14T13:14:08.182603+00:00",
+      "status": 503,
+      "body": "raw/pocket-series.json",
+      "bytes": 20,
+      "sha256": "7c92b4541725a7c992628f2239d389b3cd44b0e2f2ba1cc87ee93ba79d0088f1",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Research/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "responseHeaders": [
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Content-Type",
+          "text/plain; charset=utf-8"
+        ],
+        [
+          "X-Content-Type-Options",
+          "nosniff"
+        ],
+        [
+          "Date",
+          "Mon, 14 Sep 2026 13:14:08 GMT"
+        ],
+        [
+          "Content-Length",
+          "20"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "classification": "acquisition-failure"
+    },
+    {
+      "id": "source-charizard-base1-4",
+      "url": "https://api.github.com/repos/tcgdex/cards-database/contents/data/Base/Base%20Set/4.ts?ref=5b6a2859f454972477a9953ffe5cb554d24c45e9",
+      "finalUrl": "https://api.github.com/repos/tcgdex/cards-database/contents/data/Base/Base%20Set/4.ts?ref=5b6a2859f454972477a9953ffe5cb554d24c45e9",
+      "startedAt": "2026-09-14T13:15:54.871906+00:00",
+      "status": 200,
+      "body": "raw/source-charizard-base1-4.json",
+      "bytes": 5714,
+      "sha256": "cf2c92ff896efbc558599a23223a96f8356cda3b7bfaf6d634c1c68065857e3b",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Research/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/vnd.github+json",
+        "Accept-Encoding": "identity"
+      },
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning"
+        ],
+        [
+          "Cache-Control",
+          "public, max-age=60, s-maxage=60"
+        ],
+        [
+          "Content-Length",
+          "5714"
+        ],
+        [
+          "Content-Security-Policy",
+          "default-src 'none'"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Mon, 14 Sep 2026 13:15:55 GMT"
+        ],
+        [
+          "ETag",
+          "\"fc3cdcd590edbda79385dba1ec0538480a5941bf\""
+        ],
+        [
+          "Last-Modified",
+          "Thu, 10 Sep 2026 22:19:43 GMT"
+        ],
+        [
+          "Referrer-Policy",
+          "origin-when-cross-origin, strict-origin-when-cross-origin"
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000; includeSubdomains; preload"
+        ],
+        [
+          "Vary",
+          "Accept, Accept-Encoding, Accept, X-Requested-With"
+        ],
+        [
+          "X-Content-Type-Options",
+          "nosniff"
+        ],
+        [
+          "X-Frame-Options",
+          "deny"
+        ],
+        [
+          "x-github-api-version-selected",
+          "2022-11-28"
+        ],
+        [
+          "X-GitHub-Media-Type",
+          "github.v3; format=json"
+        ],
+        [
+          "X-XSS-Protection",
+          "0"
+        ],
+        [
+          "Server",
+          "github.com"
+        ],
+        [
+          "Accept-Ranges",
+          "bytes"
+        ],
+        [
+          "X-RateLimit-Limit",
+          "60"
+        ],
+        [
+          "X-RateLimit-Remaining",
+          "59"
+        ],
+        [
+          "X-RateLimit-Used",
+          "1"
+        ],
+        [
+          "X-RateLimit-Resource",
+          "core"
+        ],
+        [
+          "X-RateLimit-Reset",
+          "1789395355"
+        ],
+        [
+          "X-GitHub-Request-Id",
+          "D701:129BF:4F6E2:605B2:6AA7F38B"
+        ],
+        [
+          "x-github-edge-region",
+          "australiaeast"
+        ],
+        [
+          "connection",
+          "close"
+        ]
+      ],
+      "classification": "source-repository-publication"
+    },
+    {
+      "id": "source-snorlax-svp-051",
+      "url": "https://api.github.com/repos/tcgdex/cards-database/contents/data/Scarlet%20%26%20Violet/SVP%20Black%20Star%20Promos/051.ts?ref=5b6a2859f454972477a9953ffe5cb554d24c45e9",
+      "finalUrl": "https://api.github.com/repos/tcgdex/cards-database/contents/data/Scarlet%20%26%20Violet/SVP%20Black%20Star%20Promos/051.ts?ref=5b6a2859f454972477a9953ffe5cb554d24c45e9",
+      "startedAt": "2026-09-14T13:15:55.763625+00:00",
+      "status": 200,
+      "body": "raw/source-snorlax-svp-051.json",
+      "bytes": 4666,
+      "sha256": "09714f2ec373d70813343b2d968e6721e8237506e78a2c33cf781ce03ed6aad6",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Research/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/vnd.github+json",
+        "Accept-Encoding": "identity"
+      },
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning"
+        ],
+        [
+          "Cache-Control",
+          "public, max-age=60, s-maxage=60"
+        ],
+        [
+          "Content-Length",
+          "4666"
+        ],
+        [
+          "Content-Security-Policy",
+          "default-src 'none'"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Mon, 14 Sep 2026 13:15:56 GMT"
+        ],
+        [
+          "ETag",
+          "\"49ac012a93f48ee06e72197b73c76ee78c8b3606\""
+        ],
+        [
+          "Last-Modified",
+          "Thu, 10 Sep 2026 22:19:43 GMT"
+        ],
+        [
+          "Referrer-Policy",
+          "origin-when-cross-origin, strict-origin-when-cross-origin"
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000; includeSubdomains; preload"
+        ],
+        [
+          "Vary",
+          "Accept, Accept-Encoding, Accept, X-Requested-With"
+        ],
+        [
+          "X-Content-Type-Options",
+          "nosniff"
+        ],
+        [
+          "X-Frame-Options",
+          "deny"
+        ],
+        [
+          "x-github-api-version-selected",
+          "2022-11-28"
+        ],
+        [
+          "X-GitHub-Media-Type",
+          "github.v3; format=json"
+        ],
+        [
+          "X-XSS-Protection",
+          "0"
+        ],
+        [
+          "Server",
+          "github.com"
+        ],
+        [
+          "Accept-Ranges",
+          "bytes"
+        ],
+        [
+          "X-RateLimit-Limit",
+          "60"
+        ],
+        [
+          "X-RateLimit-Remaining",
+          "58"
+        ],
+        [
+          "X-RateLimit-Used",
+          "2"
+        ],
+        [
+          "X-RateLimit-Resource",
+          "core"
+        ],
+        [
+          "X-RateLimit-Reset",
+          "1789395355"
+        ],
+        [
+          "X-GitHub-Request-Id",
+          "D702:1B2468:54538:65C30:6AA7F38B"
+        ],
+        [
+          "x-github-edge-region",
+          "australiaeast"
+        ],
+        [
+          "connection",
+          "close"
+        ]
+      ],
+      "classification": "source-repository-publication"
+    },
+    {
+      "id": "official-garchomp-card",
+      "url": "https://www.pokemon.com/us/pokemon-tcg/pokemon-cards/series/swsh9/109/",
+      "finalUrl": "https://www.pokemon.com/us/pokemon-tcg/pokemon-cards/series/swsh9/109",
+      "startedAt": "2026-09-14T13:15:56.596509+00:00",
+      "status": 200,
+      "body": "raw/official-garchomp-card.html",
+      "bytes": 38493,
+      "sha256": "1f7d50736a5b0835f34cc527bcbcc020a9504ea0c6b73219ccef0b191c079eac",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Research/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "text/html",
+        "Accept-Encoding": "identity"
+      },
+      "responseHeaders": [
+        [
+          "Content-Type",
+          "text/html;charset=UTF-8"
+        ],
+        [
+          "Transfer-Encoding",
+          "chunked"
+        ],
+        [
+          "Connection",
+          "close"
+        ],
+        [
+          "Date",
+          "Mon, 14 Sep 2026 13:15:57 GMT"
+        ],
+        [
+          "x-envoy-upstream-service-time",
+          "176"
+        ],
+        [
+          "x-powered-by",
+          "CrafterCMS"
+        ],
+        [
+          "Content-Language",
+          "en-US"
+        ],
+        [
+          "Cache-Control",
+          "max-age=60, s-maxage=300, must-revalidate"
+        ],
+        [
+          "Pragma",
+          "no-cache"
+        ],
+        [
+          "Expires",
+          "0"
+        ],
+        [
+          "strict-transport-security",
+          "max-age=31536000 ; includeSubDomains"
+        ],
+        [
+          "x-xss-protection",
+          "0"
+        ],
+        [
+          "x-frame-options",
+          "DENY"
+        ],
+        [
+          "x-content-type-options",
+          "nosniff"
+        ],
+        [
+          "referrer-policy",
+          "strict-origin-when-cross-origin"
+        ],
+        [
+          "content-security-policy-report-only",
+          "default-src * data: mediastream: blob: filesystem: about: ws: wss: 'unsafe-eval' 'wasm-unsafe-eval' 'unsafe-inline'"
+        ],
+        [
+          "x-permitted-cross-domain-policies",
+          "none"
+        ],
+        [
+          "Server",
+          "istio-envoy"
+        ],
+        [
+          "Via",
+          "1.1 a73c4443f00fb366a3a7226697ad0b6c.cloudfront.net (CloudFront), 1.1 92b3679e3d107e47e4c62245f64f1afa.cloudfront.net (CloudFront)"
+        ],
+        [
+          "x-amz-cf-pop",
+          "HIO52-P5"
+        ],
+        [
+          "Vary",
+          "Origin,Accept-Encoding"
+        ],
+        [
+          "X-Cache",
+          "Miss from cloudfront"
+        ],
+        [
+          "X-Amz-Cf-Pop",
+          "MEL51-P1"
+        ],
+        [
+          "X-Amz-Cf-Id",
+          "0C_CcZWyA-NuxfI-KbZDs8Im1xYiAzBj-mc77KtO1WF46fmbzcQi2g=="
+        ],
+        [
+          "Vary",
+          "Origin"
+        ],
+        [
+          "Set-Cookie",
+          "visid_incap_2884021=fhBnNuacT6uo5gcp5sD/lI3zp2oAAAAAQUIPAAAAAAB/dLISWW56QE3FccclCoQ7; expires=Mon, 13 Sep 2027 15:15:11 GMT; HttpOnly; path=/; Domain=.pokemon.com"
+        ],
+        [
+          "Set-Cookie",
+          "nlbi_2884021=24ZmEawjsQ3+eiWOJFXoLAAAAADxZ3TjHrsVr4un4yxUOKWP; HttpOnly; path=/; Domain=.pokemon.com"
+        ],
+        [
+          "Set-Cookie",
+          "incap_ses_778_2884021=IFn9Nja/sSznlFOoNAPMCo3zp2oAAAAAgeIOFsDwzVOLBsPgdc5zqA==; path=/; Domain=.pokemon.com"
+        ],
+        [
+          "X-CDN",
+          "Imperva"
+        ],
+        [
+          "X-Iinfo",
+          "54-206806574-206806583 NNNY CT(0 1 0) RT(1789391757044 53) q(0 0 0 -1) r(3 3) U24"
+        ]
+      ],
+      "classification": "official-publication"
+    },
+    {
+      "id": "tcgdex-snorlax-svp-051",
+      "url": "https://api.tcgdex.net/v2/en/cards/svp-051",
+      "finalUrl": "https://api.tcgdex.net/v2/en/cards/svp-051",
+      "startedAt": "2026-09-14T13:26:17.991754+00:00",
+      "completedAt": "2026-09-14T13:26:18.759062+00:00",
+      "status": 200,
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Pilot/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "2177"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Mon, 14 Sep 2026 13:26:18 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"881-aYAV7nC8zDfbpl+qr+q/FKfTKlU\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "body": "raw/tcgdex-snorlax-svp-051.body",
+      "bytes": 2177,
+      "sha256": "0f2feedd9a78e4e22774578ddfd0cfcf0ac764c33cbfdf5620f72c50faca4f60",
+      "contentType": "application/json",
+      "classification": "rest-card"
+    },
+    {
+      "id": "tcgdex-charizard-base1-4",
+      "url": "https://api.tcgdex.net/v2/en/cards/base1-4",
+      "finalUrl": "https://api.tcgdex.net/v2/en/cards/base1-4",
+      "startedAt": "2026-09-14T13:26:20.770507+00:00",
+      "completedAt": "2026-09-14T13:26:21.413015+00:00",
+      "status": 200,
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Pilot/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "3401"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Mon, 14 Sep 2026 13:26:21 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"d49-SbVKxv0nZSBTmbcESAGtHH4bVzM\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "body": "raw/tcgdex-charizard-base1-4.body",
+      "bytes": 3401,
+      "sha256": "d328678668820cce51e34e11beac4f410b04ee3d18001db1a309958d67e0ac37",
+      "contentType": "application/json",
+      "classification": "rest-card"
+    },
+    {
+      "id": "tcgdex-snorlax-image",
+      "url": "https://assets.tcgdex.net/en/sv/svp/051/high.png",
+      "finalUrl": "https://assets.tcgdex.net/en/sv/svp/051/high.png",
+      "startedAt": "2026-09-14T13:27:32.947797+00:00",
+      "completedAt": "2026-09-14T13:27:37.103649+00:00",
+      "status": 200,
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Pilot/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "image/png",
+        "Accept-Encoding": "identity"
+      },
+      "responseHeaders": [
+        [
+          "Accept-Ranges",
+          "bytes"
+        ],
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET, OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "max-age=31536000"
+        ],
+        [
+          "Cache-Control",
+          "public, max-age=31536000, immutable"
+        ],
+        [
+          "Content-Length",
+          "292127"
+        ],
+        [
+          "Content-Type",
+          "image/png"
+        ],
+        [
+          "Date",
+          "Mon, 14 Sep 2026 13:27:35 GMT"
+        ],
+        [
+          "Etag",
+          "\"b0b69dd6708ee89713a1be5354f31650\""
+        ],
+        [
+          "Expires",
+          "Tue, 14 Sep 2027 13:27:35 GMT"
+        ],
+        [
+          "Last-Modified",
+          "Wed, 29 Jul 2026 22:41:09 GMT"
+        ],
+        [
+          "Server",
+          "nginx"
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000; includeSubDomains; preload"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "body": "raw/tcgdex-snorlax-image.body",
+      "bytes": 292127,
+      "sha256": "e54bf5a3783b43fd7355bc252eb0a99723aa644dab0a01ecd9239598396be153",
+      "contentType": "image/png",
+      "classification": "source-image"
+    },
+    {
+      "id": "tcgdex-charizard-image",
+      "url": "https://assets.tcgdex.net/en/base/base1/4/high.png",
+      "finalUrl": "https://assets.tcgdex.net/en/base/base1/4/high.png",
+      "startedAt": "2026-09-14T13:27:39.107019+00:00",
+      "completedAt": "2026-09-14T13:27:43.529606+00:00",
+      "status": 200,
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Pilot/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "image/png",
+        "Accept-Encoding": "identity"
+      },
+      "responseHeaders": [
+        [
+          "Accept-Ranges",
+          "bytes"
+        ],
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET, OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "max-age=31536000"
+        ],
+        [
+          "Cache-Control",
+          "public, max-age=31536000, immutable"
+        ],
+        [
+          "Content-Length",
+          "360481"
+        ],
+        [
+          "Content-Type",
+          "image/png"
+        ],
+        [
+          "Date",
+          "Mon, 14 Sep 2026 13:27:41 GMT"
+        ],
+        [
+          "Etag",
+          "\"276fe70ad6a7615a8e8392df12506242\""
+        ],
+        [
+          "Expires",
+          "Tue, 14 Sep 2027 13:27:41 GMT"
+        ],
+        [
+          "Last-Modified",
+          "Tue, 08 Sep 2026 21:13:48 GMT"
+        ],
+        [
+          "Server",
+          "nginx"
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000; includeSubDomains; preload"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "body": "raw/tcgdex-charizard-image.body",
+      "bytes": 360481,
+      "sha256": "b05eac72e977adb4c6004640deb48f5cf06907577e6e1a10fd783f272508880b",
+      "contentType": "image/png",
+      "classification": "source-image"
+    },
+    {
+      "id": "official-garchomp-image",
+      "url": "https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/SWSH9/SWSH9_EN_109.png",
+      "finalUrl": "https://assets.pokemon.com/static-assets/content-assets/cms2/img/cards/web/SWSH9/SWSH9_EN_109.png",
+      "startedAt": "2026-09-14T13:27:45.539819+00:00",
+      "completedAt": "2026-09-14T13:27:46.570735+00:00",
+      "status": 200,
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Pilot/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "image/png",
+        "Accept-Encoding": "identity"
+      },
+      "responseHeaders": [
+        [
+          "Content-Type",
+          "image/png"
+        ],
+        [
+          "Content-Length",
+          "52784"
+        ],
+        [
+          "Connection",
+          "close"
+        ],
+        [
+          "Date",
+          "Mon, 14 Sep 2026 13:27:47 GMT"
+        ],
+        [
+          "x-amz-replication-status",
+          "REPLICA"
+        ],
+        [
+          "Last-Modified",
+          "Tue, 07 Jun 2022 22:04:30 GMT"
+        ],
+        [
+          "ETag",
+          "\"cf8ca29e802c7b31077eb420e308a167\""
+        ],
+        [
+          "x-amz-version-id",
+          "oXXv5dTaIItZKQOwc6LJALB5wBvSYhV7"
+        ],
+        [
+          "Accept-Ranges",
+          "bytes"
+        ],
+        [
+          "Server",
+          "AmazonS3"
+        ],
+        [
+          "X-Cache",
+          "Miss from cloudfront"
+        ],
+        [
+          "Via",
+          "1.1 eb18a63f2e4a347b07daab2c4c69df1e.cloudfront.net (CloudFront)"
+        ],
+        [
+          "X-Amz-Cf-Pop",
+          "MEL52-P2"
+        ],
+        [
+          "X-Amz-Cf-Id",
+          "bpA4okt9c8oRe7Ymn4iPtrfNPKi3Qklstz2Tc1s4gaT_A4QucOCDnw=="
+        ]
+      ],
+      "body": "raw/official-garchomp-image.body",
+      "bytes": 52784,
+      "sha256": "179a4492bf725961091125a452fbf5127a733f4768e99f8205265fc80302eb90",
+      "contentType": "image/png",
+      "classification": "source-image"
+    }
+  ]
+}

@@ -4,8 +4,15 @@ export const publishers = [
   { id: "bandai", name: "Bandai" },
   { id: "riot-games", name: "Riot Games" },
   { id: "wizards-of-the-coast", name: "Wizards of the Coast" },
+  { id: "pokemon-company-international", name: "The Pokémon Company International" },
 ];
 export const sources = [
+  { id: "tcgdex-pokemon", publisher_id: null, name: "TCGdex Pokémon" },
+  {
+    id: "pokemon-official",
+    publisher_id: "pokemon-company-international",
+    name: "Selected official Pokémon publications",
+  },
   { id: "riot-riftbound", publisher_id: "riot-games", name: "Riot Riftbound" },
   ...(["one-piece", "fusion-world", "digimon", "gundam"] as const).map((game) => ({
     id: `bandai-${game}`,
@@ -23,6 +30,14 @@ export type SourceLineageRegistration = Readonly<{
   release_region: "OCEANIA" | "ASIA" | "US" | "unknown";
 }>;
 export const sourceLineages: readonly SourceLineageRegistration[] = [
+  { id: "tcgdex-pokemon-en", source_id: "tcgdex-pokemon", game: "pokemon", locale: "en", release_region: "unknown" },
+  {
+    id: "pokemon-official-en",
+    source_id: "pokemon-official",
+    game: "pokemon",
+    locale: "en",
+    release_region: "unknown",
+  },
   { id: "scryfall-magic-en", source_id: "scryfall", game: "magic", locale: "en", release_region: "unknown" },
   { id: "riftbound-en", source_id: "riot-riftbound", game: "riftbound", locale: "en", release_region: "US" },
   { id: "one-piece-en", source_id: "bandai-one-piece", game: "one-piece", locale: "en", release_region: "OCEANIA" },
@@ -50,7 +65,14 @@ export function gameProfileRegistrations() {
     return {
       id,
       game,
-      publisher_id: game === "magic" ? "wizards-of-the-coast" : game === "riftbound" ? "riot-games" : "bandai",
+      publisher_id:
+        game === "pokemon"
+          ? "pokemon-company-international"
+          : game === "magic"
+            ? "wizards-of-the-coast"
+            : game === "riftbound"
+              ? "riot-games"
+              : "bandai",
       schema: exportedGameProfileSchema(id),
     };
   });

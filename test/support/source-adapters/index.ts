@@ -173,6 +173,14 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
         parserContract: "synthetic-fixture-card-document@2",
       },
       {
+        adapterVersion: "fixture-pokemon-json@1",
+        printingAdmission: "source_qualification" as const,
+        sourceLineage: "tcgdex-pokemon-en",
+        supportedGame: "pokemon",
+        gameProfileVersion: "pokemon@1",
+        parserContract: "synthetic-fixture-card-document@2",
+      },
+      {
         adapterVersion: "fixture-digimon-json@2",
         printingAdmission: "source_qualification" as const,
         sourceLineage: "digimon-en",

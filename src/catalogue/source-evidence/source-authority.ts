@@ -23,7 +23,7 @@ export type AuthoritySelectionRequest = {
 const areas = ["card_facts", "printing_details", "corrected_card_content"] as const;
 // Each entry applies only to its registered lineage's exact game/locale/region.
 // Scryfall selects all three areas for its English/unknown-region pilot.
-// Future Pokémon entries belong with their exact registered source scopes.
+// Pokémon splits fact/detail authority from selected official corrected content.
 const initialAuthorityAreas: Readonly<Record<string, readonly (typeof areas)[number][]>> = {
   "one-piece-en": areas,
   "fusion-world-en": areas,
@@ -32,6 +32,8 @@ const initialAuthorityAreas: Readonly<Record<string, readonly (typeof areas)[num
   "gundam-en-us": areas,
   "riftbound-en": areas,
   "scryfall-magic-en": areas,
+  "tcgdex-pokemon-en": ["card_facts", "printing_details"],
+  "pokemon-official-en": ["corrected_card_content"],
 };
 export async function sourceAuthorities(database: CatalogueStore, runId?: string) {
   const decisions = (await authorityDecisionsStatement(database, runId).all<AuthorityDecision>()).results;

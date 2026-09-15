@@ -664,6 +664,13 @@ function supportedGameExport(game: SupportedGame) {
       supported_locales: ["EN"],
       game_profile: "magic@1",
     },
+    pokemon: {
+      id: "game_pokemon",
+      key: "pokemon",
+      name: "Pokémon Trading Card Game",
+      supported_locales: ["EN"],
+      game_profile: "pokemon@1",
+    },
     riftbound: {
       id: "game_riftbound",
       key: "riftbound",

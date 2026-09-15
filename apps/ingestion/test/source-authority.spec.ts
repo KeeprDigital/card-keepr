@@ -40,7 +40,29 @@ test("Riot starts with the approved exact English authority scopes and retains e
       }),
     ),
   );
-  expect(before.authorities).toHaveLength(21);
+  expect(before.authorities.filter((a) => a.game === "pokemon")).toEqual(
+    expect.arrayContaining([
+      ...["card_facts", "printing_details"].map((area) =>
+        expect.objectContaining({
+          game: "pokemon",
+          locale: "en",
+          release_region: "unknown",
+          area,
+          source_lineage: "tcgdex-pokemon-en",
+          generation: 0,
+        }),
+      ),
+      expect.objectContaining({
+        game: "pokemon",
+        locale: "en",
+        release_region: "unknown",
+        area: "corrected_card_content",
+        source_lineage: "pokemon-official-en",
+        generation: 0,
+      }),
+    ]),
+  );
+  expect(before.authorities).toHaveLength(24);
   const selection = {
     game: "riftbound",
     locale: "en",

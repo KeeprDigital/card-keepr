@@ -1763,6 +1763,43 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
     observation.card.official_identity = { kind: "publisher_name", value: observation.card.name };
     return { cards: [observation] };
   }
+  if (scenario === "profile-pokemon") {
+    const observation = printingObservation({
+      game: "pokemon",
+      profile: "pokemon@1",
+      cardNumber: "SYN-001",
+      name: "Synthetic Pokémon Card",
+      cardAttributes: {
+        card_type: "pokemon",
+        hp: 10,
+        types: ["Colorless"],
+        stage: "Basic",
+        evolves_from: null,
+        abilities: [],
+        attacks: [],
+        weaknesses: [],
+        resistances: [],
+        retreat_cost: null,
+        regulation_mark: null,
+      },
+      printingAttributes: {
+        set_code: "SYN",
+        collector_number: "1",
+        finish: null,
+        edition: null,
+        size: null,
+        stamps: [],
+        artists: [],
+        reverse_face: null,
+      },
+      locator: "/synthetic/pokemon/SYN-001",
+      lineageMarker: "pokemon",
+      memberships: { products: [], distribution_contexts: [], source_buckets: ["synthetic"] },
+    });
+    return {
+      cards: [{ ...observation, card: { ...observation.card, official_identity: { kind: "unknown", value: null } } }],
+    };
+  }
   if (scenario === "profile-magic") {
     const name = "Synthetic Magic Creature";
     const observation = printingObservation({

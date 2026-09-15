@@ -40,6 +40,7 @@
                   "type": "string",
                   "enum": [
                     "magic",
+                    "pokemon",
                     "riftbound",
                     "one-piece",
                     "fusion-world",
@@ -70,6 +71,7 @@
                       "type": "string",
                       "enum": [
                         "magic@1",
+                        "pokemon@1",
                         "riftbound@1",
                         "one-piece@1",
                         "fusion-world@1",
@@ -458,6 +460,7 @@
                       "type": "string",
                       "enum": [
                         "magic",
+                        "pokemon",
                         "riftbound",
                         "one-piece",
                         "fusion-world",
@@ -768,6 +771,217 @@
                                 "type_line",
                                 "colour_identity",
                                 "faces"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "profile",
+                            "attributes"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "profile": {
+                              "type": "string",
+                              "enum": [
+                                "pokemon@1"
+                              ]
+                            },
+                            "attributes": {
+                              "type": "object",
+                              "properties": {
+                                "card_type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "pokemon",
+                                    "trainer",
+                                    "energy"
+                                  ]
+                                },
+                                "hp": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "types": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 0
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                },
+                                "stage": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 0
+                                },
+                                "evolves_from": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 0
+                                },
+                                "abilities": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ],
+                                        "minLength": 0
+                                      },
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "text": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ],
+                                        "minLength": 0
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "name",
+                                      "text"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                },
+                                "attacks": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "name": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "cost": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "minLength": 0
+                                        },
+                                        "minItems": 0,
+                                        "maxItems": 9007199254740991
+                                      },
+                                      "damage": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ],
+                                        "minLength": 0
+                                      },
+                                      "text": {
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ],
+                                        "minLength": 0
+                                      }
+                                    },
+                                    "required": [
+                                      "name",
+                                      "cost",
+                                      "damage",
+                                      "text"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                },
+                                "weaknesses": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "value": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "value"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                },
+                                "resistances": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "value": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "value"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  "minItems": 0,
+                                  "maxItems": 9007199254740991
+                                },
+                                "retreat_cost": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                },
+                                "regulation_mark": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "minLength": 0
+                                }
+                              },
+                              "required": [
+                                "card_type",
+                                "hp",
+                                "types",
+                                "stage",
+                                "evolves_from",
+                                "abilities",
+                                "attacks",
+                                "weaknesses",
+                                "resistances",
+                                "retreat_cost",
+                                "regulation_mark"
                               ],
                               "additionalProperties": false
                             }
@@ -1643,6 +1857,7 @@
                       "type": "string",
                       "enum": [
                         "magic",
+                        "pokemon",
                         "riftbound",
                         "one-piece",
                         "fusion-world",
@@ -1835,6 +2050,27 @@
                               "type": "string",
                               "enum": [
                                 "magic@1"
+                              ]
+                            },
+                            "attributes": {
+                              "type": "object",
+                              "properties": {},
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "profile",
+                            "attributes"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "profile": {
+                              "type": "string",
+                              "enum": [
+                                "pokemon@1"
                               ]
                             },
                             "attributes": {
@@ -2059,6 +2295,7 @@
                     "type": "string",
                     "enum": [
                       "magic",
+                      "pokemon",
                       "riftbound",
                       "one-piece",
                       "fusion-world",
@@ -2369,6 +2606,217 @@
                               "type_line",
                               "colour_identity",
                               "faces"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "profile",
+                          "attributes"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "profile": {
+                            "type": "string",
+                            "enum": [
+                              "pokemon@1"
+                            ]
+                          },
+                          "attributes": {
+                            "type": "object",
+                            "properties": {
+                              "card_type": {
+                                "type": "string",
+                                "enum": [
+                                  "pokemon",
+                                  "trainer",
+                                  "energy"
+                                ]
+                              },
+                              "hp": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ],
+                                "minimum": 0
+                              },
+                              "types": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 0
+                                },
+                                "minItems": 0,
+                                "maxItems": 9007199254740991
+                              },
+                              "stage": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "minLength": 0
+                              },
+                              "evolves_from": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "minLength": 0
+                              },
+                              "abilities": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ],
+                                      "minLength": 0
+                                    },
+                                    "name": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "text": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ],
+                                      "minLength": 0
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "name",
+                                    "text"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "minItems": 0,
+                                "maxItems": 9007199254740991
+                              },
+                              "attacks": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "cost": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "minLength": 0
+                                      },
+                                      "minItems": 0,
+                                      "maxItems": 9007199254740991
+                                    },
+                                    "damage": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ],
+                                      "minLength": 0
+                                    },
+                                    "text": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ],
+                                      "minLength": 0
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "cost",
+                                    "damage",
+                                    "text"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "minItems": 0,
+                                "maxItems": 9007199254740991
+                              },
+                              "weaknesses": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "value": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "value"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "minItems": 0,
+                                "maxItems": 9007199254740991
+                              },
+                              "resistances": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "value": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "required": [
+                                    "type",
+                                    "value"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "minItems": 0,
+                                "maxItems": 9007199254740991
+                              },
+                              "retreat_cost": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ],
+                                "minimum": 0
+                              },
+                              "regulation_mark": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "minLength": 0
+                              }
+                            },
+                            "required": [
+                              "card_type",
+                              "hp",
+                              "types",
+                              "stage",
+                              "evolves_from",
+                              "abilities",
+                              "attacks",
+                              "weaknesses",
+                              "resistances",
+                              "retreat_cost",
+                              "regulation_mark"
                             ],
                             "additionalProperties": false
                           }
@@ -3259,6 +3707,7 @@
                     "type": "string",
                     "enum": [
                       "magic",
+                      "pokemon",
                       "riftbound",
                       "one-piece",
                       "fusion-world",
@@ -3471,6 +3920,27 @@
                           "profile": {
                             "type": "string",
                             "enum": [
+                              "pokemon@1"
+                            ]
+                          },
+                          "attributes": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "profile",
+                          "attributes"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "profile": {
+                            "type": "string",
+                            "enum": [
                               "riftbound@1"
                             ]
                           },
@@ -3617,6 +4087,7 @@
                     "type": "string",
                     "enum": [
                       "magic",
+                      "pokemon",
                       "riftbound",
                       "one-piece",
                       "fusion-world",
@@ -3902,6 +4373,92 @@
                       "artists",
                       "reverse_face",
                       "finish_image"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "profile",
+                  "attributes"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "pokemon@1"
+                    ]
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "properties": {
+                      "set_code": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "collector_number": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "finish": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 0
+                      },
+                      "edition": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 0
+                      },
+                      "size": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 0
+                      },
+                      "stamps": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 0
+                        },
+                        "minItems": 0,
+                        "maxItems": 9007199254740991
+                      },
+                      "artists": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 0
+                        },
+                        "minItems": 0,
+                        "maxItems": 9007199254740991
+                      },
+                      "reverse_face": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 0
+                      }
+                    },
+                    "required": [
+                      "set_code",
+                      "collector_number",
+                      "finish",
+                      "edition",
+                      "size",
+                      "stamps",
+                      "artists",
+                      "reverse_face"
                     ],
                     "additionalProperties": false
                   }
@@ -4404,6 +4961,7 @@
                     "type": "string",
                     "enum": [
                       "magic",
+                      "pokemon",
                       "riftbound",
                       "one-piece",
                       "fusion-world",
@@ -4606,6 +5164,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -4984,6 +5543,7 @@
                   "type": "string",
                   "enum": [
                     "magic",
+                    "pokemon",
                     "riftbound",
                     "one-piece",
                     "fusion-world",
@@ -5000,7 +5560,7 @@
                   "properties": {
                     "name": {
                       "type": "string",
-                      "pattern": "^(magic|riftbound|one-piece|fusion-world|digimon|gundam)\\.(0|[1-9][0-9]*)$"
+                      "pattern": "^(magic|pokemon|riftbound|one-piece|fusion-world|digimon|gundam)\\.(0|[1-9][0-9]*)$"
                     },
                     "kind": {
                       "type": "string",
@@ -6307,6 +6867,42 @@
             },
             "required": false,
             "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.abilities.kind",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.abilities.name",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.abilities.text",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
             "name": "attribute.ability_text",
             "in": "query"
           },
@@ -6320,6 +6916,54 @@
             "required": false,
             "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
             "name": "attribute.ap",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.attacks.cost",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.attacks.damage",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.attacks.name",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.attacks.text",
             "in": "query"
           },
           {
@@ -6584,6 +7228,18 @@
             "required": false,
             "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
             "name": "attribute.energy",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.evolves_from",
             "in": "query"
           },
           {
@@ -6883,6 +7539,54 @@
             },
             "required": false,
             "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.regulation_mark",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.resistances.type",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.resistances.value",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.retreat_cost",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
             "name": "attribute.series_titles",
             "in": "query"
           },
@@ -6932,6 +7636,18 @@
             "required": false,
             "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
             "name": "attribute.specified_cost.count",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.stage",
             "in": "query"
           },
           {
@@ -7027,7 +7743,43 @@
             },
             "required": false,
             "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.types",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
             "name": "attribute.use_cost",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.weaknesses.type",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision."
+            },
+            "required": false,
+            "description": "Equality (array membership) against the selected Game Profile. Requires game; names and values are validated by that profile and the published revision.",
+            "name": "attribute.weaknesses.value",
             "in": "query"
           },
           {

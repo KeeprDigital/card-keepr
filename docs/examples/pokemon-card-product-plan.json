@@ -1,0 +1,30 @@
+{
+  "plans": [
+    {
+      "supported_game": "pokemon",
+      "source_lineage": "tcgdex-pokemon-en",
+      "adapter_version": "tcgdex-pokemon-en@1",
+      "subset": "snorlax-charizard-pilot",
+      "requests": [
+        { "id": "tcgdex-pokemon-en:svp-051", "url": "https://api.tcgdex.net/v2/en/cards/svp-051" },
+        { "id": "tcgdex-pokemon-en:base1-4", "url": "https://api.tcgdex.net/v2/en/cards/base1-4" }
+      ]
+    },
+    {
+      "supported_game": "pokemon",
+      "source_lineage": "pokemon-official-en",
+      "adapter_version": "pokemon-official-en@1",
+      "subset": "card-product-pilot",
+      "requests": [
+        {
+          "id": "pokemon-official-en:snorlax-product",
+          "url": "https://www.pokemon.com/us/pokemon-tcg/product-gallery/scarlet-violet-151-pokemon-center-elite-trainer-box"
+        },
+        {
+          "id": "pokemon-official-en:garchomp-card",
+          "url": "https://www.pokemon.com/us/pokemon-tcg/pokemon-cards/series/swsh9/109"
+        }
+      ]
+    }
+  ]
+}

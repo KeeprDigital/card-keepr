@@ -1,3 +1,4 @@
+import { pokemonCorrectedRulesText } from "./pokemon-errata";
 import { prepareNativeSourceHistory } from "./native-source-history";
 import { requiredSourceAdapter, type SourceAdapterRegistration } from "../adapters";
 import { sourceHistoryCandidateStatement, type SourceHistoryCandidate } from "./native-source-history-repository";
@@ -976,7 +977,7 @@ export async function reconcileRetainedCardPrintingEvidence(
                 sourceObservationId: observation.sourceObservationId,
                 errata: observation.errata.filter((erratum) => erratum.targetType === "card"),
               }),
-              ...matchingStandaloneErrata.map((erratum) =>
+              ...matchingStandaloneErrata.map(async (erratum) =>
                 identifyRulesTextErrata({
                   game: proposedCard.game,
                   cardId,
@@ -988,7 +989,14 @@ export async function reconcileRetainedCardPrintingEvidence(
                       targetType: "card" as const,
                       effectiveFrom: erratum.effectiveFrom,
                       officialWording: erratum.officialWording,
-                      correctedValue: erratum.correctedRulesText,
+                      correctedValue:
+                        erratum.game === "pokemon"
+                          ? pokemonCorrectedRulesText(
+                              { id: cardId, ...proposedCard },
+                              erratum,
+                              await priorErrata.forCard(proposedCard.game, cardId),
+                            )
+                          : erratum.correctedRulesText,
                     },
                   ],
                 }),
@@ -1800,7 +1808,10 @@ export async function reconcileRetainedCardPrintingEvidence(
                     targetType: observation.target.type,
                     effectiveFrom: observation.effectiveFrom,
                     officialWording: observation.officialWording,
-                    correctedValue: observation.correctedRulesText,
+                    correctedValue:
+                      observation.game === "pokemon"
+                        ? pokemonCorrectedRulesText(card, observation, await priorErrata.forCard(card.game, card.id))
+                        : observation.correctedRulesText,
                   },
                 ],
               }),

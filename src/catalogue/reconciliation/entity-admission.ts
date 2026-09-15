@@ -2,6 +2,7 @@ import { admissionPolicyDigest } from "./entity-admission-source";
 import { cardAllocationIdentity } from "./canonical-identity";
 import { parseReconciliationObservation } from "./reconciliation-observation";
 import {
+  registeredSupportedGames,
   AdministrationProblem,
   type CatalogueStore,
   type CatalogueCard,
@@ -45,7 +46,7 @@ export async function createEntityProposal(
   at: string,
 ) {
   if (
-    !["one-piece", "fusion-world", "digimon", "gundam", "riftbound", "magic"].includes(input.game) ||
+    !registeredSupportedGames().some((game) => game === input.game) ||
     (input.source_lineage !== "owner" &&
       !sourceLineages.some((s) => s.id === input.source_lineage && s.game === input.game))
   )

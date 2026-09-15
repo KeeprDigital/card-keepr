@@ -3722,7 +3722,7 @@
               "additionalProperties": false
             },
             "minItems": 1,
-            "maxItems": 6
+            "maxItems": 7
           },
           "root_digest": {
             "type": "string",
@@ -4066,6 +4066,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -4165,6 +4166,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -4354,6 +4356,7 @@
                   "type": "string",
                   "enum": [
                     "magic",
+                    "pokemon",
                     "riftbound",
                     "one-piece",
                     "fusion-world",
@@ -6270,6 +6273,7 @@
                       "type": "string",
                       "enum": [
                         "magic",
+                        "pokemon",
                         "riftbound",
                         "one-piece",
                         "fusion-world",
@@ -6696,6 +6700,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -6772,6 +6777,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -6986,6 +6992,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -7072,6 +7079,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -7293,6 +7301,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -7376,6 +7385,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -7597,6 +7607,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -7686,6 +7697,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -8127,6 +8139,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -8200,6 +8213,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -8414,6 +8428,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -8497,6 +8512,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -8718,6 +8734,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -8798,6 +8815,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -9019,6 +9037,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -9105,6 +9124,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -9607,6 +9627,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -10748,6 +10769,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -11044,6 +11066,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -11384,6 +11407,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -11465,6 +11489,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -11507,6 +11532,7 @@
         "type": "string",
         "enum": [
           "magic",
+          "pokemon",
           "riftbound",
           "one-piece",
           "fusion-world",
@@ -11518,6 +11544,7 @@
         "type": "string",
         "enum": [
           "magic",
+          "pokemon",
           "riftbound",
           "one-piece",
           "fusion-world",
@@ -11529,6 +11556,7 @@
         "type": "string",
         "enum": [
           "magic",
+          "pokemon",
           "riftbound",
           "one-piece",
           "fusion-world",
@@ -11547,6 +11575,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -11873,6 +11902,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -12158,6 +12188,212 @@
                       "type_line",
                       "colour_identity",
                       "faces"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "profile",
+                  "attributes"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "pokemon@1"
+                    ]
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "properties": {
+                      "card_type": {
+                        "type": "string",
+                        "enum": [
+                          "pokemon",
+                          "trainer",
+                          "energy"
+                        ]
+                      },
+                      "hp": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "types": {
+                        "type": "array",
+                        "items": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "stage": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "evolves_from": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "abilities": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "name": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "text": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "name",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "attacks": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "cost": {
+                              "type": "array",
+                              "items": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "damage": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "text": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "cost",
+                            "damage",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "weaknesses": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "value": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "resistances": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "value": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "retreat_cost": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "regulation_mark": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "card_type",
+                      "hp",
+                      "types",
+                      "stage",
+                      "evolves_from",
+                      "abilities",
+                      "attacks",
+                      "weaknesses",
+                      "resistances",
+                      "retreat_cost",
+                      "regulation_mark"
                     ],
                     "additionalProperties": false
                   }
@@ -13186,6 +13422,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -13357,6 +13594,27 @@
                     "type": "string",
                     "enum": [
                       "magic@1"
+                    ]
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "profile",
+                  "attributes"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "pokemon@1"
                     ]
                   },
                   "attributes": {
@@ -13878,6 +14136,92 @@
                   "profile": {
                     "type": "string",
                     "enum": [
+                      "pokemon@1"
+                    ]
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "properties": {
+                      "set_code": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "collector_number": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "finish": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "edition": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "size": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "stamps": {
+                        "type": "array",
+                        "items": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "artists": {
+                        "type": "array",
+                        "items": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "reverse_face": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "set_code",
+                      "collector_number",
+                      "finish",
+                      "edition",
+                      "size",
+                      "stamps",
+                      "artists",
+                      "reverse_face"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "profile",
+                  "attributes"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "enum": [
                       "riftbound@1"
                     ]
                   },
@@ -14066,6 +14410,27 @@
                     "type": "string",
                     "enum": [
                       "magic@1"
+                    ]
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "profile",
+                  "attributes"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "pokemon@1"
                     ]
                   },
                   "attributes": {
@@ -14309,6 +14674,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14382,6 +14748,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14455,6 +14822,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14528,6 +14896,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14601,6 +14970,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14674,6 +15044,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14747,6 +15118,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14820,6 +15192,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14893,6 +15266,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -14966,6 +15340,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15039,6 +15414,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15112,6 +15488,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15185,6 +15562,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15258,6 +15636,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15338,6 +15717,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15418,6 +15798,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15498,6 +15879,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15578,6 +15960,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15658,6 +16041,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15738,6 +16122,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15818,6 +16203,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15898,6 +16284,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -15978,6 +16365,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -16058,6 +16446,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -16138,6 +16527,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -16218,6 +16608,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -16520,6 +16911,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -16729,6 +17121,212 @@
                       "type_line",
                       "colour_identity",
                       "faces"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "profile",
+                  "attributes"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "pokemon@1"
+                    ]
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "properties": {
+                      "card_type": {
+                        "type": "string",
+                        "enum": [
+                          "pokemon",
+                          "trainer",
+                          "energy"
+                        ]
+                      },
+                      "hp": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "types": {
+                        "type": "array",
+                        "items": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "stage": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "evolves_from": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "abilities": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "name": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "text": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "name",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "attacks": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "cost": {
+                              "type": "array",
+                              "items": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "damage": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "text": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "cost",
+                            "damage",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "weaknesses": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "value": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "resistances": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "value": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "retreat_cost": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "regulation_mark": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "card_type",
+                      "hp",
+                      "types",
+                      "stage",
+                      "evolves_from",
+                      "abilities",
+                      "attacks",
+                      "weaknesses",
+                      "resistances",
+                      "retreat_cost",
+                      "regulation_mark"
                     ],
                     "additionalProperties": false
                   }
@@ -17904,6 +18502,92 @@
                   "profile": {
                     "type": "string",
                     "enum": [
+                      "pokemon@1"
+                    ]
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "properties": {
+                      "set_code": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "collector_number": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "finish": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "edition": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "size": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "stamps": {
+                        "type": "array",
+                        "items": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "artists": {
+                        "type": "array",
+                        "items": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "reverse_face": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "set_code",
+                      "collector_number",
+                      "finish",
+                      "edition",
+                      "size",
+                      "stamps",
+                      "artists",
+                      "reverse_face"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "profile",
+                  "attributes"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "enum": [
                       "riftbound@1"
                     ]
                   },
@@ -18092,6 +18776,27 @@
                     "type": "string",
                     "enum": [
                       "magic@1"
+                    ]
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "profile",
+                  "attributes"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "pokemon@1"
                     ]
                   },
                   "attributes": {
@@ -19708,6 +20413,7 @@
                         "type": "string",
                         "enum": [
                           "magic",
+                          "pokemon",
                           "riftbound",
                           "one-piece",
                           "fusion-world",
@@ -19993,6 +20699,212 @@
                                   "type_line",
                                   "colour_identity",
                                   "faces"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "profile",
+                              "attributes"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "profile": {
+                                "type": "string",
+                                "enum": [
+                                  "pokemon@1"
+                                ]
+                              },
+                              "attributes": {
+                                "type": "object",
+                                "properties": {
+                                  "card_type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "pokemon",
+                                      "trainer",
+                                      "energy"
+                                    ]
+                                  },
+                                  "hp": {
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ]
+                                  },
+                                  "types": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "stage": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "evolves_from": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "abilities": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "kind": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "name": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "text": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "name",
+                                        "text"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "attacks": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "name": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "cost": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": [
+                                              "string",
+                                              "null"
+                                            ]
+                                          }
+                                        },
+                                        "damage": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "text": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "name",
+                                        "cost",
+                                        "damage",
+                                        "text"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "weaknesses": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "value": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "value"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "resistances": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "value": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "value"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  },
+                                  "retreat_cost": {
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ]
+                                  },
+                                  "regulation_mark": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "card_type",
+                                  "hp",
+                                  "types",
+                                  "stage",
+                                  "evolves_from",
+                                  "abilities",
+                                  "attacks",
+                                  "weaknesses",
+                                  "resistances",
+                                  "retreat_cost",
+                                  "regulation_mark"
                                 ],
                                 "additionalProperties": false
                               }
@@ -21016,6 +21928,7 @@
                         "type": "string",
                         "enum": [
                           "magic",
+                          "pokemon",
                           "riftbound",
                           "one-piece",
                           "fusion-world",
@@ -21187,6 +22100,27 @@
                                 "type": "string",
                                 "enum": [
                                   "magic@1"
+                                ]
+                              },
+                              "attributes": {
+                                "type": "object",
+                                "properties": {},
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "profile",
+                              "attributes"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "profile": {
+                                "type": "string",
+                                "enum": [
+                                  "pokemon@1"
                                 ]
                               },
                               "attributes": {
@@ -21987,6 +22921,92 @@
                   "profile": {
                     "type": "string",
                     "enum": [
+                      "pokemon@1"
+                    ]
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "properties": {
+                      "set_code": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "collector_number": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "finish": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "edition": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "size": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "stamps": {
+                        "type": "array",
+                        "items": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "artists": {
+                        "type": "array",
+                        "items": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "reverse_face": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "set_code",
+                      "collector_number",
+                      "finish",
+                      "edition",
+                      "size",
+                      "stamps",
+                      "artists",
+                      "reverse_face"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "profile",
+                  "attributes"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "enum": [
                       "riftbound@1"
                     ]
                   },
@@ -22175,6 +23195,27 @@
                     "type": "string",
                     "enum": [
                       "magic@1"
+                    ]
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "profile",
+                  "attributes"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "pokemon@1"
                     ]
                   },
                   "attributes": {
@@ -22568,6 +23609,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -22777,6 +23819,212 @@
                       "type_line",
                       "colour_identity",
                       "faces"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "profile",
+                  "attributes"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "pokemon@1"
+                    ]
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "properties": {
+                      "card_type": {
+                        "type": "string",
+                        "enum": [
+                          "pokemon",
+                          "trainer",
+                          "energy"
+                        ]
+                      },
+                      "hp": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "types": {
+                        "type": "array",
+                        "items": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "stage": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "evolves_from": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "abilities": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "name": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "text": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "name",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "attacks": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "cost": {
+                              "type": "array",
+                              "items": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "damage": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "text": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "cost",
+                            "damage",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "weaknesses": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "value": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "resistances": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "value": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "retreat_cost": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "regulation_mark": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "card_type",
+                      "hp",
+                      "types",
+                      "stage",
+                      "evolves_from",
+                      "abilities",
+                      "attacks",
+                      "weaknesses",
+                      "resistances",
+                      "retreat_cost",
+                      "regulation_mark"
                     ],
                     "additionalProperties": false
                   }
@@ -23943,6 +25191,92 @@
                   "profile": {
                     "type": "string",
                     "enum": [
+                      "pokemon@1"
+                    ]
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "properties": {
+                      "set_code": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "collector_number": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "finish": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "edition": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "size": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "stamps": {
+                        "type": "array",
+                        "items": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "artists": {
+                        "type": "array",
+                        "items": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "reverse_face": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "set_code",
+                      "collector_number",
+                      "finish",
+                      "edition",
+                      "size",
+                      "stamps",
+                      "artists",
+                      "reverse_face"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "profile",
+                  "attributes"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "enum": [
                       "riftbound@1"
                     ]
                   },
@@ -24131,6 +25465,27 @@
                     "type": "string",
                     "enum": [
                       "magic@1"
+                    ]
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "profile",
+                  "attributes"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "pokemon@1"
                     ]
                   },
                   "attributes": {
@@ -24576,6 +25931,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -24774,6 +26130,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -25023,6 +26380,7 @@
                                       "type": "string",
                                       "enum": [
                                         "magic",
+                                        "pokemon",
                                         "riftbound",
                                         "one-piece",
                                         "fusion-world",
@@ -25308,6 +26666,212 @@
                                                 "type_line",
                                                 "colour_identity",
                                                 "faces"
+                                              ],
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
+                                                "pokemon@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {
+                                                "card_type": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "pokemon",
+                                                    "trainer",
+                                                    "energy"
+                                                  ]
+                                                },
+                                                "hp": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "types": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": [
+                                                      "string",
+                                                      "null"
+                                                    ]
+                                                  }
+                                                },
+                                                "stage": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "evolves_from": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "abilities": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "kind": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "name": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "text": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "kind",
+                                                      "name",
+                                                      "text"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                },
+                                                "attacks": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "name": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "cost": {
+                                                        "type": "array",
+                                                        "items": {
+                                                          "type": [
+                                                            "string",
+                                                            "null"
+                                                          ]
+                                                        }
+                                                      },
+                                                      "damage": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "text": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "name",
+                                                      "cost",
+                                                      "damage",
+                                                      "text"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                },
+                                                "weaknesses": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "type": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "value": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "type",
+                                                      "value"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                },
+                                                "resistances": {
+                                                  "type": "array",
+                                                  "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                      "type": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      },
+                                                      "value": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "type",
+                                                      "value"
+                                                    ],
+                                                    "additionalProperties": false
+                                                  }
+                                                },
+                                                "retreat_cost": {
+                                                  "type": [
+                                                    "integer",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "regulation_mark": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                }
+                                              },
+                                              "required": [
+                                                "card_type",
+                                                "hp",
+                                                "types",
+                                                "stage",
+                                                "evolves_from",
+                                                "abilities",
+                                                "attacks",
+                                                "weaknesses",
+                                                "resistances",
+                                                "retreat_cost",
+                                                "regulation_mark"
                                               ],
                                               "additionalProperties": false
                                             }
@@ -26331,6 +27895,7 @@
                                       "type": "string",
                                       "enum": [
                                         "magic",
+                                        "pokemon",
                                         "riftbound",
                                         "one-piece",
                                         "fusion-world",
@@ -26502,6 +28067,27 @@
                                               "type": "string",
                                               "enum": [
                                                 "magic@1"
+                                              ]
+                                            },
+                                            "attributes": {
+                                              "type": "object",
+                                              "properties": {},
+                                              "additionalProperties": false
+                                            }
+                                          },
+                                          "required": [
+                                            "profile",
+                                            "attributes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "profile": {
+                                              "type": "string",
+                                              "enum": [
+                                                "pokemon@1"
                                               ]
                                             },
                                             "attributes": {
@@ -27011,6 +28597,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -27034,6 +28621,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -27638,6 +29226,7 @@
                       "type": "string",
                       "enum": [
                         "magic",
+                        "pokemon",
                         "riftbound",
                         "one-piece",
                         "fusion-world",
@@ -27791,6 +29380,7 @@
                       "type": "string",
                       "enum": [
                         "magic",
+                        "pokemon",
                         "riftbound",
                         "one-piece",
                         "fusion-world",
@@ -27979,6 +29569,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -28177,6 +29768,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -28532,6 +30124,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -28555,6 +30148,7 @@
                           "type": "string",
                           "enum": [
                             "magic",
+                            "pokemon",
                             "riftbound",
                             "one-piece",
                             "fusion-world",
@@ -29159,6 +30753,7 @@
                       "type": "string",
                       "enum": [
                         "magic",
+                        "pokemon",
                         "riftbound",
                         "one-piece",
                         "fusion-world",
@@ -29312,6 +30907,7 @@
                       "type": "string",
                       "enum": [
                         "magic",
+                        "pokemon",
                         "riftbound",
                         "one-piece",
                         "fusion-world",
@@ -30393,6 +31989,7 @@
                 "type": "string",
                 "enum": [
                   "magic",
+                  "pokemon",
                   "riftbound",
                   "one-piece",
                   "fusion-world",
@@ -30678,6 +32275,212 @@
                           "type_line",
                           "colour_identity",
                           "faces"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "profile",
+                      "attributes"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "profile": {
+                        "type": "string",
+                        "enum": [
+                          "pokemon@1"
+                        ]
+                      },
+                      "attributes": {
+                        "type": "object",
+                        "properties": {
+                          "card_type": {
+                            "type": "string",
+                            "enum": [
+                              "pokemon",
+                              "trainer",
+                              "energy"
+                            ]
+                          },
+                          "hp": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "types": {
+                            "type": "array",
+                            "items": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "stage": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "evolves_from": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "abilities": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "name": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "text": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "name",
+                                "text"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "attacks": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "cost": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "damage": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "text": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "cost",
+                                "damage",
+                                "text"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "weaknesses": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "type": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "value": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "type",
+                                "value"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "resistances": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "type": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "value": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "type",
+                                "value"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "retreat_cost": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "regulation_mark": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "card_type",
+                          "hp",
+                          "types",
+                          "stage",
+                          "evolves_from",
+                          "abilities",
+                          "attacks",
+                          "weaknesses",
+                          "resistances",
+                          "retreat_cost",
+                          "regulation_mark"
                         ],
                         "additionalProperties": false
                       }
@@ -31701,6 +33504,7 @@
                 "type": "string",
                 "enum": [
                   "magic",
+                  "pokemon",
                   "riftbound",
                   "one-piece",
                   "fusion-world",
@@ -31872,6 +33676,27 @@
                         "type": "string",
                         "enum": [
                           "magic@1"
+                        ]
+                      },
+                      "attributes": {
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "profile",
+                      "attributes"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "profile": {
+                        "type": "string",
+                        "enum": [
+                          "pokemon@1"
                         ]
                       },
                       "attributes": {
@@ -32828,6 +34653,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -33128,6 +34954,7 @@
                   "type": "string",
                   "enum": [
                     "magic",
+                    "pokemon",
                     "riftbound",
                     "one-piece",
                     "fusion-world",
@@ -33237,6 +35064,7 @@
             "type": "string",
             "enum": [
               "magic",
+              "pokemon",
               "riftbound",
               "one-piece",
               "fusion-world",
@@ -42111,7 +43939,7 @@
                       "minLength": 1
                     },
                     "minItems": 1,
-                    "maxItems": 6
+                    "maxItems": 7
                   }
                 },
                 "required": [
@@ -43491,6 +45319,7 @@
                     "type": "string",
                     "enum": [
                       "magic",
+                      "pokemon",
                       "riftbound",
                       "one-piece",
                       "fusion-world",
@@ -51458,6 +53287,7 @@
                     "type": "string",
                     "enum": [
                       "magic",
+                      "pokemon",
                       "riftbound",
                       "one-piece",
                       "fusion-world",
@@ -51875,6 +53705,7 @@
               "type": "string",
               "enum": [
                 "magic",
+                "pokemon",
                 "riftbound",
                 "one-piece",
                 "fusion-world",
@@ -52567,6 +54398,7 @@
               "type": "string",
               "enum": [
                 "magic",
+                "pokemon",
                 "riftbound",
                 "one-piece",
                 "fusion-world",
@@ -52931,6 +54763,7 @@
                     "type": "string",
                     "enum": [
                       "magic",
+                      "pokemon",
                       "riftbound",
                       "one-piece",
                       "fusion-world",
