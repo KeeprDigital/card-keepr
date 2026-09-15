@@ -1,0 +1,60 @@
+diff --git a/wrangler-dist/cli.js b/wrangler-dist/cli.js
+index a1aaf3a51515c1eb8d5b03d46ecef41286293e61..319c801279a2b26d6258db4448633845a0fd7225 100644
+--- a/wrangler-dist/cli.js
++++ b/wrangler-dist/cli.js
+@@ -223818,15 +223818,23 @@ function splitSqlIntoStatements(sql) {
+   let next = iterator.next();
+   while (!next.done) {
+     const char = next.value;
+-    if (compoundStatementStack[0]?.(str + char)) {
++    const compoundBoundary = str.slice(-6) + char;
++    if (compoundStatementStack[0]?.(compoundBoundary)) {
+       compoundStatementStack.shift();
+     }
++    if (isCompoundStatementStart(compoundBoundary)) {
++      compoundStatementStack.unshift(isCompoundStatementEnd);
++    }
+     switch (char) {
+       case `'`:
+       case `"`:
+       case "`":
+         str += char + consumeUntilMarker(iterator, char);
+         break;
++      case `[`: {
++        str += char + consumeUntilMarker(iterator, "]");
++        break;
++      }
+       case `$`: {
+         const dollarQuote = "$" + consumeWhile(iterator, isDollarQuoteIdentifier);
+         str += dollarQuote;
+@@ -223849,6 +223857,7 @@ function splitSqlIntoStatements(sql) {
+         next = iterator.next();
+         if (!next.done && next.value === "*") {
+           consumeUntilMarker(iterator, "*/");
++          str += " ";
+           break;
+         } else {
+           str += char;
+@@ -223866,9 +223875,6 @@ function splitSqlIntoStatements(sql) {
+         str += char;
+         break;
+     }
+-    if (isCompoundStatementStart(str)) {
+-      compoundStatementStack.unshift(isCompoundStatementEnd);
+-    }
+     next = iterator.next();
+   }
+   statements.push(str);
+@@ -223904,10 +223910,10 @@ function isDollarQuoteIdentifier(str) {
+   );
+ }
+ function isCompoundStatementStart(str) {
+-  return /\s(BEGIN|CASE)\s$/i.test(str);
++  return /(?:^|[^a-z0-9_$:@#\u0080-\uffff])(BEGIN|CASE)[^a-z0-9_$\u0080-\uffff]$/i.test(str);
+ }
+ function isCompoundStatementEnd(str) {
+-  return /\sEND[;\s]$/i.test(str);
++  return /(?:^|[^a-z0-9_$:@#\u0080-\uffff])END[^a-z0-9_$\u0080-\uffff]$/i.test(str);
+ }
+ var init_splitter = __esm({
+   "src/d1/splitter.ts"() {
