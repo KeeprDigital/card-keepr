@@ -1022,6 +1022,38 @@ export async function pendingEvidenceRequestPage(
   return result.results;
 }
 
+export const evidenceHostShardRequestCapacity = 200;
+
+/** One next shard per host, with bounded results independent of request count. */
+export async function pendingEvidenceHostShards(database: CatalogueStore, runId: string) {
+  const result = await repositoryStatements(database)
+    .prepare(
+      `WITH shards AS (
+      SELECT ${sourceRequestHostnameSql("url")} AS hostname,
+        CAST(sequence_number / ${evidenceHostShardRequestCapacity} AS INTEGER) * ${evidenceHostShardRequestCapacity} AS minimum_sequence_number,
+        COUNT(*) AS pending_request_count
+      FROM source_requests
+      WHERE ingestion_run_id = ? AND state IN ('pending', 'captured')
+      GROUP BY hostname, minimum_sequence_number
+    ), ranked AS (
+      SELECT *, ROW_NUMBER() OVER (PARTITION BY hostname ORDER BY minimum_sequence_number) AS position,
+        COUNT(*) OVER (PARTITION BY hostname) AS pending_shard_count
+      FROM shards
+    )
+    SELECT hostname, minimum_sequence_number, pending_request_count, pending_shard_count
+    FROM ranked WHERE position = 1
+    ORDER BY minimum_sequence_number, hostname LIMIT 100`,
+    )
+    .bind(runId)
+    .all<{
+      hostname: string;
+      minimum_sequence_number: number;
+      pending_request_count: number;
+      pending_shard_count: number;
+    }>();
+  return result.results;
+}
+
 /** A Workflow can act only while its parent and its own scope still own the run. */
 export async function isCurrentCollectionWorkflowAttempt(
   database: CatalogueStore,
@@ -1109,7 +1141,7 @@ export function workflowAttemptStatements(
 // only that shard's active requests: other hosts' healthy shards keep
 // collecting, and the completeness gate still fails the run at the barrier.
 // The host is extracted from the normalized request URL and compared for
-// equality (evidence requests are plain https URLs without ports).
+// equality using the same port-free hostname as the child and pacing keys.
 export async function failActiveEvidenceRequestsForWorkflowExhaustion(
   database: CatalogueStore,
   runId: string,

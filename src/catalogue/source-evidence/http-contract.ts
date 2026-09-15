@@ -12,6 +12,7 @@ import {
 import type { MiddlewareHandler } from "hono";
 import { createRoute, z } from "@hono/zod-openapi";
 import { boundedJson, identifier, problemResponses, secured } from "../../http/openapi";
+import { globalEmergencySourceRequestCeiling } from "../adapters";
 
 export const privateResponse: MiddlewareHandler = async (c, next) => {
   c.header("Cache-Control", "no-store");
@@ -301,7 +302,11 @@ export const extendCapacityRoute = createRoute({
           schema: intentSchema.extend({
             expected_request_capacity: count.min(1),
             expected_capacity_generation: count.min(1),
-            request_capacity: count.min(1),
+            request_capacity: count
+              .min(1)
+              .describe(
+                `Absolute per-lineage capacity, greater than the current capacity and below ${globalEmergencySourceRequestCeiling}. A capacity at or above this ceiling returns request_capacity_exceeds_global_ceiling.`,
+              ),
           }),
         },
       },

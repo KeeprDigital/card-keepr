@@ -813,6 +813,12 @@ export const workersPoolSyntheticHostScenario: PublisherScenario = async (contex
 };
 
 export const workersPoolScenarios: readonly PublisherScenario[] = [
+  // A reserved documentation address exercises IPv6 and nondefault ports
+  // through actual collection children without a live network dependency.
+  ({ url }) =>
+    url.hostname === "[2001:db8::1]" && url.pathname === "/cards"
+      ? Response.json({ cards: [{ card_number: "OP01-001", name: "Roronoa Zoro" }] })
+      : null,
   workersPoolOfficialSourceScenario,
   workersPoolSyntheticHostScenario,
 ];

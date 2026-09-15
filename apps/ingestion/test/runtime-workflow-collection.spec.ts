@@ -742,14 +742,16 @@ test("a completed host shard durably releases the next same-host shard", async (
     (current) =>
       current.collection_completed_at !== null &&
       current.snapshots.length === 2 &&
-      current.workflow.child_ids.length === 3,
+      current.workflow.child_ids.length === 2,
     15_000,
   );
   expect(completed.snapshots.map(({ request }) => request.url).sort()).toEqual([
     "https://official-source.invalid/sequence/root",
     "https://official-source.invalid/sequence/shard-200",
   ]);
-  expect(completed.workflow.child_ids.filter((id) => id.endsWith("-attempt-0"))).toHaveLength(1);
+  // Scheduling a future shard for the first time must not consume a recovery
+  // identity merely because its base identity was eagerly recorded earlier.
+  expect(completed.workflow.child_ids.filter((id) => id.endsWith("-attempt-0"))).toHaveLength(0);
 }, 30_000);
 
 test("dynamic discovery preserves the first edge when two parents reach one immutable request", async () => {

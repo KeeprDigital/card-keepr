@@ -172,6 +172,15 @@ An R2 object alone proves neither publication nor recovery. D1 receipts and
 verified reference closure must agree with its bytes. Reconciliation uses
 retained evidence rather than silently fetching a changed source.
 
+Collection scheduling reads a bounded page containing the next pending shard
+for each hostname. It retains Workflow identities only for dispatched shards;
+later shards are selected after their predecessors finish. Hostname grouping
+uses the canonical URL hostname, including IPv6 brackets and excluding ports,
+while each full request URL keeps its own identity. The global emergency request
+ceiling is a finite admission limit, not a measured throughput or arbitrary-host
+capacity guarantee. Each Source Adapter Version keeps its separately declared
+capacity. [Source intake foundation](https://github.com/KeeprDigital/card-keepr/issues/327).
+
 ## HTTP interface direction
 
 The accepted direction is Hono for maintainable HTTP routing and middleware in

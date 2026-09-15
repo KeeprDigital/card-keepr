@@ -86,6 +86,8 @@ export {
   pauseEvidenceRunForWorkflowRecovery,
   pauseEvidenceRunOnOwnerRequest,
   pendingEvidenceRequestPage,
+  pendingEvidenceHostShards,
+  evidenceHostShardRequestCapacity,
   pendingEvidenceRequests,
   persistOfficialSourceCollectionPlan,
   RequestCapacityProblem,

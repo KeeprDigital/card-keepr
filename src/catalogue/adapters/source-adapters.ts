@@ -18,7 +18,7 @@ export type { OfficialSourceContract, SourceAdapterRegistration } from "./source
 // reaches it, and capacity admission additionally clamps the registered
 // database column to it, so neither surface can authorize unbounded
 // discovery alone.
-export const globalEmergencySourceRequestCeiling = 25_000;
+export const globalEmergencySourceRequestCeiling = 250_000;
 
 // Request capacity is a policy of each exact Source Adapter Version, counted
 // per Source Lineage over unique Source Request identities. Versions without
