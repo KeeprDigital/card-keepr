@@ -81,7 +81,13 @@ test("the Scryfall capacity change protects resumable collections and retained h
       capacity
         .insertIngestionRun(database)
         .run({ id, started_at: at, expected_current_revision_id: "catrev_spine_000", idempotency_key: id });
-      queries.unrecordedCurrent(database).run(id);
+      queries.unrecordedCurrent(database).run({
+        ingestion_run_id: id,
+        last_event_sequence: 1,
+        last_event_id: "missing-event",
+        state: "failed",
+        completed_stage_count: 0,
+      });
     } else {
       await seedRunFixtureStatement(d1Adapter(database), {
         id,
@@ -112,7 +118,7 @@ test("the Scryfall capacity change protects resumable collections and retained h
     if (completed) queries.completeCollection(database).run(at, id);
     if (!reservation) queries.removeReservation(database).run(id);
     if (missing === "current") queries.removeCurrent(database).run(id);
-    if (missing === "agreement") queries.disagreeingCurrent(database).run(id);
+    if (missing === "agreement") queries.disagreeingCurrent(database).run("parsing", id);
     return id;
   }
   function refused(database, pattern = /malformed JSON/u) {
@@ -224,9 +230,18 @@ test("the Scryfall capacity change protects resumable collections and retained h
         request_digest: "a".repeat(64),
         response_json: '{"request_capacity":20,"retained":"owner intent"}',
       });
-      queries
-        .retainAuthorityDecision(database)
-        .run("retained-authority", "Retained owner designation", '{"retained":"owner rationale"}', at);
+      queries.retainAuthorityDecision(database).run({
+        idempotency_key: "retained-authority",
+        game: "magic",
+        locale: "en",
+        release_region: "unknown",
+        area: "card_facts",
+        source_lineage: "scryfall-magic-en",
+        generation: 2,
+        rationale: "Retained owner designation",
+        request_json: '{"retained":"owner rationale"}',
+        decided_at: at,
+      });
       migrated(database);
     });
   }
@@ -242,7 +257,7 @@ test("the Scryfall capacity change protects resumable collections and retained h
       if (classification === "retained_source") refused(database);
       else {
         migrated(database);
-        assert.throws(() => queries.disagreeingCurrent(database).run(id), /restored_collection_abandoned/u);
+        assert.throws(() => queries.disagreeingCurrent(database).run("parsing", id), /restored_collection_abandoned/u);
       }
     });
   }
@@ -338,19 +353,37 @@ test("the Scryfall capacity change protects resumable collections and retained h
       release = "migration-handoff",
       digest = "b".repeat(64);
     const preparation = JSON.stringify({ release_id: release, dispatch_digest: digest });
-    queries.prepareHandoff(database).run(release, "{}", preparation, at);
-    queries.reserveHandoff(database).run(release);
-    queries.claimHandoff(database).run(release, digest, "migration-execution", "{}", preparation, at);
+    queries.prepareHandoff(database).run({
+      idempotency_key: release,
+      operation: "prepare_production_release",
+      request_json: "{}",
+      response_json: preparation,
+      http_status: 200,
+      outcome: "success",
+      created_at: at,
+    });
+    queries.reserveHandoff(database).run(release, "2099-01-01T00:00:00.000Z");
+    queries.claimHandoff(database).run({
+      release_id: release,
+      role: "source",
+      dispatch_digest: digest,
+      execution_id: "migration-execution",
+      request_json: "{}",
+      preparation_json: preparation,
+      phase: 1,
+      evidence_json: "[]",
+      created_at: at,
+    });
     refused(database, /fresh_baseline_mutation_fenced/u);
   });
   await t.test("stale schema and changed registration predecessors are refused atomically", (context) => {
     const database = fresh(context);
     schema.setUnexpectedSchemaLevel(database).run();
     refused(database);
-    queries.stalePredecessor(database).run();
+    queries.stalePredecessor(database).run(39);
     migrated(database);
     refused(database);
-    queries.stalePredecessor(database).run();
+    queries.stalePredecessor(database).run(39);
     refused(database);
   });
 });
