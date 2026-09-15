@@ -1,3 +1,5 @@
+import httpDocument from "../../../contracts/admin-openapi.json";
+import { assertHttpResponse } from "../../../test/support/http-contract";
 import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { afterEach, beforeEach, expect, test } from "vitest";
@@ -1295,6 +1297,13 @@ test("Catalogue Export deletion plans bind an exact immutable set and delete an 
     plan_id: "export-delete-plan-old",
   });
   expect(prepared.response.status).toBe(201);
+  await assertHttpResponse(
+    httpDocument,
+    "/v1/catalogue-export-deletion-plans",
+    "post",
+    prepared.response,
+    prepared.document,
+  );
   expect(prepared.document).toMatchObject({
     contract: "card-keepr-catalogue-export-deletion-plan@1",
     id: "export-delete-plan-old",
@@ -1977,6 +1986,10 @@ async function administrationRequest(
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }),
   );
+  if (pathname.startsWith("/v1/catalogue-export-deletion")) {
+    const registered = pathname.replace(/(\/v1\/catalogue-export-deletions\/)[^/]+/, "$1{deletion}");
+    await assertHttpResponse(httpDocument, registered, body === undefined ? "get" : "post", response);
+  }
   return {
     response,
     document: (await response.json()) as Record<string, unknown>,
@@ -2001,6 +2014,10 @@ async function administrationRequestWithEnv(
     }),
     requestEnv,
   );
+  if (pathname.startsWith("/v1/catalogue-export-deletion")) {
+    const registered = pathname.replace(/(\/v1\/catalogue-export-deletions\/)[^/]+/, "$1{deletion}");
+    await assertHttpResponse(httpDocument, registered, body === undefined ? "get" : "post", response);
+  }
   return {
     response,
     document: (await response.json()) as Record<string, unknown>,

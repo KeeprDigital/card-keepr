@@ -210,12 +210,12 @@ async function mutationContext(operation, options, environment, json, binding) {
   if (secret.error !== null) {
     return writeCliFailure(json, { code: "secret_input_error", detail: secret.error }, 2);
   }
-  const query = new URLSearchParams({
+  const choices = {
     expected_current_revision_id: options.values["--expected-current-revision"],
     curated_operation: operation,
-    curated_binding: JSON.stringify(binding),
-  });
-  const status = await rawRequest(environment, `/v1/status?${query}`, "GET", undefined, secret.value);
+    curated_binding: binding,
+  };
+  const status = await rawRequest(environment, "/v1/administration-targets/resolve", "POST", choices, secret.value);
   if (status.error !== null) return requestFailure(json, status);
   const required = status.document?.resolved_target?.confirmation;
   if (typeof required !== "string")

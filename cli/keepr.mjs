@@ -1043,7 +1043,12 @@ function resolveProductionStatus(environment, json, expectedCurrentRevision) {
   return resolveTarget(environment, json, { expected_current_revision_id: expectedCurrentRevision });
 }
 async function resolveTarget(environment, json, parameters) {
-  const observed = await fetchAdministrationDocument(environment, `/v1/status?${new URLSearchParams(parameters)}`);
+  const observed = await fetchAdministrationDocument(
+    environment,
+    "/v1/administration-targets/resolve",
+    "POST",
+    parameters,
+  );
   if (observed.error !== null) return writeObservedFailure(observed, json);
   const resolved = observed.document?.resolved_target;
   if (typeof resolved?.confirmation !== "string")

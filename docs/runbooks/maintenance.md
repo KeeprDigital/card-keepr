@@ -4,7 +4,9 @@ Use the configured owner CLI (`pnpm run keepr`, shown as `keepr`). For commands
 with production-target confirmation, first omit `--confirm`, inspect the exact
 resolved JSON, then repeat unchanged with that confirmation. A new operation or
 changed target requires fresh confirmation. See the
-[administration contract](../../contracts/ADMINISTRATION.md).
+[administration contract](../../contracts/ADMINISTRATION.md#maintenance-http).
+The CLI resolves typed choices through POST `/v1/administration-targets/resolve`;
+GET `/v1/status` is inspection and accepts no target query parameters.
 
 ## Health and unexpected failures
 
@@ -35,7 +37,8 @@ keepr catalogue search repair --target-revision TARGET_REVISION \
   --environment production --confirm "$EXACT_CONFIRMATION" --yes --json
 ```
 
-Use a new key for each new bounded step. Replaying a key observes that step.
+An incomplete replay continues its retained repair under current guards; a completed
+replay returns the retained result. Use a new key to request a new repair.
 Bootstrap spine and archived revisions outside the retained chain cannot be
 repaired. Oversized retained legacy Card JSON fails before repair is recorded;
 new publication writes its search facts and availability atomically. A repair

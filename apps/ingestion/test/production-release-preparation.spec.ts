@@ -1,3 +1,5 @@
+import httpDocument from "../../../contracts/admin-openapi.json";
+import { assertHttpResponse } from "../../../test/support/http-contract";
 import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { beforeEach, expect, test } from "vitest";
 import worker from "../src/index";
@@ -32,6 +34,7 @@ const intent = {
 test("release preparation resolves confirmation without mutation and returns server-issued dispatch bytes", async () => {
   const preview = await request({ ...intent, prepare: true });
   expect(preview.status).toBe(200);
+  await assertHttpResponse(httpDocument, "/v1/production-releases", "post", preview);
   const resolved = await preview.json<Record<string, unknown>>();
   expect(resolved).toMatchObject({
     contract: "card-keepr-production-release-confirmation@1",
@@ -44,6 +47,7 @@ test("release preparation resolves confirmation without mutation and returns ser
   expect(await preparedReleaseCount(testEnv.CATALOGUE_DB).first("count")).toBe(0);
   const accepted = await request({ ...intent, confirmation: resolved.confirmation });
   expect(accepted.status).toBe(201);
+  await assertHttpResponse(httpDocument, "/v1/production-releases", "post", accepted);
   const document = await accepted.json<Record<string, unknown>>();
   expect(document).toMatchObject({
     contract: "card-keepr-production-release-request@1",
@@ -76,6 +80,7 @@ test("administration returns one ordinary JSON representation independent of CLI
   expect(response.headers.get("vary")).toBeNull();
   const document = await response.json<Record<string, unknown>>();
   expect(document.contract).toBe("card-keepr-administration-status@1");
+  await assertHttpResponse(httpDocument, "/v1/status", "get", response, document);
   expect(document).not.toHaveProperty("exit_code");
 });
 
@@ -86,27 +91,33 @@ test("another operation's idempotency record is rejected before interpreting its
   expect(response.status).toBe(409);
   expect(await response.json()).toMatchObject({ code: "idempotency_key_reused" });
 });
-test("status resolves exact production targets without accepting stale revisions or open query fields", async () => {
-  const get = (query: string) =>
+test("target resolution checks exact production state and rejects stale revisions or open fields", async () => {
+  const get = (choices: Record<string, unknown>) =>
     worker.fetch(
-      new Request(`http://127.0.0.1:8788/v1/status?${query}`, {
-        headers: { authorization: "Bearer vitest-administration-key" },
+      new Request("http://127.0.0.1:8788/v1/administration-targets/resolve", {
+        method: "POST",
+        body: JSON.stringify(choices),
+        headers: { authorization: "Bearer vitest-administration-key", "content-type": "application/json" },
       }),
       testEnv,
     );
-  const current = await get("expected_current_revision_id=catrev_spine_000");
+  const current = await get({ expected_current_revision_id: "catrev_spine_000" });
   expect(current.status).toBe(200);
+  await assertHttpResponse(httpDocument, "/v1/administration-targets/resolve", "post", current);
   const document = await current.json<Record<string, unknown>>();
   expect(document.resolved_target).toEqual({
-    production_target: document.production_target,
-    confirmation: JSON.stringify(document.production_target),
+    production_target: expect.any(Object),
+    confirmation: JSON.stringify((document.resolved_target as { production_target: unknown }).production_target),
   });
-  const stale = await get("expected_current_revision_id=catrev_stale");
+  const stale = await get({ expected_current_revision_id: "catrev_stale" });
   expect(stale.status).toBe(409);
   expect(await stale.json()).toMatchObject({ code: "production_target_mismatch" });
-  const unsupported = await get("expected_current_revision_id=catrev_spine_000&arbitrary_choice=true");
+  const unsupported = await get({ expected_current_revision_id: "catrev_spine_000", arbitrary_choice: true });
   expect(unsupported.status).toBe(422);
-  const unretained = await get("expected_current_revision_id=catrev_spine_000&repair_revision_id=catrev_unknown");
+  const unretained = await get({
+    expected_current_revision_id: "catrev_spine_000",
+    repair_revision_id: "catrev_unknown",
+  });
   expect(unretained.status).toBe(409);
   expect(await unretained.json()).toMatchObject({ code: "production_target_mismatch" });
 });
@@ -119,5 +130,5 @@ test("the Worker owns release actor validation before dispatch", async () => {
     prepare: true,
   });
   expect(response.status).toBe(422);
-  expect(await response.json()).toMatchObject({ code: "invalid_production_release_request" });
+  expect(await response.json()).toMatchObject({ code: "invalid_parameter" });
 });

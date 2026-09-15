@@ -439,6 +439,48 @@ Every advertised member joins to a real published Catalogue Revision; the
 unpublished bootstrap spine is never a repair target. Reconciliation target
 validation remains independent of this repair-only window.
 
+## Maintenance HTTP
+
+All maintenance and owner release operations use the generated administration
+specification. JSON commands are bounded at 16 KiB and reject unknown fields.
+Malformed JSON returns 400, unsupported media 415, typed command errors 422 and
+state/intent conflicts 409. Responses and inspection use `Cache-Control: no-store`.
+Owner Bearer authentication remains distinct from signed deployment authority.
+
+GET `/v1/status` is current inspection without query parameters. POST
+`/v1/administration-targets/resolve` takes one typed JSON choice: expected current
+revision (optionally with a run or repair revision), exact recovery identity/digest
+(optionally restored revision), or Curated operation with an object-valued binding.
+It returns `card-keepr-administration-target@1` with `resolved_target.production_target`
+and the server-owned confirmation. Resolution is read-only, remains available
+under a fresh-baseline fence, and never replaces mutation-time target/state guards.
+Curated resolution accepts the same explicit retained relationship-target extensions
+as inspection and replay, and confirms their literal JSON. Fresh Curated mutations
+continue to validate current proposal shapes.
+
+Evidence cleanup creation and retry return 202 with the current cleanup document;
+status and bounded advance return 200. Exact creation replay matches original owner,
+scope and retention (omission means 30 days), then returns current state. Retry
+preserves its retained generation rules and completion. Object inspection takes an
+optional literal `after` key and returns `{objects, next_after}` with at most 50
+results. Continue with the returned key until it is null. Owner keys
+and stored cleanup/export identifiers retain their nonempty-string contracts;
+they do not acquire a generic opaque-ID length restriction.
+
+Production Release preview returns 200 with exact confirmation; acknowledgement
+and exact replay return 201 with the original requested receipt and serialized
+server-owned plan. Dispatch JSON fields are strings, including bootstrap/migration
+values and the established `none` sentinels. Historical plans may omit the optional
+fresh-baseline handoff. Cancellation and SHA correction retain separate responses.
+
+Staging owner preview returns 200 and confirmation/receipt replay returns 201.
+Its original deadline is never renewed. Historical singleton or nested singleton
+scope arrays remain replayable only as their exact acknowledged JSON; fresh input
+requires a string scope. GET staging release returns the intent and optional signed
+claim. GET staging deployment returns preparation or the recorded terminal outcome,
+only on staging. Signed workflow claim/deployment routes still verify unexpired
+owner authority and exact workflow identity before retained replay.
+
 ## Catalogue Export deletion
 
 Preparation resolves the manifest and every component to an exact immutable R2
@@ -449,6 +491,11 @@ prepared --confirm exact bindings--> deleting → deleted
                                       deleting → failed → deleting
 ```
 
+Plan creation returns 201 and is not idempotent: reusing a plan ID conflicts.
+Confirmation/retry returns 202 for its original pending attempt acknowledgement
+or 200 for its original terminal receipt. Exact replay preserves that response
+even after execution finishes or a later retry changes current status. GET
+`/v1/catalogue-export-deletions/{deletion}` returns current state.
 A plan expires after 15 minutes. It always warns that Catalogue Consumers may
 depend on the immutable bytes and that known URLs will return
 `catalogue_export_deleted`. The current Catalogue Revision is a blocking

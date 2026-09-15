@@ -1,3 +1,5 @@
+import document from "../../../contracts/admin-openapi.json";
+import { assertHttpResponse } from "../../../test/support/http-contract";
 import { exports, env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import { catalogueStore } from "../../../src/catalogue/shared";
@@ -5,6 +7,7 @@ import { stagingPreparation } from "../../../src/catalogue/source-evidence/stagi
 import { installRuntimeSuite } from "./runtime-helpers";
 
 import { seedRunFixtureStatement } from "./query-helpers/run-events";
+import { seedCleanupResult } from "./query-helpers/cleanup-results";
 
 installRuntimeSuite();
 
@@ -20,7 +23,7 @@ async function request(path: string, now: string, body?: unknown) {
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
-  return worker.fetch(
+  const response = await worker.fetch(
     new Request(`https://card-keepr.invalid${path}`, {
       method: body === undefined ? "GET" : "POST",
       headers: {
@@ -32,6 +35,17 @@ async function request(path: string, now: string, body?: unknown) {
     }),
     { ...env, RECONCILIATION_WORKFLOW: workflow },
   );
+  if (path.includes("evidence-cleanup")) {
+    const registered = path
+      .split("?")[0]!
+      .replace(
+        /(\/v1\/(?:ingestion-runs|reconciliation-operations|evidence-cleanups)\/)[^/]+/,
+        (_match, prefix: string) =>
+          `${prefix}${prefix.includes("ingestion-runs") ? "{run}" : prefix.includes("reconciliation-operations") ? "{preparation}" : "{cleanup}"}`,
+      );
+    await assertHttpResponse(document, registered, body === undefined ? "get" : "post", response);
+  }
+  return response;
 }
 
 // Synthetic terminal fixture; no real-source or measured-capacity claim.
@@ -49,18 +63,48 @@ async function terminalRun(id: string) {
 test("owner cleanup persists the exact thirty-day eligibility boundary and resumes its intent", async () => {
   await terminalRun("cleanup_boundary");
   const path = "/v1/ingestion-runs/cleanup_boundary/evidence-cleanup";
-  const early = await request(path, "2026-08-30T23:59:59.999Z", { idempotency_key: "cleanup_boundary" });
+  const early = await request(path, "2026-08-30T23:59:59.999Z", {
+    idempotency_key: "owner cleanup / " + "x".repeat(240),
+  });
   expect(early.status).toBe(409);
   expect(await early.json()).toMatchObject({ code: "evidence_cleanup_not_eligible" });
-  const due = await request(path, "2026-08-31T00:00:00.000Z", { idempotency_key: "cleanup_boundary" });
+  const due = await request(path, "2026-08-31T00:00:00.000Z", {
+    idempotency_key: "owner cleanup / " + "x".repeat(240),
+  });
   expect(due.status).toBe(202);
+  await assertHttpResponse(document, "/v1/ingestion-runs/{run}/evidence-cleanup", "post", due);
   const intent = (await due.json()) as { id: string; retention_days: number; eligible_at: string; state: string };
   expect(intent).toMatchObject({ retention_days: 30, eligible_at: "2026-08-31T00:00:00.000Z", state: "pending" });
   const progress = await request(`/v1/evidence-cleanups/${intent.id}/advance`, "2026-08-31T00:00:01.000Z", {});
   expect(progress.status).toBe(200);
   expect(await progress.json()).toMatchObject({ id: intent.id, state: "completed", deleted_objects: 0 });
-  const replay = await request(path, "2026-09-01T00:00:00.000Z", { idempotency_key: "cleanup_boundary" });
+  const replay = await request(path, "2026-09-01T00:00:00.000Z", {
+    idempotency_key: "owner cleanup / " + "x".repeat(240),
+  });
   expect(await replay.json()).toMatchObject({ id: intent.id, state: "completed" });
+});
+
+test("cleanup object inspection pages retained results without truncation or duplicate keys", async () => {
+  const now = "2026-08-31T00:00:00.000Z";
+  await terminalRun("cleanup_pagination");
+  const response = await request("/v1/ingestion-runs/cleanup_pagination/evidence-cleanup", now, {
+    idempotency_key: "cleanup_pagination",
+  });
+  const intent = (await response.json()) as { id: string };
+  const path = `/v1/evidence-cleanups/${intent.id}/objects`;
+  expect(await (await request(path, now)).json()).toEqual({ objects: [], next_after: null });
+  const objects = Array.from({ length: 51 }, (_, index) => ({
+    object_key: `retained key / ${String(index).padStart(2, "0")} ?&+`,
+    state: "deleted",
+    reason: null,
+  }));
+  await env.CATALOGUE_DB.batch(
+    objects.map(({ object_key }) => seedCleanupResult(env.CATALOGUE_DB, intent.id, object_key)),
+  );
+  const first = await (await request(path, now)).json();
+  expect(first).toEqual({ objects: objects.slice(0, 50), next_after: objects[49]!.object_key });
+  const second = await (await request(`${path}?after=${encodeURIComponent(objects[49]!.object_key)}`, now)).json();
+  expect(second).toEqual({ objects: objects.slice(50), next_after: null });
 });
 
 async function capturedObject(run: string, key = `source-snapshots/${run}.bin`) {

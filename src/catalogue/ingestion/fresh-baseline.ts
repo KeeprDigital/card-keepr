@@ -7,7 +7,11 @@ export async function enforceFreshBaselineMutationGuard(
   method: string,
   path: string,
 ): Promise<void> {
-  if (["GET", "HEAD", "OPTIONS"].includes(method) || path === "/v1/production-releases") return;
+  if (
+    ["GET", "HEAD", "OPTIONS"].includes(method) ||
+    ["/v1/production-releases", "/v1/administration-targets/resolve"].includes(path)
+  )
+    return;
   const handoff = await freshBaselineHandoffStatement(database).first<{ role: string; phase: number }>();
   if (
     handoff !== null &&

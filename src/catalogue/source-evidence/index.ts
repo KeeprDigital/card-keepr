@@ -123,3 +123,7 @@ export { sourceRecordAt, sourceRecordPage, type SourceRecordRow } from "./source
 export { restoreSourceRecordText, type SourceRecordEnvelope } from "./source-record-text";
 
 export { readSourceRecordManifest } from "./source-record-manifest";
+
+export { cleanupSchema, captureCleanupRoute, stagingCleanupRoute, retryCleanupRoute } from "./cleanup-http-contract";
+
+export { operationalDiagnosticsSchema } from "./http-evidence-schema";

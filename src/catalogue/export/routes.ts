@@ -1,10 +1,5 @@
-import {
-  assertOnlyFields,
-  catalogueExportDeletionResultStatus,
-  readAdministrationBody,
-  requiredString,
-} from "../../http/administration";
-import { type RouteContext, route } from "../../http/routes";
+import { httpRoute } from "../../http/openapi";
+import { type Route, type RouteContext } from "../../http/routes";
 import type { CatalogueStore } from "../shared";
 import {
   catalogueExportDeletionStatus,
@@ -12,83 +7,65 @@ import {
   prepareCatalogueExportDeletion,
   retryCatalogueExportDeletion,
 } from "./catalogue-export-deletion";
+import {
+  exportDeletionPlanSchema,
+  exportDeletionSchema,
+  exportDeletionPendingSchema,
+  exportDeletionTerminalSchema,
+  planExportDeletionRoute,
+  confirmExportDeletionRoute,
+  retryExportDeletionRoute,
+  inspectExportDeletionRoute,
+} from "./http-contract";
 
-type Environment = {
-  CATALOGUE_DB: CatalogueStore;
-  CATALOGUE_EXPORTS: R2Bucket;
-};
-type Context = RouteContext<Environment> & { observedAt: string };
-
-export const exportRoutes = [
-  route<Context>("POST", "/v1/catalogue-export-deletion-plans", async ({ request, env, observedAt }) => {
-    const body = await readAdministrationBody(request);
-    assertOnlyFields(body, ["catalogue_revision_id", "manifest_digest", "expected_current_revision_id", "plan_id"]);
-    const document = await prepareCatalogueExportDeletion(
-      env.CATALOGUE_DB,
-      env.CATALOGUE_EXPORTS,
-      {
-        catalogue_revision_id: requiredString(body, "catalogue_revision_id"),
-        manifest_digest: requiredString(body, "manifest_digest"),
-        expected_current_revision_id: requiredString(body, "expected_current_revision_id"),
-        plan_id: requiredString(body, "plan_id"),
-      },
-      observedAt,
-    );
-    return Response.json(document, { status: 201 });
-  }),
-  route<Context>("POST", "/v1/catalogue-export-deletions", async ({ request, env, observedAt }) => {
-    const body = await readAdministrationBody(request);
-    assertOnlyFields(body, [
-      "plan_id",
-      "plan_digest",
-      "catalogue_revision_id",
-      "manifest_digest",
-      "expected_current_revision_id",
-      "confirmation_revision_id",
-      "deletion_id",
-      "idempotency_key",
-    ]);
-    const document = await confirmCatalogueExportDeletion(
-      env.CATALOGUE_DB,
-      env.CATALOGUE_EXPORTS,
-      {
-        plan_id: requiredString(body, "plan_id"),
-        plan_digest: requiredString(body, "plan_digest"),
-        catalogue_revision_id: requiredString(body, "catalogue_revision_id"),
-        manifest_digest: requiredString(body, "manifest_digest"),
-        expected_current_revision_id: requiredString(body, "expected_current_revision_id"),
-        confirmation_revision_id: requiredString(body, "confirmation_revision_id"),
-        deletion_id: requiredString(body, "deletion_id"),
-        idempotency_key: requiredString(body, "idempotency_key"),
-      },
-      observedAt,
-    );
-    return Response.json(document, {
-      status: catalogueExportDeletionResultStatus(document),
-    });
-  }),
-  route<Context>(
-    "POST",
-    "/v1/catalogue-export-deletions/:deletion/retry",
-    async ({ request, env, observedAt }, params) => {
-      const body = await readAdministrationBody(request);
-      assertOnlyFields(body, ["object_set_digest", "idempotency_key"]);
-      const document = await retryCatalogueExportDeletion(
-        env.CATALOGUE_DB,
-        env.CATALOGUE_EXPORTS,
-        params.deletion!,
-        {
-          object_set_digest: requiredString(body, "object_set_digest"),
-          idempotency_key: requiredString(body, "idempotency_key"),
-        },
-        observedAt,
-      );
-      return Response.json(document, {
-        status: catalogueExportDeletionResultStatus(document),
-      });
-    },
+type Context = RouteContext<{ CATALOGUE_DB: CatalogueStore; CATALOGUE_EXPORTS: R2Bucket }> & { observedAt: string };
+const route = httpRoute<Context>();
+const headers = { "Cache-Control": "no-store" };
+export const exportRoutes: Route<Context>[] = [
+  route(planExportDeletionRoute, async (c) =>
+    c.json(
+      exportDeletionPlanSchema.parse(
+        await prepareCatalogueExportDeletion(
+          c.env.env.CATALOGUE_DB,
+          c.env.env.CATALOGUE_EXPORTS,
+          c.req.valid("json"),
+          c.env.observedAt,
+        ),
+      ),
+      201,
+      headers,
+    ),
   ),
-  route<Context>("GET", "/v1/catalogue-export-deletions/:deletion", async ({ env }, params) => {
-    return Response.json(await catalogueExportDeletionStatus(env.CATALOGUE_DB, params.deletion!));
+  route(confirmExportDeletionRoute, async (c) => {
+    const result = await confirmCatalogueExportDeletion(
+      c.env.env.CATALOGUE_DB,
+      c.env.env.CATALOGUE_EXPORTS,
+      c.req.valid("json"),
+      c.env.observedAt,
+    );
+    return result.state === "deleting"
+      ? c.json(exportDeletionPendingSchema.parse(result), 202, headers)
+      : c.json(exportDeletionTerminalSchema.parse(result), 200, headers);
   }),
+  route(retryExportDeletionRoute, async (c) => {
+    const result = await retryCatalogueExportDeletion(
+      c.env.env.CATALOGUE_DB,
+      c.env.env.CATALOGUE_EXPORTS,
+      c.req.valid("param").deletion,
+      c.req.valid("json"),
+      c.env.observedAt,
+    );
+    return result.state === "deleting"
+      ? c.json(exportDeletionPendingSchema.parse(result), 202, headers)
+      : c.json(exportDeletionTerminalSchema.parse(result), 200, headers);
+  }),
+  route(inspectExportDeletionRoute, async (c) =>
+    c.json(
+      exportDeletionSchema.parse(
+        await catalogueExportDeletionStatus(c.env.env.CATALOGUE_DB, c.req.valid("param").deletion),
+      ),
+      200,
+      headers,
+    ),
+  ),
 ];

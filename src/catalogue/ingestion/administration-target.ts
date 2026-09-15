@@ -3,31 +3,17 @@ import { showCuratedRevision } from "../curated";
 import { AdministrationProblem, type CatalogueStore } from "../shared";
 import { requiredRun } from "./run-storage";
 
-/** Read-only checks behind the existing status route; mutation CAS remains authoritative. */
+/** Read-only owner target resolution; mutation CAS remains authoritative. */
 export async function resolveAdministrationTarget(
   database: CatalogueStore,
   backups: R2Bucket,
   status: Record<string, unknown>,
-  query: URLSearchParams,
+  input: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  const allowed = [
-    "expected_current_revision_id",
-    "ingestion_run_id",
-    "repair_revision_id",
-    "recovery_id",
-    "target_digest",
-    "expected_restored_revision_id",
-    "curated_operation",
-    "curated_binding",
-  ];
-  if (
-    [...query.keys()].some((key) => !allowed.includes(key)) ||
-    [...new Set(query.keys())].some((key) => query.getAll(key).length !== 1)
-  )
-    throw new AdministrationProblem(422, "invalid_request", "Target resolution parameters are invalid.");
+  const choice = (name: string): string | null => (typeof input[name] === "string" ? input[name] : null);
   const safe = status.safe_state as Record<string, unknown>;
-  const expected = query.get("expected_current_revision_id");
-  const runId = query.get("ingestion_run_id");
+  const expected = choice("expected_current_revision_id");
+  const runId = choice("ingestion_run_id");
   if (runId !== null) {
     const run = await requiredRun(database, runId);
     if (run.expected_current_revision_id !== expected)
@@ -37,16 +23,16 @@ export async function resolveAdministrationTarget(
     mismatch(
       `Production currently resolves to Catalogue Revision ${String(safe.current_revision_id ?? "unknown")}, not ${expected}.`,
     );
-  const repair = query.get("repair_revision_id");
+  const repair = choice("repair_revision_id");
   if (repair !== null && !(status.repairable_catalogue_revision_ids as string[]).includes(repair))
     mismatch("The target Catalogue Revision was not resolved from the authoritative retained revision chain.");
-  const recoveryId = query.get("recovery_id");
+  const recoveryId = choice("recovery_id");
   if (recoveryId !== null) {
     const recovery = await inspectCatalogueRecovery(database, backups, recoveryId);
-    const restored = query.get("expected_restored_revision_id");
+    const restored = choice("expected_restored_revision_id");
     if (
       recovery.id !== recoveryId ||
-      recovery.target_digest !== query.get("target_digest") ||
+      recovery.target_digest !== choice("target_digest") ||
       (restored !== null && recovery.target_revision_id !== restored)
     )
       mismatch("The production recovery operation does not match the supplied exact target evidence.");
@@ -57,15 +43,10 @@ export async function resolveAdministrationTarget(
       mismatch("Production does not resolve to either the recovery source or restored Catalogue Revision.");
   }
   let confirmation = JSON.stringify(status.production_target);
-  const operation = query.get("curated_operation");
+  const operation = choice("curated_operation");
   if (operation !== null) {
     if (!["create", "reaffirm", "supersede", "retire"].includes(operation)) invalidCurated();
-    let binding: Record<string, unknown>;
-    try {
-      binding = JSON.parse(query.get("curated_binding") ?? "null") as Record<string, unknown>;
-    } catch {
-      invalidCurated();
-    }
+    let binding = input.curated_binding as Record<string, unknown>;
     if (binding === null || typeof binding !== "object" || Array.isArray(binding)) invalidCurated();
     const fields =
       operation === "create"
@@ -104,7 +85,10 @@ export async function resolveAdministrationTarget(
       ...binding,
     });
   }
-  return { ...status, resolved_target: { production_target: status.production_target, confirmation } };
+  return {
+    contract: "card-keepr-administration-target@1",
+    resolved_target: { production_target: status.production_target, confirmation },
+  };
 }
 function mismatch(detail: string): never {
   throw new AdministrationProblem(409, "production_target_mismatch", detail);
