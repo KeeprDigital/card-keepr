@@ -61,6 +61,7 @@ test("owner backs up, retries, restores, verifies and explicitly accepts with im
   });
   const key = crypto.randomUUID();
   const workers = [];
+  const providerFailures = [];
   let releaseImport;
   t.after(async () => {
     releaseImport?.();
@@ -68,8 +69,21 @@ test("owner backs up, retries, restores, verifies and explicitly accepts with im
     cloudflare.close();
     await rm(directory, { recursive: true, force: true });
   });
-  const outboundService = (request) => {
-    if (isNativeCheckpointRequest(request)) return cloudflare.fetch(request);
+  const outboundService = async (request) => {
+    if (isNativeCheckpointRequest(request)) {
+      try {
+        return await cloudflare.fetch(request);
+      } catch (error) {
+        providerFailures.push({
+          method: request.method,
+          path: new URL(request.url).pathname,
+          error: String(error),
+          cause: error instanceof Error && error.cause !== undefined ? String(error.cause) : null,
+        });
+        if (providerFailures.length > 4) providerFailures.shift();
+        throw error;
+      }
+    }
     const url = new URL(request.url);
     assert.equal(url.hostname, "official-source.invalid");
     const source = reconciliationSourceDocument("base", "", request.url);
@@ -150,7 +164,7 @@ test("owner backs up, retries, restores, verifies and explicitly accepts with im
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
       body: JSON.stringify({ label, predecessor }),
     });
-    assert.equal(response.status, 200, await response.clone().text());
+    assert.equal(response.status, 200, JSON.stringify({ response: await response.clone().text(), providerFailures }));
     return response.json();
   };
   const { published } = await publish("first");

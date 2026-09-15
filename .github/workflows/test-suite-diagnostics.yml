@@ -5,12 +5,12 @@ on:
   workflow_dispatch:
     inputs:
       worker:
-        description: Worker suite
+        description: Test suite
         type: choice
-        options: [ingestion, api]
+        options: [ingestion, api, acceptance]
         default: ingestion
       suite:
-        description: Routine Worker tests or ingestion stress experiments
+        description: Routine tests or ingestion stress experiments
         type: choice
         options: [routine, stress]
         default: routine
@@ -47,10 +47,25 @@ jobs:
         uses: ./.github/actions/setup-toolchain
       - name: Run the selected files
         run: |
-          case "$TEST_WORKER" in ingestion|api) ;; *) exit 2 ;; esac
+          case "$TEST_WORKER" in ingestion|api|acceptance) ;; *) exit 2 ;; esac
           case "$TEST_SUITE" in routine|stress) ;; *) exit 2 ;; esac
           case "$TEST_STORAGE" in memory|disk) ;; *) exit 2 ;; esac
           case "$TEST_REPEATS" in 1|3) ;; *) exit 2 ;; esac
+          if [ "$TEST_WORKER" = acceptance ]; then
+            if [ "$TEST_SUITE" != routine ] || [ "$TEST_REPEATS" != 1 ]; then exit 2; fi
+            if [[ ! "$TEST_FILES" =~ ^acceptance/[a-z0-9-]+\.test\.mjs$ ]] || [ ! -f "$TEST_FILES" ]; then
+              echo "Select exactly one acceptance test file." >&2
+              exit 2
+            fi
+            # The existing default-tier selector rejects extended/benchmark files.
+            node scripts/acceptance-tier.mjs default "$TEST_FILES" --list
+            if [ "$TEST_STORAGE" = memory ]; then
+              bash scripts/ci-test.sh pnpm run test:acceptance "$TEST_FILES"
+            else
+              pnpm run test:acceptance "$TEST_FILES"
+            fi
+            exit 0
+          fi
           suffix='\.spec\.ts'
           if [ "$TEST_SUITE" = stress ]; then
             if [ "$TEST_WORKER" != ingestion ]; then exit 2; fi
