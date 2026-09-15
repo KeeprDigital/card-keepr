@@ -56,7 +56,7 @@ async function prepare(both: boolean, key: string, predecessor = "catrev_spine_0
     predecessor,
     key: `${key}-candidate`,
   });
-  return { candidate, records: await nativeCandidateRecords(String(candidate.id)) };
+  return { candidate, records: await nativeCandidateRecords(String(candidate.id), ["cards", "printings"]) };
 }
 
 test.each([false, true])(
