@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Body + UI fonts: early discovery helps FCP/LCP while CSS loads -->
+    <link rel="preload" href="/fonts/Spiegel-Regular.woff" as="font" type="font/woff" crossorigin />
+    <link rel="preload" href="/fonts/Spiegel-SemiBold.woff" as="font" type="font/woff" crossorigin />
+    <link rel="preload" href="/fonts/BeaufortforLOL-Bold.woff" as="font" type="font/woff" crossorigin />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192x192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512x512.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta data-rh="true" name="description" content="Search the full Riftbound TCG card database: filter by region, domain, champion, keyword, cost, might, and rarity. Scan physical cards with your phone camera to instantly add them to your collection. Brew decks with validation and guides, export lists, and build print-ready proxy PDFs." />
+    <title data-rh="true">Riftbound Card Database, Scanner &amp; Deck Builder | Riftbound DB</title>
+
+    <!-- SEO fallbacks — all tagged data-rh="true" so react-helmet-async replaces them on hydration (no duplicates) -->
+    <meta data-rh="true" name="robots" content="index, follow" />
+    <meta data-rh="true" name="keywords" content="Riftbound TCG, Riot Riftbound, League of Legends card game, Riftbound cards, Riftbound card database, Riftbound card search, Riftbound collection tracker, Riftbound card scanner, Riftbound deck builder, trading card game, physical TCG" />
+    <link data-rh="true" rel="canonical" href="https://www.riftbound-db.com/" />
+
+    <!-- Open Graph -->
+    <meta data-rh="true" property="og:type" content="website" />
+    <meta data-rh="true" property="og:site_name" content="Riftbound DB" />
+    <meta data-rh="true" property="og:locale" content="en_US" />
+    <meta data-rh="true" property="og:url" content="https://www.riftbound-db.com/" />
+    <meta data-rh="true" property="og:title" content="Riftbound Card Database, Scanner &amp; Deck Builder | Riftbound DB" />
+    <meta data-rh="true" property="og:description" content="Search the full Riftbound TCG card database: filter by region, domain, champion, keyword, cost, might, and rarity. Scan physical cards with your phone camera to instantly add them to your collection. Brew decks with validation and guides, export lists, and build print-ready proxy PDFs." />
+    <meta data-rh="true" property="og:image" content="https://www.riftbound-db.com/og-image.png" />
+    <meta data-rh="true" property="og:image:alt" content="Riftbound DB — Riftbound TCG card database, deck builder, collection tracker, and proxy prints" />
+
+    <!-- Twitter / X -->
+    <meta data-rh="true" property="twitter:card" content="summary_large_image" />
+    <meta data-rh="true" property="twitter:url" content="https://www.riftbound-db.com/" />
+    <meta data-rh="true" property="twitter:title" content="Riftbound Card Database, Scanner &amp; Deck Builder | Riftbound DB" />
+    <meta data-rh="true" property="twitter:description" content="Search the full Riftbound TCG card database: filter by region, domain, champion, keyword, cost, might, and rarity. Scan physical cards with your phone camera to instantly add them to your collection. Brew decks with validation and guides, export lists, and build print-ready proxy PDFs." />
+    <meta data-rh="true" property="twitter:image" content="https://www.riftbound-db.com/og-image.png" />
+    <meta data-rh="true" name="twitter:image:alt" content="Riftbound DB — Riftbound TCG card database, deck builder, collection tracker, and proxy prints" />
+
+    <!-- PWA / browser chrome — not managed by react-helmet-async -->
+    <meta name="language" content="English" />
+    <meta name="theme-color" content="#0F0B1A" />
+    <meta name="msapplication-TileColor" content="#0F0B1A" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Riftbound DB" />
+
+    <!-- Web App Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+
+    <!--
+      Structured data: WebSite (SearchAction), Organization, and WebApplication.
+      Uses @graph + @id references so Google can cross-link the entities.
+      Intentionally kept here (not in Helmet) so the richer @graph schema is always
+      present in the static HTML. react-helmet-async emits simpler per-page schemas
+      alongside this without conflict.
+    -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://www.riftbound-db.com/#website",
+            "url": "https://www.riftbound-db.com/",
+            "name": "Riftbound DB",
+            "description": "Fan-made Riftbound TCG card database, collection tracker, deck builder, proxy printer — built with official Riftbound API data.",
+            "inLanguage": "en-US",
+            "publisher": { "@id": "https://www.riftbound-db.com/#organization" },
+            "potentialAction": {
+              "@type": "SearchAction",
+              "target": {
+                "@type": "EntryPoint",
+                "urlTemplate": "https://www.riftbound-db.com/search?q={search_term_string}"
+              },
+              "query-input": "required name=search_term_string"
+            }
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://www.riftbound-db.com/#organization",
+            "name": "Riftbound DB",
+            "url": "https://www.riftbound-db.com/",
+            "description": "Independent companion site for Riot Games' Riftbound trading card game."
+          },
+          {
+            "@type": "WebApplication",
+            "@id": "https://www.riftbound-db.com/#webapp",
+            "name": "Riftbound DB",
+            "url": "https://www.riftbound-db.com/",
+            "applicationCategory": "GameApplication",
+            "operatingSystem": "Web Browser",
+            "description": "Riftbound TCG card search, collection tracking, deck builder with guides and publishing, proxy print PDFs — powered by official Riftbound API data.",
+            "isPartOf": { "@id": "https://www.riftbound-db.com/#website" },
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD"
+            }
+          }
+        ]
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/index-JZIjG9lm.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BZIFfwR6.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

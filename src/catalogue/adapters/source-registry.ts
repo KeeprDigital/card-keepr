@@ -14,6 +14,7 @@ export const sources = [
     name: "Selected official Pokémon publications",
   },
   { id: "riot-riftbound", publisher_id: "riot-games", name: "Riot Riftbound" },
+  { id: "riftbound-db", publisher_id: null, name: "Riftbound DB" },
   ...(["one-piece", "fusion-world", "digimon", "gundam"] as const).map((game) => ({
     id: `bandai-${game}`,
     publisher_id: "bandai",
@@ -40,6 +41,7 @@ export const sourceLineages: readonly SourceLineageRegistration[] = [
   },
   { id: "scryfall-magic-en", source_id: "scryfall", game: "magic", locale: "en", release_region: "unknown" },
   { id: "riftbound-en", source_id: "riot-riftbound", game: "riftbound", locale: "en", release_region: "US" },
+  { id: "riftbound-db-en", source_id: "riftbound-db", game: "riftbound", locale: "en", release_region: "unknown" },
   { id: "one-piece-en", source_id: "bandai-one-piece", game: "one-piece", locale: "en", release_region: "OCEANIA" },
   {
     id: "limitless-one-piece-en",

@@ -111,7 +111,9 @@ export type CardObservation = CatalogueObservation & {
 
 /** Structurally valid source claims that cannot yet form a publishable Card. */
 export type SourceAdmissionEvidenceObservation =
-  ScryfallSourceAdmissionEvidenceObservation | TcgdexSourceAdmissionEvidenceObservation;
+  | ScryfallSourceAdmissionEvidenceObservation
+  | TcgdexSourceAdmissionEvidenceObservation
+  | RiftboundDbSourceAdmissionEvidenceObservation;
 
 export type ScryfallSourceAdmissionEvidenceObservation = {
   observation_type: "source_admission_evidence";
@@ -149,4 +151,16 @@ export type TcgdexSourceAdmissionEvidenceObservation = {
   };
   source_sidecar: { source_record_json: string };
   completeness: ObservationCompleteness;
+};
+
+export type RiftboundDbSourceAdmissionEvidenceObservation = Omit<
+  TcgdexSourceAdmissionEvidenceObservation,
+  "game" | "source_lineage" | "issues"
+> & {
+  game: "riftbound";
+  source_lineage: "riftbound-db-en";
+  issues: readonly {
+    code: "card_identity_unresolved" | "printing_treatment_unresolved" | "physical_issuance_unresolved";
+    source_paths: readonly string[];
+  }[];
 };

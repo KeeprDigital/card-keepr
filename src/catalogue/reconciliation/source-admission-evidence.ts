@@ -52,7 +52,16 @@ type PokemonSourceAdmissionEvidence = {
   source_sidecar: { source_record_json: string };
   completeness: ScryfallSourceAdmissionEvidence["completeness"];
 };
-export type SourceAdmissionEvidence = ScryfallSourceAdmissionEvidence | PokemonSourceAdmissionEvidence;
+type RiftboundSourceAdmissionEvidence = Omit<PokemonSourceAdmissionEvidence, "game" | "source_lineage" | "issues"> & {
+  game: "riftbound";
+  source_lineage: "riftbound-db-en";
+  issues: {
+    code: "card_identity_unresolved" | "printing_treatment_unresolved" | "physical_issuance_unresolved";
+    source_paths: string[];
+  }[];
+};
+export type SourceAdmissionEvidence =
+  ScryfallSourceAdmissionEvidence | PokemonSourceAdmissionEvidence | RiftboundSourceAdmissionEvidence;
 export type NormalizedSourceAdmissionEvidence = {
   kind: "source_admission_evidence";
   sourceObservationId: string;
@@ -110,7 +119,7 @@ export async function retainSourceAdmissionEvidence(
 ): Promise<NormalizedSourceAdmissionEvidence> {
   const attributedImages = observation.appearance_evidence.images.map((image) => {
     const retained = images.get(image.source_url);
-    if (image.content_sha256 !== undefined && image.content_sha256 !== retained?.content_sha256)
+    if (retained && image.content_sha256 !== undefined && image.content_sha256 !== retained.content_sha256)
       throw new Error("Review-required image digest conflicts with retained evidence.");
     return { ...image, ...(retained ?? {}) };
   });

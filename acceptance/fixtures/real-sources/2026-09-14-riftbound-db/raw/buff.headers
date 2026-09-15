@@ -1,0 +1,19 @@
+HTTP/2 200 
+date: Tue, 15 Sep 2026 18:52:02 GMT
+content-type: image/webp
+content-length: 64942
+server: cloudflare
+nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+last-modified: Wed, 29 Apr 2026 06:38:51 GMT
+etag: "69f1a77b-fdae"
+expires: Wed, 15 Sep 2027 18:52:01 GMT
+cache-control: public, max-age=31536000, immutable
+x-frame-options: SAMEORIGIN
+x-content-type-options: nosniff
+accept-ranges: bytes
+strict-transport-security: max-age=31536000; includeSubDomains; preload
+cf-cache-status: MISS
+report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=dLJvZdE6aIFBzsHCOUaWwIhJ1m%2FNmH5om2mLZu49Va5MMb35ZIC1c4htncKwCPHmf8aL87LurQ3xhcJlV88KqlV6XAB5QPfH2r4svW%2FMtAm2l515mi3%2F7EhknHSMyqY%3D"}]}
+cf-ray: a3b9d3780abec78d-MEL
+alt-svc: h3=":443"; ma=86400
+

@@ -178,6 +178,17 @@ exceptions, prior automatic decisions and category/profile equivalence survive
 refresh and recovery. Admission remains separate from approval of the whole
 Catalogue Candidate and publication.
 
+Riftbound DB's bounded English pilot preserves OpenRift IDs and Riot image origins
+as attributable upstream facts. Only the inspected Eclipse Herald record maps
+into the shared profile; it requires an owner decision to link or admit the
+supplementary observation. Promo issuance, treatment and identity claims remain
+source-record Entity Proposals with private retained front images. They contribute
+no partial Card or Printing, and cannot be admitted by waiving required structure.
+The real duplicate Bird observations retain both evidence references without
+creating two proposals. Selection and the bounded query/facet check do not
+establish full-source completeness or change Riot's authority.
+[Riftbound DB pilot](https://github.com/KeeprDigital/card-keepr/issues/331).
+
 ## Runtime and storage boundaries
 
 Two Workers separate authenticated catalogue reads from administration and
