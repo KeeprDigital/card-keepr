@@ -15,3 +15,4 @@ overrides:
   "parse5>entities": 8.0.0
 patchedDependencies:
   "@cloudflare/vitest-plugin@1.1.6": patches/@cloudflare__vitest-plugin@1.1.6.patch
+  wrangler@4.130.0: patches/wrangler@4.130.0.patch

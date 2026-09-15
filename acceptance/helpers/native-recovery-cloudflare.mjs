@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { open, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { unstable_splitSqlQuery } from "wrangler";
+import { nativeRecoveryExportSql } from "./native-recovery-export.mjs";
 import { nativeSqliteExport } from "./native-sqlite-export.mjs";
 
 // Only the Cloudflare control-plane boundary is simulated. SQL export/import
@@ -59,24 +59,7 @@ export function nativeRecoveryCloudflare({ databaseDirectory, directory, sourceD
           return Response.json({ success: false, errors: [{ message: "Injected SQL export failure" }] });
         }
         exported = await nativeSqliteExport(await sourceFile(), join(directory, "native-export.sql"));
-        const virtual = exported.split("\n").filter((line) => line.includes("CREATE VIRTUAL TABLE"));
-        if (virtual.length > 0) throw new Error(`Export still contains virtual tables: ${virtual.join(" | ")}`);
-        // D1 management exports omit provider-owned bookkeeping; AUTOINCREMENT
-        // counters are reconstructed by inserting the retained primary keys.
-        const statements = unstable_splitSqlQuery(exported).filter(
-          (sql) =>
-            !/^(?:CREATE TABLE|INSERT INTO) ["`]?_cf_/i.test(sql.trim()) &&
-            !/^(?:INSERT INTO|DELETE FROM) sqlite_sequence/i.test(sql.trim()) &&
-            !/^(?:PRAGMA foreign_keys|BEGIN TRANSACTION|COMMIT)/i.test(sql.trim()),
-        );
-        exported =
-          "PRAGMA defer_foreign_keys=ON;\n" +
-          [
-            ...statements.filter((sql) => /^CREATE TABLE/i.test(sql.trim())),
-            ...statements.filter((sql) => /^CREATE (?:UNIQUE )?INDEX/i.test(sql.trim())),
-            ...statements.filter((sql) => !/^CREATE (?:TABLE|(?:UNIQUE )?INDEX)/i.test(sql.trim())),
-          ].join(";\n") +
-          ";";
+        exported = nativeRecoveryExportSql(exported);
         snapshots.push(exported);
         await hooks.afterExport?.();
         return success({
