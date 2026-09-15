@@ -251,7 +251,7 @@ function assembleScryfallRecord(bytes: Uint8Array, sourceUrl: string, cutoff = "
   const id = uuid(card.id);
   if (sourceUrl !== surfaceUrl(id) || card.uri !== sourceUrl || card.object !== "card")
     throw new AdapterParseFailure("Scryfall response does not match its exact selected record.");
-  if (card.lang !== "en" || card.digital !== false || !list(card.games).includes("paper"))
+  if (card.lang !== "en" || card.digital !== false || !list(card.games).map(text).includes("paper"))
     throw new AdapterParseFailure("Scryfall pilot requires explicit English physical availability.");
   // The pilot's issue evidence predates this cutoff. Never use parser wall time
   // to silently turn a preview into an issued Printing on replay.
@@ -260,10 +260,8 @@ function assembleScryfallRecord(bytes: Uint8Array, sourceUrl: string, cutoff = "
   const layout = text(card.layout);
   const art = layout === "art_series";
   const token = layout === "token" || layout === "double_faced_token";
-  if (
-    (layout === "token" && !/^Token(?: |$)/u.test(text(card.type_line))) ||
-    (art && (card.set_type !== "memorabilia" || card.type_line !== "Card // Card"))
-  )
+  const categoryUnresolved = layout === "token" && !/^Token(?: |$)/u.test(text(card.type_line));
+  if (art && (card.set_type !== "memorabilia" || card.type_line !== "Card // Card"))
     throw new AdapterParseFailure("Scryfall Card category evidence is contradictory.");
   const faces = card.card_faces === undefined ? [card] : list(card.card_faces).map(object);
   let roles: ("front" | "back")[];
@@ -278,7 +276,6 @@ function assembleScryfallRecord(bytes: Uint8Array, sourceUrl: string, cutoff = "
   const oracle = uuid(reversible ? faces[0]!.oracle_id : card.oracle_id);
   const design = reversible ? faces[0]! : card;
   const designFaces = reversible ? [design] : faces;
-  const category = art ? "art" : token || (reversible && design.layout === "token") ? "token" : "gameplay";
   if (
     reversible &&
     (card.oracle_id !== undefined ||
@@ -303,9 +300,8 @@ function assembleScryfallRecord(bytes: Uint8Array, sourceUrl: string, cutoff = "
   // or qualification. This keeps the observation available for explicit review.
   const fingerprint =
     illustration == null ? `scryfall:unresolved-artwork:${id}` : `scryfall:illustration:${uuid(illustration)}`;
-  const images = (twoSided ? faces : [card]).flatMap((face, index) => {
+  const sourceImage = (face: Record<string, unknown>, role: "front" | "back") => {
     if (face.image_uris === undefined) return [];
-    const role = faceRole(index);
     const url = adapterUrl(text(object(face.image_uris).normal));
     if (
       url.origin !== "https://cards.scryfall.io" ||
@@ -317,22 +313,34 @@ function assembleScryfallRecord(bytes: Uint8Array, sourceUrl: string, cutoff = "
     )
       throw new AdapterParseFailure("Scryfall whole-card image is outside the returned record/face authority.");
     return [{ role, source_url: url.href, artwork_fingerprint: fingerprint }];
-  });
-  if (reversible) {
-    const designLayout = text(design.layout);
-    if (!magicLayouts.some((known) => known === designLayout))
-      throw new AdapterParseFailure("Scryfall reversible design layout is unsupported.");
-    for (const face of faces) {
-      if (face.object !== "card_face") throw new AdapterParseFailure("Scryfall face object is invalid.");
+  };
+  const images = (twoSided ? faces : [card]).flatMap((face, index) => sourceImage(face, faceRole(index)));
+  const issues: SourceAdmissionEvidenceObservation["issues"][number][] = [];
+  if (categoryUnresolved) issues.push({ code: "category_unresolved", source_paths: ["layout", "type_line"] });
+  if (categoryUnresolved || reversible) {
+    // Reviewable meaning never bypasses validation of the retained source claims.
+    for (const face of new Set([card, ...faces])) {
+      if (face !== card && face.object !== "card_face")
+        throw new AdapterParseFailure("Scryfall face object is invalid.");
       text(face.name);
-      text(face.type_line);
+      if (face !== card || !reversible) text(face.type_line);
+      else optionalText(face.type_line);
       optionalText(face.mana_cost);
       optionalText(face.oracle_text);
       optionalText(face.power);
       optionalText(face.toughness);
       optionalText(face.printed_text);
+      optionalText(face.artist);
       if (face.colors !== undefined) colours(face.colors);
+      if (face.illustration_id != null) uuid(face.illustration_id);
+      if (face.oracle_id !== undefined) uuid(face.oracle_id);
+      sourceImage(face, face === card ? "front" : faceRole(faces.indexOf(face)));
     }
+  }
+  if (reversible) {
+    const designLayout = text(design.layout);
+    if (!magicLayouts.some((known) => known === designLayout))
+      throw new AdapterParseFailure("Scryfall reversible design layout is unsupported.");
     // Physical front/back entries do not supply a complete logical design
     // when that design itself requires multiple parts. Preserve the source
     // claims for review instead of duplicating or borrowing missing parts.
@@ -344,27 +352,30 @@ function assembleScryfallRecord(bytes: Uint8Array, sourceUrl: string, cutoff = "
       // Source identity, field structure and image-authority checks still fail.
       logicalPartsComplete = false;
     }
-    if (!logicalPartsComplete) {
-      const observation: SourceAdmissionEvidenceObservation = {
-        observation_type: "source_admission_evidence",
-        game: "magic",
-        source_lineage: lineage,
-        locator: id,
-        declared_finishes: finishes,
-        issues: [{ code: "logical_parts_unresolved", source_paths: ["card_faces.0.layout", "card_faces.1.layout"] }],
-        appearance_evidence: { images },
-        source_sidecar: { source_record_json: JSON.stringify(card) },
-        completeness: {
-          structurally_complete: true,
-          required_surfaces_complete: true,
-          partitions_complete: true,
-          declared_record_count: 1,
-          parsed_record_count: 1,
-        },
-      };
-      return { kind: "requires_review" as const, observations: [observation], images };
-    }
+    if (!logicalPartsComplete)
+      issues.push({ code: "logical_parts_unresolved", source_paths: ["card_faces.0.layout", "card_faces.1.layout"] });
   }
+  if (issues.length) {
+    const observation: SourceAdmissionEvidenceObservation = {
+      observation_type: "source_admission_evidence",
+      game: "magic",
+      source_lineage: lineage,
+      locator: id,
+      declared_finishes: finishes,
+      issues,
+      appearance_evidence: { images },
+      source_sidecar: { source_record_json: JSON.stringify(card) },
+      completeness: {
+        structurally_complete: true,
+        required_surfaces_complete: true,
+        partitions_complete: true,
+        declared_record_count: 1,
+        parsed_record_count: 1,
+      },
+    };
+    return { kind: "requires_review" as const, observations: [observation], images };
+  }
+  const category = art ? "art" : token || (reversible && design.layout === "token") ? "token" : "gameplay";
   const cardAttributes = art
     ? {}
     : {

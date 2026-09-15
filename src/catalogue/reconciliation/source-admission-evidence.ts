@@ -16,7 +16,7 @@ export type SourceAdmissionEvidence = {
   source_lineage: "scryfall-magic-en";
   locator: string;
   declared_finishes: ("nonfoil" | "foil" | "etched")[];
-  issues: { code: "logical_parts_unresolved"; source_paths: string[] }[];
+  issues: { code: "logical_parts_unresolved" | "category_unresolved"; source_paths: string[] }[];
   appearance_evidence: {
     images: { role: "front" | "back"; source_url: string; artwork_fingerprint: string; content_sha256?: string }[];
   };

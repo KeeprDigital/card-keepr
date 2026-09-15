@@ -116,7 +116,7 @@ export type SourceAdmissionEvidenceObservation = {
   source_lineage: string;
   locator: string;
   declared_finishes: readonly string[];
-  issues: readonly { code: "logical_parts_unresolved"; source_paths: readonly string[] }[];
+  issues: readonly { code: "logical_parts_unresolved" | "category_unresolved"; source_paths: readonly string[] }[];
   appearance_evidence: {
     images: readonly { role: "front" | "back"; source_url: string; artwork_fingerprint: string }[];
   };
