@@ -55,9 +55,13 @@ test("owner backs up, retries, restores, verifies and explicitly accepts with im
   });
   const { syntheticSourceAdapterMigration } = await import(pathToFileURL(migrationModule).href);
   await applyMigrations(statePath, configPath, [syntheticSourceAdapterMigration]);
+  // This fixture contains synthetic source data only; keep one failed input outside cleanup.
+  const importFailureDirectory =
+    process.env.KEEPR_OWNER_IMPORT_DIAGNOSTICS === "1" ? resolve("test-results/owner-import") : undefined;
   let cloudflare = nativeRecoveryCloudflare({
     databaseDirectory: await persistedDatabaseDirectory(statePath),
     directory,
+    importFailureDirectory,
   });
   const key = crypto.randomUUID();
   const workers = [];
@@ -326,7 +330,7 @@ test("owner backs up, retries, restores, verifies and explicitly accepts with im
   const sourceDatabaseFile = join(databaseDirectory, restoredFiles[0]);
   await verifiedBackupApiState(statePath, directory, sourceDatabaseFile);
   cloudflare.close();
-  cloudflare = nativeRecoveryCloudflare({ databaseDirectory, directory, sourceDatabaseFile });
+  cloudflare = nativeRecoveryCloudflare({ databaseDirectory, directory, sourceDatabaseFile, importFailureDirectory });
   worker = await startWorker({
     config: restoredConfigPath,
     statePath,
