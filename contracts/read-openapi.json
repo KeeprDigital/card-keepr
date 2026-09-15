@@ -1043,7 +1043,8 @@
                                     },
                                     "types": {
                                       "type": "array",
-                                      "prefixItems": []
+                                      "items": {},
+                                      "maxItems": 0
                                     },
                                     "stage": {
                                       "type": "null"
@@ -1053,19 +1054,23 @@
                                     },
                                     "abilities": {
                                       "type": "array",
-                                      "prefixItems": []
+                                      "items": {},
+                                      "maxItems": 0
                                     },
                                     "attacks": {
                                       "type": "array",
-                                      "prefixItems": []
+                                      "items": {},
+                                      "maxItems": 0
                                     },
                                     "weaknesses": {
                                       "type": "array",
-                                      "prefixItems": []
+                                      "items": {},
+                                      "maxItems": 0
                                     },
                                     "resistances": {
                                       "type": "array",
-                                      "prefixItems": []
+                                      "items": {},
+                                      "maxItems": 0
                                     },
                                     "retreat_cost": {
                                       "type": "null"
@@ -1156,7 +1161,8 @@
                                             },
                                             "units": {
                                               "type": "array",
-                                              "prefixItems": []
+                                              "items": {},
+                                              "maxItems": 0
                                             }
                                           },
                                           "required": [
@@ -1172,7 +1178,8 @@
                                     },
                                     "types": {
                                       "type": "array",
-                                      "prefixItems": []
+                                      "items": {},
+                                      "maxItems": 0
                                     },
                                     "stage": {
                                       "type": "null"
@@ -1182,19 +1189,23 @@
                                     },
                                     "abilities": {
                                       "type": "array",
-                                      "prefixItems": []
+                                      "items": {},
+                                      "maxItems": 0
                                     },
                                     "attacks": {
                                       "type": "array",
-                                      "prefixItems": []
+                                      "items": {},
+                                      "maxItems": 0
                                     },
                                     "weaknesses": {
                                       "type": "array",
-                                      "prefixItems": []
+                                      "items": {},
+                                      "maxItems": 0
                                     },
                                     "resistances": {
                                       "type": "array",
-                                      "prefixItems": []
+                                      "items": {},
+                                      "maxItems": 0
                                     },
                                     "retreat_cost": {
                                       "type": "null"
@@ -3120,7 +3131,8 @@
                                   },
                                   "types": {
                                     "type": "array",
-                                    "prefixItems": []
+                                    "items": {},
+                                    "maxItems": 0
                                   },
                                   "stage": {
                                     "type": "null"
@@ -3130,19 +3142,23 @@
                                   },
                                   "abilities": {
                                     "type": "array",
-                                    "prefixItems": []
+                                    "items": {},
+                                    "maxItems": 0
                                   },
                                   "attacks": {
                                     "type": "array",
-                                    "prefixItems": []
+                                    "items": {},
+                                    "maxItems": 0
                                   },
                                   "weaknesses": {
                                     "type": "array",
-                                    "prefixItems": []
+                                    "items": {},
+                                    "maxItems": 0
                                   },
                                   "resistances": {
                                     "type": "array",
-                                    "prefixItems": []
+                                    "items": {},
+                                    "maxItems": 0
                                   },
                                   "retreat_cost": {
                                     "type": "null"
@@ -3233,7 +3249,8 @@
                                           },
                                           "units": {
                                             "type": "array",
-                                            "prefixItems": []
+                                            "items": {},
+                                            "maxItems": 0
                                           }
                                         },
                                         "required": [
@@ -3249,7 +3266,8 @@
                                   },
                                   "types": {
                                     "type": "array",
-                                    "prefixItems": []
+                                    "items": {},
+                                    "maxItems": 0
                                   },
                                   "stage": {
                                     "type": "null"
@@ -3259,19 +3277,23 @@
                                   },
                                   "abilities": {
                                     "type": "array",
-                                    "prefixItems": []
+                                    "items": {},
+                                    "maxItems": 0
                                   },
                                   "attacks": {
                                     "type": "array",
-                                    "prefixItems": []
+                                    "items": {},
+                                    "maxItems": 0
                                   },
                                   "weaknesses": {
                                     "type": "array",
-                                    "prefixItems": []
+                                    "items": {},
+                                    "maxItems": 0
                                   },
                                   "resistances": {
                                     "type": "array",
-                                    "prefixItems": []
+                                    "items": {},
+                                    "maxItems": 0
                                   },
                                   "retreat_cost": {
                                     "type": "null"

@@ -43,7 +43,7 @@ export function profileWire(schema: ProfileSchema): z.ZodType {
                     if (key === field) return [key, z.literal(value)];
                     let wire = profileWire(child);
                     if (Object.hasOwn(rule.inapplicable, key))
-                      wire = rule.inapplicable[key] === null ? z.null() : z.tuple([]);
+                      wire = rule.inapplicable[key] === null ? z.null() : z.array(z.unknown()).max(0);
                     if (child.kind === "array" && rule.minimumItems?.[key] !== undefined)
                       wire = z.array(profileWire(child.items)).min(rule.minimumItems[key]);
                     return [key, schema.required.includes(key) || rule.required.includes(key) ? wire : wire.optional()];

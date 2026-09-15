@@ -27,13 +27,7 @@ import {
 import { d1Adapter } from "./helpers/query-helpers/sqlite-d1-adapter.mjs";
 import * as queries from "./helpers/query-helpers/fresh-baseline.mjs";
 import { schemaMigrationLevel } from "./helpers/query-helpers/schema.mjs";
-import {
-  seedParentContextFenceRows,
-  parentContextFenceRows,
-  parentContextLateWrites,
-  seedParentRecoveryClassificationOperation,
-  parentRecoveryClassifications,
-} from "./helpers/query-helpers/parent-context-fences.mjs";
+import * as parentQueries from "./helpers/query-helpers/parent-context-fences.mjs";
 
 const bundle = await build({
   stdin: {
@@ -56,6 +50,54 @@ const migrations = await Promise.all(
     .map((f) => readFile(`migrations/${f}`, "utf8")),
 );
 const sha = (value) => createHash("sha256").update(value).digest("hex");
+
+// Populated storage fixture for writer fences, not source parsing/qualification.
+function seedParentContextFenceRows(database, run) {
+  const digest = sha("{}");
+  for (let ordinal = 0; ordinal < 2; ordinal++) {
+    const id = `${run}-${ordinal}`,
+      parent = ordinal === 0 ? null : `${run}-0`;
+    const url = `https://source.invalid/fence/${ordinal}`;
+    parentQueries.insertParentFenceRequest(database).run(run, id, ordinal, url, parent);
+    parentQueries.insertParentFenceFetchAttempt(database).run(id, run, id);
+    parentQueries.insertParentFenceSnapshot(database).run(id, run, id, id, url, digest, `source-snapshots/${id}`);
+    parentQueries.setParentFenceRequestSnapshot(database).run(id, run, id);
+    parentQueries.insertParentFenceParseOperation(database).run(id, id, id, `${id}-obs`, `source-observations/${id}`);
+    if (parent) parentQueries.insertParentFenceDependency(database).run(id, 0, parent);
+    parentQueries.insertParentFenceContext(database).run(id, ordinal, 1024);
+    parentQueries
+      .insertParentFenceObservationSet(database)
+      .run(`${id}-obs`, id, id, digest, `source-observations/${id}`);
+    parentQueries.insertParentFenceRecordProgress(database).run(`${id}-obs`, digest);
+    parentQueries.finalizeParentFenceParse(database).run(digest, id);
+    parentQueries.observeParentFenceRequest(database).run(run, id);
+  }
+}
+
+function parentContextFenceRows(database) {
+  return {
+    contexts: parentQueries.parentFenceContexts(database).all(),
+    dependencies: parentQueries.parentFenceDependencies(database).all(),
+  };
+}
+
+function parentContextLateWrites(database, run) {
+  return [
+    () => parentQueries.insertParentFenceContext(database).run(`${run}-0`, 0, 1024),
+    () => parentQueries.updateParentFenceContext(database).run(`${run}-1`),
+    () => parentQueries.deleteParentFenceContext(database).run(`${run}-1`),
+    () => parentQueries.insertParentFenceDependency(database).run(`${run}-1`, 1, `${run}-0`),
+    () => parentQueries.updateParentFenceDependency(database).run(`${run}-1`),
+    () => parentQueries.deleteParentFenceDependency(database).run(`${run}-1`),
+  ];
+}
+
+function seedParentRecoveryClassificationOperation(database, recoveryId) {
+  // Only the classifier's owning journal identity is supplied here. No fake
+  // verified backup, accepted recovery or source-qualification result is seeded.
+  parentQueries.insertParentRecoveryBackup(database).run(recoveryId, recoveryId, `backups/${recoveryId}`);
+  parentQueries.insertParentRecoveryOperation(database).run(recoveryId, recoveryId, "a".repeat(64), recoveryId);
+}
 const canonical = (value) =>
   value && typeof value === "object"
     ? Array.isArray(value)
@@ -242,8 +284,7 @@ test("a real prepared handoff fences populated parent contexts and preserves the
   assert.equal(result.go_live, false);
   assert.equal(f.read("source").phase, 6);
   assert.deepEqual(parentContextFenceRows(f.source), before);
-  for (const write of parentContextLateWrites(f.source, run))
-    assert.throws(() => write.run(), /fresh_baseline_mutation_fenced/);
+  for (const write of parentContextLateWrites(f.source, run)) assert.throws(write, /fresh_baseline_mutation_fenced/);
   const directory = await mkdtemp(join(tmpdir(), "parent-context-retired-source-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const restoredPath = join(directory, "restored.sqlite");
@@ -252,8 +293,7 @@ test("a real prepared handoff fences populated parent contexts and preserves the
   try {
     assert.deepEqual(parentContextFenceRows(restored), before);
     assert.equal(restored.prepare(handoffReadSql(f.environment, "source")).get().phase, 6);
-    for (const write of parentContextLateWrites(restored, run))
-      assert.throws(() => write.run(), /fresh_baseline_mutation_fenced/);
+    for (const write of parentContextLateWrites(restored, run)) assert.throws(write, /fresh_baseline_mutation_fenced/);
   } finally {
     restored.close();
   }
@@ -291,7 +331,10 @@ test("production classification fences parent contexts belonging to an unfinishe
     // The surrounding owner recovery/verification protocol is tested separately.
     await database.batch(runtime.classifyRestoredWorkStatements(database, recoveryId));
     assert.deepEqual(
-      parentRecoveryClassifications(restored, recoveryId).map((row) => ({ ...row })),
+      parentQueries
+        .parentRecoveryClassifications(restored)
+        .all(recoveryId)
+        .map((row) => ({ ...row })),
       [
         { ingestion_run_id: "parent-classification-collecting", classification: "abandoned_after_restore" },
         { ingestion_run_id: "parent-classification-failed", classification: "retained_source" },
@@ -299,7 +342,7 @@ test("production classification fences parent contexts belonging to an unfinishe
     );
     assert.deepEqual(parentContextFenceRows(restored), before);
     for (const write of parentContextLateWrites(restored, "parent-classification-collecting"))
-      assert.throws(() => write.run(), /restored_collection_abandoned/);
+      assert.throws(write, /restored_collection_abandoned/);
     assert.deepEqual(restored.prepare("PRAGMA foreign_key_check").all(), []);
   } finally {
     restored.close();

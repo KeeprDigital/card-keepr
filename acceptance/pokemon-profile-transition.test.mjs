@@ -48,6 +48,15 @@ const runtime = await import(
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const withoutLinks = (value) => JSON.parse(JSON.stringify(value, (key, item) => (key === "links" ? undefined : item)));
 
+function immutablePokemonHistory(database) {
+  return [
+    { kind: "admission", rows: queries.pokemonAdmissionHistory(database).all() },
+    { kind: "observations", rows: queries.pokemonObservationHistory(database).all() },
+    { kind: "snapshots", rows: queries.pokemonSnapshotHistory(database).all() },
+    { kind: "published_exports", rows: queries.pokemonPublishedExportHistory(database).all() },
+  ];
+}
+
 test("actual old Pokémon definitions preserve published history and require fresh unfinished preparation", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "keepr-pokemon-profile-transition-"));
   const statePath = join(directory, "state"),
@@ -71,7 +80,7 @@ test("actual old Pokémon definitions preserve published history and require fre
   const sealedDb = new DatabaseSync(sealedPath);
   try {
     const row = queries.candidateDefinition(sealedDb).get(fixture.states.sealed.candidate.id);
-    const sealedHistory = queries.immutablePokemonHistory(sealedDb);
+    const sealedHistory = immutablePokemonHistory(sealedDb);
     assert.equal(schemaMigrationLevel(sealedDb).get().migration_level, fixture.schema);
     for (const name of ["0038_source_archives.sql", "0039_source_parent_context.sql"]) {
       sealedDb.exec("BEGIN");
@@ -79,7 +88,7 @@ test("actual old Pokémon definitions preserve published history and require fre
       sealedDb.exec("COMMIT");
     }
     assert.equal(schemaMigrationLevel(sealedDb).get().migration_level, 39);
-    assert.deepEqual(queries.immutablePokemonHistory(sealedDb), sealedHistory);
+    assert.deepEqual(immutablePokemonHistory(sealedDb), sealedHistory);
     assert.deepEqual(queries.foreignKeyViolations(sealedDb).all(), []);
     const store = runtime.catalogueStore(d1Adapter(sealedDb));
     assert.equal(row.state, "sealed");
@@ -107,7 +116,7 @@ test("actual old Pokémon definitions preserve published history and require fre
     pending = queries.candidateDefinition(before).get(fixture.states.preparing.candidate.id);
     assert.equal(pending.state, "preparing");
     assert.equal(pending.definition_pins_json, fixture.states.preparing.candidate.definition_pins_json);
-    history = queries.immutablePokemonHistory(before);
+    history = immutablePokemonHistory(before);
     exportReceipts = queries.pokemonExportReceipts(before).all();
     await assert.rejects(
       runtime.initializeReconciliationProgress(
@@ -118,7 +127,7 @@ test("actual old Pokémon definitions preserve published history and require fre
       (error) => error.status === 409 && error.code === "reconciliation_definition_changed",
     );
     assert.deepEqual(queries.candidateDefinition(before).get(pending.id), pending);
-    assert.deepEqual(queries.immutablePokemonHistory(before), history);
+    assert.deepEqual(immutablePokemonHistory(before), history);
   } finally {
     before.close();
   }
@@ -127,7 +136,7 @@ test("actual old Pokémon definitions preserve published history and require fre
   try {
     assert.equal(schemaMigrationLevel(migrated).get().migration_level, 39);
     assert.deepEqual(queries.candidateDefinition(migrated).get(pending.id), pending);
-    assert.deepEqual(queries.immutablePokemonHistory(migrated), history);
+    assert.deepEqual(immutablePokemonHistory(migrated), history);
     assert.deepEqual(queries.foreignKeyViolations(migrated).all(), []);
   } finally {
     migrated.close();
@@ -311,7 +320,7 @@ test("actual old Pokémon definitions preserve published history and require fre
   const restored = await verifiedBackupApiState(statePath, directory);
   const restoredDb = new DatabaseSync(databasePath, { readOnly: true });
   try {
-    const retained = queries.immutablePokemonHistory(restoredDb);
+    const retained = immutablePokemonHistory(restoredDb);
     for (const previous of history) {
       const current = retained.find((entry) => entry.kind === previous.kind);
       for (const row of previous.rows)

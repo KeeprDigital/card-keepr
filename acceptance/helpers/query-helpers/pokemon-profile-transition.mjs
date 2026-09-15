@@ -5,16 +5,20 @@ export function candidateDefinition(database) {
     WHERE candidate.id=?`);
 }
 
-export function immutablePokemonHistory(database) {
-  return [
-    ["admission", database.prepare("SELECT * FROM entity_admission_decisions ORDER BY proposal_id,generation")],
-    ["observations", database.prepare("SELECT * FROM source_observation_sets ORDER BY id")],
-    ["snapshots", database.prepare("SELECT * FROM source_snapshots ORDER BY id")],
-    [
-      "published_exports",
-      database.prepare("SELECT * FROM publication_export_components ORDER BY candidate_id,ordinal"),
-    ],
-  ].map(([kind, statement]) => ({ kind, rows: statement.all() }));
+export function pokemonAdmissionHistory(database) {
+  return database.prepare("SELECT * FROM entity_admission_decisions ORDER BY proposal_id,generation");
+}
+
+export function pokemonObservationHistory(database) {
+  return database.prepare("SELECT * FROM source_observation_sets ORDER BY id");
+}
+
+export function pokemonSnapshotHistory(database) {
+  return database.prepare("SELECT * FROM source_snapshots ORDER BY id");
+}
+
+export function pokemonPublishedExportHistory(database) {
+  return database.prepare("SELECT * FROM publication_export_components ORDER BY candidate_id,ordinal");
 }
 
 export function pokemonExportReceipts(database) {
