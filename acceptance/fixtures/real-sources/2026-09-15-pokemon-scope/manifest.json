@@ -1,0 +1,2528 @@
+{
+  "classification": "retained-bounded-qualification-not-full-source-acceptance",
+  "captures": [
+    {
+      "id": "set-base1",
+      "url": "https://api.tcgdex.net/v2/en/sets/base1",
+      "parentBody": "raw/groundwork-english-sets.body",
+      "setId": "base1",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:35:34.148923+00:00",
+      "complete": true,
+      "body": "raw/set-base1.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/sets/base1",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "11037"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:35:34 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"2b1d-xf8zS8EyjnVR4S6NEqEUFXQvVgk\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 11037,
+      "sha256": "fbf0c46daf1faa242732b4531cc2842c9b5018da67000dac879c7180fe4524dd",
+      "finishedAt": "2026-09-15T01:35:34.829701+00:00"
+    },
+    {
+      "id": "set-base4",
+      "url": "https://api.tcgdex.net/v2/en/sets/base4",
+      "parentBody": "raw/groundwork-english-sets.body",
+      "setId": "base4",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:35:35.832086+00:00",
+      "complete": true,
+      "body": "raw/set-base4.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/sets/base4",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "14076"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:35:36 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"36fc-xn2Ec1/aMczQGhHJN4Q7XU/AydY\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 14076,
+      "sha256": "c9d3f074215b8dcae7986965c3e6ac329d1fc0f23ea13d39df973b4706a80a4f",
+      "finishedAt": "2026-09-15T01:35:36.648533+00:00"
+    },
+    {
+      "id": "set-tk-ex-latia",
+      "url": "https://api.tcgdex.net/v2/en/sets/tk-ex-latia",
+      "parentBody": "raw/groundwork-english-sets.body",
+      "setId": "tk-ex-latia",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:35:37.652039+00:00",
+      "complete": true,
+      "body": "raw/set-tk-ex-latia.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/sets/tk-ex-latia",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "906"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:35:38 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"38a-XUdigPldb5sxuC0m7TYLjwI5clU\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 906,
+      "sha256": "102e96df35e9680dfd52e71b7b91814931722da8743fd6652f6f8c1e74e366e2",
+      "finishedAt": "2026-09-15T01:35:38.270778+00:00"
+    },
+    {
+      "id": "set-swsh9",
+      "url": "https://api.tcgdex.net/v2/en/sets/swsh9",
+      "parentBody": "raw/groundwork-english-sets.body",
+      "setId": "swsh9",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:35:39.278942+00:00",
+      "complete": true,
+      "body": "raw/set-swsh9.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/sets/swsh9",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "20581"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:35:39 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"5065-gEkKrkVX8aO+S4YwGjqqtvepqb4\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 20581,
+      "sha256": "7cc614af4d283245716fc4675f79d26175979f8f4a1235f9ccc55961401091ca",
+      "finishedAt": "2026-09-15T01:35:40.113599+00:00"
+    },
+    {
+      "id": "card-base1-94",
+      "url": "https://api.tcgdex.net/v2/en/cards/base1-94",
+      "parentBody": "raw/set-base1.body",
+      "setId": "base1",
+      "localId": "94",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:36:21.344559+00:00",
+      "complete": true,
+      "body": "raw/card-base1-94.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/cards/base1-94",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "2647"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:36:21 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"a57-9rAZGC8k5vu7jCXtjUEiJK13+aI\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 2647,
+      "sha256": "2081a0ebf985c246a1d9826f1deac7923df5c3c58ed5da80a3f2dc588918a2c5",
+      "finishedAt": "2026-09-15T01:36:21.966240+00:00"
+    },
+    {
+      "id": "card-base1-96",
+      "url": "https://api.tcgdex.net/v2/en/cards/base1-96",
+      "parentBody": "raw/set-base1.body",
+      "setId": "base1",
+      "localId": "96",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:36:22.970783+00:00",
+      "complete": true,
+      "body": "raw/card-base1-96.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/cards/base1-96",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "2699"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:36:23 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"a8b-PjEc06qnLeZojCEUmqIIlKJl2+o\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 2699,
+      "sha256": "47e028861e91ae6cb74a1a710ffb3a107aef82a6e3d12dc0c6865c42cc953ea0",
+      "finishedAt": "2026-09-15T01:36:23.560203+00:00"
+    },
+    {
+      "id": "card-base1-98",
+      "url": "https://api.tcgdex.net/v2/en/cards/base1-98",
+      "parentBody": "raw/set-base1.body",
+      "setId": "base1",
+      "localId": "98",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:36:24.565534+00:00",
+      "complete": true,
+      "body": "raw/card-base1-98.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/cards/base1-98",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "2624"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:36:25 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"a40-tY6LxmIi++a7VFmxsg+c+krCsig\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 2624,
+      "sha256": "306d37361239675b764d4d926d4104a44caa00f5981c0becbabb04f3b3b3414c",
+      "finishedAt": "2026-09-15T01:36:25.226141+00:00"
+    },
+    {
+      "id": "card-base4-126",
+      "url": "https://api.tcgdex.net/v2/en/cards/base4-126",
+      "parentBody": "raw/set-base4.body",
+      "setId": "base4",
+      "localId": "126",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:36:26.236340+00:00",
+      "complete": true,
+      "body": "raw/card-base4-126.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/cards/base4-126",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "1620"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:36:26 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"654-Y4LXDbjPKooPX4nz7s6WfBxyjpM\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 1620,
+      "sha256": "b4e365e41cc56798f7f8158b3e87f615922335004e4c06f1086f6ea627d955c8",
+      "finishedAt": "2026-09-15T01:36:26.858006+00:00"
+    },
+    {
+      "id": "card-swsh9-109",
+      "url": "https://api.tcgdex.net/v2/en/cards/swsh9-109",
+      "parentBody": "raw/set-swsh9.body",
+      "setId": "swsh9",
+      "localId": "109",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:36:27.865707+00:00",
+      "complete": true,
+      "body": "raw/card-swsh9-109.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/cards/swsh9-109",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "3257"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:36:28 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"cb9-swHdeoj28Em2wO2tU48o/bdZkXY\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 3257,
+      "sha256": "8bbfc0f984d57ba3c38043e51f757369a193db4ffbacabe655c3570415234e8b",
+      "finishedAt": "2026-09-15T01:36:28.456164+00:00"
+    },
+    {
+      "id": "card-tk-ex-latia-8",
+      "url": "https://api.tcgdex.net/v2/en/cards/tk-ex-latia-8",
+      "parentBody": "raw/set-tk-ex-latia.body",
+      "setId": "tk-ex-latia",
+      "localId": "8",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:36:29.462113+00:00",
+      "complete": true,
+      "body": "raw/card-tk-ex-latia-8.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/cards/tk-ex-latia-8",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "1649"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:36:30 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"671-1Jxw7TZ/eJoOk5G9jCOmYcOclQg\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 1649,
+      "sha256": "e279ce0237324cb1c8536ec3d23b58407487fb2c7f426b863647d05e67b84a42",
+      "finishedAt": "2026-09-15T01:36:30.150342+00:00"
+    },
+    {
+      "id": "card-swsh9-147",
+      "url": "https://api.tcgdex.net/v2/en/cards/swsh9-147",
+      "parentBody": "raw/set-swsh9.body",
+      "setId": "swsh9",
+      "localId": "147",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:37:08.719160+00:00",
+      "complete": true,
+      "body": "raw/card-swsh9-147.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/cards/swsh9-147",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "2671"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:37:09 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"a6f-6+ZUB94NeDZ0dPHd7EJAoepmS4g\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 2671,
+      "sha256": "936bc5ef5bdd2474e8eb7865c40a60d66e510886aed852b7d61c1a0fcf891a65",
+      "finishedAt": "2026-09-15T01:37:09.339771+00:00"
+    },
+    {
+      "id": "tcgdex-assets-contract",
+      "url": "https://tcgdex.dev/assets",
+      "accept": "text/html",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "text/html",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:37:10.347200+00:00",
+      "complete": true,
+      "body": "raw/tcgdex-assets-contract.body",
+      "status": 200,
+      "finalUrl": "https://tcgdex.dev/assets",
+      "responseHeaders": [
+        [
+          "Accept-Ranges",
+          "bytes"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Content-Length",
+          "71472"
+        ],
+        [
+          "Content-Security-Policy",
+          "default-src 'self'; frame-ancestors 'none'; form-action 'self'; manifest-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src data: 'self' https://img.shields.io; font-src 'self'; connect-src 'self'; base-uri 'self';"
+        ],
+        [
+          "Content-Type",
+          "text/html"
+        ],
+        [
+          "Cross-Origin-Embedder-Policy",
+          "require-corp"
+        ],
+        [
+          "Cross-Origin-Opener-Policy",
+          "same-origin"
+        ],
+        [
+          "Cross-Origin-Resource-Policy",
+          "same-origin"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:37:11 GMT"
+        ],
+        [
+          "Etag",
+          "\"6a919173-11730\""
+        ],
+        [
+          "Last-Modified",
+          "Fri, 28 Aug 2026 13:47:31 GMT"
+        ],
+        [
+          "Permissions-Policy",
+          "geolocation=(), microphone=(), interest-cohort=()"
+        ],
+        [
+          "Referrer-Policy",
+          "no-referrer"
+        ],
+        [
+          "Server",
+          "nginx"
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=63072000; includeSubDomains; preload"
+        ],
+        [
+          "X-Content-Type-Options",
+          "nosniff"
+        ],
+        [
+          "X-Download-Options",
+          "noopen"
+        ],
+        [
+          "X-Frame-Options",
+          "DENY"
+        ],
+        [
+          "X-Xss-Protection",
+          "1; mode=block"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 71472,
+      "sha256": "87228f36e24ea361522f4fb5ddde224e6e5b5b7af30dcbdecc7238b469eb378a",
+      "finishedAt": "2026-09-15T01:37:12.552063+00:00"
+    },
+    {
+      "id": "image-base1-96",
+      "url": "https://assets.tcgdex.net/en/base/base1/96/high.png",
+      "accept": "image/png",
+      "parentBody": "raw/card-base1-96.body",
+      "sourceRecordId": "base1-96",
+      "association": "unreviewed-root-image",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "image/png",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:37:27.818569+00:00",
+      "complete": true,
+      "body": "raw/image-base1-96.body",
+      "status": 200,
+      "finalUrl": "https://assets.tcgdex.net/en/base/base1/96/high.png",
+      "responseHeaders": [
+        [
+          "Accept-Ranges",
+          "bytes"
+        ],
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET, OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "max-age=31536000"
+        ],
+        [
+          "Cache-Control",
+          "public, max-age=31536000, immutable"
+        ],
+        [
+          "Content-Length",
+          "409864"
+        ],
+        [
+          "Content-Type",
+          "image/png"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:37:28 GMT"
+        ],
+        [
+          "Etag",
+          "\"b2879e30c85ae7cc462dad1ed8a9868b\""
+        ],
+        [
+          "Expires",
+          "Wed, 15 Sep 2027 01:37:28 GMT"
+        ],
+        [
+          "Last-Modified",
+          "Tue, 08 Sep 2026 21:18:40 GMT"
+        ],
+        [
+          "Server",
+          "nginx"
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000; includeSubDomains; preload"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 409864,
+      "sha256": "32be771327573a5a2582ca6cd41db2dd0f7a0d04d158dadd591e97c290e52636",
+      "finishedAt": "2026-09-15T01:37:29.428149+00:00"
+    },
+    {
+      "id": "image-base1-98",
+      "url": "https://assets.tcgdex.net/en/base/base1/98/high.png",
+      "accept": "image/png",
+      "parentBody": "raw/card-base1-98.body",
+      "sourceRecordId": "base1-98",
+      "association": "unreviewed-root-image",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "image/png",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:37:30.431015+00:00",
+      "complete": true,
+      "body": "raw/image-base1-98.body",
+      "status": 200,
+      "finalUrl": "https://assets.tcgdex.net/en/base/base1/98/high.png",
+      "responseHeaders": [
+        [
+          "Accept-Ranges",
+          "bytes"
+        ],
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET, OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "max-age=31536000"
+        ],
+        [
+          "Cache-Control",
+          "public, max-age=31536000, immutable"
+        ],
+        [
+          "Content-Length",
+          "409545"
+        ],
+        [
+          "Content-Type",
+          "image/png"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:37:30 GMT"
+        ],
+        [
+          "Etag",
+          "\"628ddf0bf3e517686087e9eb4e58fca9\""
+        ],
+        [
+          "Expires",
+          "Wed, 15 Sep 2027 01:37:30 GMT"
+        ],
+        [
+          "Last-Modified",
+          "Tue, 08 Sep 2026 21:18:54 GMT"
+        ],
+        [
+          "Server",
+          "nginx"
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000; includeSubDomains; preload"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 409545,
+      "sha256": "b37b463cd43a7f6eeac0c9619f2e950d50b8984bf4436f134c48ff8167460830",
+      "finishedAt": "2026-09-15T01:37:31.787210+00:00"
+    },
+    {
+      "id": "image-base4-126",
+      "url": "https://assets.tcgdex.net/en/base/base4/126/high.png",
+      "accept": "image/png",
+      "parentBody": "raw/card-base4-126.body",
+      "sourceRecordId": "base4-126",
+      "association": "unreviewed-root-image",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "image/png",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:37:32.797538+00:00",
+      "complete": true,
+      "body": "raw/image-base4-126.body",
+      "status": 200,
+      "finalUrl": "https://assets.tcgdex.net/en/base/base4/126/high.png",
+      "responseHeaders": [
+        [
+          "Accept-Ranges",
+          "bytes"
+        ],
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET, OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "max-age=31536000"
+        ],
+        [
+          "Cache-Control",
+          "public, max-age=31536000, immutable"
+        ],
+        [
+          "Content-Length",
+          "400017"
+        ],
+        [
+          "Content-Type",
+          "image/png"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:37:34 GMT"
+        ],
+        [
+          "Etag",
+          "\"ddb84eea767ab001a6986e1d117aaf9c\""
+        ],
+        [
+          "Expires",
+          "Wed, 15 Sep 2027 01:37:34 GMT"
+        ],
+        [
+          "Last-Modified",
+          "Tue, 28 Jul 2026 13:32:27 GMT"
+        ],
+        [
+          "Server",
+          "nginx"
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000; includeSubDomains; preload"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 400017,
+      "sha256": "b71878ddd2b261c752465e233f43a004d3722a13126dccbbcc1a907d499433ec",
+      "finishedAt": "2026-09-15T01:37:36.673121+00:00"
+    },
+    {
+      "id": "image-swsh9-147",
+      "url": "https://assets.tcgdex.net/en/swsh/swsh9/147/high.png",
+      "accept": "image/png",
+      "parentBody": "raw/card-swsh9-147.body",
+      "sourceRecordId": "swsh9-147",
+      "association": "unreviewed-root-image",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "image/png",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:37:37.683667+00:00",
+      "complete": true,
+      "body": "raw/image-swsh9-147.body",
+      "status": 200,
+      "finalUrl": "https://assets.tcgdex.net/en/swsh/swsh9/147/high.png",
+      "responseHeaders": [
+        [
+          "Accept-Ranges",
+          "bytes"
+        ],
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET, OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "max-age=31536000"
+        ],
+        [
+          "Cache-Control",
+          "public, max-age=31536000, immutable"
+        ],
+        [
+          "Content-Length",
+          "189725"
+        ],
+        [
+          "Content-Type",
+          "image/png"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:37:39 GMT"
+        ],
+        [
+          "Etag",
+          "\"396ee6cb9f59659b6ee1aeb33b754767\""
+        ],
+        [
+          "Expires",
+          "Wed, 15 Sep 2027 01:37:39 GMT"
+        ],
+        [
+          "Last-Modified",
+          "Thu, 30 Jul 2026 07:10:09 GMT"
+        ],
+        [
+          "Server",
+          "nginx"
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000; includeSubDomains; preload"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 189725,
+      "sha256": "299df3bb21d16243bfe4d3cef2ddbe107ea94c450416a3170ff19f8f129e0514",
+      "finishedAt": "2026-09-15T01:37:41.451770+00:00"
+    },
+    {
+      "id": "english-sets",
+      "url": "https://api.tcgdex.net/v2/en/sets",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:39:33.855449+00:00",
+      "complete": true,
+      "body": "raw/english-sets.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/sets",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "35505"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:39:34 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"8ab1-WtbzpPNivgcl4o6RinOyp9svTxM\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 35505,
+      "sha256": "16f34d978327245b5af89c46b6368e7426770905396b8e55c4b9c30664c39556",
+      "finishedAt": "2026-09-15T01:39:34.701136+00:00"
+    },
+    {
+      "id": "pocket-series",
+      "url": "https://api.tcgdex.net/v2/en/series/tcgp",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:39:35.705057+00:00",
+      "complete": true,
+      "body": "raw/pocket-series.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/series/tcgp",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "2497"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:39:36 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"9c1-gWkPHKH5JTsdZpxr+znrJZ7O+y4\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 2497,
+      "sha256": "6f9959038b30271ec4480f1d8929216a78b16fcb6778467471ba4fa91c1a0ded",
+      "finishedAt": "2026-09-15T01:39:36.331840+00:00"
+    },
+    {
+      "id": "set-wp",
+      "url": "https://api.tcgdex.net/v2/en/sets/wp",
+      "parentBody": "raw/english-sets.body",
+      "setId": "wp",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:41:37.130469+00:00",
+      "complete": true,
+      "body": "raw/set-wp.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/sets/wp",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "233"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:41:37 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"e9-Rwf+xnpfqoQsiQx7FnbrX1jlhaY\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 233,
+      "sha256": "7f04c760a87f6fb4c57f7d57ad94a1c3b09320f15a44b2f34d2ecfdcfd8ba25e",
+      "finishedAt": "2026-09-15T01:41:37.772219+00:00"
+    },
+    {
+      "id": "set-jumbo",
+      "url": "https://api.tcgdex.net/v2/en/sets/jumbo",
+      "parentBody": "raw/english-sets.body",
+      "setId": "jumbo",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:41:40.414750+00:00",
+      "complete": true,
+      "body": "raw/set-jumbo.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/sets/jumbo",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "247"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:41:40 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"f7-UO+HZjhAjQh1Juc9/aZ7C/rO0l0\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 247,
+      "sha256": "a88ff7ee1e529de75eca798cb03a716e3980c66bb315224103617f5cf02eba6f",
+      "finishedAt": "2026-09-15T01:41:41.031303+00:00"
+    },
+    {
+      "id": "set-sp",
+      "url": "https://api.tcgdex.net/v2/en/sets/sp",
+      "parentBody": "raw/english-sets.body",
+      "setId": "sp",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:41:57.726065+00:00",
+      "complete": true,
+      "body": "raw/set-sp.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/sets/sp",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "289"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:41:58 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"121-H63LGRgW0HptdI1bpPM5BMlIB+Q\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 289,
+      "sha256": "005a1ca66f3b14165c663aaffdc4f5003eeef950df42a956fb16ac4e3f6269c1",
+      "finishedAt": "2026-09-15T01:41:58.411488+00:00"
+    },
+    {
+      "id": "set-rc",
+      "url": "https://api.tcgdex.net/v2/en/sets/rc",
+      "parentBody": "raw/english-sets.body",
+      "setId": "rc",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:44:07.993422+00:00",
+      "complete": true,
+      "body": "raw/set-rc.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/sets/rc",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "246"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:44:08 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"f6-rgSUXuTZX3Z+1lNn4nCMjMTAvbo\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 246,
+      "sha256": "9b1bf3d6863d1502f313791e07b0c389de10933d326cc5d2e40354f9d2251488",
+      "finishedAt": "2026-09-15T01:44:08.610879+00:00"
+    },
+    {
+      "id": "set-tk-sm-l",
+      "url": "https://api.tcgdex.net/v2/en/sets/tk-sm-l",
+      "parentBody": "raw/english-sets.body",
+      "setId": "tk-sm-l",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:45:03.265713+00:00",
+      "complete": true,
+      "body": "raw/set-tk-sm-l.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/sets/tk-sm-l",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "1311"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:45:03 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"51f-irpiU0wgU/cg8AbdQuasRJqvV6A\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 1311,
+      "sha256": "a58b6c38118f6635aeffca51e36a2b361511e98f1abd50c0b951fa404ac135ac",
+      "finishedAt": "2026-09-15T01:45:03.902833+00:00"
+    },
+    {
+      "id": "set-mfb",
+      "url": "https://api.tcgdex.net/v2/en/sets/mfb",
+      "parentBody": "raw/english-sets.body",
+      "setId": "mfb",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:46:37.377012+00:00",
+      "complete": true,
+      "body": "raw/set-mfb.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/sets/mfb",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "1941"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:46:37 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"795-nJQiU/7Zj32xkI3LpAMIQ1I4Z9o\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 1941,
+      "sha256": "c8dd53dbd178de8bdb41ca9201910e22b3596b4df6994618634d61bf9e7885a0",
+      "finishedAt": "2026-09-15T01:46:37.970526+00:00"
+    },
+    {
+      "id": "card-base1-5",
+      "url": "https://api.tcgdex.net/v2/en/cards/base1-5",
+      "parentBody": "raw/set-base1.body",
+      "setId": "base1",
+      "localId": "5",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:54:26.906992+00:00",
+      "complete": true,
+      "body": "raw/card-base1-5.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/cards/base1-5",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "3321"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:54:27 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"cf9-XiOyjKndeEJZbKhjA8Ld0/DHg9k\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 3321,
+      "sha256": "15a9d703412e53f25f96b59108362bd2c45ad60ed64fc8ee3b3bce5f22cb39dc",
+      "finishedAt": "2026-09-15T01:54:27.500553+00:00"
+    },
+    {
+      "id": "card-swsh9-053",
+      "url": "https://api.tcgdex.net/v2/en/cards/swsh9-053",
+      "parentBody": "raw/set-swsh9.body",
+      "setId": "swsh9",
+      "localId": "053",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:54:28.504202+00:00",
+      "complete": true,
+      "body": "raw/card-swsh9-053.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/cards/swsh9-053",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "2935"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:54:29 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"b77-Kiu4B220HYHMax2pKiJWzTNMkuw\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 2935,
+      "sha256": "6e2c271e929f02bd7e30e40145385f816273367dba46788c740b27a6250f5f02",
+      "finishedAt": "2026-09-15T01:54:29.090733+00:00"
+    },
+    {
+      "id": "image-base1-5",
+      "url": "https://assets.tcgdex.net/en/base/base1/5/high.png",
+      "accept": "image/png",
+      "parentBody": "raw/card-base1-5.body",
+      "sourceRecordId": "base1-5",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "image/png",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:55:33.978058+00:00",
+      "complete": true,
+      "body": "raw/image-base1-5.body",
+      "status": 200,
+      "finalUrl": "https://assets.tcgdex.net/en/base/base1/5/high.png",
+      "responseHeaders": [
+        [
+          "Accept-Ranges",
+          "bytes"
+        ],
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET, OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "max-age=31536000"
+        ],
+        [
+          "Cache-Control",
+          "public, max-age=31536000, immutable"
+        ],
+        [
+          "Content-Length",
+          "371717"
+        ],
+        [
+          "Content-Type",
+          "image/png"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:55:34 GMT"
+        ],
+        [
+          "Etag",
+          "\"e1f724b4dd3f1afd9e5cb77cbc15cb43\""
+        ],
+        [
+          "Expires",
+          "Wed, 15 Sep 2027 01:55:34 GMT"
+        ],
+        [
+          "Last-Modified",
+          "Tue, 28 Jul 2026 13:04:49 GMT"
+        ],
+        [
+          "Server",
+          "nginx"
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000; includeSubDomains; preload"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 371717,
+      "sha256": "218bcdef84190e545c0e7dbb35525ec82dc3cae5fb0b05dd02beab0638e9ee8d",
+      "finishedAt": "2026-09-15T01:55:35.374833+00:00"
+    },
+    {
+      "id": "image-swsh9-053",
+      "url": "https://assets.tcgdex.net/en/swsh/swsh9/053/high.png",
+      "accept": "image/png",
+      "parentBody": "raw/card-swsh9-053.body",
+      "sourceRecordId": "swsh9-053",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "image/png",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:55:36.385100+00:00",
+      "complete": true,
+      "body": "raw/image-swsh9-053.body",
+      "status": 200,
+      "finalUrl": "https://assets.tcgdex.net/en/swsh/swsh9/053/high.png",
+      "responseHeaders": [
+        [
+          "Accept-Ranges",
+          "bytes"
+        ],
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET, OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "max-age=31536000"
+        ],
+        [
+          "Cache-Control",
+          "public, max-age=31536000, immutable"
+        ],
+        [
+          "Content-Length",
+          "300758"
+        ],
+        [
+          "Content-Type",
+          "image/png"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:55:38 GMT"
+        ],
+        [
+          "Etag",
+          "\"ed27b43bffc1676475855b6d7096c510\""
+        ],
+        [
+          "Expires",
+          "Wed, 15 Sep 2027 01:55:38 GMT"
+        ],
+        [
+          "Last-Modified",
+          "Fri, 11 Sep 2026 13:23:13 GMT"
+        ],
+        [
+          "Server",
+          "nginx"
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000; includeSubDomains; preload"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 300758,
+      "sha256": "ecdeef24af465d7d48c9fb0e8515781248784d9d641f17b6d15fbe90e407da37",
+      "finishedAt": "2026-09-15T01:55:40.472054+00:00"
+    },
+    {
+      "id": "tcgdex-english-sets",
+      "url": "https://api.tcgdex.net/v2/en/sets",
+      "startedAt": "2026-09-14T23:50:10.474747+00:00",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Research/0.1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "body": "raw/groundwork-english-sets.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/sets",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "35505"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Mon, 14 Sep 2026 23:50:11 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"8ab1-WtbzpPNivgcl4o6RinOyp9svTxM\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "complete": true,
+      "bytes": 35505,
+      "sha256": "16f34d978327245b5af89c46b6368e7426770905396b8e55c4b9c30664c39556",
+      "seconds": 0.9940374169964343,
+      "finishedAt": "2026-09-14T23:50:11.469389+00:00"
+    },
+    {
+      "id": "set-base3",
+      "url": "https://api.tcgdex.net/v2/en/sets/base3",
+      "parentBody": "raw/english-sets.body",
+      "setId": "base3",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:41:38.783414+00:00",
+      "complete": true,
+      "body": "raw/set-base3.body",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/sets/base3",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "6765"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 01:41:39 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"1a6d-rm7BuZXNdxY5ftCT/ftzn8YEyoI\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "bytes": 6765,
+      "sha256": "c5a6339aac4b450168ad9788094d36f4e9bce0dd21089428f420cecf8a3e742a",
+      "finishedAt": "2026-09-15T01:41:39.412120+00:00"
+    },
+    {
+      "id": "card-base3-62",
+      "url": "https://api.tcgdex.net/v2/en/cards/base3-62",
+      "accept": "application/json",
+      "parentBody": "raw/set-base3.body",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "application/json",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T04:20:58.450606+00:00",
+      "complete": true,
+      "body": "raw/card-base3-62.body",
+      "freeBytesBefore": 51748712448,
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/cards/base3-62",
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "3177"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 04:21:00 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"c69-n3i+oeTQStqJeh/TyqYdr1K2XaM\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "freeBytesAfter": 51748712448,
+      "bytes": 3177,
+      "sha256": "92b9abed897f1e43c88edf6357e6f19a3177b1992678a896d9e5539fc686feff",
+      "finishedAt": "2026-09-15T04:21:00.076110+00:00"
+    },
+    {
+      "id": "image-base3-62",
+      "url": "https://assets.tcgdex.net/en/base/base3/62/high.png",
+      "accept": "image/png",
+      "parentBody": "raw/set-base3.body",
+      "qualityContract": "raw/tcgdex-assets-contract.body",
+      "association": "unreviewed source root image; inspect whole card before treatment or HP qualification",
+      "requestHeaders": {
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)",
+        "Accept": "image/png",
+        "Accept-Encoding": "identity"
+      },
+      "startedAt": "2026-09-15T04:21:01.077301+00:00",
+      "complete": true,
+      "body": "raw/image-base3-62.body",
+      "freeBytesBefore": 51748696064,
+      "status": 200,
+      "finalUrl": "https://assets.tcgdex.net/en/base/base3/62/high.png",
+      "responseHeaders": [
+        [
+          "Accept-Ranges",
+          "bytes"
+        ],
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET, OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "max-age=31536000"
+        ],
+        [
+          "Cache-Control",
+          "public, max-age=31536000, immutable"
+        ],
+        [
+          "Content-Length",
+          "409859"
+        ],
+        [
+          "Content-Type",
+          "image/png"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 04:21:03 GMT"
+        ],
+        [
+          "Etag",
+          "\"508388ac053b6ce3db2335d0f856dea3\""
+        ],
+        [
+          "Expires",
+          "Wed, 15 Sep 2027 04:21:03 GMT"
+        ],
+        [
+          "Last-Modified",
+          "Tue, 28 Jul 2026 13:29:03 GMT"
+        ],
+        [
+          "Server",
+          "nginx"
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000; includeSubDomains; preload"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ],
+      "freeBytesAfter": 51748270080,
+      "bytes": 409859,
+      "sha256": "82021f7db6451e04db5382fa3034126a31eeb2b0596d7157ac6036afde750bd8",
+      "finishedAt": "2026-09-15T04:21:05.076621+00:00"
+    }
+  ]
+}

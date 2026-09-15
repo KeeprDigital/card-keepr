@@ -4,6 +4,7 @@ import { parseArchiveBatch } from "./source-archive-parse";
 import { SourceArchiveFailure } from "../shared";
 import { sourceParseAuthorityGuard, type SourceParseAuthority } from "./source-parse-authority-repository";
 import { retainSourceRecordManifest } from "./source-record-manifest";
+import { retainedParentContext } from "./source-parent-context";
 import { retainExtractedSourceRecords, verifiedSnapshotChunks } from "./source-record-intake";
 import { sealSourceRecords } from "./source-record-repository";
 import {
@@ -86,7 +87,7 @@ export async function parseSnapshotBatch(
   parseIntent: ParseIntent,
 ): Promise<ObservationSetRow | ParsePending> {
   const snapshot = await sourceSnapshotForParsingStatement(database, snapshotId).first<
-    SnapshotRow & { request_role: SourceRequestRole }
+    SnapshotRow & { request_role: SourceRequestRole; discovered_from_request_id: string | null }
   >();
   if (snapshot === null) {
     throw new AdministrationProblem(404, "source_snapshot_not_found", "The requested Source Snapshot does not exist.");
@@ -146,8 +147,22 @@ export async function parseSnapshotBatch(
   let observationDocument: Record<string, unknown>;
   let observationCount: number;
   try {
-    const context = { url: snapshot.request_url, mediaType: snapshot.media_type, requestId: snapshot.request_id };
     const image = snapshot.request_role === "image";
+    const parents = image
+      ? undefined
+      : await retainedParentContext(database, evidenceObjects, snapshot, adapter, operation.id);
+    const interpretationHeader = {
+      ...header,
+      ...(parents === undefined
+        ? {}
+        : { discovery_context: parents.map(({ bytes: _bytes, ...reference }) => reference) }),
+    };
+    const context = {
+      url: snapshot.request_url,
+      mediaType: snapshot.media_type,
+      requestId: snapshot.request_id,
+      parents,
+    };
     if (!image && snapshot.media_type?.startsWith("image/"))
       throw new AdapterParseFailure("A catalogue document request cannot retain an image response as card facts.");
     if (archive) {
@@ -168,7 +183,7 @@ export async function parseSnapshotBatch(
         database,
         evidenceObjects,
         operation.observation_set_id,
-        header,
+        interpretationHeader,
         decoded,
         archive,
         pin.cutoff,
@@ -196,29 +211,34 @@ export async function parseSnapshotBatch(
         extraction = adapter.recordExtraction?.matches(context)
           ? await adapter.recordExtraction.extract(() => verifiedSnapshotChunks(evidenceObjects, snapshot), context)
           : await extractBoundedAdapterPage(adapter, () => verifiedSnapshotChunks(evidenceObjects, snapshot), context);
-      observationDocument = await retainExtractedSourceRecords(database, operation.observation_set_id, header, {
-        ...extraction,
-        requests: (async function* () {
-          const inherited: unknown = JSON.parse(snapshot.request_headers_json);
-          for await (const request of extraction.requests) {
-            if (
-              !isRecord(inherited) ||
-              (request.discoveryKey === undefined && adapter.inheritDiscoveryRequestHeaders !== true)
-            ) {
-              yield request;
-              continue;
+      observationDocument = await retainExtractedSourceRecords(
+        database,
+        operation.observation_set_id,
+        interpretationHeader,
+        {
+          ...extraction,
+          requests: (async function* () {
+            const inherited: unknown = JSON.parse(snapshot.request_headers_json);
+            for await (const request of extraction.requests) {
+              if (
+                !isRecord(inherited) ||
+                (request.discoveryKey === undefined && adapter.inheritDiscoveryRequestHeaders !== true)
+              ) {
+                yield request;
+                continue;
+              }
+              const headers = {
+                ...request.headers,
+                ...Object.fromEntries(
+                  Object.entries(inherited).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+                ),
+              };
+              if (request.headers.accept !== undefined) headers.accept = request.headers.accept;
+              yield { ...request, headers: discoveredRequestHeaders(request, headers) };
             }
-            const headers = {
-              ...request.headers,
-              ...Object.fromEntries(
-                Object.entries(inherited).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-              ),
-            };
-            if (request.headers.accept !== undefined) headers.accept = request.headers.accept;
-            yield { ...request, headers: discoveredRequestHeaders(request, headers) };
-          }
-        })(),
-      });
+          })(),
+        },
+      );
       observationCount = extraction.count;
     }
   } catch (error) {

@@ -5,12 +5,14 @@ import {
   type AcceptedEvidenceArtifactRoot,
   compositionSnapshotTables,
   compositionSourceSnapshotTables,
+  compositionParentContextTables,
   maximumSnapshotPageRows,
   maximumSnapshotPageBytes,
   maximumSchemaSnapshotPageRows,
   maximumSchemaSnapshotPageBytes,
 } from "./composition-verification-repository";
 import { captureCompositionSourceArtifacts, type CompositionSourceEvidence } from "./composition-source-artifacts";
+import { captureParentContextArtifacts, type ParentContextEvidence } from "./composition-parent-context-artifacts";
 
 export type CompositionSnapshotEvidence = {
   revision_id: string;
@@ -20,6 +22,7 @@ export type CompositionSnapshotEvidence = {
   schema_migration_level: number;
   accepted_evidence_roots?: AcceptedEvidenceArtifactRoot[];
   source_evidence?: CompositionSourceEvidence;
+  parent_context_evidence?: ParentContextEvidence;
   members: number;
   schema_sha256: string;
   tables: { table: string; rows: number; sha256: string }[];
@@ -66,6 +69,7 @@ export async function captureCompositionSnapshot(
   const schema = createHash("sha256");
   let schemaAfter = "";
   let hasSourceArchives = false;
+  let parentContextTables = 0;
   for (;;) {
     const page = await query({ kind: "composition-schema", after: schemaAfter });
     if (page.length === 0) break;
@@ -73,6 +77,8 @@ export async function captureCompositionSnapshot(
     let pageBytes = 0;
     for (const entry of page) {
       hasSourceArchives ||= entry.type === "table" && entry.name === "source_archive_decodes";
+      if (entry.type === "table" && ["source_parse_contexts", "source_parse_dependencies"].includes(String(entry.name)))
+        parentContextTables++;
       if (typeof entry.name !== "string" || entry.name <= schemaAfter)
         throw new Error("Invalid schema snapshot cursor.");
       const encoded = new TextEncoder().encode(canonicalJson(entry));
@@ -84,8 +90,11 @@ export async function captureCompositionSnapshot(
     }
   }
   const tables: CompositionSnapshotEvidence["tables"] = [];
+  if (parentContextTables !== 0 && parentContextTables !== 2)
+    throw new Error("Source parent context schema is incomplete.");
   for (const table of compositionSnapshotTables) {
     if (!hasSourceArchives && (compositionSourceSnapshotTables as readonly string[]).includes(table)) continue;
+    if (!parentContextTables && (compositionParentContextTables as readonly string[]).includes(table)) continue;
     // Schema 30 snapshots predate accepted-evidence metadata and partition fingerprints.
     if (
       state.migration_level < 31 &&
@@ -136,6 +145,7 @@ export async function captureCompositionSnapshot(
     schema_sha256: schema.digest("hex"),
     tables,
     ...(hasSourceArchives ? { source_evidence: await captureCompositionSourceArtifacts(query) } : {}),
+    ...(parentContextTables ? { parent_context_evidence: await captureParentContextArtifacts(query) } : {}),
   };
 }
 export async function verifyCompositionSnapshot(query: CompositionQuery, expected: CompositionSnapshotEvidence) {

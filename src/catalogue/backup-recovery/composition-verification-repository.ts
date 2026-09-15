@@ -16,8 +16,10 @@ export const compositionSourceSnapshotTables = [
   "source_archive_parse_progress",
   "source_archive_record_receipts",
 ] as const;
+export const compositionParentContextTables = ["source_parse_contexts", "source_parse_dependencies"] as const;
 export const compositionSnapshotTables = [
   ...compositionSourceSnapshotTables,
+  ...compositionParentContextTables,
   "catalogue_revisions",
   "catalogue_exports",
   "catalogue_export_deletion_plans",
@@ -104,6 +106,7 @@ export type CompositionVerificationQuery =
   | { kind: "composition-schema"; after: string }
   | { kind: "composition-accepted-roots" }
   | { kind: "composition-source-artifacts"; after: string }
+  | { kind: "composition-parent-context-artifacts"; after: string }
   | { kind: "foreign-keys" };
 export type CompositionQuery = (query: CompositionVerificationQuery) => Promise<Record<string, unknown>[]>;
 export function compositionVerificationQuery(input: CompositionVerificationQuery) {
@@ -153,6 +156,43 @@ export function compositionVerificationQuery(input: CompositionVerificationQuery
       GROUP BY object_key ORDER BY object_key LIMIT 64`,
       params: [input.after],
     };
+  if (input.kind === "composition-parent-context-artifacts") {
+    const retainedParent = (snapshot: string) => `EXISTS (
+      SELECT 1 FROM source_parse_dependencies dependency
+      JOIN source_parse_contexts context ON context.parse_operation_id=dependency.parse_operation_id
+      JOIN source_parse_operations child ON child.id=dependency.parse_operation_id
+      WHERE dependency.parent_source_snapshot_id=${snapshot} AND (
+        EXISTS(SELECT 1 FROM evidence_cleanup_retained_snapshots retained WHERE retained.snapshot_id=child.source_snapshot_id)
+        OR EXISTS(SELECT 1 FROM source_snapshots owned
+          JOIN evidence_object_references reference ON reference.object_key=owned.content_object_key
+          WHERE owned.id=child.source_snapshot_id)
+        OR EXISTS(SELECT 1 FROM source_parse_operations owned
+          JOIN evidence_object_references reference ON reference.object_key=owned.content_object_key
+          WHERE owned.source_snapshot_id=child.source_snapshot_id)
+        OR EXISTS(SELECT 1 FROM source_archive_blocks owned
+          JOIN evidence_object_references reference ON reference.object_key=owned.object_key
+          WHERE owned.source_snapshot_id=child.source_snapshot_id)))`;
+    return {
+      sql: `WITH receipts AS (
+        SELECT s.content_object_key AS object_key,s.content_digest AS sha256,s.content_byte_length AS byte_length
+        FROM source_snapshots s WHERE s.content_object_key>?1 AND ${retainedParent("s.id")}
+        UNION ALL SELECT observation.content_object_key,observation.content_digest,observation.content_byte_length
+        FROM source_observation_sets observation WHERE observation.content_object_key>?1
+          AND ${retainedParent("observation.source_snapshot_id")}
+        UNION ALL SELECT block.object_key,block.sha256,block.byte_length
+        FROM source_archive_blocks block
+        JOIN source_archive_decodes archive ON archive.source_snapshot_id=block.source_snapshot_id
+          AND archive.state='decoded'
+        WHERE block.object_key>?1 AND block.state='retained'
+          AND EXISTS(SELECT 1 FROM source_observation_sets s WHERE s.source_snapshot_id=block.source_snapshot_id)
+          AND ${retainedParent("block.source_snapshot_id")}
+        ) SELECT object_key,min(sha256) AS sha256,min(byte_length) AS byte_length,
+          min(sha256)=max(sha256) AND min(byte_length)=max(byte_length) AS consistent
+        FROM receipts GROUP BY object_key
+        ORDER BY object_key LIMIT 64`,
+      params: [input.after],
+    };
+  }
   if (input.kind === "composition-accepted-roots") return acceptedEvidenceArtifactRootsQuery();
   if (input.kind === "composition-schema")
     return {

@@ -16,7 +16,7 @@ import * as queries from "./helpers/query-helpers/curated-evidence-migration.mjs
 
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 
-test("Curated retention and archive migrations preserve acknowledged dependencies, history and tombstones", async (t) => {
+test("Curated, archive and parent-context migrations preserve acknowledged dependencies, history and tombstones", async (t) => {
   const database = new DatabaseSync(":memory:");
   t.after(() => database.close());
   const root = new URL("../migrations/", import.meta.url);
@@ -148,6 +148,20 @@ test("Curated retention and archive migrations preserve acknowledged dependencie
   database.exec(migration);
   database.exec("COMMIT");
   assert.equal(schemaMigrationLevel(database).get().migration_level, 38);
+  assert.deepEqual(seedRows(database), history);
+  assert.deepEqual(queries.retainedCuratedKeys(database).all(), retained);
+  assert.deepEqual(
+    schemaObjectRows(database)
+      .all()
+      .find(({ name }) => name === "evidence_cleanup_retained_snapshots"),
+    retentionView,
+  );
+  assert.deepEqual(foreignKeyViolations(database).all(), []);
+  migration = await readFile(new URL("0039_source_parent_context.sql", root), "utf8");
+  database.exec("BEGIN");
+  database.exec(migration);
+  database.exec("COMMIT");
+  assert.equal(schemaMigrationLevel(database).get().migration_level, 39);
   assert.deepEqual(seedRows(database), history);
   assert.deepEqual(queries.retainedCuratedKeys(database).all(), retained);
   assert.deepEqual(
