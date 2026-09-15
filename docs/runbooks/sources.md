@@ -20,6 +20,13 @@ Collection creation acknowledges the retained plan; resume dispatches its work.
 Inspect `source show` for current progress and completion. Exact creation retries
 return the original acceptance, even after the run advances.
 
+To reinterpret a retained Source Snapshot, run `keepr snapshot reparse` with
+`--snapshot-id SNAPSHOT --adapter ADAPTER --idempotency-key PARSE_INTENT --json`.
+A large archive returns HTTP 202 with `kind: pending` and its decoding or
+normalizing phase after each bounded step. Repeat the same command and key until
+HTTP 201 returns the sealed Source Observation Set. Further retries return that
+same set; a different key starts a separate interpretation of the retained bytes.
+
 The [example plan](../examples/one-piece-two-source-plan.json) selects required
 Bandai P-001 catalogue/event corroboration and Limitless P-001 evidence. Its
 completeness is confined to those named source scopes, not the entire game.

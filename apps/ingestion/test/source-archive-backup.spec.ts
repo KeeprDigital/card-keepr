@@ -151,7 +151,7 @@ test.each(["identical", "sha256", "byte_length", "kind"] as const)(
       await testEnv.EVIDENCE_OBJECTS.put(key, bytes);
       await archive.db.batch([
         archiveReplacementFetch(archive.db).bind(id, at, "success", "{}", original.id),
-        archiveBoundarySnapshot(archive.db).bind(id, at, original.content_digest, bytes.length, key, original.id),
+        archiveBoundarySnapshot(archive.db).bind(id, at, original.content_digest, bytes.length, key, original.id, 200),
         retainEvidenceObjectReferenceStatement(archive.db, {
           objectKey: key,
           ownerKind: "archive_backup_fixture",
@@ -174,6 +174,9 @@ test.each(["identical", "sha256", "byte_length", "kind"] as const)(
           at,
           original.content_digest,
           bytes.length,
+          "reparse",
+          "finalized",
+          0,
         ),
         archiveBoundaryObservationSet(archive.db).bind(
           "archive-conflict",
@@ -182,6 +185,7 @@ test.each(["identical", "sha256", "byte_length", "kind"] as const)(
           original.content_digest,
           bytes.length,
           lastKey,
+          0,
         ),
       ]);
     } else {
@@ -194,6 +198,7 @@ test.each(["identical", "sha256", "byte_length", "kind"] as const)(
           conflict === "byte_length" ? bytes.length + 1 : bytes.length,
           lastKey,
           original.id,
+          200,
         ),
       ]);
     }
@@ -443,7 +448,7 @@ test.each(["block", "record"] as const)(
         // Queries address the independent database that consumed actual exported
         // SQL. Temporarily remove and exactly restore triggers so the final schema
         // stays identical; the test must detect missing/changed data, not DDL.
-        const query = async (body: { sql: string; params: string[] }) => {
+        const query = async (body: { sql: string; params: (string | number)[] }) => {
           const response = await fetch(
             `https://api.cloudflare.com/client/v4/accounts/${input.accountId}/d1/database/${input.databaseId}/query`,
             {
@@ -456,7 +461,13 @@ test.each(["block", "record"] as const)(
           if (!response.ok || !result.success) throw new Error("Restored archive fixture query failed.");
           return result.result[0]!.results;
         };
-        const fixture = restoredArchiveFaultQueries(kind, archive.snapshot.id, archive.observations.id);
+        const fixture = restoredArchiveFaultQueries(
+          kind,
+          archive.snapshot.id,
+          archive.observations.id,
+          0,
+          "0".repeat(64),
+        );
         const triggers = await query(fixture.triggers);
         expect(triggers.length).toBeGreaterThan(0);
         for (const trigger of triggers) await query(dropRestoredArchiveTrigger(String(trigger.name)));

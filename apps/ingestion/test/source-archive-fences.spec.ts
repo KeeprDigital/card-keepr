@@ -36,16 +36,58 @@ for (const [fence, code] of [
       if (!claim) throw new Error("Handoff claim trigger missing");
       await queries.removeArchiveHandoffClaimTrigger(archive.db).run();
       try {
-        await queries.archiveHandoffFence(archive.db).run();
+        await queries
+          .archiveHandoffFence(archive.db)
+          .bind(
+            "archive-handoff",
+            "source",
+            "archive-dispatch",
+            "archive-execution",
+            "{}",
+            "{}",
+            1,
+            "[]",
+            "2026-09-15T00:00:00.000Z",
+          )
+          .run();
       } finally {
         await env.CATALOGUE_DB.prepare(claim).run();
       }
       expect(await queries.archiveHandoffClaimTrigger(archive.db).first("sql")).toBe(claim);
     } else {
       await archive.db.batch([
-        queries.archiveRestoredBackup(archive.db),
-        queries.archiveRestoredRecovery(archive.db).bind("a".repeat(64)),
-        queries.archiveRestoredClassification(archive.db).bind(archive.run.id),
+        queries
+          .archiveRestoredBackup(archive.db)
+          .bind(
+            "archive-recovery-backup",
+            "{}",
+            "archive-owner",
+            "catrev_spine_000",
+            "pending",
+            "archive-backup",
+            "2026-09-15T00:00:00.000Z",
+          ),
+        queries
+          .archiveRestoredRecovery(archive.db)
+          .bind(
+            "archive-recovery",
+            "preparing",
+            "time_travel",
+            "{}",
+            "archive-recovery",
+            "catrev_spine_000",
+            "bookmark",
+            "a".repeat(64),
+            "archive-recovery-backup",
+            "catrev_spine_000",
+            "fixture-database",
+            38,
+            "{}",
+            "2026-09-15T00:00:00.000Z",
+          ),
+        queries
+          .archiveRestoredClassification(archive.db)
+          .bind("archive-recovery", archive.run.id, "collecting", "abandoned_after_restore"),
       ]);
     }
     for (const probe of probes) {

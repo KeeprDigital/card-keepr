@@ -2080,6 +2080,7 @@
       "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
       "apps/ingestion/test/runtime-adapter-reparse.spec.ts",
       "apps/ingestion/test/runtime-storage-recovery.spec.ts",
+      "apps/ingestion/test/source-archive-http.spec.ts",
       "apps/ingestion/test/source-http-contract.spec.ts",
       "cli/keepr.mjs"
     ]
@@ -2353,6 +2354,7 @@
       "apps/api/test/product-release.spec.ts",
       "apps/api/test/public-mount.spec.ts",
       "apps/api/test/runtime.spec.ts",
+      "apps/api/test/scryfall-http.spec.ts",
       "apps/api/test/short-card-search.spec.ts",
       "apps/ingestion/test/game-publication.spec.ts",
       "apps/ingestion/test/native-no-change-helpers.ts",
@@ -2391,6 +2393,7 @@
       "apps/api/test/hono-contract.spec.ts",
       "apps/api/test/product-release.spec.ts",
       "apps/api/test/public-mount.spec.ts",
+      "apps/api/test/scryfall-http.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
       "cli/staging-release.mjs",
       "scripts/production-smoke.mjs"

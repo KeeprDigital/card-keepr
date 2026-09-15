@@ -3,9 +3,21 @@ import { URL } from "node:url";
 import { expect, test } from "vitest";
 import { requiredSourceAdapter } from "../../src/catalogue/adapters/source-adapters";
 import { parseReconciliationObservation } from "../../src/catalogue/reconciliation/reconciliation-observation";
+import { profileFields } from "../../src/catalogue/read/http-contract";
+import { requiredProfileContract } from "../../src/catalogue/shared";
 
 const fixture = new URL("../../acceptance/fixtures/real-sources/2026-09-14-scryfall/raw/", import.meta.url);
 const bulkFixture = new URL("../bulk/", fixture);
+
+test("Magic discovery describes nullable logical-face colour arrays", () => {
+  expect(profileFields(requiredProfileContract("magic@1").card)).toContainEqual({
+    path: "faces.colours",
+    type: "enum",
+    nullable: true,
+    multiple: true,
+    values: ["W", "U", "B", "R", "G"],
+  });
+});
 
 test("a reversible token keeps its token design category and both printed faces", async () => {
   const adapter = requiredSourceAdapter("scryfall-magic-en@1");

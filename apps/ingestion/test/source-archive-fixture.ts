@@ -55,9 +55,10 @@ export async function seedArchive(key: string, corrupt = false, input = raw) {
   ]);
   if (!request) throw new Error("Archive request missing");
   const id = `snapshot-${key}`,
-    objectKey = `source-snapshots/${id}`;
+    objectKey = `source-snapshots/${id}`,
+    at = "2026-09-14T10:00:00.000Z";
   await db.batch([
-    queries.insertArchiveFixtureAttempt(db).bind(id, run.id, request.request_id),
+    queries.insertArchiveFixtureAttempt(db).bind(id, run.id, request.request_id, 1, at, at, "success", "{}"),
     queries
       .insertArchiveFixtureSnapshot(db)
       .bind(
@@ -65,12 +66,22 @@ export async function seedArchive(key: string, corrupt = false, input = raw) {
         run.id,
         request.request_id,
         id,
+        "GET",
         request.url,
         request.request_headers_json,
         request.representation_fingerprint,
+        "[]",
+        at,
+        200,
+        "{}",
+        "application/gzip",
         await sha256(compressed),
         compressed.length,
         objectKey,
+        adapter.sourceLineage,
+        adapter.supportedGame,
+        adapter.gameProfileVersion,
+        adapter.adapterVersion,
       ),
     queries.markArchiveFixtureCaptured(db).bind(id, run.id, request.request_id),
   ]);

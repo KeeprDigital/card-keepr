@@ -76,8 +76,10 @@ function profileWire(schema: ProfileSchema): z.ZodType {
       return z.boolean();
     case "enum":
       return z.enum(schema.values);
-    case "array":
-      return z.array(profileWire(schema.items));
+    case "array": {
+      const value = z.array(profileWire(schema.items));
+      return schema.nullable ? value.nullable() : value;
+    }
     case "object":
       return z.strictObject(
         Object.fromEntries(

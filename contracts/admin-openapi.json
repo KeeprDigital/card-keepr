@@ -4720,6 +4720,49 @@
         ],
         "additionalProperties": false
       },
+      "SourceParsePending": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "pending"
+            ]
+          },
+          "source_snapshot_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "adapter_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "parse_operation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "observation_set_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "decoding",
+              "normalizing"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "source_snapshot_id",
+          "adapter_version",
+          "parse_operation_id",
+          "observation_set_id",
+          "phase"
+        ],
+        "additionalProperties": false
+      },
       "EvidenceStatus": {
         "type": "object",
         "properties": {
@@ -15620,7 +15663,10 @@
                               ]
                             },
                             "colours": {
-                              "type": "array",
+                              "type": [
+                                "array",
+                                "null"
+                              ],
                               "items": {
                                 "type": "string",
                                 "enum": [
@@ -20594,7 +20640,10 @@
                               ]
                             },
                             "colours": {
-                              "type": "array",
+                              "type": [
+                                "array",
+                                "null"
+                              ],
                               "items": {
                                 "type": "string",
                                 "enum": [
@@ -23934,7 +23983,10 @@
                                           ]
                                         },
                                         "colours": {
-                                          "type": "array",
+                                          "type": [
+                                            "array",
+                                            "null"
+                                          ],
                                           "items": {
                                             "type": "string",
                                             "enum": [
@@ -27095,7 +27147,10 @@
                               ]
                             },
                             "colours": {
-                              "type": "array",
+                              "type": [
+                                "array",
+                                "null"
+                              ],
                               "items": {
                                 "type": "string",
                                 "enum": [
@@ -31276,7 +31331,10 @@
                                                         ]
                                                       },
                                                       "colours": {
-                                                        "type": "array",
+                                                        "type": [
+                                                          "array",
+                                                          "null"
+                                                        ],
                                                         "items": {
                                                           "type": "string",
                                                           "enum": [
@@ -36905,7 +36963,10 @@
                                   ]
                                 },
                                 "colours": {
-                                  "type": "array",
+                                  "type": [
+                                    "array",
+                                    "null"
+                                  ],
                                   "items": {
                                     "type": "string",
                                     "enum": [
@@ -51393,6 +51454,24 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SourceObservationSet"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "A bounded parse step retained progress. Repeat this POST with the same snapshot, adapter version and idempotency key until 201 seals the observation set. Retrying the completed intent returns that same immutable set.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceParsePending"
                 }
               }
             }

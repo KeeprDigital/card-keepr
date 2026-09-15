@@ -324,7 +324,9 @@ async function collectRetainedReconciliationObservation(
       );
       let parsed: ReturnType<typeof parseReconciliationObservation> | NormalizedSourceAdmissionEvidence;
       if (isRecord(retained.value) && retained.value.observation_type === "source_admission_evidence") {
-        const review = parseSourceAdmissionEvidence(retained.value, adapter);
+        // Validate the retained source claims; authenticated image metadata
+        // travels separately in retained.images and is checked during intake.
+        const review = parseSourceAdmissionEvidence(wrapped.value, adapter);
         if (
           review.game !== row.supported_game ||
           review.source_lineage !== row.source_lineage ||

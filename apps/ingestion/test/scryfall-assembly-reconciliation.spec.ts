@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import bloomvine from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/reversible-adventure.json?raw";
 import control from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/etched.json?raw";
+import split from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/split-three.json?raw";
 import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { get, installReconciliationSuite, postFixtureEvidence, testEnv } from "./reconciliation-helpers";
@@ -18,7 +19,7 @@ installReconciliationSuite({ directPreparation: true });
 test("review-required source claims retain separate finish proposals while the resolved control reaches the candidate", async () => {
   const adapter = requiredSourceAdapter("scryfall-magic-en@1");
   const values: unknown[] = [];
-  for (const raw of [bloomvine, control])
+  for (const raw of [bloomvine, control, split])
     values.push(
       ...(await adapter.parseBytes!(new TextEncoder().encode(raw), {
         url: JSON.parse(raw).uri,
@@ -74,9 +75,20 @@ test("review-required source claims retain separate finish proposals while the r
     key: "assembly-review-candidate",
   });
   const records = await nativeCandidateRecords(String(candidate.id), ["cards", "printings"]);
-  expect(records.cards).toHaveLength(1);
-  expect(records.cards![0]!.name).toBe("Miara, Thorn of the Glade");
-  expect(records.printings).toHaveLength(1);
+  expect(records.cards).toHaveLength(2);
+  expect(records.cards!.map(({ name }) => name).sort()).toEqual(["Miara, Thorn of the Glade", "Smelt // Herd // Saw"]);
+  expect(records.cards!.find(({ name }) => name === "Smelt // Herd // Saw")).toMatchObject({
+    game_data: {
+      attributes: {
+        faces: [
+          { name: "Smelt", colours: null },
+          { name: "Herd", colours: null },
+          { name: "Saw", colours: null },
+        ],
+      },
+    },
+  });
+  expect(records.printings).toHaveLength(2);
   const proposals = (await get("/v1/entity-proposals?game=magic")).document.proposals as {
     id: string;
     reference: string;

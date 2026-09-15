@@ -4,15 +4,14 @@ import { repositoryStatements } from "../../../../src/catalogue/shared";
 export function insertArchiveFixtureAttempt(db: CatalogueStore) {
   return repositoryStatements(db).prepare(`INSERT INTO source_fetch_attempts
     (id,ingestion_run_id,request_id,attempt_number,requested_at,completed_at,outcome,response_headers_json)
-    VALUES (?,?,?,1,'2026-09-14T10:00:00.000Z','2026-09-14T10:00:00.000Z','success','{}')`);
+    VALUES (?,?,?,?,?,?,?,?)`);
 }
 export function insertArchiveFixtureSnapshot(db: CatalogueStore) {
   return repositoryStatements(db).prepare(`INSERT INTO source_snapshots
     (id,ingestion_run_id,request_id,fetch_attempt_id,request_method,request_url,request_headers_json,
     representation_fingerprint,response_vary_json,retrieved_at,http_status,response_headers_json,media_type,
     content_digest,content_byte_length,content_object_key,source_lineage,supported_game,game_profile_version,adapter_version)
-    VALUES (?,?,?,?,'GET',?,?,?,'[]','2026-09-14T10:00:00.000Z',200,'{}','application/gzip',?,?,?,
-    'scryfall-magic-en','magic','magic@1','scryfall-magic-en@1')`);
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
 }
 export function markArchiveFixtureCaptured(db: CatalogueStore) {
   return repositoryStatements(db).prepare(`UPDATE source_requests SET state='captured',source_snapshot_id=?
@@ -84,7 +83,13 @@ export function uploadedArchiveObservationInput(db: CatalogueStore) {
     WHERE s.id=? AND p.state='uploaded'`);
 }
 
-export function restoredArchiveFaultQueries(kind: "block" | "record", snapshot: string, set: string) {
+export function restoredArchiveFaultQueries(
+  kind: "block" | "record",
+  snapshot: string,
+  set: string,
+  ordinal: number,
+  digest: string,
+) {
   const table = kind === "block" ? "source_archive_blocks" : "source_record_pages";
   return {
     triggers: {
@@ -94,10 +99,10 @@ export function restoredArchiveFaultQueries(kind: "block" | "record", snapshot: 
     mutate:
       kind === "block"
         ? {
-            sql: "UPDATE source_archive_blocks SET sha256=? WHERE source_snapshot_id=? AND ordinal=0",
-            params: ["0".repeat(64), snapshot],
+            sql: "UPDATE source_archive_blocks SET sha256=? WHERE source_snapshot_id=? AND ordinal=?",
+            params: [digest, snapshot, ordinal],
           }
-        : { sql: "DELETE FROM source_record_pages WHERE observation_set_id=? AND ordinal=0", params: [set] },
+        : { sql: "DELETE FROM source_record_pages WHERE observation_set_id=? AND ordinal=?", params: [set, ordinal] },
     foreignKeys: { sql: "PRAGMA foreign_key_check", params: [] },
   };
 }
@@ -113,7 +118,7 @@ export function archiveBoundarySnapshot(db: CatalogueStore) {
      representation_fingerprint,response_vary_json,retrieved_at,http_status,response_headers_json,media_type,
      content_digest,content_byte_length,content_object_key,source_lineage,supported_game,game_profile_version,adapter_version)
     SELECT ?1,ingestion_run_id,request_id,?1,request_method,request_url,request_headers_json,
-      representation_fingerprint,response_vary_json,?2,200,response_headers_json,media_type,
+      representation_fingerprint,response_vary_json,?2,?7,response_headers_json,media_type,
       ?3,?4,?5,source_lineage,supported_game,game_profile_version,adapter_version
     FROM source_snapshots WHERE id=?6`);
 }
@@ -121,11 +126,12 @@ export function archiveBoundaryParse(db: CatalogueStore) {
   return repositoryStatements(db).prepare(`INSERT INTO source_parse_operations
     (id,source_snapshot_id,adapter_version,intent,idempotency_key,observation_set_id,content_object_key,
      parsed_at,state,content_digest,content_byte_length,observation_count)
-    VALUES (?1,?2,'scryfall-magic-en@1','reparse',?1,?1,?3,?4,'finalized',?5,?6,0)`);
+    SELECT ?1,id,adapter_version,?7,?1,?1,?3,?4,?8,?5,?6,?9 FROM source_snapshots WHERE id=?2`);
 }
 export function archiveBoundaryObservationSet(db: CatalogueStore) {
   return repositoryStatements(db).prepare(`INSERT INTO source_observation_sets
     (id,parse_operation_id,source_snapshot_id,source_lineage,supported_game,game_profile_version,adapter_version,
      parsed_at,content_digest,content_byte_length,content_object_key,observation_count)
-    VALUES (?1,?1,?2,'scryfall-magic-en','magic','magic@1','scryfall-magic-en@1',?3,?4,?5,?6,0)`);
+    SELECT ?1,?1,id,source_lineage,supported_game,game_profile_version,adapter_version,?3,?4,?5,?6,?7
+    FROM source_snapshots WHERE id=?2`);
 }

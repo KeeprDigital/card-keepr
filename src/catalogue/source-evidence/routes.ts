@@ -7,6 +7,7 @@ import {
 } from "./cleanup-http-contract";
 import {
   reparseRoute,
+  sourceParsePendingSchema,
   importRecordsRoute,
   importedRecordsSchema,
   snapshotContentRoute,
@@ -279,18 +280,16 @@ export const sourceEvidenceRoutes: Route<Context>[] = [
   ),
   httpRoute<Context>()(reparseRoute, async (c) => {
     const body = c.req.valid("json");
-    return c.json(
-      observationSetSchema.parse(
-        await reparseSourceSnapshot(
-          c.env.env.CATALOGUE_DB,
-          c.env.env.EVIDENCE_OBJECTS,
-          c.req.valid("param").snapshot,
-          body.adapter_version,
-          body.idempotency_key,
-        ),
-      ),
-      201,
+    const result = await reparseSourceSnapshot(
+      c.env.env.CATALOGUE_DB,
+      c.env.env.EVIDENCE_OBJECTS,
+      c.req.valid("param").snapshot,
+      body.adapter_version,
+      body.idempotency_key,
     );
+    return result.kind === "pending"
+      ? c.json(sourceParsePendingSchema.parse(result), 202)
+      : c.json(observationSetSchema.parse(result), 201);
   }),
   streamingHttpRoute<Context>()(snapshotContentRoute, async (c) =>
     sourceSnapshotContent(c.env.env.CATALOGUE_DB, c.env.env.EVIDENCE_OBJECTS, c.req.valid("param").snapshot),

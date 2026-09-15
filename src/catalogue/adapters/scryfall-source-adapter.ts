@@ -297,7 +297,7 @@ function assembleScryfallRecord(bytes: Uint8Array, sourceUrl: string, cutoff = "
   const setCode = text(card.set);
   const collectorNumber = text(card.collector_number);
   const rarity = text(card.rarity);
-  const colourIdentity = list(card.color_identity).map(text);
+  const colourIdentity = colours(card.color_identity);
   const illustration = card.illustration_id ?? faces[0]!.illustration_id;
   // A missing illustration is an unresolved locator, never artwork equivalence
   // or qualification. This keeps the observation available for explicit review.
@@ -331,7 +331,7 @@ function assembleScryfallRecord(bytes: Uint8Array, sourceUrl: string, cutoff = "
       optionalText(face.power);
       optionalText(face.toughness);
       optionalText(face.printed_text);
-      if (face.colors !== undefined) list(face.colors).forEach(text);
+      if (face.colors !== undefined) colours(face.colors);
     }
     // Physical front/back entries do not supply a complete logical design
     // when that design itself requires multiple parts. Preserve the source
@@ -376,7 +376,7 @@ function assembleScryfallRecord(bytes: Uint8Array, sourceUrl: string, cutoff = "
           name: text(face.name),
           mana_cost: optionalText(face.mana_cost),
           type_line: optionalText(face.type_line),
-          colours: face.colors === undefined ? null : list(face.colors).map(text),
+          colours: face.colors === undefined ? null : colours(face.colors),
           oracle_text: optionalText(face.oracle_text),
           power: optionalText(face.power),
           toughness: optionalText(face.toughness),
@@ -513,6 +513,13 @@ function object(value: unknown): Record<string, unknown> {
     throw new AdapterParseFailure("Scryfall required object is missing.");
   return value as Record<string, unknown>;
 }
+function colours(value: unknown): string[] {
+  const values = list(value).map(text);
+  if (new Set(values).size !== values.length || values.some((colour) => !["W", "U", "B", "R", "G"].includes(colour)))
+    throw new AdapterParseFailure("Scryfall colours must be unique Magic colour symbols.");
+  return values;
+}
+
 function list(value: unknown): unknown[] {
   if (!Array.isArray(value)) throw new AdapterParseFailure("Scryfall required list is missing.");
   return value;

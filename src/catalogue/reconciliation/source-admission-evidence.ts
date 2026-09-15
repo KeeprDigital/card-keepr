@@ -1,5 +1,4 @@
-import { z } from "zod";
-import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
+import { type CatalogueStore, canonicalJson, decodeDocument, sha256Text } from "../shared";
 import { retainEvidenceObjectReferenceStatement } from "../source-evidence";
 import type { SourceAdapterRegistration } from "../adapters";
 import {
@@ -11,50 +10,25 @@ import {
 import { documentStorage } from "./reconciliation-document";
 import type { VerifiedPrintingImage } from "./reconciliation-images";
 
-const reviewEvidence = z.strictObject({
-  observation_type: z.literal("source_admission_evidence"),
-  game: z.literal("magic"),
-  source_lineage: z.literal("scryfall-magic-en"),
-  locator: z.uuid(),
-  declared_finishes: z
-    .array(z.enum(["nonfoil", "foil", "etched"]))
-    .min(1)
-    .max(3),
-  issues: z
-    .array(
-      z.object({
-        code: z.literal("logical_parts_unresolved"),
-        source_paths: z.array(z.string().min(1).max(256)).min(1).max(16),
-      }),
-    )
-    .min(1)
-    .max(3),
-  appearance_evidence: z.object({
-    images: z
-      .array(
-        z.object({
-          role: z.enum(["front", "back"]),
-          source_url: z.url().max(2048),
-          artwork_fingerprint: z.string().min(1).max(256),
-          content_sha256: z
-            .string()
-            .regex(/^[a-f0-9]{64}$/u)
-            .optional(),
-        }),
-      )
-      .max(2),
-  }),
-  source_sidecar: z.object({ source_record_json: z.string().min(1) }),
-  completeness: z.object({
-    structurally_complete: z.literal(true),
-    required_surfaces_complete: z.literal(true),
-    partitions_complete: z.literal(true),
-    declared_record_count: z.literal(1),
-    parsed_record_count: z.literal(1),
-  }),
-});
-
-export type SourceAdmissionEvidence = z.infer<typeof reviewEvidence>;
+export type SourceAdmissionEvidence = {
+  observation_type: "source_admission_evidence";
+  game: "magic";
+  source_lineage: "scryfall-magic-en";
+  locator: string;
+  declared_finishes: ("nonfoil" | "foil" | "etched")[];
+  issues: { code: "logical_parts_unresolved"; source_paths: string[] }[];
+  appearance_evidence: {
+    images: { role: "front" | "back"; source_url: string; artwork_fingerprint: string; content_sha256?: string }[];
+  };
+  source_sidecar: { source_record_json: string };
+  completeness: {
+    structurally_complete: true;
+    required_surfaces_complete: true;
+    partitions_complete: true;
+    declared_record_count: 1;
+    parsed_record_count: 1;
+  };
+};
 export type NormalizedSourceAdmissionEvidence = {
   kind: "source_admission_evidence";
   sourceObservationId: string;
@@ -62,16 +36,20 @@ export type NormalizedSourceAdmissionEvidence = {
   proposalIds: string[];
 };
 
-/** This explicit wire contract is separate from strict Card/Printing validation. */
+/** Retained review evidence is validated independently of HTTP and Card/Printing contracts. */
 export function parseSourceAdmissionEvidence(
   value: unknown,
   adapter: SourceAdapterRegistration,
 ): SourceAdmissionEvidence {
-  const result = reviewEvidence.parse(value);
+  const result = decodeDocument<SourceAdmissionEvidence>(
+    "sourceAdmissionEvidence",
+    value,
+    "Review-required source evidence is malformed.",
+  );
+  for (const image of result.appearance_evidence.images) new URL(image.source_url);
   if (
     result.game !== adapter.supportedGame ||
     result.source_lineage !== adapter.sourceLineage ||
-    new Set(result.declared_finishes).size !== result.declared_finishes.length ||
     new Set(result.appearance_evidence.images.map((image) => image.role)).size !==
       result.appearance_evidence.images.length
   )
@@ -107,7 +85,7 @@ export async function retainSourceAdmissionEvidence(
       issues: observation.issues,
       physical_images: physicalImages,
     });
-    const writes: ReturnType<typeof retainProposalEvidenceStatement>[] = [];
+    const exists = proposal !== null;
     if (!proposal) {
       // The full source record remains in sealed evidence. Partial content does
       // not invent a Card category, a Printing, a profile, or effective text.
@@ -126,27 +104,31 @@ export async function retainSourceAdmissionEvidence(
       };
       if (new TextEncoder().encode(proposal.request_json).byteLength > 60 * 1024)
         throw new Error("Review-required proposal exceeds its bounded owner document.");
-      writes.push(insertProposalStatement(database, proposal, runId));
     }
-    writes.push(
-      retainProposalEvidenceStatement(
-        database,
-        proposal.id,
-        runId,
-        source.sourceSnapshotId,
-        source.sourceObservationId,
-      ),
-    );
-    for (const image of images.values())
+    const retainedProposal = proposal;
+    await documentStorage(() => {
+      const writes: ReturnType<typeof retainProposalEvidenceStatement>[] = [];
+      if (!exists) writes.push(insertProposalStatement(database, retainedProposal, runId));
       writes.push(
-        retainEvidenceObjectReferenceStatement(database, {
-          objectKey: image.content_object_key,
-          ownerKind: "entity_proposal",
-          ownerId: proposal.id,
-          createdAt: at,
-        }),
+        retainProposalEvidenceStatement(
+          database,
+          retainedProposal.id,
+          runId,
+          source.sourceSnapshotId,
+          source.sourceObservationId,
+        ),
       );
-    await documentStorage(() => database.batch(writes));
+      for (const image of images.values())
+        writes.push(
+          retainEvidenceObjectReferenceStatement(database, {
+            objectKey: image.content_object_key,
+            ownerKind: "entity_proposal",
+            ownerId: retainedProposal.id,
+            createdAt: at,
+          }),
+        );
+      return database.batch(writes);
+    });
     proposalIds.push(proposal.id);
   }
   return {

@@ -373,6 +373,17 @@ export const resumeEvidenceRoute = createRoute({
 
 const snapshotParams = z.strictObject({ snapshot: identifier });
 const observationParams = z.strictObject({ observationSet: identifier });
+export const sourceParsePendingSchema = z
+  .strictObject({
+    kind: z.literal("pending"),
+    source_snapshot_id: identifier,
+    adapter_version: identifier,
+    parse_operation_id: identifier,
+    observation_set_id: identifier,
+    phase: z.enum(["decoding", "normalizing"]),
+  })
+  .openapi("SourceParsePending");
+
 export const reparseRoute = createRoute({
   method: "post",
   path: "/v1/source-snapshots/{snapshot}/observations",
@@ -392,6 +403,12 @@ export const reparseRoute = createRoute({
         "Immutable observation set for this parse intent. A different key appends a new interpretation; original bytes remain unchanged.",
       headers: jsonHeaders,
       content: { "application/json": { schema: observationSetSchema } },
+    },
+    202: {
+      description:
+        "A bounded parse step retained progress. Repeat this POST with the same snapshot, adapter version and idempotency key until 201 seals the observation set. Retrying the completed intent returns that same immutable set.",
+      headers: jsonHeaders,
+      content: { "application/json": { schema: sourceParsePendingSchema } },
     },
     ...problemResponses,
   },

@@ -65,23 +65,22 @@ export function removeArchiveHandoffClaimTrigger(db: CatalogueStore) {
 export function archiveHandoffFence(db: CatalogueStore) {
   return repositoryStatements(db).prepare(`INSERT INTO fresh_baseline_handoffs
     (release_id,role,dispatch_digest,execution_id,request_json,preparation_json,phase,evidence_json,created_at)
-    VALUES ('archive-handoff','source','archive-dispatch','archive-execution','{}','{}',1,'[]','2026-09-15T00:00:00.000Z')`);
+    VALUES (?,?,?,?,?,?,?,?,?)`);
 }
 export function archiveRestoredBackup(db: CatalogueStore) {
   return repositoryStatements(db).prepare(`INSERT INTO catalogue_backup_attempts
     (idempotency_key,request_json,owner_token,catalogue_revision_id,state,object_key,started_at)
-    VALUES ('archive-recovery-backup','{}','archive-owner','catrev_spine_000','pending','archive-backup','2026-09-15T00:00:00.000Z')`);
+    VALUES (?,?,?,?,?,?,?)`);
 }
 export function archiveRestoredRecovery(db: CatalogueStore) {
   return repositoryStatements(db).prepare(`INSERT INTO catalogue_recovery_operations
     (id,state,method,request_json,idempotency_key,target_revision_id,target_bookmark,target_digest,
      source_backup_attempt_id,expected_current_revision_id,original_database_id,expected_schema_migration_level,
      expected_verification_json,started_at)
-    VALUES ('archive-recovery','preparing','time_travel','{}','archive-recovery','catrev_spine_000','bookmark',?,
-     'archive-recovery-backup','catrev_spine_000','fixture-database',38,'{}','2026-09-15T00:00:00.000Z')`);
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
 }
 export function archiveRestoredClassification(db: CatalogueStore) {
   return repositoryStatements(db).prepare(`INSERT INTO catalogue_recovery_collection_classifications
     (recovery_id,ingestion_run_id,prior_state,classification)
-    VALUES ('archive-recovery',?,'collecting','abandoned_after_restore')`);
+    VALUES (?,?,?,?)`);
 }

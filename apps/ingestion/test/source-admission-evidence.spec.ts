@@ -123,6 +123,38 @@ test("archive review intake survives two committed response losses and keeps ter
   ]);
   const source = { sourceObservationId: wrapped.id, sourceObservationSetId: sealed.id, sourceSnapshotId: snapshot.id };
   const allocations = (await queries.reviewAllocations(db).all()).results;
+  for (const statement of [
+    "INSERT INTO entity_proposals",
+    "INSERT INTO entity_proposal_source_evidence",
+    "INSERT INTO evidence_object_references",
+  ]) {
+    let injected = false;
+    const unavailable = catalogueStore(
+      new Proxy(env.CATALOGUE_DB, {
+        get(target, property) {
+          if (property === "prepare")
+            return (sql: string) => {
+              if (sql.includes(statement)) {
+                injected = true;
+                throw new Error("synchronous source admission storage failure");
+              }
+              return target.prepare(sql);
+            };
+          const value = Reflect.get(target, property, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }),
+    );
+    await expect(
+      retainSourceAdmissionEvidence(unavailable, preparation, review, source, images, at),
+    ).rejects.toMatchObject({
+      name: "ReconciliationDocumentStorageError",
+      cause: { message: "synchronous source admission storage failure" },
+    });
+    expect(injected).toBe(true);
+    expect((await queries.reviewProposals(db).bind("scryfall-magic-en").all()).results).toEqual([]);
+    expect((await queries.reviewEvidencePins(db).bind(run.id).all()).results).toEqual([]);
+  }
   await expect(retainSourceAdmissionEvidence(failing, preparation, review, source, images, at)).rejects.toMatchObject({
     cause: { message: "lost finish proposal response" },
   });
