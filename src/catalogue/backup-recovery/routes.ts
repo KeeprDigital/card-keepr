@@ -1,4 +1,5 @@
 import { type Route, type RouteContext } from "../../http/routes";
+import { recoveryBeginIntent, recoveryAcceptanceIntent } from "./http-input";
 import { httpRoute, retainedWireValue } from "../../http/openapi";
 import {
   backupStartRoute,
@@ -78,19 +79,7 @@ export const backupRecoveryRoutes: Route<Context>[] = [
       );
     }
     const document = await beginCatalogueRecovery(env.CATALOGUE_DB, env.BACKUPS, {
-      recoveryId: body.recovery_id,
-      method: body.method,
-      targetRevisionId: body.target_revision_id,
-      targetBookmark: body.target_bookmark,
-      targetDigest: body.target_digest,
-      backupAttemptId: body.backup_attempt_id,
-      expectedCurrentRevisionId: body.expected_current_revision_id,
-      idempotencyKey: body.idempotency_key,
-      ...(body.linked_operation_id === undefined
-        ? {}
-        : {
-            linkedOperationId: body.linked_operation_id,
-          }),
+      ...recoveryBeginIntent(body),
       observedAt,
       cloudflareAccountId: env.CLOUDFLARE_ACCOUNT_ID,
       catalogueDatabaseId: env.CATALOGUE_D1_DATABASE_ID,
@@ -121,12 +110,8 @@ export const backupRecoveryRoutes: Route<Context>[] = [
     const { env, observedAt } = c.env;
     const body = c.req.valid("json");
     const document = await acceptCatalogueRecovery(env.CATALOGUE_DB, env.BACKUPS, c.req.valid("param").recovery, {
-      expectedRestoredRevisionId: body.expected_restored_revision_id,
-      targetDigest: body.target_digest,
-      confirmationRecoveryId: body.confirmation_recovery_id,
-      idempotencyKey: body.idempotency_key,
+      ...recoveryAcceptanceIntent(body, env.CATALOGUE_D1_DATABASE_ID),
       observedAt,
-      boundDatabaseId: env.CATALOGUE_D1_DATABASE_ID,
     });
     return c.json(retainedWireValue(recoverySchema, document), 200, { "Cache-Control": "no-store" });
   }),

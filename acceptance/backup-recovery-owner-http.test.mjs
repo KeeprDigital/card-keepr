@@ -99,12 +99,18 @@ test("owner backs up, retries, restores, verifies and explicitly accepts with im
     assert.ok(codes.includes(result.code), `${args.join(" ")}: exit ${result.code}\n${result.stdout}${result.stderr}`);
     return JSON.parse(result.stdout);
   };
-  const mutate = async (args, codes = [0]) => {
+  const confirmations = new Map();
+  const mutate = async (args, codes = [0], retainConfirmation = false) => {
     const base = [...args, "--environment", "production", "--yes"];
     const preview = await cli(base, [3]);
     assert.equal(preview.code, "confirmation_required");
     const confirmation = /--confirm '(.+)'/.exec(preview.detail)?.[1];
     assert.ok(confirmation, preview.detail);
+    if (retainConfirmation) {
+      const name = JSON.stringify(args);
+      if (confirmations.has(name)) assert.equal(confirmation, confirmations.get(name));
+      else confirmations.set(name, confirmation);
+    }
     return cli([...base, "--confirm", confirmation], codes);
   };
   const call = async (path, { body, status = 200, schemaPath = path, authenticated = true } = {}) => {
@@ -202,7 +208,20 @@ test("owner backs up, retries, restores, verifies and explicitly accepts with im
   const backup = await waitBackup(retry.idempotency_key);
   assert.equal(backup.state, "verified", JSON.stringify(backup));
   assert.equal(backup.linked_attempt_id, failedKey);
-  const verifiedBackup = await call("/v1/backups", { body: retry });
+  const retryArgs = [
+    "backup",
+    "retry",
+    "--expected-current-revision",
+    revision,
+    "--idempotency-key",
+    retry.idempotency_key,
+    "--failed-attempt-id",
+    failedKey,
+    "--failed-attempt-digest",
+    failed.attempt_digest,
+  ];
+  const verifiedBackup = await mutate(retryArgs);
+  check("/v1/backups", "post", 200, verifiedBackup);
   assert.equal(verifiedBackup.output.verified, true);
   assert.equal(verifiedBackup.workflow_instance_id, started.workflow_instance_id);
   const conflict = await call("/v1/backups", {
@@ -321,7 +340,7 @@ test("owner backs up, retries, restores, verifies and explicitly accepts with im
     "--idempotency-key",
     acceptance.idempotency_key,
   ];
-  const accepted = await mutate(acceptArgs);
+  const accepted = await mutate(acceptArgs, [0], true);
   check(acceptanceSchemaPath, "post", 200, accepted);
   assert.equal(accepted.state, "accepted");
   assert.ok(accepted.restored_work.some((row) => row.classification === "published_retained"));
@@ -329,7 +348,29 @@ test("owner backs up, retries, restores, verifies and explicitly accepts with im
   const later = await publish("later", revision);
   assert.notEqual(later.published.resulting_revision_id, revision);
   // The original decisions remain addressable after a later real publication.
-  assert.deepEqual(await mutate(acceptArgs), accepted);
+  assert.deepEqual(await mutate(acceptArgs, [0], true), accepted);
+  assert.deepEqual(await mutate(retryArgs), verifiedBackup);
+  const beginArgs = [
+    "recovery",
+    "begin",
+    "--recovery-id",
+    begin.recovery_id,
+    "--method",
+    begin.method,
+    "--target-revision",
+    revision,
+    "--target-bookmark",
+    begin.target_bookmark,
+    "--target-digest",
+    begin.target_digest,
+    "--backup-attempt-id",
+    begin.backup_attempt_id,
+    "--expected-current-revision",
+    revision,
+    "--idempotency-key",
+    begin.idempotency_key,
+  ];
+  assert.deepEqual(await mutate(beginArgs), accepted);
   assert.deepEqual(await mutate(verifyArgs), accepted);
   const finalStatus = await cli(["status"]);
   assert.equal(finalStatus.safe_state.current_revision_id, later.published.resulting_revision_id);

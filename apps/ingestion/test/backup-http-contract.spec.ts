@@ -5,6 +5,7 @@ import type { CatalogueBackupWorkflowParams } from "../../../src/catalogue/backu
 import document from "../../../contracts/admin-openapi.json";
 import { assertHttpResponse } from "../../../test/support/http-contract";
 import { administrationPresentation } from "../../../src/http/administration-presentation.mjs";
+import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 
 const testEnv = env as Env & { TEST_MIGRATIONS: D1Migration[] };
 beforeEach(async () => {
@@ -118,6 +119,35 @@ test("backup HTTP replay preserves its original intent and observes dispatch, ru
   expect(changed.status).toBe(409);
   await assertHttpResponse(document, "/v1/backups", "post", changed);
   expect(await changed.json()).toMatchObject({ code: "idempotency_key_reused" });
+  const resolve = (backup: Record<string, unknown>) =>
+    worker.fetch(
+      new Request("https://card-keepr.invalid/v1/administration-targets/resolve", {
+        method: "POST",
+        headers: { authorization: "Bearer vitest-administration-key", "content-type": "application/json" },
+        body: JSON.stringify({ backup }),
+      }),
+      environment,
+    );
+  const originalTarget = await resolve(body);
+  expect(originalTarget.status, await originalTarget.clone().text()).toBe(200);
+  const originalConfirmation = await originalTarget.json();
+  await publishedCatalogueQueries
+    .setCatalogueStateCurrentRevisionIdForExactAcceptedReplayRemainsImmutableAfterLaterPublication(testEnv.CATALOGUE_DB)
+    .run();
+  const retainedTarget = await resolve(body);
+  expect(retainedTarget.status).toBe(200);
+  await assertHttpResponse(document, "/v1/administration-targets/resolve", "post", retainedTarget);
+  expect(await retainedTarget.json()).toEqual(originalConfirmation);
+  for (const [change, code] of [
+    [{ expected_current_revision_id: "catrev_other" }, "idempotency_key_reused"],
+    [{ failed_attempt_id: "parent", failed_attempt_digest: "a".repeat(64) }, "idempotency_key_reused"],
+    [{ idempotency_key: "fresh-stale-request" }, "production_target_mismatch"],
+  ] as const) {
+    const rejected = await resolve({ ...body, ...change });
+    expect(rejected.status).toBe(409);
+    expect(await rejected.json()).toMatchObject({ code });
+  }
+  expect((await send()).status).toBe(200);
   expect(creations).toHaveLength(count);
 });
 

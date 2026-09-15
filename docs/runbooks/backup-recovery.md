@@ -72,7 +72,11 @@ it prints the required confirmation and exits `3` without applying that mutation
 Review the resolved target and copy the complete confirmation JSON, unchanged,
 into `EXACT_CONFIRMATION`. Rerun that same command with
 `--confirm "$EXACT_CONFIRMATION"`. Obtain a fresh confirmation for each distinct
-operation below; a changed current revision requires a fresh inspection.
+operation below. For a new request, inspect a changed current revision before
+proceeding. An exact acknowledged request remains replayable after later
+publication with its original arguments and confirmation, provided the observed
+production target has not changed. A replacement database binding changes that
+target and requires reviewing the newly resolved confirmation.
 
 With ingestion idle and recovery healthy, create a backup of the current revision:
 

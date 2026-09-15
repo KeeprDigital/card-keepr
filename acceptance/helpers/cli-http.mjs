@@ -14,15 +14,28 @@ export function createServer(listener) {
       let bytes = "";
       for await (const chunk of request) bytes += chunk;
       const choices = JSON.parse(bytes);
+      const binding =
+        choices.backup ??
+        (choices.recovery
+          ? {
+              ...(choices.recovery.action === "begin" ? {} : { recovery_id: choices.recovery.recovery_id }),
+              ...choices.recovery.input,
+            }
+          : undefined);
+      const lookupChoices = binding
+        ? choices.backup || choices.recovery.action === "begin"
+          ? { expected_current_revision_id: binding.expected_current_revision_id }
+          : binding
+        : choices;
       const query = new URLSearchParams();
-      for (const [key, value] of Object.entries(choices))
+      for (const [key, value] of Object.entries(lookupChoices))
         query.set(key, key === "curated_binding" ? JSON.stringify(value) : String(value));
       const status = await fetch(`http://${request.headers.host}/v1/status`, {
         headers: { authorization: request.headers.authorization },
       });
       const document = await status.json();
       const resolved = status.ok
-        ? await resolveFixtureTarget(request, document, query)
+        ? await resolveFixtureTarget(request, document, query, binding)
         : { status: status.status, document };
       response.statusCode = resolved.status;
       response.setHeader("content-type", "application/json");
@@ -63,7 +76,7 @@ export function createServer(listener) {
   }
 }
 
-async function resolveFixtureTarget(request, document, query) {
+async function resolveFixtureTarget(request, document, query, binding) {
   const target = validatedProductionTarget(document.production_target);
   if (target === null) return { status: 200, document };
   const fail = (detail) => ({ status: 409, document: { code: "production_target_mismatch", detail } });
@@ -99,7 +112,7 @@ async function resolveFixtureTarget(request, document, query) {
     if (current !== recovery.expected_current_revision_id && current !== recovery.target_revision_id)
       return fail("Production does not resolve to either the recovery source or restored Catalogue Revision.");
   }
-  let confirmation = JSON.stringify(target);
+  let confirmation = JSON.stringify(binding ? { production_target: target, ...binding } : target);
   if (query.has("curated_operation")) {
     const operation = query.get("curated_operation");
     let binding = JSON.parse(query.get("curated_binding"));

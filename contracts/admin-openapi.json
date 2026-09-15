@@ -46123,6 +46123,242 @@
                   {
                     "type": "object",
                     "properties": {
+                      "backup": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "expected_current_revision_id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "required": [
+                              "expected_current_revision_id",
+                              "idempotency_key"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "expected_current_revision_id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "idempotency_key": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "failed_attempt_id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "failed_attempt_digest": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              }
+                            },
+                            "required": [
+                              "expected_current_revision_id",
+                              "idempotency_key",
+                              "failed_attempt_id",
+                              "failed_attempt_digest"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "backup"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "recovery": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "action": {
+                                "type": "string",
+                                "enum": [
+                                  "begin"
+                                ]
+                              },
+                              "input": {
+                                "type": "object",
+                                "properties": {
+                                  "environment": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "recovery_id": {
+                                    "type": "string",
+                                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
+                                  },
+                                  "method": {
+                                    "type": "string",
+                                    "enum": [
+                                      "time_travel",
+                                      "replacement_database"
+                                    ]
+                                  },
+                                  "target_revision_id": {
+                                    "type": "string",
+                                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
+                                  },
+                                  "target_bookmark": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "target_digest": {
+                                    "type": "string",
+                                    "pattern": "^[a-f0-9]{64}$"
+                                  },
+                                  "backup_attempt_id": {
+                                    "type": "string",
+                                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
+                                  },
+                                  "expected_current_revision_id": {
+                                    "type": "string",
+                                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
+                                  },
+                                  "idempotency_key": {
+                                    "type": "string",
+                                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
+                                  },
+                                  "linked_operation_id": {
+                                    "type": "string",
+                                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
+                                  }
+                                },
+                                "required": [
+                                  "environment",
+                                  "recovery_id",
+                                  "method",
+                                  "target_revision_id",
+                                  "target_bookmark",
+                                  "target_digest",
+                                  "backup_attempt_id",
+                                  "expected_current_revision_id",
+                                  "idempotency_key"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "action",
+                              "input"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "action": {
+                                "type": "string",
+                                "enum": [
+                                  "verify"
+                                ]
+                              },
+                              "recovery_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
+                              },
+                              "input": {
+                                "type": "object",
+                                "properties": {
+                                  "target_digest": {
+                                    "type": "string",
+                                    "pattern": "^[a-f0-9]{64}$"
+                                  },
+                                  "idempotency_key": {
+                                    "type": "string",
+                                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
+                                  }
+                                },
+                                "required": [
+                                  "target_digest",
+                                  "idempotency_key"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "action",
+                              "recovery_id",
+                              "input"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "action": {
+                                "type": "string",
+                                "enum": [
+                                  "accept"
+                                ]
+                              },
+                              "recovery_id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
+                              },
+                              "input": {
+                                "type": "object",
+                                "properties": {
+                                  "expected_restored_revision_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "target_digest": {
+                                    "type": "string",
+                                    "pattern": "^[a-f0-9]{64}$"
+                                  },
+                                  "confirmation_recovery_id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "idempotency_key": {
+                                    "type": "string",
+                                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
+                                  }
+                                },
+                                "required": [
+                                  "expected_restored_revision_id",
+                                  "target_digest",
+                                  "confirmation_recovery_id",
+                                  "idempotency_key"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "action",
+                              "recovery_id",
+                              "input"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "recovery"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
                       "expected_current_revision_id": {
                         "type": "string",
                         "minLength": 1
@@ -46166,28 +46402,6 @@
                     "required": [
                       "expected_current_revision_id",
                       "repair_revision_id"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "recovery_id": {
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "target_digest": {
-                        "type": "string",
-                        "pattern": "^[a-f0-9]{64}$"
-                      },
-                      "expected_restored_revision_id": {
-                        "type": "string",
-                        "minLength": 1
-                      }
-                    },
-                    "required": [
-                      "recovery_id",
-                      "target_digest"
                     ],
                     "additionalProperties": false
                   },

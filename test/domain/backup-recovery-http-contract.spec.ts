@@ -100,3 +100,23 @@ test("generated Workflow status separates in-progress, dispatch failure and both
   expect(validate({ ...running, status: "dispatch_failed" })).toBe(false);
   expect(validate({ ...running, output: failure.output })).toBe(false);
 });
+
+test("generated target resolution requires the full backup or recovery intent", () => {
+  const validate = request("/v1/administration-targets/resolve");
+  const backup = { expected_current_revision_id: "catrev", idempotency_key: "backup / " + "x".repeat(240) };
+  expect(validate({ backup })).toBe(true);
+  expect(validate({ backup: { ...backup, failed_attempt_id: "parent", failed_attempt_digest: "a".repeat(64) } })).toBe(
+    true,
+  );
+  expect(validate({ backup: { ...backup, failed_attempt_id: "parent" } })).toBe(false);
+  const recovery = {
+    action: "verify",
+    recovery_id: "recovery",
+    input: { target_digest: "a".repeat(64), idempotency_key: "verify" },
+  };
+  expect(validate({ recovery })).toBe(true);
+  expect(validate({ recovery: { ...recovery, input: { target_digest: "a".repeat(64) } } })).toBe(false);
+  expect(validate({ recovery: { ...recovery, unexpected: true } })).toBe(false);
+  expect(validate({ backup, recovery })).toBe(false);
+  expect(validate({ backup: [] })).toBe(false);
+});

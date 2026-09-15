@@ -6,6 +6,7 @@
     "contract": "platform",
     "treatment": "authenticated-readiness",
     "callers": [
+      "acceptance/backup-recovery-owner-http.test.mjs",
       "acceptance/bounded-capacity-pilot.test.mjs",
       "acceptance/card-categories.test.mjs",
       "acceptance/card-model-migration.test.mjs",
@@ -103,8 +104,10 @@
       "acceptance/maintenance-owner-http.test.mjs",
       "acceptance/native-request-pacing.test.mjs",
       "acceptance/riftbound-catalogue.test.mjs",
+      "apps/ingestion/test/backup-http-contract.spec.ts",
       "apps/ingestion/test/production-release-preparation.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "apps/ingestion/test/recovery.spec.ts",
       "cli/curated-revisions.mjs",
       "cli/keepr.mjs",
       "cli/staging-release.mjs"
@@ -119,6 +122,7 @@
     "slice": "Backup and recovery",
     "named_cli": "createBackup",
     "callers": [
+      "acceptance/backup-recovery-owner-http.test.mjs",
       "acceptance/composition-smoke-targets.test.mjs",
       "acceptance/helpers/native-backup-retry.mjs",
       "acceptance/helpers/native-fresh-baseline.mjs",
@@ -142,6 +146,7 @@
     "slice": "Backup and recovery",
     "named_cli": "backup status --attempt-id",
     "callers": [
+      "acceptance/backup-recovery-owner-http.test.mjs",
       "acceptance/card-categories.test.mjs",
       "acceptance/composed-recovery.test.mjs",
       "acceptance/helpers/native-catalogue-runtime.mjs",
@@ -229,6 +234,7 @@
     "slice": "Backup and recovery",
     "named_cli": "backup status --catalogue-revision",
     "callers": [
+      "acceptance/backup-recovery-owner-http.test.mjs",
       "apps/ingestion/test/reconciliation-scale-and-recovery.spec.ts",
       "cli/keepr.mjs"
     ]
@@ -1871,10 +1877,12 @@
     "slice": "Backup and recovery",
     "named_cli": "beginRecovery",
     "callers": [
+      "acceptance/backup-recovery-owner-http.test.mjs",
       "acceptance/composition-smoke-targets.test.mjs",
       "acceptance/helpers/native-fresh-baseline.mjs",
       "acceptance/ingestion-cli.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/backup-http-contract.spec.ts",
       "apps/ingestion/test/recovery.spec.ts",
       "cli/keepr.mjs"
     ]
@@ -1906,6 +1914,7 @@
     "slice": "Backup and recovery",
     "named_cli": "acceptRecovery",
     "callers": [
+      "acceptance/backup-recovery-owner-http.test.mjs",
       "acceptance/ingestion-cli.test.mjs",
       "apps/ingestion/test/recovery.spec.ts",
       "cli/keepr.mjs"
@@ -1920,6 +1929,7 @@
     "slice": "Backup and recovery",
     "named_cli": "verifyRecovery",
     "callers": [
+      "acceptance/backup-recovery-owner-http.test.mjs",
       "acceptance/ingestion-cli.test.mjs",
       "apps/ingestion/test/recovery.spec.ts",
       "cli/keepr.mjs"
@@ -2229,6 +2239,7 @@
     "treatment": "authenticated-readiness",
     "named_cli": null,
     "callers": [
+      "acceptance/backup-recovery-owner-http.test.mjs",
       "acceptance/bounded-capacity-pilot.test.mjs",
       "acceptance/card-categories.test.mjs",
       "acceptance/card-model-migration.test.mjs",

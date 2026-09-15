@@ -193,6 +193,16 @@ export const recoveryAcceptCommand = z.strictObject({
   confirmation_recovery_id: identifier,
   idempotency_key: recoveryIdentity,
 });
+export const backupRecoveryTargetCommand = z.union([
+  z.strictObject({ backup: backupCommand }),
+  z.strictObject({
+    recovery: z.discriminatedUnion("action", [
+      z.strictObject({ action: z.literal("begin"), input: recoveryBeginCommand }),
+      z.strictObject({ action: z.literal("verify"), recovery_id: recoveryIdentity, input: recoveryVerifyCommand }),
+      z.strictObject({ action: z.literal("accept"), recovery_id: recoveryIdentity, input: recoveryAcceptCommand }),
+    ]),
+  }),
+]);
 const recoveryVerificationSchema = z
   .strictObject({
     schema: z.literal(true),

@@ -533,6 +533,60 @@ test("exact accepted replay remains immutable after a later publication", async 
   const inspected = await http("/v1/recoveries/recovery-accepted-replay");
   expect(inspected.status).toBe(200);
   expect(await inspected.clone().json()).toEqual(accepted);
+  const verifyBody = { target_digest: digest, idempotency_key: "verify-accepted-replay" };
+  const acceptBody = {
+    expected_restored_revision_id: acceptance.expectedRestoredRevisionId,
+    target_digest: acceptance.targetDigest,
+    confirmation_recovery_id: acceptance.confirmationRecoveryId,
+    idempotency_key: acceptance.idempotencyKey,
+  };
+  const targetPath = "/v1/administration-targets/resolve";
+  for (const recovery of [
+    { action: "begin", input: beginReplayBody },
+    { action: "verify", recovery_id: beginReplayBody.recovery_id, input: verifyBody },
+    { action: "accept", recovery_id: beginReplayBody.recovery_id, input: acceptBody },
+  ]) {
+    const resolved = await http(targetPath, { recovery });
+    expect(resolved.status, await resolved.clone().text()).toBe(200);
+    await assertHttpResponse(adminDocument, targetPath, "post", resolved);
+    const document = await resolved.json<{ resolved_target: { production_target: unknown; confirmation: string } }>();
+    expect(document.resolved_target.confirmation).toBe(
+      JSON.stringify({
+        production_target: document.resolved_target.production_target,
+        ...(recovery.action === "begin" ? {} : { recovery_id: recovery.recovery_id }),
+        ...recovery.input,
+      }),
+    );
+    const changed = await http(targetPath, {
+      recovery: {
+        ...recovery,
+        input: { ...recovery.input, target_digest: "b".repeat(64) },
+      },
+    });
+    expect(changed.status).toBe(409);
+    expect(await changed.json()).toMatchObject({ code: "idempotency_key_reused" });
+  }
+  const fresh = await http(targetPath, {
+    recovery: {
+      action: "begin",
+      input: {
+        ...beginReplayBody,
+        recovery_id: "fresh-stale",
+        idempotency_key: "fresh-stale",
+      },
+    },
+  });
+  expect(fresh.status).toBe(409);
+  expect(await fresh.json()).toMatchObject({ code: "production_target_mismatch" });
+  const changedConfirmation = await http(targetPath, {
+    recovery: {
+      action: "accept",
+      recovery_id: beginReplayBody.recovery_id,
+      input: { ...acceptBody, confirmation_recovery_id: "another-recovery" },
+    },
+  });
+  expect(changedConfirmation.status).toBe(409);
+  expect(await changedConfirmation.json()).toMatchObject({ code: "idempotency_key_reused" });
   await assertHttpResponse(adminDocument, "/v1/recoveries", "post", begunAgain);
   await assertHttpResponse(adminDocument, "/v1/recoveries/{recovery}", "get", inspected);
   await assertHttpResponse(adminDocument, "/v1/recoveries/{recovery}/verification", "post", verifiedAgain);

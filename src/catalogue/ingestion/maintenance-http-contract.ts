@@ -1,5 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { boundedJson, digest, identifier, problemResponses, secured } from "../../http/openapi";
+import { backupRecoveryTargetCommand } from "../backup-recovery";
 import { retainedCuratedTargetSchema } from "../curated";
 import { registeredSupportedGames } from "../shared";
 import { administrationStatusSchema } from "./administration-status-schema";
@@ -13,14 +14,10 @@ const lifecycle = {
   idempotency_key: identifier,
 };
 export const administrationTargetCommand = z.union([
+  backupRecoveryTargetCommand,
   z.strictObject(expected),
   z.strictObject({ ...expected, ingestion_run_id: identifier }),
   z.strictObject({ ...expected, repair_revision_id: identifier }),
-  z.strictObject({
-    recovery_id: identifier,
-    target_digest: digest,
-    expected_restored_revision_id: identifier.optional(),
-  }),
   z.strictObject({
     ...expected,
     curated_operation: z.literal("create"),

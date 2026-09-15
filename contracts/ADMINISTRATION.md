@@ -586,6 +586,17 @@ An exact acknowledged parent remains replayable after its retry child exists;
 replay retains original input, observed time and Workflow identity before fresh
 current-revision, idle and retry-leaf checks.
 
+The CLI submits complete backup and recovery choices to POST
+`/v1/administration-targets/resolve`. Its nested `backup` command or `recovery`
+action and input bind the confirmation to the exact request being sent.
+Resolution shares the mutation's retained-intent comparison; only an exact
+acknowledged request can pass a changed current revision. Fresh requests retain
+the current-revision and recovery-target guards. Confirmation JSON retains the
+original command fields and order, plus the observed production target; the CLI
+uses that server-returned string unchanged. Resolution does not dispatch a
+Workflow, restore, verify or accept recovery. Retained journal hydration remains
+available when resolving a recovery on a replacement binding.
+
 `backup create` durably binds its exact expected revision to the idempotency
 key before export and creates an immutable backup attempt:
 
