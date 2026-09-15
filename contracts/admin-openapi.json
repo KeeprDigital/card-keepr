@@ -37379,7 +37379,8 @@
                         },
                         "uri": {
                           "type": "string",
-                          "format": "uri"
+                          "minLength": 1,
+                          "description": "Original acknowledged owner URL, retained without normalization."
                         },
                         "content_digest": {
                           "type": "string",
@@ -38012,7 +38013,8 @@
                         },
                         "uri": {
                           "type": "string",
-                          "format": "uri"
+                          "minLength": 1,
+                          "description": "Original acknowledged owner URL, retained without normalization."
                         },
                         "content_digest": {
                           "type": "string",

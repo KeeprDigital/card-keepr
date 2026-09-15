@@ -265,6 +265,7 @@ export const documentSchemas = {
   record,
   candidate,
   proposalEvidence,
+  curatedOwnerReferenceUri: { ...string, format: "uri" },
   proposalFieldTarget,
   selectedGames,
   progress,

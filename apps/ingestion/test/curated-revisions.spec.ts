@@ -581,44 +581,7 @@ test("legacy empty-name proposal properties survive creation, inspection and imm
   Object.defineProperty(command, "__proto__", { value: ["retained command"], enumerable: true });
   const fresh = await adminRequest("/v1/curated-revisions", command);
   expect(fresh.status).toBe(422);
-  const receipt = {
-    operation_id: `curop_${(await sha256Text(command.idempotency_key)).slice(0, 32)}`,
-    curated_revision_id: `currev_legacy_${sequence}`,
-    status: "active",
-    event_version: 1,
-    content_digest: command.proposal_digest,
-    current_catalogue_revision_id: currentRevision,
-    code: "curated_revision_created",
-  };
-  // Exact acknowledged pre-migration bytes, proved reachable by the original
-  // HTTP tracer. Installing history does not relax the fresh command boundary.
-  const database = catalogueStore(env.CATALOGUE_DB);
-  await database.batch([
-    insertAuthoredCuratedRevisionStatement(database, {
-      revisionId: receipt.curated_revision_id,
-      game: "one-piece",
-      targetKey: `one-piece|field|card|${card.id}|/name`,
-      targetKind: "field",
-      effectiveFrom: null,
-      effectiveTo: null,
-      proposalJson: canonicalJson(content),
-      contentDigest: command.proposal_digest,
-      reviewedSourceDigest: content.reviewed_source_digest,
-      schemaBindingJson: canonicalJson({ catalogue_revision_id: currentRevision, game_profile: "one-piece@1" }),
-      observedAt: now,
-    }),
-    insertCuratedAuthoredEventStatement(database, {
-      revisionId: receipt.curated_revision_id,
-      eventJson: canonicalJson({ reviewed_source_digest: content.reviewed_source_digest }),
-      observedAt: now,
-    }),
-    insertCuratedCreationResponseStatement(database, {
-      idempotencyKey: command.idempotency_key,
-      requestDigest: await sha256Text(canonicalJson(command)),
-      documentJson: canonicalJson(receipt),
-      observedAt: now,
-    }),
-  ]);
+  const receipt = await installAcknowledgedCuratedCreation(command);
   const inspection = await adminRequest(`/v1/curated-revisions/${receipt.curated_revision_id}`);
   expect(inspection.status).toBe(200);
   const shown = await inspection.json<{ revision: { content: unknown } }>();
@@ -630,6 +593,82 @@ test("legacy empty-name proposal properties survive creation, inspection and imm
   const changed = await adminRequest("/v1/curated-revisions", { ...command, later: { exact: false } });
   expect(changed.status).toBe(409);
 });
+
+const literalOwnerUrls = [
+  " https://owner.example/review ",
+  "https://owner.example/\nreview",
+  "https:\\owner.example\\review",
+  "https://owner.example/é",
+];
+
+test.each([
+  ...literalOwnerUrls.map((uri) => [uri, false] as const),
+  ["relative/review", false],
+  ["1https://owner.example/review", false],
+  ["mailto:owner@example.com", true],
+  ["urn:review:123", true],
+  ["HTTPS://OWNER.EXAMPLE/review", true],
+  ["https://owner.example/review%20note", true],
+] as const)("fresh owner reference %j has matching validation and creation boundaries", async (uri, valid) => {
+  const content = {
+    ...(await proposal("/name", "Literal owner URL")),
+    evidence: [{ kind: "owner_reference" as const, uri, content_digest: "a".repeat(64) }],
+  };
+  const validated = await adminRequest("/v1/curated-revisions/validate", {
+    proposal: content,
+    catalogue_revision_id: currentRevision,
+  });
+  expect(validated.status).toBe(valid ? 200 : 422);
+  const digest = await sha256Text(canonicalJson(content));
+  const created = await adminRequest("/v1/curated-revisions", {
+    environment: "production",
+    expected_current_revision_id: currentRevision,
+    proposal: content,
+    proposal_digest: digest,
+    idempotency_key: `literal-owner-url-${sequence}`,
+  });
+  expect(created.status).toBe(valid ? 201 : 422);
+  if (!valid) return;
+  expect(await validated.json()).toMatchObject({ proposal_digest: digest });
+  const receipt = await created.json<{ curated_revision_id: string }>();
+  const shown = await adminRequest(`/v1/curated-revisions/${receipt.curated_revision_id}`);
+  expect(shown.status).toBe(200);
+  expect(await shown.json()).toMatchObject({ revision: { content } });
+});
+
+test.each(literalOwnerUrls)(
+  "retained owner reference %j survives inspection and exact replay literally",
+  async (uri) => {
+    const content = {
+      ...(await proposal("/name", "Retained literal URL")),
+      evidence: [{ kind: "owner_reference" as const, uri, content_digest: "a".repeat(64) }],
+    };
+    const command = {
+      environment: "production",
+      expected_current_revision_id: currentRevision,
+      proposal: content,
+      proposal_digest: await sha256Text(canonicalJson(content)),
+      idempotency_key: `retained-owner-url-${sequence}`,
+    };
+    const receipt = await installAcknowledgedCuratedCreation(command);
+    const shown = await adminRequest(`/v1/curated-revisions/${receipt.curated_revision_id}`);
+    expect(shown.status).toBe(200);
+    expect(await shown.json()).toMatchObject({ revision: { content, content_digest: command.proposal_digest } });
+    const listed = await adminRequest("/v1/curated-revisions");
+    expect(listed.status).toBe(200);
+    expect(await listed.json()).toMatchObject({
+      items: expect.arrayContaining([expect.objectContaining({ id: receipt.curated_revision_id, content })]),
+    });
+    const replay = await adminRequest("/v1/curated-revisions", command);
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toEqual(receipt);
+    const changed = await adminRequest("/v1/curated-revisions", {
+      ...command,
+      proposal: { ...content, evidence: [{ ...content.evidence[0], uri: new URL(uri).href }] },
+    });
+    expect(changed.status).toBe(409);
+  },
+);
 
 test("validate derives a canonical proposal digest and rejects protected identity fields", async () => {
   const valid = await adminRequest("/v1/curated-revisions/validate", {
@@ -2985,6 +3024,52 @@ async function proposal(path: string, value: unknown) {
     ),
     supersedes_revision_id: null,
   };
+}
+
+async function installAcknowledgedCuratedCreation(command: {
+  proposal: Awaited<ReturnType<typeof proposal>>;
+  proposal_digest: string;
+  idempotency_key: string;
+}) {
+  const receipt = {
+    operation_id: `curop_${(await sha256Text(command.idempotency_key)).slice(0, 32)}`,
+    curated_revision_id: `currev_legacy_${sequence}`,
+    status: "active",
+    event_version: 1,
+    content_digest: command.proposal_digest,
+    current_catalogue_revision_id: currentRevision,
+    code: "curated_revision_created",
+  };
+  // Exact acknowledged pre-migration bytes, proved reachable by the original
+  // HTTP tracer. Installing history does not relax the fresh command boundary.
+  const database = catalogueStore(env.CATALOGUE_DB);
+  await database.batch([
+    insertAuthoredCuratedRevisionStatement(database, {
+      revisionId: receipt.curated_revision_id,
+      game: "one-piece",
+      targetKey: `one-piece|field|card|${card.id}|/name`,
+      targetKind: "field",
+      effectiveFrom: null,
+      effectiveTo: null,
+      proposalJson: canonicalJson(command.proposal),
+      contentDigest: command.proposal_digest,
+      reviewedSourceDigest: command.proposal.reviewed_source_digest,
+      schemaBindingJson: canonicalJson({ catalogue_revision_id: currentRevision, game_profile: "one-piece@1" }),
+      observedAt: now,
+    }),
+    insertCuratedAuthoredEventStatement(database, {
+      revisionId: receipt.curated_revision_id,
+      eventJson: canonicalJson({ reviewed_source_digest: command.proposal.reviewed_source_digest }),
+      observedAt: now,
+    }),
+    insertCuratedCreationResponseStatement(database, {
+      idempotencyKey: command.idempotency_key,
+      requestDigest: await sha256Text(canonicalJson(command)),
+      documentJson: canonicalJson(receipt),
+      observedAt: now,
+    }),
+  ]);
+  return receipt;
 }
 
 async function adminRequest(pathname: string, body?: unknown): Promise<Response> {

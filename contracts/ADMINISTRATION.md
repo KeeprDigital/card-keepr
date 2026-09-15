@@ -49,6 +49,11 @@ commands are strict. Removing or changing retained command properties conflicts.
 The wire boundary preserves literal JSON property names when checking those
 retained values. Idempotency keys are nonempty strings; Curated evidence and
 target identities retain their own pattern without a generic ID length ceiling.
+Fresh owner-reference URLs must satisfy the generated URI format without
+normalization. Historical acknowledged URL strings remain literal during
+inspection and exact replay, including whitespace and other syntax accepted by
+the former URL guard. Fresh creation and supersession apply the URI guard only
+after checking immutable replay.
 
 Schema-invalid JSON bodies return `422 invalid_parameter`; malformed JSON returns
 `400 invalid_json`, and invalid query parameters return `400 invalid_parameter`.

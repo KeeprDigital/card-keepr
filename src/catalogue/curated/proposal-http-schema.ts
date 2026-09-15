@@ -1,6 +1,6 @@
 import { z } from "@hono/zod-openapi";
 import { digest, identifier } from "../../http/openapi";
-import { registeredSupportedGames, sourceValue } from "../shared";
+import { isCuratedOwnerReferenceUri, registeredSupportedGames, sourceValue } from "../shared";
 
 const game = z.enum(registeredSupportedGames());
 // Curated evidence/target identities have no generic storage-ID length ceiling;
@@ -40,24 +40,27 @@ function proposalSchemas(partitioned: boolean) {
     kind: z.literal("relationship"),
     presence: z.enum(["present", "absent"]),
   });
-  const evidence = z
-    .array(
-      z.union([
-        z.strictObject({ kind: z.literal("source_observation"), id: curatedIdentity }),
-        z.strictObject({
-          kind: z.literal("owner_reference"),
-          uri: partitioned ? z.string().nullable() : z.url(),
-          content_digest: digest,
-        }),
-      ]),
-    )
-    .min(1);
+  const evidence = <T extends z.ZodType>(uri: T) =>
+    z
+      .array(
+        z.union([
+          z.strictObject({ kind: z.literal("source_observation"), id: curatedIdentity }),
+          z.strictObject({
+            kind: z.literal("owner_reference"),
+            uri,
+            content_digest: digest,
+          }),
+        ]),
+      )
+      .min(1);
   const proposalFields = {
     game,
     target: z.union([field, relationship]),
     assertion: z.union([fieldAssertion, relationshipAssertion]),
     rationale: partitioned ? z.string().nullable() : identifier.refine((value) => value.trim().length > 0),
-    evidence,
+    evidence: evidence(
+      partitioned ? z.string().nullable() : z.string().refine(isCuratedOwnerReferenceUri).openapi({ format: "uri" }),
+    ),
     effective_interval: interval,
     reviewed_source_digest: digest,
     supersedes_revision_id: curatedIdentity.nullable(),
@@ -69,6 +72,13 @@ function proposalSchemas(partitioned: boolean) {
   });
   const retained = historicalObject({
     ...proposalFields,
+    // The former WHATWG URL guard acknowledged literal whitespace, controls,
+    // backslashes and Unicode. Inspection/replay cannot normalize that intent.
+    evidence: evidence(
+      partitioned
+        ? z.string().nullable()
+        : z.string().min(1).describe("Original acknowledged owner URL, retained without normalization."),
+    ),
     target: z.union([field, historicalRelationship]),
     assertion: z.union([historicalObject(fieldAssertion.shape), historicalObject(relationshipAssertion.shape)]),
     effective_interval: historicalObject(interval.shape),

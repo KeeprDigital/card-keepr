@@ -54,6 +54,7 @@ export type {
   CuratedRelationshipTarget,
 } from "./curated-provenance";
 export { type DocumentSchema, decodeDocument } from "./document-decoder";
+export { curatedOwnerReferenceUri as isCuratedOwnerReferenceUri } from "./document-validators.mjs";
 export { deterministicGzip, deterministicGzipStream } from "./export-compression";
 export {
   CatalogueExportLimitError,

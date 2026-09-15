@@ -12,6 +12,7 @@ import {
   canonicalJson,
   canonicalProfileAttributes,
   gameProfileCardClassification,
+  isCuratedOwnerReferenceUri,
   decodeDocument,
   exportedGameProfileSchema,
   type ProductRelationship,
@@ -2168,7 +2169,13 @@ function structuralProposal(input: unknown, retained = false): Proposal {
         "At least one valid evidence reference is required.",
       ),
   );
-  if (evidence.some((item) => item.kind === "owner_reference" && !absoluteUri(item.uri)))
+  if (
+    evidence.some(
+      (item) =>
+        item.kind === "owner_reference" &&
+        (!absoluteUri(item.uri) || (!retained && !isCuratedOwnerReferenceUri(item.uri))),
+    )
+  )
     invalid("At least one valid evidence reference is required.");
   const interval = value.effective_interval;
   if (record(interval)) fields(interval, ["from", "to"]);

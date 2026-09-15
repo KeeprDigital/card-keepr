@@ -82,6 +82,29 @@ test("generated Curated lifecycle contracts require explicit nullable conflicts 
   expect(reaffirm({ ...command, conflict_digest: "c".repeat(64) }), JSON.stringify(reaffirm.errors)).toBe(true);
 });
 
+test("generated Curated URI validation distinguishes fresh proposals from retained literal evidence", () => {
+  const validate = request("/v1/curated-revisions/validate");
+  const retained = ajv.compile({ $ref: "administration#/components/schemas/RetainedCuratedRevisionProposal" });
+  for (const [uri, fresh] of [
+    [" https://owner.example/review ", false],
+    ["https://owner.example/\nreview", false],
+    ["https:\\owner.example\\review", false],
+    ["https://owner.example/é", false],
+    ["relative/review", false],
+    ["1https://owner.example/review", false],
+    ["mailto:owner@example.com", true],
+    ["urn:review:123", true],
+    ["HTTPS://OWNER.EXAMPLE/review", true],
+    ["https://owner.example/review%20note", true],
+  ] as const) {
+    const content = { ...proposal, evidence: [{ kind: "owner_reference", uri, content_digest: "a".repeat(64) }] };
+    expect(validate({ proposal: content, catalogue_revision_id: "catrev_reviewed" }), uri).toBe(fresh);
+    // The retained wire field is literal text; the retained decoder owns its
+    // historical URL semantics without rewriting the acknowledged proposal.
+    expect(retained(content), JSON.stringify(retained.errors)).toBe(true);
+  }
+});
+
 test("generated Curated event details require the fields belonging to their lifecycle event", () => {
   const validate = ajv.compile({
     $ref: "administration#/components/schemas/CuratedRevisionInspection/properties/events/items",
