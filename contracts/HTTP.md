@@ -43,6 +43,17 @@ handlers consume `c.req.valid(...)`. JSON responses parse the declared response
 schema before `c.json`, especially when presenters return stored or broadly typed
 JSON. Hono does not automatically validate outgoing JSON.
 
+Keep nullability at the use site with `z.union([namedSchema, z.null()])` when
+sharing a named component. Applying `.nullable()` to the named schema can change
+the generated component globally or leave a nullable reference non-null. Check
+both required and intentionally nullable positions against actual responses.
+
+For explicitly free-form retained JSON, validate without rebuilding the value.
+Record parsers can strip literal keys such as `__proto__`, changing acknowledged
+intent or inspection history. Verify actual commands, retained responses and
+replay conflicts for key removal. This applies to free-form intake and unused
+review fields; typed Card, Printing and admission fields retain their schemas.
+
 The Card and Printing wire schemas project the Game Profile's declared primitives and
 filter paths into Zod. Profile semantic checks, retained-document validators and
 domain transitions remain independent of Zod. Card queries retain their existing
@@ -142,6 +153,17 @@ provenance. Recorded model context selects explicit current or retained historic
 fact/input shapes without rewriting immutable evidence. Source-defined values
 remain JSON. Candidate image inspection uses the shared streaming boundary to
 check declared media and headers without buffering bytes.
+
+## Identity review and admission
+
+All 13 identity/admission operations are registered through the reconciliation
+module. The [administration protocol](ADMINISTRATION.md#identity-review-and-entity-proposals)
+defines wire inputs, retained decision replay, status-specific responses and
+history pagination. Proposal evidence and preparation-scoped identity review are
+available in the CLI as well as HTTP. Current profile checks and evidence-backed
+admission stay in the domain; retained correction and identity evidence reuse
+the shared historical schemas. Admission, correction and review resolution leave
+whole-candidate approval and publication separate.
 
 ## Migrating a family
 

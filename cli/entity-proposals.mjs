@@ -19,18 +19,21 @@ export async function runEntityProposalCommand(arguments_, environment, json) {
   } else if (operation === "inspect") {
     if (!value("proposal-id")) return usage(json);
     pathname += `/${encodeURIComponent(value("proposal-id"))}?after_generation=${encodeURIComponent(value("after-generation") ?? "0")}`;
+  } else if (operation === "evidence") {
+    if (!value("proposal-id")) return usage(json);
+    pathname += `/${encodeURIComponent(value("proposal-id"))}/evidence?after=${encodeURIComponent(value("after") ?? "")}`;
   } else if (operation === "create" || ["admit", "link", "reject", "reconsider"].includes(operation)) {
     const file = value(operation === "create" ? "proposal" : "decision");
     if (!file || !options.flags.has("--yes") || (operation !== "create" && !value("proposal-id"))) return usage(json);
     try {
       const bytes = await readFile(file);
-      if (bytes.byteLength > 64 * 1024) throw new Error("too large");
+      if (bytes.byteLength > 16 * 1024) throw new Error("too large");
       body = JSON.parse(bytes.toString("utf8"));
       if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("object required");
     } catch {
       return writeCliFailure(
         json,
-        { code: "invalid_proposal_file", detail: "Provide one JSON object of at most 64 KiB." },
+        { code: "invalid_proposal_file", detail: "Provide one JSON object of at most 16 KiB." },
         2,
       );
     }
@@ -51,7 +54,7 @@ function usage(json) {
     {
       code: "usage",
       detail:
-        "Usage: keepr entity-proposal list --game GAME | inspect --proposal-id ID | create --proposal FILE --yes | admit|link|reject|reconsider --proposal-id ID --decision FILE --yes",
+        "Usage: keepr entity-proposal list --game GAME | inspect|evidence --proposal-id ID | create --proposal FILE --yes | admit|link|reject|reconsider --proposal-id ID --decision FILE --yes",
     },
     2,
   );

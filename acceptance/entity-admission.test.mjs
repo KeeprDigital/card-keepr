@@ -1,4 +1,5 @@
 import { readWorkerConfig } from "../cli/lib/config.mjs";
+import { assertIdentityCliDocument, assertIdentityDocument } from "./helpers/identity-http-contract.mjs";
 import { collectNativeFixtureSource } from "./helpers/native-catalogue-runtime.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -60,7 +61,9 @@ test("owner CLI admission remains administrative until publication and serves or
   const cli = async (args) => {
     const result = await runCli([...args, "--json"], environment);
     assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
-    return JSON.parse(result.stdout);
+    const document = JSON.parse(result.stdout);
+    assertIdentityCliDocument(args, document);
+    return document;
   };
   const collectNativeSource = (lineage, adapter, url, key) =>
     collectNativeFixtureSource(directory, environment, lineage, adapter, url, key);
@@ -103,6 +106,13 @@ test("owner CLI admission remains administrative until publication and serves or
   );
   const proposed = await cli(["entity-proposal", "create", "--proposal", proposalPath, "--yes"]);
   assert.equal(proposed.status, "unresolved");
+  const unauthorized = await fetch(`${ingestion.url}/v1/entity-proposals/${proposed.id}`);
+  assert.equal(unauthorized.status, 401);
+  assertIdentityDocument("/v1/entity-proposals/{proposal}", "get", 401, await unauthorized.json());
+  assert.deepEqual(await cli(["entity-proposal", "evidence", "--proposal-id", proposed.id]), {
+    evidence: [],
+    next_cursor: null,
+  });
   await writeFile(
     decisionPath,
     JSON.stringify({
@@ -153,6 +163,40 @@ test("owner CLI admission remains administrative until publication and serves or
   ]);
   const cardId = admitted.history[2].decision.card.id;
   assert.equal(admitted.status, "admitted");
+  const replay = await cli([
+    "entity-proposal",
+    "admit",
+    "--proposal-id",
+    proposed.id,
+    "--decision",
+    decisionPath,
+    "--yes",
+  ]);
+  assert.deepEqual(replay, admitted);
+  const invalid = await fetch(`${ingestion.url}/v1/entity-proposals/${proposed.id}/decisions`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      action: "reject",
+      expected_generation: 3,
+      rationale: "Invalid numeric generation",
+      idempotency_key: "invalid",
+    }),
+  });
+  assert.equal(invalid.status, 422);
+  assertIdentityDocument("/v1/entity-proposals/{proposal}/decisions", "post", 422, await invalid.json());
+  const conflict = await fetch(`${ingestion.url}/v1/entity-proposals/${proposed.id}/decisions`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      action: "admit",
+      expected_generation: "2",
+      rationale: "Changed immutable intent",
+      idempotency_key: "admit",
+    }),
+  });
+  assert.equal(conflict.status, 409);
+  assertIdentityDocument("/v1/entity-proposals/{proposal}/decisions", "post", 409, await conflict.json());
   assert.equal((await cli(["entity-proposal", "inspect", "--proposal-id", proposed.id])).history.length, 3);
   assert.equal((await cli(["entity-proposal", "list", "--game", "one-piece"])).proposals[0].id, proposed.id);
   const run = await collectNativeSource(

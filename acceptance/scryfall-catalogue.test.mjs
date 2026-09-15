@@ -21,6 +21,7 @@ import {
 import { nativeExportReader } from "./helpers/native-export-reader.mjs";
 import { verifiedBackupApiState } from "./helpers/verified-backup-api-state.mjs";
 import { isNativeCheckpointRequest } from "./helpers/native-checkpoint-hosts.mjs";
+import { assertIdentityCliDocument, assertIdentityDocument } from "./helpers/identity-http-contract.mjs";
 
 test("retained Scryfall Cards publish with stable finish identities, private evidence and actual SQL restore", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "keepr-scryfall-"));
@@ -84,7 +85,9 @@ test("retained Scryfall Cards publish with stable finish identities, private evi
   const cli = async (args) => {
     const result = await runCli([...args, "--json"], environment);
     assert.equal(result.code, 0, result.stdout + result.stderr + ingestion.getOutput());
-    return JSON.parse(result.stdout);
+    const document = JSON.parse(result.stdout);
+    assertIdentityCliDocument(args, document);
+    return document;
   };
   const collect = async (intent) => {
     const run = await cli([
@@ -140,6 +143,22 @@ test("retained Scryfall Cards publish with stable finish identities, private evi
       evidence[kind] = body.records;
     }
     return evidence;
+  };
+  const preparationDesignEvidence = async (cardId, preparationId) => {
+    const response = await fetch(
+      `${environment.KEEPR_INGESTION_URL}/v1/reconciliation/identities/${cardId}?preparation_id=${preparationId}`,
+      { headers: { authorization: `Bearer ${key}` } },
+    );
+    assert.equal(response.status, 200, await response.clone().text());
+    const document = await response.json();
+    assertIdentityDocument("/v1/reconciliation/identities/{identity}", "get", 200, document);
+    assert.ok(document.mappings.length > 0);
+    for (const mapping of document.mappings) {
+      assert.equal(mapping.preparation_id, preparationId);
+      assert.equal(mapping.publication_state, "published");
+      assert.match(mapping.evidence.card_design_key, /^oracle:/u);
+    }
+    return document;
   };
   const first = await collect("scryfall-pilot");
   const privateEvidence = await candidateDesignEvidence(first.candidates[0]);
@@ -223,6 +242,7 @@ test("retained Scryfall Cards publish with stable finish identities, private evi
   assert.deepEqual(repeated.inspection.records.printings.map((p) => p.id).sort(), printings.map((p) => p.id).sort());
   for (const [id, history] of histories)
     assert.deepEqual((await cli(["entity-proposal", "inspect", "--proposal-id", id])).history, history);
+  const preparedEvidence = await preparationDesignEvidence(art.id, first.candidates[0].id);
   await stopWorker(api);
   await stopWorker(ingestion);
   await verifiedBackupApiState(statePath, directory);
@@ -233,6 +253,7 @@ test("retained Scryfall Cards publish with stable finish identities, private evi
   environment.KEEPR_INGESTION_URL = ingestion.url;
   reader.clear();
   assert.deepEqual(await candidateDesignEvidence(first.candidates[0]), privateEvidence);
+  assert.deepEqual(await preparationDesignEvidence(art.id, first.candidates[0].id), preparedEvidence);
   assert.deepEqual(await reader.records(api.url, key, publication.resulting_revision_id, "cards"), exportedCards);
   assert.deepEqual(
     await reader.records(api.url, key, publication.resulting_revision_id, "printings"),

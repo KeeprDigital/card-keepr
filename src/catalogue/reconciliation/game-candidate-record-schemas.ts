@@ -20,6 +20,12 @@ const nonNullSourceValue: z.ZodType<Exclude<JsonValue, null>> = z
   )
   .openapi("CandidateNonNullSourceValue");
 export const sourceValue = z.union([nonNullSourceValue, z.null()]);
+const sourceObject = z.record(z.string(), sourceValue);
+// Validate free-form JSON without rebuilding it: literal keys such as __proto__
+// are retained evidence and must survive both command parsing and inspection.
+export const retainedSourceObject = z
+  .custom<z.infer<typeof sourceObject>>((value) => sourceObject.safeParse(value).success)
+  .openapi({ type: "object", additionalProperties: true });
 export const textPart = z.strictObject({
   path: z.array(z.union([z.string(), count])),
   sha256: digest,
@@ -152,11 +158,13 @@ const artCard = z.strictObject({
 export const cardRecord = z
   .union([gameplayCard.openapi("CandidateGameplayCard"), artCard.openapi("CandidateArtCard")])
   .openapi("CandidateCard");
-export const observedCard = z.union([gameplayCard.omit({ id: true }), artCard.omit({ id: true })]);
+export const observedCard = z
+  .union([gameplayCard.omit({ id: true }), artCard.omit({ id: true })])
+  .openapi("CandidateObservedCard");
 export const historicalCard = gameplayCard
   .omit({ category: true, gameplay_applicability: true, related_cards: true })
   .openapi("RetainedPreCategoryCard");
-export const historicalObservedCard = historicalCard.omit({ id: true });
+export const historicalObservedCard = historicalCard.omit({ id: true }).openapi("RetainedPreCategoryObservedCard");
 const printingFields = {
   ...curated,
   id: identifier,
@@ -180,8 +188,10 @@ export const printingRecord = z.strictObject(printingFields).openapi("CandidateP
 export const historicalPrinting = printingRecord
   .omit({ gameplay_applicability: true })
   .openapi("RetainedPreCategoryPrinting");
-export const historicalObservedPrinting = historicalPrinting.omit({ id: true, card_id: true });
-export const observedPrinting = printingRecord.omit({ id: true, card_id: true });
+export const historicalObservedPrinting = historicalPrinting
+  .omit({ id: true, card_id: true })
+  .openapi("RetainedPreCategoryObservedPrinting");
+export const observedPrinting = printingRecord.omit({ id: true, card_id: true }).openapi("CandidateObservedPrinting");
 export const imageRecord = z
   .strictObject({
     id: identifier,

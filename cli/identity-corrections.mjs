@@ -23,13 +23,13 @@ export async function runIdentityCorrectionCommand(arguments_, environment, json
     if (!value("proposal") || (operation === "create" && !options.flags.has("--yes"))) return usage();
     try {
       const bytes = await readFile(value("proposal"));
-      if (bytes.byteLength > 64 * 1024) throw new Error("too large");
+      if (bytes.byteLength > 16 * 1024) throw new Error("too large");
       body = JSON.parse(bytes.toString("utf8"));
       if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("object required");
     } catch {
       return writeCliFailure(
         json,
-        { code: "invalid_correction_file", detail: "Provide one JSON object of at most 64 KiB." },
+        { code: "invalid_correction_file", detail: "Provide one JSON object of at most 16 KiB." },
         2,
       );
     }

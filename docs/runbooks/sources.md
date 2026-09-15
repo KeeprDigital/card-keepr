@@ -137,6 +137,7 @@ the run. Redirects are never followed as if they were the original evidence.
 ```sh
 keepr identity inspect --identity-id PRINTING --json
 keepr identity reviews --run-id RUN --json
+keepr identity reviews --preparation-id CANDIDATE --json
 keepr identity resolve --review-id REVIEW --printing-id PRINTING \
   --rationale 'Evidence establishing this issued Printing' \
   --idempotency-key IDENTITY_INTENT --yes --json
@@ -164,12 +165,14 @@ image gaps and all candidate exclusions before whole-candidate approval.
 keepr entity-proposal create --proposal proposal.json --yes --json
 keepr entity-proposal list --game one-piece --json
 keepr entity-proposal inspect --proposal-id PROPOSAL --json
+keepr entity-proposal evidence --proposal-id PROPOSAL --json
 keepr entity-proposal admit --proposal-id PROPOSAL --decision decision.json --yes --json
 ```
 
 The proposal contains `game`, `source_lineage` (`owner` for personal intake),
 stable source `reference`, `content`, `evidence` and `idempotency_key`. Use normalized
-Card and optional Printing shapes without canonical IDs, at most 64 KiB. Unknown
+Card and optional Printing shapes without canonical IDs. HTTP command bodies are
+limited to 16 KiB; the separate retained-intake domain bound is 64 KiB. Unknown
 numbers use `{"kind":"unknown","value":null}`. Personal evidence records specific
 observations in `evidence.attestation`; retained captures reference their real
 snapshot/observation identities.
@@ -212,7 +215,8 @@ keepr identity-correction list --game GAME --json
 
 Validation binds current entities, relationships and preceding decisions. A changed
 revision needs revalidation. One review permits 100 IDs per side, 1,000 Printing
-relationships, 64 KiB input and 256 KiB retained review. A later Printing under a
+relationships and 256 KiB retained review. HTTP commands remain capped at 16 KiB
+within the 64 KiB domain proposal bound. A later Printing under a
 split Card remains excluded until an `assign` decision maps its ID to an existing
 replacement; at most 100 assignments per such decision. Consumer-owned copies
 are never assigned automatically.

@@ -550,7 +550,7 @@
     "method": "GET",
     "path": "/v1/entity-proposals/:proposal/evidence",
     "slice": "Identity and admission",
-    "cli": null
+    "cli": "entity-proposal evidence"
   },
   {
     "family": "reconciliation",

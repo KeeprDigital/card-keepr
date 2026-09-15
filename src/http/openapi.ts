@@ -125,7 +125,14 @@ export const boundedJson: MiddlewareHandler<{ Bindings: HttpContext }> = async (
   const body = await readBoundedJsonObject(c.req.raw, 16_384, (status, code, detail) =>
     Object.assign(new Error(detail), { status, code }),
   );
-  c.req.raw = new Request(c.req.raw, { method: c.req.raw.method, body: JSON.stringify(body) });
+  const json = JSON.stringify(body, (_key, value: unknown) => {
+    // JSON.parse permits numeric overflow. Reject it before stringify silently
+    // changes Infinity to null and a command can retain different owner intent.
+    if (typeof value === "number" && !Number.isFinite(value))
+      throw Object.assign(new Error("JSON numbers must be finite."), { status: 422, code: "invalid_parameter" });
+    return value;
+  });
+  c.req.raw = new Request(c.req.raw, { method: c.req.raw.method, body: json });
   await next();
 };
 

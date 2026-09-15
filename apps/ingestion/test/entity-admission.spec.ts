@@ -1,4 +1,6 @@
 import { expect, test } from "vitest";
+import contract from "../../../contracts/admin-openapi.json";
+import { assertHttpResponse } from "../../../test/support/http-contract";
 import {
   insertAdmissionDecisionStatement,
   proposalHistoryStatement,
@@ -54,6 +56,7 @@ test("owner retains incomplete intake, rejects and explicitly reconsiders withou
     idempotency_key: "proposal-1",
   });
   expect(created.response.status).toBe(201);
+  await assertHttpResponse(contract, "/v1/entity-proposals", "post", created.response, created.document);
   const id = String(created.document.id);
   expect(created.document).toMatchObject({ status: "unresolved", generation: 0 });
   const rejected = await post(`/v1/entity-proposals/${id}/decisions`, {
@@ -64,6 +67,13 @@ test("owner retains incomplete intake, rejects and explicitly reconsiders withou
   });
   expect(rejected.document).not.toHaveProperty("code");
   expect(rejected.response.status).toBe(200);
+  await assertHttpResponse(
+    contract,
+    "/v1/entity-proposals/{proposal}/decisions",
+    "post",
+    rejected.response,
+    rejected.document,
+  );
   expect(rejected.document).toMatchObject({ status: "rejected", generation: 1 });
   const reconsidered = await post(`/v1/entity-proposals/${id}/decisions`, {
     action: "reconsider",
@@ -73,11 +83,48 @@ test("owner retains incomplete intake, rejects and explicitly reconsiders withou
   });
   expect(reconsidered.response.status).toBe(200);
   const inspected = await get(`/v1/entity-proposals/${id}`);
+  await assertHttpResponse(contract, "/v1/entity-proposals/{proposal}", "get", inspected.response, inspected.document);
   expect(inspected.document).toMatchObject({ status: "unresolved", generation: 2 });
   expect(inspected.document.history).toEqual([
     expect.objectContaining({ action: "reject", rationale: "Identity not established" }),
     expect.objectContaining({ action: "reconsider", rationale: "Owner will inspect again" }),
   ]);
+  const listed = await get("/v1/entity-proposals?game=one-piece");
+  await assertHttpResponse(contract, "/v1/entity-proposals", "get", listed.response, listed.document);
+  expect(listed.document.proposals).toEqual([expect.objectContaining({ id, generation: 2, status: "unresolved" })]);
+  const evidence = await get(`/v1/entity-proposals/${id}/evidence`);
+  await assertHttpResponse(
+    contract,
+    "/v1/entity-proposals/{proposal}/evidence",
+    "get",
+    evidence.response,
+    evidence.document,
+  );
+  expect(evidence.document).toEqual({ evidence: [], next_cursor: null });
+  const invalid = await get(`/v1/entity-proposals/${id}?after_generation=-1`);
+  expect(invalid.response.status).toBe(400);
+  await assertHttpResponse(contract, "/v1/entity-proposals/{proposal}", "get", invalid.response, invalid.document);
+  const replay = await post(`/v1/entity-proposals/${id}/decisions`, {
+    action: "reject",
+    expected_generation: "0",
+    rationale: "Identity not established",
+    idempotency_key: "reject-1",
+  });
+  expect(replay.document).toEqual(inspected.document);
+  const conflict = await post(`/v1/entity-proposals/${id}/decisions`, {
+    action: "reject",
+    expected_generation: "0",
+    rationale: "Changed intent",
+    idempotency_key: "reject-1",
+  });
+  expect(conflict.response.status).toBe(409);
+  await assertHttpResponse(
+    contract,
+    "/v1/entity-proposals/{proposal}/decisions",
+    "post",
+    conflict.response,
+    conflict.document,
+  );
 });
 
 const syntheticCard = {
@@ -641,6 +688,239 @@ test("owner cannot allocate a second numbered Card and can link evidence without
   const history = linked.document.history as { decision: { card: { id: string }; linked: boolean } }[];
   expect(history[0]!.decision).toMatchObject({ card: { id }, linked: true });
 });
+
+test("free-form intake retains literal JSON keys through creation, reconsideration, inspection and replay", async () => {
+  const initialIntake = {
+    content: JSON.parse('{"card":{"name":"Synthetic intake","__proto__":{"note":"Card"}},"__proto__":null}'),
+    evidence: JSON.parse('{"attestation":"Synthetic inspection","notes":[{"__proto__":{"source":true}}]}'),
+  };
+  const create = {
+    game: "one-piece",
+    source_lineage: "owner",
+    reference: "literal-intake-keys",
+    ...initialIntake,
+    idempotency_key: "literal-intake-create",
+  };
+  const created = await post("/v1/entity-proposals", create);
+  expect(created.response.status).toBe(201);
+  expect(Object.hasOwn(created.document.content as object, "__proto__")).toBe(true);
+  expect(created.document.initial_intake).toEqual(initialIntake);
+  const id = String(created.document.id);
+  const revisedIntake = {
+    content: JSON.parse('{"card":{"name":"Synthetic revised intake","__proto__":{"note":"new"}}}'),
+    evidence: JSON.parse('{"attestation":"Synthetic second inspection","__proto__":{"checked":true}}'),
+  };
+  const reconsider = {
+    action: "reconsider",
+    expected_generation: "0",
+    rationale: "Retain the exact newly inspected intake",
+    ...revisedIntake,
+    idempotency_key: "literal-intake-reconsider",
+  };
+  const path = `/v1/entity-proposals/${id}/decisions`;
+  const amended = await post(path, reconsider);
+  expect(amended.response.status).toBe(200);
+  expect(amended.document.content).toEqual(revisedIntake.content);
+  expect(amended.document.evidence).toEqual(revisedIntake.evidence);
+  expect(amended.document.history).toEqual([expect.objectContaining({ decision: revisedIntake })]);
+  const rejected = await post(path, {
+    action: "reject",
+    expected_generation: "1",
+    rationale: "Required Card structure still needs review",
+    idempotency_key: "literal-intake-reject",
+  });
+  expect(rejected.response.status).toBe(200);
+  const inspected = await get(`/v1/entity-proposals/${id}`);
+  expect(inspected.document).toMatchObject({
+    ...revisedIntake,
+    initial_intake: initialIntake,
+    generation: 2,
+    history: [expect.objectContaining({ decision: revisedIntake }), expect.objectContaining({ action: "reject" })],
+  });
+  await assertHttpResponse(contract, "/v1/entity-proposals/{proposal}", "get", inspected.response, inspected.document);
+  const creationReplay = await post("/v1/entity-proposals", create);
+  expect(creationReplay.response.status).toBe(201);
+  expect(creationReplay.document).toEqual(inspected.document);
+  const decisionReplay = await post(path, reconsider);
+  expect(decisionReplay.response.status).toBe(200);
+  expect(decisionReplay.document).toEqual(inspected.document);
+  const changedCreation = await post("/v1/entity-proposals", {
+    ...create,
+    content: { card: { name: "Synthetic intake" } },
+  });
+  expect(changedCreation.response.status).toBe(409);
+  const changedContent = await post(path, {
+    ...reconsider,
+    content: { card: { name: "Synthetic revised intake" } },
+  });
+  expect(changedContent.response.status).toBe(409);
+  const changedEvidence = await post(path, {
+    ...reconsider,
+    evidence: { attestation: "Synthetic second inspection" },
+  });
+  expect(changedEvidence.response.status).toBe(409);
+});
+
+const unusedExceptionValues = [
+  null,
+  false,
+  0,
+  "",
+  [],
+  ["identity", null, 3],
+  {},
+  { scope: "legacy note", attestation: null, prior: { inspections: [false, 1] } },
+  JSON.parse('{"__proto__":{"legacy":true}}'),
+];
+
+test.each(
+  ["reject", "reconsider"].flatMap((action) => unusedExceptionValues.map((exception) => ({ action, exception }))),
+)("unused exception intent survives $action replay: $exception", async ({ action, exception }) => {
+  const created = await post("/v1/entity-proposals", {
+    game: "one-piece",
+    source_lineage: "owner",
+    reference: "unused-exception",
+    content: { card: syntheticCard },
+    evidence: { attestation: "Synthetic personal inspection." },
+    idempotency_key: "unused-exception-create",
+  });
+  expect(created.response.status).toBe(201);
+  const path = `/v1/entity-proposals/${created.document.id}/decisions`;
+  const request = {
+    action,
+    expected_generation: "0",
+    rationale: "Retain the acknowledged review intent",
+    idempotency_key: "unused-exception-decision",
+    card_id: "unused Card reference",
+    printing_id: "unused Printing reference",
+  };
+  const decided = await post(path, { ...request, exception });
+  expect(decided.response.status, JSON.stringify(decided.document)).toBe(200);
+  expect(decided.document.history).toEqual([expect.objectContaining({ action })]);
+  const amended = await post(path, {
+    action: "reconsider",
+    expected_generation: "1",
+    rationale: "Append later inspected evidence",
+    idempotency_key: "unused-exception-amend",
+    evidence: { attestation: "Synthetic second inspection." },
+  });
+  expect(amended.response.status).toBe(200);
+  const replay = await post(path, { ...request, exception });
+  expect(replay.response.status).toBe(200);
+  expect(replay.document).toEqual(amended.document);
+  await assertHttpResponse(
+    contract,
+    "/v1/entity-proposals/{proposal}/decisions",
+    "post",
+    replay.response,
+    replay.document,
+  );
+  const omitted = await post(path, request);
+  expect(omitted.response.status).toBe(409);
+  const changed = await post(path, {
+    ...request,
+    exception: Object.hasOwn(exception ?? {}, "__proto__") ? {} : { changed: true, previous: exception },
+  });
+  expect(changed.response.status).toBe(409);
+});
+
+test.each(["admit", "link"])("%s still requires a valid scoped exception and attestation", async (action) => {
+  const created = await post("/v1/entity-proposals", {
+    game: "one-piece",
+    source_lineage: "owner",
+    reference: "invalid-exception",
+    content: { card: syntheticCard },
+    evidence: { attestation: "Synthetic personal inspection." },
+    idempotency_key: "invalid-exception-create",
+  });
+  expect(created.response.status).toBe(201);
+  const path = `/v1/entity-proposals/${created.document.id}/decisions`;
+  const request = {
+    action,
+    expected_generation: "0",
+    rationale: "Attempt admission with an invalid exception",
+    idempotency_key: "invalid-exception-decision",
+  };
+  for (const exception of unusedExceptionValues) {
+    const rejected = await post(path, { ...request, exception });
+    expect(rejected.response.status, JSON.stringify(rejected.document)).toBe(422);
+  }
+  for (const exception of [
+    { scope: [], attestation: "Synthetic inspection" },
+    { scope: ["identity"], attestation: " " },
+  ]) {
+    const rejected = await post(path, { ...request, exception });
+    expect(rejected.response.status).toBe(422);
+    expect(rejected.document.code).toBe("admission_exception_invalid");
+  }
+  expect((await get(`/v1/entity-proposals/${created.document.id}`)).document).toMatchObject({
+    status: "unresolved",
+    generation: 0,
+    history: [],
+  });
+});
+
+test.each([{ content: null }, { evidence: null }, { content: null, evidence: null }])(
+  "explicit-null reconsideration retains intake and exact replay intent: %j",
+  async (unchangedIntake) => {
+    const intake = {
+      content: { card: { name: "Synthetic incomplete Card" } },
+      evidence: { attestation: "Synthetic personal inspection." },
+    };
+    const created = await post("/v1/entity-proposals", {
+      game: "one-piece",
+      source_lineage: "owner",
+      reference: "null-reconsideration",
+      ...intake,
+      idempotency_key: "null-intake-create",
+    });
+    expect(created.response.status).toBe(201);
+    const path = `/v1/entity-proposals/${created.document.id}/decisions`;
+    const request = {
+      action: "reconsider",
+      expected_generation: "0",
+      rationale: "Retain the prior intake while reviewing it again",
+      idempotency_key: "null-intake-reconsider",
+    };
+    const reconsidered = await post(path, { ...request, ...unchangedIntake });
+    expect(reconsidered.response.status, JSON.stringify(reconsidered.document)).toBe(200);
+    expect(reconsidered.document).toMatchObject({
+      ...intake,
+      generation: 1,
+      history: [expect.objectContaining({ action: "reconsider", decision: intake })],
+    });
+    const amended = await post(path, {
+      action: "reconsider",
+      expected_generation: "1",
+      rationale: "Retain new inspection evidence",
+      idempotency_key: "null-intake-amend",
+      content: { card: { name: "Synthetic amended Card" } },
+      evidence: { attestation: "Synthetic second inspection." },
+    });
+    expect(amended.response.status).toBe(200);
+    const replay = await post(path, { ...request, ...unchangedIntake });
+    expect(replay.response.status).toBe(200);
+    expect(replay.document).toEqual(amended.document);
+    await assertHttpResponse(
+      contract,
+      "/v1/entity-proposals/{proposal}/decisions",
+      "post",
+      replay.response,
+      replay.document,
+    );
+    const changedIntent = await post(path, request);
+    expect(changedIntent.response.status).toBe(409);
+    const rejectedIntake = await post(path, {
+      ...request,
+      ...unchangedIntake,
+      action: "reject",
+      expected_generation: "2",
+      idempotency_key: "null-intake-reject",
+    });
+    expect(rejectedIntake.response.status).toBe(422);
+    expect(rejectedIntake.document.code).toBe("admission_intake_requires_reconsideration");
+  },
+);
 
 test("owner appends corrected intake on reconsideration while retaining the original incomplete proposal", async () => {
   const created = await post("/v1/entity-proposals", {
