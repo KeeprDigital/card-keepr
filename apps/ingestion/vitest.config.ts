@@ -12,6 +12,7 @@ import {
 import { exportSqliteFile, localCatalogueDatabase } from "../../test/support/fake-publisher/sqlite-transfer.ts";
 import { SqliteRestore } from "../../test/support/fake-publisher/sqlite-restore.ts";
 import { syntheticSourceAdapterMigration } from "../../test/support/source-adapters/migration";
+import { IngestionSequencer } from "../../scripts/ingestion-sequencer.ts";
 
 const migrations = await readD1Migrations(resolve(import.meta.dirname, "../../migrations"));
 // KEEPR_TEST_SUITE=stress selects the *.stress.spec.ts suite (scheduled /
@@ -110,6 +111,7 @@ export default defineConfig({
   ],
   test: {
     maxWorkers: stressSuite ? 1 : 2,
+    ...(stressSuite ? {} : { sequence: { sequencer: IngestionSequencer } }),
     include: stressSuite ? ["apps/ingestion/test/**/*.stress.spec.ts"] : ["apps/ingestion/test/**/*.spec.ts"],
     exclude: stressSuite ? [...configDefaults.exclude] : [...configDefaults.exclude, "**/*.stress.spec.ts"],
     hookTimeout: 30_000,
