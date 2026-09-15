@@ -92,9 +92,39 @@ export function nativeRecoveryCloudflare({ databaseDirectory, directory, sourceD
         assert.ok(target);
         // One uploaded SQL file is one local import unit. Autocommitting each
         // retained row adds filesystem sync work unrelated to provider verification.
+        const initialTables = target
+          .prepare("SELECT COUNT(*) AS count FROM sqlite_schema WHERE type='table'")
+          .get().count;
         target.exec("PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE;");
         try {
-          target.exec(uploaded);
+          const statements = unstable_splitSqlQuery(uploaded);
+          for (let index = 0; index < statements.length; index++) {
+            const sql = statements[index];
+            try {
+              target.exec(sql);
+            } catch (error) {
+              let recoveryGuard;
+              try {
+                recoveryGuard = target
+                  .prepare("SELECT recovery_restore_guard FROM operation_state WHERE singleton=1")
+                  .get();
+              } catch {
+                recoveryGuard = "unavailable";
+              }
+              throw new Error(
+                `Native import statement failed: ${JSON.stringify({
+                  targetId,
+                  initialTables,
+                  index,
+                  statement: sql.slice(0, 300),
+                  recoveryGuard,
+                  uploadSha256: createHash("sha256").update(uploaded).digest("hex"),
+                  exportSha256: exported === undefined ? null : createHash("sha256").update(exported).digest("hex"),
+                })}`,
+                { cause: error },
+              );
+            }
+          }
           target.exec("COMMIT;");
         } catch (error) {
           target.exec("ROLLBACK;");
