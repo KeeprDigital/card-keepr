@@ -1,5 +1,6 @@
 import { retainedParentContextAdapter } from "./retained-parent-context";
 import { tcgdexRetainedGraphAdapter } from "./tcgdex-retained-graph";
+import { tcgdexReviewRecordAdapter } from "./tcgdex-review-record";
 import { designIdentityAdapters } from "./design-identity";
 import { capacitySourceAdapter } from "./capacity";
 import {
@@ -218,6 +219,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
     capacitySourceAdapter,
     retainedParentContextAdapter,
     tcgdexRetainedGraphAdapter,
+    tcgdexReviewRecordAdapter,
     ...designIdentityAdapters,
     {
       adapterVersion: "fixture-unqualified-one-piece-json@1",

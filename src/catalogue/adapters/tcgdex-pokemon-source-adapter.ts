@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
 import { tcgdexCardContent } from "./tcgdex-card-content";
+import { tcgdexReviewEvidence } from "./tcgdex-review-evidence";
+import {
+  isTcgdexInventoryUrl,
+  qualifiedTcgdexCard,
+  tcgdexDiscoveryRequests,
+  tcgdexEnglishSetsUrl,
+} from "./tcgdex-discovery";
 import { AdapterParseFailure, adapterUrl, decodeAdapterUtf8, withAdapterParseFailure } from "./adapter-parse-failure";
 import type { SourceAdapterRegistration, SourcePrintingIdentityEvidence } from "./source-adapter-registration-types";
 
@@ -163,6 +170,7 @@ export const tcgdexPokemonSourceAdapterRegistration = {
   parserContract: "tcgdex-pokemon-rest-card@1",
   maximumSnapshotBytes: 1024 * 1024,
   requestCapacity: 4,
+  retainedParentContext: { maximumDepth: 3, maximumTotalBytes: 3 * 1024 * 1024 },
   origin: "production",
   requestSurface: { kind: "credential-free-https" },
   reconciliationCapability: "catalogue",
@@ -190,6 +198,16 @@ export const tcgdexPokemonSourceAdapterRegistration = {
   requiredSurfaces: cardIds,
   requestUrlForSurface: surfaceUrl,
   coverageContracts: {
+    "english-declared-catalogue": {
+      description:
+        "English TCGdex Set inventory excluding declared Pocket membership, exact candidate Set/Card details and explicit unresolved issuance/treatment evidence. Complete capture and admission require all discovered work and owner decisions.",
+      requiredSurfaces: ["english-set-inventory"],
+      requestUrlForSurface(surface) {
+        if (surface !== "english-set-inventory")
+          throw new AdapterParseFailure("Unknown TCGdex inventory surface.", { category: "configuration" });
+        return tcgdexEnglishSetsUrl;
+      },
+    },
     "snorlax-charizard-pilot": {
       description:
         "Exactly English physical svp-051 and base1-4 with their complete detailed treatment arrays. Excludes Pocket (tcgp), other Cards and full launch coverage.",
@@ -199,10 +217,24 @@ export const tcgdexPokemonSourceAdapterRegistration = {
   },
   parseBytes(bytes, context) {
     if (context.mediaType?.startsWith("image/")) return [];
+    if (isTcgdexInventoryUrl(context.url)) {
+      tcgdexDiscoveryRequests(bytes, context);
+      return [];
+    }
+    if (!cardIds.some((id) => cardUrl(id) === context.url)) return [tcgdexReviewEvidence(bytes, context)];
+    if (context.parents?.length) qualifiedTcgdexCard(bytes, context);
     return observations(bytes, context.url);
   },
   discoverRequests(bytes, context) {
     if (context.mediaType?.startsWith("image/")) return [];
+    if (isTcgdexInventoryUrl(context.url)) return tcgdexDiscoveryRequests(bytes, context);
+    if (!cardIds.some((id) => cardUrl(id) === context.url))
+      return tcgdexReviewEvidence(bytes, context).appearance_evidence.images.map((image) => ({
+        role: "image" as const,
+        url: image.source_url,
+        headers: { accept: "image/png" },
+      }));
+    if (context.parents?.length) qualifiedTcgdexCard(bytes, context);
     const card = sourceCard(bytes, context.url);
     observations(bytes, context.url);
     return card.image === undefined

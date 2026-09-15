@@ -145,6 +145,19 @@ structure or category remains unresolved. A decision about one finish does not
 decide another, and another printing's rules text cannot fill the source's gap.
 [Magic source assembly](https://github.com/KeeprDigital/card-keepr/issues/327).
 
+TCGdex's declared English inventory graph retains exact Set/Card membership and
+excludes the separately declared Pocket membership. Outside the qualified pilot,
+a structurally valid record retains one source-scoped Entity Proposal covering
+unresolved category, Card identity and treatment claims. Its raw record and
+ancestor evidence remain inspectable; an attributed source image does not imply
+an issued Printing or a qualified treatment. Missing image URLs create no image
+request. A later capture appends evidence without rewriting the original proposal
+or transferring its decision to a separately qualified target. These records
+contribute no Card or Printing. Collection must close its actual discovered graph
+before native preparation; registered Request Capacity still applies. The named
+pilot's identities and qualified image associations remain unchanged.
+[Pokémon source assembly](https://github.com/KeeprDigital/card-keepr/issues/329).
+
 The accepted admission direction automatically admits unambiguous, sufficiently
 evidenced Cards and Printings from designated authorities after their adapters
 have demonstrated reliable identity handling. Ambiguous identities and new Cards
@@ -202,9 +215,12 @@ siblings owned by that snapshot. Reverse ownership uses only literal stored keys
 so a parent reference cannot retain otherwise unreferenced descendants. Backup
 verification fingerprints the context receipts and verifies required ancestor
 bytes against both the fenced source and restored database. Context receipts
-alone do not permanently retain evidence. The Pokémon discovery and content
-qualification work exercises this opt-in through a test adapter; production
-coverage remains the [registered pilot](https://github.com/KeeprDigital/card-keepr/issues/329).
+alone do not permanently retain evidence. TCGdex's production inventory graph
+uses this opt-in. A proposal pins its source-record image bytes independently of
+Printing qualification; cleanup and backup follow the same source, ancestor and
+image closure. Bounded retained-byte proofs do not establish complete declared
+capture or physical treatment coverage.
+[Pokémon source assembly](https://github.com/KeeprDigital/card-keepr/issues/329).
 
 Collection scheduling reads a bounded page containing the next pending shard
 for each hostname. It retains Workflow identities only for dispatched shards;

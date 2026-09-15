@@ -3,7 +3,7 @@ import { expect, test } from "vitest";
 import bloomvine from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/reversible-adventure.json?raw";
 import reminder from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/manifest-reminder.json?raw";
 import control from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/etched.json?raw";
-import { catalogueStore } from "../../../src/catalogue/shared";
+import { catalogueStore, canonicalJson, sha256Text } from "../../../src/catalogue/shared";
 import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
 import { appendDiscoveredEvidenceRequests, collectSourceRequestBatch } from "../../../src/catalogue/source-evidence";
 import { parseSnapshotBatch } from "../../../src/catalogue/source-evidence/source-evidence-parsing";
@@ -109,14 +109,14 @@ test.each([
     expect(captured).toMatchObject({ processed: imageCount + 1, halt: null });
     const snapshots = (await queries.reviewImageSnapshots(db).bind(run.id, "image").all<SnapshotRow>()).results;
     const images = new Map();
-    for (const row of snapshots.filter((row) =>
-      review.appearance_evidence.images.some((image) => image.source_url === row.request_url),
-    ))
+    // The existing retention contract pins every independently verified map
+    // entry, including the control image absent from this proposal's faces.
+    for (const row of snapshots)
       images.set(row.request_url, {
         ...(await verifiedRetainedPrintingImage(env.EVIDENCE_OBJECTS, row)),
         content_object_key: row.content_object_key,
       });
-    expect(images.size).toBe(imageCount);
+    expect(images.size).toBe(imageCount + 1);
     // Scoped active-operation fixture: the transition under test is proposal intake,
     // not native dispatch or unrelated collection roots. All writes retain real guards.
     const preparation = "review-evidence-preparation",
@@ -188,6 +188,35 @@ test.each([
     expect(resumed.proposalIds).toHaveLength(2);
     const after = (await queries.reviewProposals(db).bind("scryfall-magic-en").all()).results;
     expect(after).toEqual(expect.arrayContaining(before));
+    // Exact pre-Pokémon Magic identity and stored JSON contract. Supplying a
+    // separately verified image must not add it to physical_images.
+    const physicalImages = review.appearance_evidence.images.map((image) => ({
+      ...image,
+      ...images.get(image.source_url),
+    }));
+    const evidence = canonicalJson({
+      source_snapshot_id: source.sourceSnapshotId,
+      source_observation_set_id: source.sourceObservationSetId,
+      source_observation_id: source.sourceObservationId,
+      issues: review.issues,
+      physical_images: physicalImages,
+    });
+    for (const finish of ["nonfoil", "foil"]) {
+      const reference = canonicalJson([review.locator, finish]);
+      const content = canonicalJson({ game: "magic", locator: review.locator, finish });
+      const id = `proposal_${await sha256Text(canonicalJson(["scryfall-magic-en", reference]))}`;
+      expect(after).toContainEqual(
+        expect.objectContaining({
+          id,
+          reference,
+          content_json: content,
+          evidence_json: evidence,
+          idempotency_key: id,
+          request_json: canonicalJson([content, evidence]),
+        }),
+      );
+    }
+
     expect(await retainSourceAdmissionEvidence(db, preparation, review, source, images, at)).toEqual(resumed);
     expect((await queries.reviewProposals(db).bind("scryfall-magic-en").all()).results).toEqual(after);
     expect((await queries.reviewEvidencePins(db).bind(run.id).all()).results).toHaveLength(2);
@@ -195,7 +224,7 @@ test.each([
     for (const id of resumed.proposalIds) {
       expect(await inspectEntityProposal(db, id)).toMatchObject({ status: "unresolved", generation: 0 });
       expect((await queries.reviewPrivateReferences(db).bind("entity_proposal", id).all()).results).toHaveLength(
-        imageCount,
+        imageCount + 1,
       );
     }
 
