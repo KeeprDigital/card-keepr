@@ -9,7 +9,7 @@ export const devDeploymentIntentSchema = z.strictObject({
 });
 export const stagingIntentIdentitySchema = z.strictObject({ release_id: releaseIdentity, intent_digest: digest });
 export const stagingOutcomeRequestSchema = z.strictObject({ intent_digest: digest, outcome: stagingOutcomeSchema });
-const devReceiptSchema = z
+export const devReceiptSchema = z
   .strictObject({
     ...releaseReceiptFields,
     environment: z.literal("dev"),
@@ -17,14 +17,14 @@ const devReceiptSchema = z
     authorization_expires_at: z.string().datetime(),
   })
   .openapi("DevDeploymentReceipt");
-const stagingPreparationSchema = z
+export const stagingPreparationSchema = z
   .strictObject({
     ...releaseReceiptFields,
     environment: z.literal("staging"),
     authorization: stagingAuthorizationSchema,
   })
   .openapi("StagingDeploymentPreparation");
-const stagingOutcomeReceiptSchema = z
+export const stagingOutcomeReceiptSchema = z
   .strictObject({
     release_id: releaseIdentity,
     authorization: stagingAuthorizationSchema,

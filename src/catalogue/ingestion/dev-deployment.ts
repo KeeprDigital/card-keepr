@@ -1,4 +1,5 @@
 import { readAdministrationBody } from "../../http/administration";
+import { retainedWireValue } from "../../http/openapi";
 import { verifyDevWorkflow } from "../../http/dev-workflow-identity.mjs";
 import { environmentNames } from "../../http/environment-target.mjs";
 import { validatedEnvironmentTarget } from "../../http/production-target.mjs";
@@ -7,7 +8,7 @@ import { AdministrationProblem, type CatalogueStore } from "../shared";
 import { administrationStatus } from "./administration-inspection";
 import { resolveProductionRelease } from "./production-release-preparation";
 import { preparedProductionReleaseStatement } from "./production-release-repository";
-import { devDeploymentIntentSchema } from "./platform-http-contract";
+import { devDeploymentIntentSchema, devReceiptSchema } from "./platform-http-contract";
 
 /** Dev-only workflow identity grants one exact preparation, never administration access. */
 export async function handleDevDeployment(
@@ -96,12 +97,12 @@ export async function handleDevDeployment(
     observedAt,
   );
   return Response.json(
-    {
+    retainedWireValue(devReceiptSchema, {
       ...prepared,
       environment: "dev",
       workflow_run_id: identity.runId,
       authorization_expires_at: new Date(Date.parse(observedAt) + 5 * 60_000).toISOString(),
-    },
+    }),
     { status: 201, headers: { "cache-control": "no-store" } },
   );
 }

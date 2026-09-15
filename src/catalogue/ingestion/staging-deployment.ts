@@ -1,4 +1,5 @@
 import { readAdministrationBody } from "../../http/administration";
+import { retainedWireValue } from "../../http/openapi";
 import { stagingAudience } from "../../http/dev-workflow-identity.mjs";
 import { environmentNames } from "../../http/environment-target.mjs";
 import { validatedEnvironmentTarget } from "../../http/production-target.mjs";
@@ -14,7 +15,11 @@ import {
 import { administrationStatus } from "./administration-inspection";
 import { resolveProductionRelease } from "./production-release-preparation";
 import { stagingIntentIdentity, type StagingAuthorization } from "./staging-authorization";
-import { stagingOutcomeRequestSchema } from "./platform-http-contract";
+import {
+  stagingOutcomeRequestSchema,
+  stagingPreparationSchema,
+  stagingOutcomeReceiptSchema,
+} from "./platform-http-contract";
 import {
   recordStagingProtocolStatement,
   stagingDeploymentSucceededStatement,
@@ -95,7 +100,9 @@ export async function handleStagingDeployment(
   if (prior !== null) {
     if (prior.operation !== "prepare_staging_deployment" || prior.request_json !== canonicalJson(authorization))
       conflict();
-    return Response.json(JSON.parse(prior.response_json), { headers: { "cache-control": "no-store" } });
+    return Response.json(retainedWireValue(stagingPreparationSchema, JSON.parse(prior.response_json)), {
+      headers: { "cache-control": "no-store" },
+    });
   }
   if (Date.parse(authorization.preparation_expires_at) <= Date.parse(at))
     throw new AdministrationProblem(
@@ -170,7 +177,10 @@ export async function handleStagingDeployment(
     const concurrent = await stagingRecordStatement(env.CATALOGUE_DB, key).first<RecordRow>();
     if (concurrent?.response_json !== canonicalJson(result)) conflict();
   }
-  return Response.json(result, { status: 201, headers: { "cache-control": "no-store" } });
+  return Response.json(retainedWireValue(stagingPreparationSchema, result), {
+    status: 201,
+    headers: { "cache-control": "no-store" },
+  });
 }
 
 export async function handleStagingOutcome(
@@ -250,7 +260,9 @@ export async function handleStagingOutcome(
       canonicalJson(previous.authorization) !== canonicalJson(authorization)
     )
       conflict();
-    return Response.json(previous, { headers: { "cache-control": "no-store" } });
+    return Response.json(retainedWireValue(stagingOutcomeReceiptSchema, previous), {
+      headers: { "cache-control": "no-store" },
+    });
   }
   try {
     await recordStagingProtocolStatement(env.CATALOGUE_DB, {
@@ -269,9 +281,14 @@ export async function handleStagingOutcome(
       canonicalJson(previous?.authorization) !== canonicalJson(authorization)
     )
       conflict();
-    return Response.json(previous, { headers: { "cache-control": "no-store" } });
+    return Response.json(retainedWireValue(stagingOutcomeReceiptSchema, previous), {
+      headers: { "cache-control": "no-store" },
+    });
   }
-  return Response.json(result, { status: 201, headers: { "cache-control": "no-store" } });
+  return Response.json(retainedWireValue(stagingOutcomeReceiptSchema, result), {
+    status: 201,
+    headers: { "cache-control": "no-store" },
+  });
 }
 
 export async function showStagingDeployment(

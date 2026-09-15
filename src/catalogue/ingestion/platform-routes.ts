@@ -11,6 +11,8 @@ import { handleStagingAuthorization } from "./staging-authorization";
 import { handleStagingDeployment, handleStagingOutcome } from "./staging-deployment";
 
 type Context = RouteContext<Parameters<typeof handleDevDeployment>[1]>;
+// The signed handlers validate bounded JSON receipts before serialization;
+// this adapter preserves their explicit status, headers and retained values.
 const route = streamingHttpRoute<Context>();
 export const platformRoutes = [
   route(devDeploymentRoute, async (c) => handleDevDeployment(c.env.request, c.env.env)),

@@ -1,4 +1,5 @@
 import { readAdministrationBody } from "../../http/administration";
+import { retainedWireValue } from "../../http/openapi";
 import { verifyStagingWorkflow } from "../../http/dev-workflow-identity.mjs";
 import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { showStagingRelease, type StagingIntent } from "./staging-release";
@@ -8,6 +9,7 @@ import {
   stagingRecordStatement,
 } from "./staging-release-repository";
 import { stagingIntentIdentitySchema } from "./platform-http-contract";
+import { stagingAuthorizationSchema } from "./staging-http-contract";
 
 export type StagingAuthorization = {
   contract: "card-keepr-staging-authorization@1";
@@ -63,9 +65,12 @@ export async function handleStagingAuthorization(
     );
   }
   if (existing !== null)
-    return Response.json(exactClaim(existing, identity.runId, identity.runAttempt), {
-      headers: { "cache-control": "no-store" },
-    });
+    return Response.json(
+      retainedWireValue(stagingAuthorizationSchema, exactClaim(existing, identity.runId, identity.runAttempt)),
+      {
+        headers: { "cache-control": "no-store" },
+      },
+    );
   const authorization: StagingAuthorization = {
     contract: "card-keepr-staging-authorization@1",
     intent,
@@ -93,11 +98,17 @@ export async function handleStagingAuthorization(
     const concurrent = await readClaim(env.CATALOGUE_DB, key);
     if (concurrent === null)
       throw new AdministrationProblem(409, "staging_start_changed", "Production changed before staging authorization.");
-    return Response.json(exactClaim(concurrent, identity.runId, identity.runAttempt), {
-      headers: { "cache-control": "no-store" },
-    });
+    return Response.json(
+      retainedWireValue(stagingAuthorizationSchema, exactClaim(concurrent, identity.runId, identity.runAttempt)),
+      {
+        headers: { "cache-control": "no-store" },
+      },
+    );
   }
-  return Response.json(authorization, { status: 201, headers: { "cache-control": "no-store" } });
+  return Response.json(retainedWireValue(stagingAuthorizationSchema, authorization), {
+    status: 201,
+    headers: { "cache-control": "no-store" },
+  });
 }
 
 export function stagingIntentIdentity(body: Record<string, unknown>): { releaseId: string; intentDigest: string } {

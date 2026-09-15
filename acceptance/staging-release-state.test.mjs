@@ -3,6 +3,7 @@ import { stagingStateFixture as fixture } from "./helpers/staging-state.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { stagingWorkflowFixture } from "./helpers/staging-workflow.mjs";
+import { insertStagingPreparationResponse } from "./helpers/query-helpers/staging-release.mjs";
 import { execFileSync } from "node:child_process";
 import { readdir } from "node:fs/promises";
 
@@ -118,6 +119,27 @@ test("staging retains its own exact plan and refuses successful validation witho
     recorded,
   );
   assert.deepEqual(await production.showStagingRelease(production.database, "staging-237"), intent);
+
+  const retained = await fixture(t);
+  const { canonicalJson } = await retained.vite.ssrLoadModule("/src/catalogue/shared/index.ts");
+  const { handleStagingDeployment: receiveRetainedDeployment } = await retained.vite.ssrLoadModule(
+    "/src/catalogue/ingestion/staging-deployment.ts",
+  );
+  insertStagingPreparationResponse(retained.sql).run(
+    "staging-deployment:staging-237",
+    canonicalJson(prepared.authorization),
+    JSON.stringify({ ...prepared, environment: "dev" }),
+    now,
+  );
+  await assert.rejects(
+    receiveRetainedDeployment(
+      await request(identity),
+      { ...env, CATALOGUE_DB: retained.database, CATALOGUE_EXPORTS: retained.bucket },
+      now,
+    ),
+    /environment/u,
+    "a malformed retained receipt must be rejected before the signed handler serializes it",
+  );
 });
 
 test("migration rehearsal traverses the recorded production predecessor independently of current staging", async () => {
