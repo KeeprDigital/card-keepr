@@ -654,7 +654,7 @@ export async function appendDiscoveredEvidenceRequests(
           `SELECT CASE WHEN EXISTS (
            SELECT 1
            FROM json_each(?) AS proposed
-           JOIN source_discovery_request_plans AS retained
+           CROSS JOIN source_discovery_request_plans AS retained
              ON retained.ingestion_run_id = ?
             AND retained.request_id = json_extract(proposed.value, '$.id')
            WHERE retained.method <> 'GET'
