@@ -15746,6 +15746,52 @@
                           "energy"
                         ]
                       },
+                      "trainer_type": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "effect_text": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "energy_kind": {
+                        "type": "string",
+                        "enum": [
+                          "basic",
+                          "special",
+                          "unknown"
+                        ]
+                      },
+                      "provided_energy": {
+                        "type": "object",
+                        "properties": {
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "fixed",
+                              "unknown"
+                            ]
+                          },
+                          "units": {
+                            "type": "array",
+                            "items": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "state",
+                          "units"
+                        ],
+                        "additionalProperties": false
+                      },
                       "hp": {
                         "type": [
                           "integer",
@@ -20723,6 +20769,52 @@
                           "energy"
                         ]
                       },
+                      "trainer_type": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "effect_text": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "energy_kind": {
+                        "type": "string",
+                        "enum": [
+                          "basic",
+                          "special",
+                          "unknown"
+                        ]
+                      },
+                      "provided_energy": {
+                        "type": "object",
+                        "properties": {
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "fixed",
+                              "unknown"
+                            ]
+                          },
+                          "units": {
+                            "type": "array",
+                            "items": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "state",
+                          "units"
+                        ],
+                        "additionalProperties": false
+                      },
                       "hp": {
                         "type": [
                           "integer",
@@ -24066,6 +24158,52 @@
                                       "energy"
                                     ]
                                   },
+                                  "trainer_type": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "effect_text": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "energy_kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "basic",
+                                      "special",
+                                      "unknown"
+                                    ]
+                                  },
+                                  "provided_energy": {
+                                    "type": "object",
+                                    "properties": {
+                                      "state": {
+                                        "type": "string",
+                                        "enum": [
+                                          "fixed",
+                                          "unknown"
+                                        ]
+                                      },
+                                      "units": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "state",
+                                      "units"
+                                    ],
+                                    "additionalProperties": false
+                                  },
                                   "hp": {
                                     "type": [
                                       "integer",
@@ -27229,6 +27367,52 @@
                           "trainer",
                           "energy"
                         ]
+                      },
+                      "trainer_type": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "effect_text": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "energy_kind": {
+                        "type": "string",
+                        "enum": [
+                          "basic",
+                          "special",
+                          "unknown"
+                        ]
+                      },
+                      "provided_energy": {
+                        "type": "object",
+                        "properties": {
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "fixed",
+                              "unknown"
+                            ]
+                          },
+                          "units": {
+                            "type": "array",
+                            "items": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "state",
+                          "units"
+                        ],
+                        "additionalProperties": false
                       },
                       "hp": {
                         "type": [
@@ -31413,6 +31597,52 @@
                                                     "trainer",
                                                     "energy"
                                                   ]
+                                                },
+                                                "trainer_type": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "effect_text": {
+                                                  "type": [
+                                                    "string",
+                                                    "null"
+                                                  ]
+                                                },
+                                                "energy_kind": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "basic",
+                                                    "special",
+                                                    "unknown"
+                                                  ]
+                                                },
+                                                "provided_energy": {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "state": {
+                                                      "type": "string",
+                                                      "enum": [
+                                                        "fixed",
+                                                        "unknown"
+                                                      ]
+                                                    },
+                                                    "units": {
+                                                      "type": "array",
+                                                      "items": {
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
+                                                      }
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "state",
+                                                    "units"
+                                                  ],
+                                                  "additionalProperties": false
                                                 },
                                                 "hp": {
                                                   "type": [
@@ -37045,6 +37275,52 @@
                               "trainer",
                               "energy"
                             ]
+                          },
+                          "trainer_type": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "effect_text": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "energy_kind": {
+                            "type": "string",
+                            "enum": [
+                              "basic",
+                              "special",
+                              "unknown"
+                            ]
+                          },
+                          "provided_energy": {
+                            "type": "object",
+                            "properties": {
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "fixed",
+                                  "unknown"
+                                ]
+                              },
+                              "units": {
+                                "type": "array",
+                                "items": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "state",
+                              "units"
+                            ],
+                            "additionalProperties": false
                           },
                           "hp": {
                             "type": [

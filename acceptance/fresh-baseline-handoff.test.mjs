@@ -27,11 +27,18 @@ import {
 import { d1Adapter } from "./helpers/query-helpers/sqlite-d1-adapter.mjs";
 import * as queries from "./helpers/query-helpers/fresh-baseline.mjs";
 import { schemaMigrationLevel } from "./helpers/query-helpers/schema.mjs";
+import {
+  seedParentContextFenceRows,
+  parentContextFenceRows,
+  parentContextLateWrites,
+  seedParentRecoveryClassificationOperation,
+  parentRecoveryClassifications,
+} from "./helpers/query-helpers/parent-context-fences.mjs";
 
 const bundle = await build({
   stdin: {
     contents:
-      'export { resolveFreshBaselineCorrection } from "./src/catalogue/ingestion/fresh-baseline-correction"; export { prepareProductionRelease } from "./src/catalogue/ingestion/production-release"; export { catalogueStore } from "./src/catalogue/shared/catalogue-store-repository"; export { prepareCardSearchForD1ExportStatements, reconstructCardSearchAfterD1RestoreStatements } from "./src/catalogue/backup-recovery/card-search-recovery-statements";',
+      'export { resolveFreshBaselineCorrection } from "./src/catalogue/ingestion/fresh-baseline-correction"; export { prepareProductionRelease } from "./src/catalogue/ingestion/production-release"; export { catalogueStore } from "./src/catalogue/shared/catalogue-store-repository"; export { prepareCardSearchForD1ExportStatements, reconstructCardSearchAfterD1RestoreStatements } from "./src/catalogue/backup-recovery/card-search-recovery-statements"; export { seedRunFixtureStatement } from "./apps/ingestion/test/query-helpers/run-events"; export { classifyRestoredWorkStatements } from "./src/catalogue/backup-recovery/recovery-repository";',
     resolveDir: process.cwd(),
   },
   bundle: true,
@@ -212,6 +219,91 @@ test("two SQL databases transfer only prepared authority and retire source befor
   assert.equal(queries.sharedReferences(f.source).all().length, 1);
   assert.throws(() => queries.attemptSharedDelete(f.destination).run(), /fresh_baseline_retained_source_storage/);
   assert.deepEqual(await runFreshBaselineRelease(f.environment, f.adapter), result);
+});
+
+test("a real prepared handoff fences populated parent contexts and preserves them in a restored retired source", async (t) => {
+  const f = await setup(t);
+  const run = "parent-handoff";
+  await runtime
+    .seedRunFixtureStatement(d1Adapter(f.source), {
+      id: run,
+      state: "failed",
+      failure_code: "fixture_collection_incomplete",
+      started_at: "2026-09-15T00:00:00.000Z",
+      terminal_at: "2026-09-15T00:02:00.000Z",
+    })
+    .run();
+  seedParentContextFenceRows(f.source, run);
+  const before = parentContextFenceRows(f.source);
+  assert.equal(before.contexts.length, 2);
+  assert.equal(before.dependencies.length, 1);
+  const result = await runFreshBaselineRelease(f.environment, f.adapter);
+  assert.equal(result.state, "handoff_accepted");
+  assert.equal(result.go_live, false);
+  assert.equal(f.read("source").phase, 6);
+  assert.deepEqual(parentContextFenceRows(f.source), before);
+  for (const write of parentContextLateWrites(f.source, run))
+    assert.throws(() => write.run(), /fresh_baseline_mutation_fenced/);
+  const directory = await mkdtemp(join(tmpdir(), "parent-context-retired-source-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const restoredPath = join(directory, "restored.sqlite");
+  await sqliteBackup(f.source, restoredPath);
+  const restored = new DatabaseSync(restoredPath);
+  try {
+    assert.deepEqual(parentContextFenceRows(restored), before);
+    assert.equal(restored.prepare(handoffReadSql(f.environment, "source")).get().phase, 6);
+    for (const write of parentContextLateWrites(restored, run))
+      assert.throws(() => write.run(), /fresh_baseline_mutation_fenced/);
+  } finally {
+    restored.close();
+  }
+});
+
+test("production classification fences parent contexts belonging to an unfinished collector in a restored database", async (t) => {
+  const source = new DatabaseSync(":memory:");
+  t.after(() => source.close());
+  for (const sql of migrations) source.exec(sql);
+  for (const state of ["collecting", "failed"]) {
+    const run = `parent-classification-${state}`;
+    await runtime
+      .seedRunFixtureStatement(d1Adapter(source), {
+        id: run,
+        state,
+        started_at: "2026-09-15T00:00:00.000Z",
+        ...(state === "failed"
+          ? { failure_code: "fixture_collection_incomplete", terminal_at: "2026-09-15T00:02:00.000Z" }
+          : {}),
+      })
+      .run();
+    seedParentContextFenceRows(source, run);
+  }
+  const recoveryId = "parent-classification-recovery";
+  seedParentRecoveryClassificationOperation(source, recoveryId);
+  const before = parentContextFenceRows(source);
+  const directory = await mkdtemp(join(tmpdir(), "parent-context-abandoned-source-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const restoredPath = join(directory, "restored.sqlite");
+  await sqliteBackup(source, restoredPath);
+  const restored = new DatabaseSync(restoredPath);
+  try {
+    const database = runtime.catalogueStore(d1Adapter(restored));
+    // Actual production classifier and native transaction over restored rows.
+    // The surrounding owner recovery/verification protocol is tested separately.
+    await database.batch(runtime.classifyRestoredWorkStatements(database, recoveryId));
+    assert.deepEqual(
+      parentRecoveryClassifications(restored, recoveryId).map((row) => ({ ...row })),
+      [
+        { ingestion_run_id: "parent-classification-collecting", classification: "abandoned_after_restore" },
+        { ingestion_run_id: "parent-classification-failed", classification: "retained_source" },
+      ],
+    );
+    assert.deepEqual(parentContextFenceRows(restored), before);
+    for (const write of parentContextLateWrites(restored, "parent-classification-collecting"))
+      assert.throws(() => write.run(), /restored_collection_abandoned/);
+    assert.deepEqual(restored.prepare("PRAGMA foreign_key_check").all(), []);
+  } finally {
+    restored.close();
+  }
 });
 
 test("every durable phase boundary can restart after an ambiguous successful write and expired lease", async (t) => {

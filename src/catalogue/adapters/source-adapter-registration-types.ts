@@ -34,6 +34,25 @@ export type ExtractedSourceRequest = {
   headers: Record<string, string>;
 };
 
+export type SourceAdapterParent = Readonly<{
+  requestId: string;
+  snapshotId: string;
+  role: string;
+  url: string;
+  mediaType: string | null;
+  retrievedAt: string;
+  contentSha256: string;
+  bytes: Uint8Array;
+}>;
+
+export type SourceAdapterParseContext = Readonly<{
+  url: string;
+  mediaType: string | null;
+  requestId?: string;
+  /** Exact retained discovery ancestors, nearest first; absent for legacy parsers. */
+  parents?: readonly SourceAdapterParent[];
+}>;
+
 export type SourcePrintingIdentityEvidence = Readonly<{
   cardDesignKey?: string;
   observedCardAndPrinting: {
@@ -85,12 +104,13 @@ export type SourceAdapterRegistration = Readonly<{
   qualifiesCardDesignIdentity?: (evidence: SourcePrintingIdentityEvidence) => boolean;
   reconciliationAreas?: readonly ("catalogue" | "errata")[];
   inheritDiscoveryRequestHeaders?: boolean;
+  retainedParentContext?: Readonly<{ maximumDepth: number; maximumTotalBytes: number }>;
   listingReconciliation?: ListingReconciliationTraits;
   recordExtraction?: {
     matches: (context: { mediaType: string | null; url: string }) => boolean;
     extract: (
       source: () => AsyncIterable<string>,
-      context: { url: string; mediaType: string | null; requestId?: string },
+      context: SourceAdapterParseContext,
     ) => Promise<{
       count: number;
       pagination: Record<string, unknown> | null;
@@ -107,11 +127,11 @@ export type SourceAdapterRegistration = Readonly<{
   parse?: (document: unknown) => readonly unknown[] | Promise<readonly unknown[]>;
   parseBytes?: (
     bytes: Uint8Array,
-    context: { mediaType: string | null; url: string; requestId?: string },
+    context: SourceAdapterParseContext,
   ) => readonly unknown[] | Promise<readonly unknown[]>;
   discoverRequests?: (
     bytes: Uint8Array,
-    context: { mediaType: string | null; url: string; requestId?: string },
+    context: SourceAdapterParseContext,
   ) => readonly {
     role: "listing" | "detail" | "product_detail" | "image";
     discoveryKey?: string;

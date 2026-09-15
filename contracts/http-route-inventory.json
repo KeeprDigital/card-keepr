@@ -28,6 +28,7 @@
       "acceptance/one-piece-two-source.test.mjs",
       "acceptance/operational-diagnostics-leak.test.mjs",
       "acceptance/pokemon-catalogue.test.mjs",
+      "acceptance/pokemon-profile-transition.test.mjs",
       "acceptance/product-catalogue.test.mjs",
       "acceptance/production-release-smoke.test.mjs",
       "acceptance/publication-preparation.test.mjs",
@@ -155,6 +156,7 @@
       "apps/ingestion/test/reconciliation-observed-erratum-recovery.spec.ts",
       "apps/ingestion/test/reconciliation-progress.spec.ts",
       "apps/ingestion/test/source-archive-backup.spec.ts",
+      "apps/ingestion/test/source-parent-context-backup.spec.ts",
       "cli/keepr.mjs",
       "cli/staging-release.mjs"
     ]
@@ -275,6 +277,7 @@
       "apps/ingestion/test/reconciliation-curated-lookup.spec.ts",
       "apps/ingestion/test/reconciliation-progress.spec.ts",
       "apps/ingestion/test/runtime-game-preparation-dispatch.spec.ts",
+      "apps/ingestion/test/source-parent-context-curated.spec.ts",
       "cli/curated-revisions.mjs"
     ]
   },
@@ -301,6 +304,7 @@
       "apps/ingestion/test/reconciliation-curated-lookup.spec.ts",
       "apps/ingestion/test/reconciliation-progress.spec.ts",
       "apps/ingestion/test/runtime-game-preparation-dispatch.spec.ts",
+      "apps/ingestion/test/source-parent-context-curated.spec.ts",
       "cli/curated-revisions.mjs"
     ]
   },
@@ -645,6 +649,7 @@
       "acceptance/helpers/native-catalogue-runtime.mjs",
       "acceptance/identity-corrections-cli.test.mjs",
       "acceptance/pokemon-catalogue.test.mjs",
+      "acceptance/pokemon-profile-transition.test.mjs",
       "acceptance/publication-preparation.test.mjs",
       "acceptance/riftbound-bounded-intake.test.mjs",
       "acceptance/riftbound-catalogue.test.mjs",
@@ -2254,6 +2259,7 @@
       "acceptance/one-piece-two-source.test.mjs",
       "acceptance/operational-diagnostics-leak.test.mjs",
       "acceptance/pokemon-catalogue.test.mjs",
+      "acceptance/pokemon-profile-transition.test.mjs",
       "acceptance/product-catalogue.test.mjs",
       "acceptance/production-release-smoke.test.mjs",
       "acceptance/publication-preparation.test.mjs",
@@ -2341,6 +2347,7 @@
       "acceptance/ingestion-cli.test.mjs",
       "acceptance/one-piece-two-source.test.mjs",
       "acceptance/pokemon-catalogue.test.mjs",
+      "acceptance/pokemon-profile-transition.test.mjs",
       "acceptance/product-catalogue.test.mjs",
       "acceptance/production-release-smoke.test.mjs",
       "acceptance/publication-preparation.test.mjs",
@@ -2384,6 +2391,7 @@
       "acceptance/one-piece-catalogue.test.mjs",
       "acceptance/one-piece-two-source.test.mjs",
       "acceptance/pokemon-catalogue.test.mjs",
+      "acceptance/pokemon-profile-transition.test.mjs",
       "acceptance/publication-preparation.test.mjs",
       "acceptance/riftbound-bounded-intake.test.mjs",
       "acceptance/riftbound-catalogue.test.mjs",
@@ -2464,6 +2472,7 @@
       "acceptance/helpers/native-catalogue-runtime.mjs",
       "acceptance/mixed-game-recovery.test.mjs",
       "acceptance/one-piece-two-source.test.mjs",
+      "acceptance/pokemon-profile-transition.test.mjs",
       "acceptance/publication-preparation.test.mjs",
       "apps/api/test/public-mount.spec.ts",
       "apps/api/test/runtime.spec.ts",
@@ -2584,6 +2593,7 @@
       "acceptance/fusion-world-catalogue.test.mjs",
       "acceptance/helpers/native-fresh-baseline.mjs",
       "acceptance/pokemon-catalogue.test.mjs",
+      "acceptance/pokemon-profile-transition.test.mjs",
       "acceptance/production-release-smoke.test.mjs",
       "acceptance/publication-preparation.test.mjs",
       "acceptance/scryfall-catalogue.test.mjs",
@@ -2637,6 +2647,7 @@
       "acceptance/fusion-world-catalogue.test.mjs",
       "acceptance/helpers/native-fresh-baseline.mjs",
       "acceptance/pokemon-catalogue.test.mjs",
+      "acceptance/pokemon-profile-transition.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
       "apps/api/test/product-release.spec.ts",
       "apps/api/test/public-mount.spec.ts"

@@ -30,7 +30,29 @@ export function profileWire(schema: ProfileSchema): z.ZodType {
         .max(schema.maximumItems ?? Number.MAX_SAFE_INTEGER);
       return schema.nullable ? value.nullable() : value;
     }
-    case "object":
+    case "object": {
+      if (schema.conditions) {
+        const field = schema.conditions.field;
+        return z.union(
+          Object.entries(schema.conditions.cases).map(([value, rule]) =>
+            z.strictObject(
+              Object.fromEntries(
+                Object.entries(schema.properties)
+                  .filter(([key]) => !rule.absent.includes(key))
+                  .map(([key, child]) => {
+                    if (key === field) return [key, z.literal(value)];
+                    let wire = profileWire(child);
+                    if (Object.hasOwn(rule.inapplicable, key))
+                      wire = rule.inapplicable[key] === null ? z.null() : z.tuple([]);
+                    if (child.kind === "array" && rule.minimumItems?.[key] !== undefined)
+                      wire = z.array(profileWire(child.items)).min(rule.minimumItems[key]);
+                    return [key, schema.required.includes(key) || rule.required.includes(key) ? wire : wire.optional()];
+                  }),
+              ),
+            ),
+          ),
+        );
+      }
       return z.strictObject(
         Object.fromEntries(
           Object.entries(schema.properties).map(([key, value]) => [
@@ -39,6 +61,7 @@ export function profileWire(schema: ProfileSchema): z.ZodType {
           ]),
         ),
       );
+    }
   }
 }
 export const profiles = registeredGameProfiles();
