@@ -18728,12 +18728,7 @@
                           ]
                         },
                         "action": {
-                          "type": "string",
-                          "enum": [
-                            "merge",
-                            "split",
-                            "assign"
-                          ]
+                          "$ref": "#/components/schemas/RetainedIdentityCorrectionAction"
                         },
                         "source_ids": {
                           "type": "array",
@@ -18750,11 +18745,7 @@
                           }
                         },
                         "printing_assignments": {
-                          "type": "object",
-                          "additionalProperties": {
-                            "type": "string",
-                            "minLength": 1
-                          }
+                          "$ref": "#/components/schemas/RetainedIdentityCorrectionAssignments"
                         },
                         "expected_current_revision_id": {
                           "type": "string",
@@ -18815,12 +18806,7 @@
                                   ]
                                 },
                                 "action": {
-                                  "type": "string",
-                                  "enum": [
-                                    "merge",
-                                    "split",
-                                    "assign"
-                                  ]
+                                  "$ref": "#/components/schemas/RetainedIdentityCorrectionAction"
                                 },
                                 "source_ids": {
                                   "type": "array",
@@ -18837,11 +18823,7 @@
                                   }
                                 },
                                 "printing_assignments": {
-                                  "type": "object",
-                                  "additionalProperties": {
-                                    "type": "string",
-                                    "minLength": 1
-                                  }
+                                  "$ref": "#/components/schemas/RetainedIdentityCorrectionAssignments"
                                 },
                                 "expected_current_revision_id": {
                                   "type": "string",
@@ -18951,12 +18933,7 @@
                                   ]
                                 },
                                 "action": {
-                                  "type": "string",
-                                  "enum": [
-                                    "merge",
-                                    "split",
-                                    "assign"
-                                  ]
+                                  "$ref": "#/components/schemas/RetainedIdentityCorrectionAction"
                                 },
                                 "source_ids": {
                                   "type": "array",
@@ -18973,11 +18950,7 @@
                                   }
                                 },
                                 "printing_assignments": {
-                                  "type": "object",
-                                  "additionalProperties": {
-                                    "type": "string",
-                                    "minLength": 1
-                                  }
+                                  "$ref": "#/components/schemas/RetainedIdentityCorrectionAssignments"
                                 },
                                 "expected_current_revision_id": {
                                   "type": "string",
@@ -24423,6 +24396,34 @@
           "exception"
         ],
         "additionalProperties": false
+      },
+      "RetainedIdentityCorrectionAction": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "merge",
+              "split",
+              "assign"
+            ]
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RetainedIdentityCorrectionAction"
+            },
+            "minItems": 1,
+            "maxItems": 1
+          }
+        ]
+      },
+      "RetainedIdentityCorrectionAssignments": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": "Retained assignment keys are literal, including unused keys in historical array-action decisions."
       },
       "GameCandidateInputs": {
         "type": "object",
@@ -32567,12 +32568,7 @@
                     ]
                   },
                   "action": {
-                    "type": "string",
-                    "enum": [
-                      "merge",
-                      "split",
-                      "assign"
-                    ]
+                    "$ref": "#/components/schemas/RetainedIdentityCorrectionAction"
                   },
                   "source_ids": {
                     "type": "array",
@@ -32589,11 +32585,7 @@
                     }
                   },
                   "printing_assignments": {
-                    "type": "object",
-                    "additionalProperties": {
-                      "type": "string",
-                      "minLength": 1
-                    }
+                    "$ref": "#/components/schemas/RetainedIdentityCorrectionAssignments"
                   },
                   "expected_current_revision_id": {
                     "type": "string",
@@ -32703,12 +32695,7 @@
                     ]
                   },
                   "action": {
-                    "type": "string",
-                    "enum": [
-                      "merge",
-                      "split",
-                      "assign"
-                    ]
+                    "$ref": "#/components/schemas/RetainedIdentityCorrectionAction"
                   },
                   "source_ids": {
                     "type": "array",
@@ -32725,11 +32712,7 @@
                     }
                   },
                   "printing_assignments": {
-                    "type": "object",
-                    "additionalProperties": {
-                      "type": "string",
-                      "minLength": 1
-                    }
+                    "$ref": "#/components/schemas/RetainedIdentityCorrectionAssignments"
                   },
                   "expected_current_revision_id": {
                     "type": "string",
@@ -32886,11 +32869,7 @@
             "maxItems": 100
           },
           "printing_assignments": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string",
-              "minLength": 1
-            }
+            "$ref": "#/components/schemas/RetainedIdentityCorrectionAssignments"
           },
           "expected_current_revision_id": {
             "type": "string",
@@ -32942,12 +32921,7 @@
             ]
           },
           "action": {
-            "type": "string",
-            "enum": [
-              "merge",
-              "split",
-              "assign"
-            ]
+            "$ref": "#/components/schemas/RetainedIdentityCorrectionAction"
           },
           "source_ids": {
             "type": "array",
@@ -32964,11 +32938,7 @@
             }
           },
           "printing_assignments": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string",
-              "minLength": 1
-            }
+            "$ref": "#/components/schemas/RetainedIdentityCorrectionAssignments"
           },
           "expected_current_revision_id": {
             "type": "string",
@@ -33053,12 +33023,7 @@
                   ]
                 },
                 "action": {
-                  "type": "string",
-                  "enum": [
-                    "merge",
-                    "split",
-                    "assign"
-                  ]
+                  "$ref": "#/components/schemas/RetainedIdentityCorrectionAction"
                 },
                 "source_ids": {
                   "type": "array",
@@ -33075,11 +33040,7 @@
                   }
                 },
                 "printing_assignments": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string",
-                    "minLength": 1
-                  }
+                  "$ref": "#/components/schemas/RetainedIdentityCorrectionAssignments"
                 },
                 "expected_current_revision_id": {
                   "type": "string",
@@ -51491,36 +51452,101 @@
           "content": {
             "application/json": {
               "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/IdentityCorrectionProposal"
+                "type": "object",
+                "properties": {
+                  "game": {
+                    "type": "string",
+                    "enum": [
+                      "magic",
+                      "riftbound",
+                      "one-piece",
+                      "fusion-world",
+                      "digimon",
+                      "gundam"
+                    ]
                   },
-                  {
+                  "entity_kind": {
+                    "type": "string",
+                    "enum": [
+                      "card",
+                      "printing"
+                    ]
+                  },
+                  "action": {
+                    "$ref": "#/components/schemas/RetainedIdentityCorrectionAction"
+                  },
+                  "source_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1,
+                    "maxItems": 100
+                  },
+                  "replacement_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1,
+                    "maxItems": 100
+                  },
+                  "printing_assignments": {
+                    "$ref": "#/components/schemas/RetainedIdentityCorrectionAssignments"
+                  },
+                  "expected_current_revision_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "rationale": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "evidence": {
                     "type": "object",
                     "properties": {
-                      "review_digest": {
-                        "type": "string",
-                        "pattern": "^[a-f0-9]{64}$"
-                      },
-                      "idempotency_key": {
+                      "attestation": {
                         "type": "string",
                         "minLength": 1
                       }
                     },
                     "required": [
-                      "review_digest",
-                      "idempotency_key"
+                      "attestation"
                     ],
                     "additionalProperties": false
+                  },
+                  "review_digest": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "idempotency_key": {
+                    "type": "string",
+                    "minLength": 1
                   }
-                ]
+                },
+                "required": [
+                  "game",
+                  "entity_kind",
+                  "action",
+                  "source_ids",
+                  "replacement_ids",
+                  "printing_assignments",
+                  "expected_current_revision_id",
+                  "rationale",
+                  "evidence",
+                  "review_digest",
+                  "idempotency_key"
+                ],
+                "additionalProperties": false
               }
             }
           }
         },
         "responses": {
           "201": {
-            "description": "Immutable reviewed correction, including exact replay after the published revision changes. A fresh whole-candidate approval remains required.",
+            "description": "Immutable reviewed correction, including exact replay of historical array-action intent after the published revision changes. Fresh commands require a scalar action. A fresh whole-candidate approval remains required.",
             "headers": {
               "Cache-Control": {
                 "required": true,

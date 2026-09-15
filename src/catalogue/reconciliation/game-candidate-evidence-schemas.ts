@@ -17,13 +17,33 @@ import {
 } from "./game-candidate-record-schemas";
 const count = z.number().int().nonnegative();
 const text = z.string().nullable();
+export const correctionAction = z.enum(["merge", "split", "assign"]);
+type RetainedCorrectionAction = z.infer<typeof correctionAction> | RetainedCorrectionAction[];
+// The legacy String(action) guard acknowledged singleton arrays, including
+// nested arrays. Retain their shape for inspection and exact replay only.
+const retainedCorrectionAction: z.ZodType<RetainedCorrectionAction> = z
+  .lazy(() => z.union([correctionAction, z.array(retainedCorrectionAction).min(1).max(1)]))
+  .openapi("RetainedIdentityCorrectionAction");
+const retainedAssignments = z
+  .custom<Record<string, string>>(
+    (value) =>
+      value !== null &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Object.values(value).every((id) => typeof id === "string" && id.length > 0),
+  )
+  .openapi("RetainedIdentityCorrectionAssignments", {
+    type: "object",
+    additionalProperties: { type: "string", minLength: 1 },
+    description: "Retained assignment keys are literal, including unused keys in historical array-action decisions.",
+  });
 export const correctionRequest = z.strictObject({
   game: identifier,
   entity_kind: z.enum(["card", "printing"]),
-  action: z.enum(["merge", "split", "assign"]),
+  action: retainedCorrectionAction,
   source_ids: z.array(identifier),
   replacement_ids: z.array(identifier),
-  printing_assignments: z.record(identifier, identifier),
+  printing_assignments: retainedAssignments,
   expected_current_revision_id: identifier,
   rationale: text,
   evidence: z.strictObject({ attestation: text }),

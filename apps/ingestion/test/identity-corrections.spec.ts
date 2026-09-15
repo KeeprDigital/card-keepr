@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, test } from "vitest";
 import contract from "../../../contracts/admin-openapi.json";
 import { assertHttpResponse } from "../../../test/support/http-contract";
 import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
-import { catalogueStore } from "../../../src/catalogue/shared";
+import { canonicalJson, catalogueStore, sha256Text } from "../../../src/catalogue/shared";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
 import { retainNativePreparation } from "./native-preparation-fixture";
 import { approveNativeCandidate, prepareNativeCandidate, seedNativePredecessor } from "./native-publication-helpers";
-import { retainLegacyCorrectionPin } from "./query-helpers/legacy-decision-pins";
+import { retainLegacyCorrectionDecision, retainLegacyCorrectionPin } from "./query-helpers/legacy-decision-pins";
 import {
   collect,
   exportComponentRecords,
@@ -174,6 +174,103 @@ async function admitSyntheticPrinting(reference: string) {
   expect(admitted.response.status, JSON.stringify(admitted.document)).toBe(200);
   return (admitted.document.history as { decision: { card: { id: string }; printing: { id: string } } }[])[0]!.decision;
 }
+
+test.each([{ action: ["merge"] }, { action: [[["split"]]] }, { action: [["assign"]] }])(
+  "retained legacy correction action $action remains inspectable and exactly replayable",
+  async ({ action }) => {
+    const original = await admitSyntheticPrinting("historical-action-original");
+    const replacement = await admitSyntheticPrinting("historical-action-replacement");
+    const seed = await publishIdentityFixture(
+      "/reconciliation/card-without-printing",
+      "historical-action-seed",
+      "catrev_spine_000",
+    );
+    const revision = String(seed.document.resulting_revision_id);
+    const proposal = {
+      game: "one-piece",
+      entity_kind: "card",
+      action: "merge",
+      source_ids: [original.card.id],
+      replacement_ids: [replacement.card.id],
+      printing_assignments: {},
+      expected_current_revision_id: revision,
+      rationale: "Synthetic historical identity review",
+      evidence: { attestation: "Synthetic comparison of both retained identities" },
+    };
+    const validation = await post("/v1/identity-corrections/validate", proposal);
+    expect(validation.response.status, JSON.stringify(validation.document)).toBe(200);
+    const unusedAssignment = {
+      ...proposal,
+      printing_assignments: JSON.parse(`{"__proto__":"${replacement.card.id}"}`),
+    };
+    expect((await post("/v1/identity-corrections/validate", unusedAssignment)).response.status).toBe(422);
+    const legacy = {
+      ...proposal,
+      action,
+      // The old String(action) guard accepted nested singleton arrays and
+      // skipped the strict action branches, retaining otherwise unused keys.
+      printing_assignments: JSON.parse(`{"":"${replacement.card.id}","__proto__":"${replacement.card.id}"}`),
+    };
+    const reviewed = { ...(validation.document.reviewed as Record<string, unknown>), proposal: legacy };
+    const reviewDigest = await sha256Text(canonicalJson(reviewed));
+    const request = { ...legacy, review_digest: reviewDigest, idempotency_key: "historical-action" };
+    // Fresh commands stay typed, even if their historical shape was once accepted.
+    expect((await post("/v1/identity-corrections/validate", legacy)).response.status).toBe(422);
+    expect((await post("/v1/identity-corrections", request)).response.status).toBe(422);
+    expect((await get("/v1/identity-corrections?game=one-piece")).document.decisions).toEqual([]);
+    await admitSyntheticPrinting("historical-action-later-intake");
+    const successor = await publishIdentityFixture(
+      "/reconciliation/card-without-printing",
+      "historical-action-successor",
+      revision,
+    );
+    expect(successor.response.status).toBe(200);
+    expect(successor.document.resulting_revision_id).not.toBe(revision);
+    // Restore an acknowledged row against its original published evidence after
+    // the current revision advances. Do not mutate immutable production history.
+    await retainLegacyCorrectionDecision(testEnv.CATALOGUE_DB)
+      .bind(
+        "correction_historical_action",
+        canonicalJson(legacy),
+        canonicalJson(reviewed),
+        reviewDigest,
+        request.idempotency_key,
+        "2026-09-01T00:00:00.000Z",
+      )
+      .run();
+    const inspected = await get("/v1/identity-corrections/correction_historical_action");
+    expect(inspected.response.status, JSON.stringify(inspected.document)).toBe(200);
+    expect(inspected.document).toMatchObject({ ...legacy, reviewed, review_digest: reviewDigest });
+    expect(Object.hasOwn(inspected.document.printing_assignments as object, "__proto__")).toBe(true);
+    await assertHttpResponse(
+      contract,
+      "/v1/identity-corrections/{correction}",
+      "get",
+      inspected.response,
+      inspected.document,
+    );
+    const listed = await get("/v1/identity-corrections?game=one-piece");
+    expect(listed.response.status).toBe(200);
+    expect(listed.document.decisions).toEqual([expect.objectContaining(legacy)]);
+    await assertHttpResponse(contract, "/v1/identity-corrections", "get", listed.response, listed.document);
+    const replay = await post("/v1/identity-corrections", request);
+    expect(replay.response.status, JSON.stringify(replay.document)).toBe(201);
+    expect(replay.document).toEqual(inspected.document);
+    await assertHttpResponse(contract, "/v1/identity-corrections", "post", replay.response, replay.document);
+    for (const change of [
+      { action: String(action) },
+      { action: [action] },
+      { printing_assignments: { "": replacement.card.id } },
+      { printing_assignments: {} },
+      { review_digest: "0".repeat(64) },
+    ]) {
+      const conflict = await post("/v1/identity-corrections", { ...request, ...change });
+      expect(conflict.response.status, JSON.stringify(conflict.document)).toBe(409);
+      await assertHttpResponse(contract, "/v1/identity-corrections", "post", conflict.response, conflict.document);
+    }
+    expect((await get("/v1/identity-corrections/correction_historical_action")).document).toEqual(inspected.document);
+  },
+);
 
 test("an empty legacy correction snapshot excludes decisions recorded before its upgraded resume", async () => {
   const original = await admitSyntheticPrinting("legacy-original");

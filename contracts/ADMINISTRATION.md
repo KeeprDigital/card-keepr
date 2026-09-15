@@ -306,13 +306,21 @@ attestation checks. Free-form intake and unused exception values preserve all
 literal JSON keys through validation and inspection. Retention still uses the
 existing canonical JSON rules: ordered object keys, NFC text normalization and
 finite integer numbers. Typed Card, Printing and admission evidence keep their
-declared structure.
+declared structure. Bounded JSON commands reject numeric overflow before it can
+be converted to null by request validation.
 
 Proposal creation/decision replay returns current inspection while preserving the
 original immutable intake/decision; subsequent decisions can change its status and
 history. Correction creation and identity resolution return their original
 immutable decision on exact replay. Reusing an intent for different content
 conflicts. None of these acknowledgements approves or publishes a candidate.
+
+Fresh corrections require a scalar `merge`, `split` or `assign` action. Historical
+decisions can retain a singleton array around that action, including nested
+arrays, because the former validator coerced the action when checking it.
+Inspection and exact creation replay preserve those arrays and all retained
+assignment keys, including unused keys. They do not reinterpret a historical
+array as a fresh correction command.
 
 Identity inspection accepts `after` and optional `preparation_id`; review listing
 accepts `after` and requires `run_id` or `preparation_id`. Preparation-scoped mappings

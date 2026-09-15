@@ -1,7 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { boundedJson, digest, identifier, problemResponses, secured } from "../../http/openapi";
 import { gameProfileRegistrations } from "../adapters";
-import { correctionRequest, correctionEvidence } from "./game-candidate-evidence-schemas";
+import { correctionAction, correctionRequest, correctionEvidence } from "./game-candidate-evidence-schemas";
 import { historyCursor } from "./entity-admission-http-contract";
 
 const game = z.enum(gameProfileRegistrations().map(({ game }) => game));
@@ -14,6 +14,7 @@ const ids = z
 const proposal = correctionRequest
   .extend({
     game,
+    action: correctionAction,
     source_ids: ids,
     replacement_ids: ids,
     expected_current_revision_id: nonblank,
@@ -76,14 +77,24 @@ export const createCorrectionRoute = createRoute({
     body: {
       required: true,
       content: {
-        "application/json": { schema: proposal.extend({ review_digest: digest, idempotency_key: nonblank }) },
+        "application/json": {
+          // Extending the named strict proposal emits incompatible closed allOf
+          // branches. Build the complete command shape for the generated request.
+          schema: z.strictObject({
+            ...proposal.shape,
+            action: correctionRequest.shape.action,
+            printing_assignments: correctionRequest.shape.printing_assignments,
+            review_digest: digest,
+            idempotency_key: nonblank,
+          }),
+        },
       },
     },
   },
   responses: {
     201: {
       description:
-        "Immutable reviewed correction, including exact replay after the published revision changes. A fresh whole-candidate approval remains required.",
+        "Immutable reviewed correction, including exact replay of historical array-action intent after the published revision changes. Fresh commands require a scalar action. A fresh whole-candidate approval remains required.",
       headers,
       content: { "application/json": { schema: correctionInspectionSchema } },
     },
