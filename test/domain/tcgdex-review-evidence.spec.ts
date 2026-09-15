@@ -48,6 +48,65 @@ function changed(source: Uint8Array, change: (card: Record<string, unknown>) => 
   return new TextEncoder().encode(JSON.stringify(card));
 }
 
+test("an actual retained Card with no weakness value stays unresolved and preserves the omission", async () => {
+  const bytes = readFileSync(
+    new URL(
+      "../../acceptance/fixtures/real-sources/2026-09-15-pokemon-optional-relations/raw/card-tk-ex-latia-2.body",
+      import.meta.url,
+    ),
+  );
+  const context = { ...source().context, url: "https://api.tcgdex.net/v2/en/cards/tk-ex-latia-2" };
+  const adapter = requiredSourceAdapter("tcgdex-pokemon-en@1");
+  const [observation] = await adapter.parseBytes!(bytes, context);
+  const result = parseSourceAdmissionEvidence(observation, adapter);
+  expect(result).toMatchObject({
+    locator: "tk-ex-latia-2",
+    source_membership: { set_id: "tk-ex-latia", local_id: "2" },
+    target: { kind: "unresolved_record" },
+    source_sidecar: { source_record_json: bytes.toString("utf8") },
+  });
+  expect(JSON.parse(result.source_sidecar.source_record_json).weaknesses).toEqual([{ type: "Water" }]);
+  expect(result).not.toHaveProperty("card");
+  expect(result).not.toHaveProperty("printing");
+});
+
+test.each(["weaknesses", "resistances"])("unresolved %s retain omitted and supplied values exactly", async (field) => {
+  const { bytes, context } = source("base1-5", "base1");
+  const relations = [{ type: "Fire" }, { type: "Water", value: field === "weaknesses" ? "×2" : "-30" }];
+  const claims = changed(bytes, (card) => {
+    card[field] = relations;
+  });
+  const adapter = requiredSourceAdapter("tcgdex-pokemon-en@1");
+  const [observation] = await adapter.parseBytes!(claims, context);
+  const result = parseSourceAdmissionEvidence(observation, adapter);
+  expect(result).toMatchObject({
+    target: { kind: "unresolved_record" },
+    source_sidecar: { source_record_json: new TextDecoder().decode(claims) },
+  });
+  expect(JSON.parse(result.source_sidecar.source_record_json)[field]).toEqual(relations);
+});
+
+test.each(["weaknesses", "resistances"])("unresolved %s reject malformed types and supplied values", async (field) => {
+  const { bytes, context } = source("base1-5", "base1");
+  const adapter = requiredSourceAdapter("tcgdex-pokemon-en@1");
+  for (const relation of [
+    {},
+    { type: null },
+    { type: "" },
+    { type: 1 },
+    { type: "Fire", value: null },
+    { type: "Fire", value: "" },
+    { type: "Fire", value: 2 },
+    { type: "Fire", value: {} },
+    { type: "Fire", value: "x".repeat(257) },
+  ]) {
+    const claims = changed(bytes, (card) => {
+      card[field] = [relation];
+    });
+    await expect(async () => adapter.parseBytes!(claims, context)).rejects.toThrow();
+  }
+});
+
 test("an evidenced image belongs to one unresolved source record while exact raw claims and the leading-zero membership survive", () => {
   const { bytes, context } = source("swsh9-053", "swsh9");
   const result = tcgdexReviewEvidence(bytes, context);

@@ -1,0 +1,84 @@
+{
+  "classification": "retained-unresolved-source-claim-regression-not-Card-qualification",
+  "issue": 329,
+  "captures": [
+    {
+      "id": "card-tk-ex-latia-2",
+      "url": "https://api.tcgdex.net/v2/en/cards/tk-ex-latia-2",
+      "body": "raw/card-tk-ex-latia-2.body",
+      "bytes": 1840,
+      "sha256": "9a78aca7e2c63f301f5bec1ef074867a74e7bf60dda8afcde10b5ef3c05b2772",
+      "status": 200,
+      "finalUrl": "https://api.tcgdex.net/v2/en/cards/tk-ex-latia-2",
+      "complete": true,
+      "startedAt": "2026-09-15T20:17:12.532168+00:00",
+      "finishedAt": "2026-09-15T20:17:13.402378+00:00",
+      "requestHeaders": {
+        "Accept": "application/json",
+        "Accept-Encoding": "identity",
+        "User-Agent": "Card-Keepr-Scope-Qualification/1 (+https://github.com/KeeprDigital/card-keepr)"
+      },
+      "responseHeaders": [
+        [
+          "Access-Control-Allow-Headers",
+          "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"
+        ],
+        [
+          "Access-Control-Allow-Methods",
+          "GET,POST,OPTIONS"
+        ],
+        [
+          "Access-Control-Allow-Origin",
+          "*"
+        ],
+        [
+          "Access-Control-Expose-Headers",
+          "Content-Length,Content-Range"
+        ],
+        [
+          "Alt-Svc",
+          "h3=\":443\"; ma=2592000"
+        ],
+        [
+          "Cache-Control",
+          "no-cache, no-store, must-revalidate"
+        ],
+        [
+          "Content-Length",
+          "1840"
+        ],
+        [
+          "Content-Type",
+          "application/json; charset=utf-8"
+        ],
+        [
+          "Date",
+          "Tue, 15 Sep 2026 20:17:13 GMT"
+        ],
+        [
+          "Etag",
+          "W/\"730-9jYcFhyDcUR3LWw+xCYalsDptKE\""
+        ],
+        [
+          "Strict-Transport-Security",
+          "max-age=31536000"
+        ],
+        [
+          "X-Powered-By",
+          "Express"
+        ],
+        [
+          "Connection",
+          "close"
+        ]
+      ]
+    }
+  ],
+  "ancestry_manifest": "../2026-09-15-pokemon-scope/manifest.json",
+  "ancestry_capture_ids": [
+    "set-tk-ex-latia",
+    "pocket-series",
+    "english-sets"
+  ],
+  "meaning": "The exact source omits weaknesses[0].value. Its omission is retained; no multiplier or qualified Card is inferred."
+}
