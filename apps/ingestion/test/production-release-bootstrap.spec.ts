@@ -1,3 +1,5 @@
+import httpDocument from "../../../contracts/admin-openapi.json";
+import { assertHttpResponse } from "../../../test/support/http-contract";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
 import { applyD1Migrations, env, type D1Migration } from "cloudflare:test";
 import { beforeEach, expect, test } from "vitest";
@@ -55,7 +57,9 @@ test("Bootstrap Mode is reported and accepted only while the catalogue is provab
     confirmation: resolved.confirmation,
   });
   expect(prepared.status).toBe(201);
-  await expect(prepared.json()).resolves.toMatchObject({
+  const receipt = await prepared.json();
+  await assertHttpResponse(httpDocument, "/v1/production-releases", "post", prepared, receipt);
+  expect(receipt).toMatchObject({
     contract: "card-keepr-production-release-request@1",
     release_id: "bootstrap-1",
     state: "requested",
@@ -63,6 +67,14 @@ test("Bootstrap Mode is reported and accepted only while the catalogue is provab
   });
 
   const published = await publishFixtureRevision();
+
+  const replay = await administrationRequest("/v1/production-releases", "POST", {
+    ...intent,
+    confirmation: resolved.confirmation,
+  });
+  expect(replay.status).toBe(201);
+  expect(await replay.clone().json()).toEqual(receipt);
+  await assertHttpResponse(httpDocument, "/v1/production-releases", "post", replay);
 
   const populated = await administrationRequest("/v1/status", "GET");
   expect(populated.status).toBe(200);

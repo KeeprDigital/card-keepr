@@ -311,7 +311,7 @@ const workflowSchema = z.strictObject({
   classification: identifier.optional(),
 });
 const operationLink = z.strictObject({ code: identifier, method: z.enum(["GET", "POST"]), path: identifier });
-const operationalDiagnosticsSchema = z.strictObject({
+export const operationalDiagnosticsSchema = z.strictObject({
   contract: z.literal("card-keepr-operational-diagnostics@1"),
   references: z.strictObject({
     run_id: nullableReference,

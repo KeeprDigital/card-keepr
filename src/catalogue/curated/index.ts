@@ -35,4 +35,4 @@ export { curatedRunStartGuardStatement, curatedPreparationStartGuardStatement } 
 export { CuratedConflictStorageError } from "./curated-conflict-preparation";
 export { pinNativeCuratedRevisionSelectionStatement } from "./curated-repository";
 
-export { partitionedCuratedProposalSchema } from "./proposal-http-schema";
+export { curatedProposalSchema, partitionedCuratedProposalSchema } from "./proposal-http-schema";

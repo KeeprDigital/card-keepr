@@ -1,3 +1,4 @@
+import { cleanupSchema, captureCleanupRoute, stagingCleanupRoute, retryCleanupRoute } from "../source-evidence";
 import { identityRoutes } from "./identity-routes";
 import { gameCandidateRoutes } from "./game-candidate-routes";
 import { httpRoute } from "../../http/openapi";
@@ -63,44 +64,48 @@ type Environment = {
 type Context = RouteContext<Environment> & { observedAt: string };
 
 export const reconciliationRoutes = [
-  route<Context>(
-    "POST",
-    "/v1/reconciliation-operations/:preparation/evidence-cleanup",
-    async ({ request, env, observedAt }, params) => {
-      const body = await readAdministrationBody(request);
-      assertOnlyFields(body, ["idempotency_key", "retention_days"]);
-      return Response.json(
+  httpRoute<Context>()(stagingCleanupRoute, async (c) => {
+    const input = c.req.valid("json");
+    return c.json(
+      cleanupSchema.parse(
         await startEvidenceCleanup(
-          env,
-          params.preparation!,
-          requiredString(body, "idempotency_key"),
-          body.retention_days,
-          observedAt,
+          c.env.env,
+          c.req.valid("param").preparation,
+          input.idempotency_key,
+          input.retention_days,
+          c.env.observedAt,
           "staging",
         ),
-        { status: 202 },
-      );
-    },
-  ),
-  route<Context>("POST", "/v1/ingestion-runs/:run/evidence-cleanup", async ({ request, env, observedAt }, params) => {
-    const body = await readAdministrationBody(request);
-    assertOnlyFields(body, ["idempotency_key", "retention_days"]);
-    return Response.json(
-      await startEvidenceCleanup(
-        env,
-        params.run!,
-        requiredString(body, "idempotency_key"),
-        body.retention_days,
-        observedAt,
       ),
-      { status: 202 },
+      202,
+      { "Cache-Control": "no-store" },
     );
   }),
-  route<Context>("POST", "/v1/evidence-cleanups/:cleanup/retry", async ({ request, env }, params) => {
-    const body = await readAdministrationBody(request);
-    assertOnlyFields(body, ["expected_generation"]);
-    return Response.json(await retryEvidenceCleanup(env, params.cleanup!, body.expected_generation), { status: 202 });
+  httpRoute<Context>()(captureCleanupRoute, async (c) => {
+    const input = c.req.valid("json");
+    return c.json(
+      cleanupSchema.parse(
+        await startEvidenceCleanup(
+          c.env.env,
+          c.req.valid("param").run,
+          input.idempotency_key,
+          input.retention_days,
+          c.env.observedAt,
+        ),
+      ),
+      202,
+      { "Cache-Control": "no-store" },
+    );
   }),
+  httpRoute<Context>()(retryCleanupRoute, async (c) =>
+    c.json(
+      cleanupSchema.parse(
+        await retryEvidenceCleanup(c.env.env, c.req.valid("param").cleanup, c.req.valid("json").expected_generation),
+      ),
+      202,
+      { "Cache-Control": "no-store" },
+    ),
+  ),
   httpRoute<Context>()(resumePublicationRoute, async (c) => {
     const result = await resumeGamePublication(
       c.env.env,

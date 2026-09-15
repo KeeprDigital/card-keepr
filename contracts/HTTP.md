@@ -174,6 +174,27 @@ physical evidence retention and CLI behavior. Current proposals remain strict;
 explicit historical shapes preserve acknowledged empty-name extensions for exact
 replay. Handlers validate retained values without rebuilding their property names.
 
+## Maintenance and software release
+
+[#322](https://github.com/KeeprDigital/card-keepr/issues/322) registers all 16
+previous maintenance operations and one separate owner target-resolution operation.
+Evidence cleanup, export deletion, status, search repair, Production Release and
+owner staging/deployment inspection use their owning modules' generated contracts.
+`POST /v1/administration-targets/resolve` accepts typed JSON choices; GET `/v1/status`
+accepts no query parameters. The CLI and operational callers use the new resolution
+route for exact server-owned confirmation. Both responses are private and no-store.
+
+Cleanup object inspection returns `{objects, next_after}` so the ordinary CLI can
+read and paginate it. Cleanup start returns current state after matching original scope/owner/retention;
+export confirmation and retry return original attempt receipts while export status
+observes current state. Search repair retains its completed result. Release receipts
+preserve serialized plans and string-valued dispatch inputs after execution, with
+separate cancellation/correction branches. Owner staging preserves its original
+authorization and deadline, including exact historical singleton-array scope intent;
+fresh scopes must be strings. The separately inventoried signed platform handlers
+retain their workflow/environment credentials, expiry and exact-identity checks.
+See the [administration protocol](ADMINISTRATION.md#maintenance-http).
+
 ## Migrating a family
 
 1. Find the operation and potential callers in [the generated inventory](http-route-inventory.json).

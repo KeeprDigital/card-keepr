@@ -90,6 +90,7 @@ export async function resolveStagingRelease(
     requireConfirmation(request, response.confirmation);
     return response;
   }
+  if (typeof request.validation_scope !== "string") invalid();
   const target = typeof targetInput === "function" ? await targetInput() : targetInput;
   if (validatedEnvironmentTarget(target, "production") === null) invalid();
   const status = await administrationStatus(database, exports, at, target, false);

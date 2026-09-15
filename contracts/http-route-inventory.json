@@ -59,6 +59,7 @@
     "contract": "platform",
     "treatment": "unauthenticated-liveness",
     "callers": [
+      "acceptance/maintenance-owner-http.test.mjs",
       "acceptance/operational-diagnostics-leak.test.mjs",
       "acceptance/production-release-smoke.test.mjs",
       "acceptance/runtime-health.test.mjs",
@@ -76,6 +77,7 @@
     "contract": "platform",
     "treatment": "unauthenticated-liveness",
     "callers": [
+      "acceptance/maintenance-owner-http.test.mjs",
       "acceptance/operational-diagnostics-leak.test.mjs",
       "acceptance/production-release-smoke.test.mjs",
       "acceptance/runtime-health.test.mjs",
@@ -84,6 +86,26 @@
       "apps/ingestion/test/runtime-health.spec.ts",
       "scripts/http-contracts.mjs",
       "scripts/production-smoke.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "ingestion",
+    "method": "POST",
+    "path": "/v1/administration-targets/resolve",
+    "contract": "generated",
+    "slice": "Maintenance and runtime operations",
+    "named_cli": null,
+    "callers": [
+      "acceptance/card-categories.test.mjs",
+      "acceptance/helpers/cli-http.mjs",
+      "acceptance/maintenance-owner-http.test.mjs",
+      "acceptance/riftbound-catalogue.test.mjs",
+      "apps/ingestion/test/production-release-preparation.spec.ts",
+      "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "cli/curated-revisions.mjs",
+      "cli/keepr.mjs",
+      "cli/staging-release.mjs"
     ]
   },
   {
@@ -104,7 +126,8 @@
       "apps/ingestion/test/backup-recovery.spec.ts",
       "apps/ingestion/test/composed-recovery.spec.ts",
       "apps/ingestion/test/reconciliation-scale-and-recovery.spec.ts",
-      "cli/keepr.mjs"
+      "cli/keepr.mjs",
+      "test/support/http-response-validators.mjs"
     ]
   },
   {
@@ -138,7 +161,7 @@
     "family": "export",
     "method": "POST",
     "path": "/v1/catalogue-export-deletion-plans",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Maintenance and runtime operations",
     "named_cli": "catalogue-export deletion plan",
     "callers": [
@@ -155,7 +178,7 @@
     "family": "export",
     "method": "POST",
     "path": "/v1/catalogue-export-deletions",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Maintenance and runtime operations",
     "named_cli": "catalogue-export deletion start",
     "callers": [
@@ -172,7 +195,7 @@
     "family": "export",
     "method": "GET",
     "path": "/v1/catalogue-export-deletions/{deletion}",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Maintenance and runtime operations",
     "named_cli": "catalogue-export deletion status",
     "callers": [
@@ -187,7 +210,7 @@
     "family": "export",
     "method": "POST",
     "path": "/v1/catalogue-export-deletions/{deletion}/retry",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Maintenance and runtime operations",
     "named_cli": "catalogue-export deletion retry",
     "callers": [
@@ -212,7 +235,7 @@
     "family": "ingestion",
     "method": "POST",
     "path": "/v1/catalogue-search-materialization/repair",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Maintenance and runtime operations",
     "named_cli": "repairCatalogueSearch",
     "callers": [
@@ -497,12 +520,13 @@
     "family": "source-evidence",
     "method": "GET",
     "path": "/v1/evidence-cleanups/{cleanup}",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Maintenance and runtime operations",
     "named_cli": "evidenceCleanupStatus",
     "callers": [
       "acceptance/card-categories.test.mjs",
       "acceptance/composed-recovery.test.mjs",
+      "acceptance/maintenance-owner-http.test.mjs",
       "apps/ingestion/test/evidence-cleanup.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
       "cli/keepr.mjs",
@@ -514,7 +538,7 @@
     "family": "source-evidence",
     "method": "POST",
     "path": "/v1/evidence-cleanups/{cleanup}/advance",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Maintenance and runtime operations",
     "named_cli": null,
     "callers": [
@@ -527,10 +551,12 @@
     "family": "source-evidence",
     "method": "GET",
     "path": "/v1/evidence-cleanups/{cleanup}/objects",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Maintenance and runtime operations",
     "named_cli": "evidenceCleanupObjects",
     "callers": [
+      "acceptance/maintenance-owner-http.test.mjs",
+      "apps/ingestion/test/evidence-cleanup.spec.ts",
       "cli/keepr.mjs"
     ]
   },
@@ -539,10 +565,11 @@
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/evidence-cleanups/{cleanup}/retry",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Maintenance and runtime operations",
     "named_cli": "evidenceCleanupRetry",
     "callers": [
+      "acceptance/maintenance-owner-http.test.mjs",
       "apps/ingestion/test/evidence-cleanup.spec.ts",
       "cli/keepr.mjs"
     ]
@@ -1272,10 +1299,11 @@
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/ingestion-runs/{run}/evidence-cleanup",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Maintenance and runtime operations",
     "named_cli": "evidenceCleanupStart",
     "callers": [
+      "acceptance/maintenance-owner-http.test.mjs",
       "apps/ingestion/test/evidence-cleanup.spec.ts",
       "cli/keepr.mjs"
     ]
@@ -1584,7 +1612,7 @@
     "family": "ingestion",
     "method": "POST",
     "path": "/v1/production-releases",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Maintenance and runtime operations",
     "named_cli": "release production",
     "callers": [
@@ -1751,7 +1779,7 @@
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/reconciliation-operations/{preparation}/evidence-cleanup",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Maintenance and runtime operations",
     "named_cli": "stagingCleanupStart",
     "callers": [
@@ -2023,6 +2051,7 @@
     "named_cli": null,
     "callers": [
       "acceptance/composed-recovery.test.mjs",
+      "acceptance/maintenance-owner-http.test.mjs",
       "acceptance/scryfall-catalogue.test.mjs",
       "apps/ingestion/test/curated-revisions.spec.ts",
       "apps/ingestion/test/reconciliation-progress.spec.ts",
@@ -2057,6 +2086,7 @@
       "acceptance/helpers/native-fresh-baseline.mjs",
       "acceptance/staging-release-state.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/staging-release-http.spec.ts",
       "scripts/http-contracts.mjs",
       "scripts/staging-release.mjs"
     ]
@@ -2066,12 +2096,13 @@
     "family": "ingestion",
     "method": "GET",
     "path": "/v1/staging-deployments/{release}",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Maintenance and runtime operations",
     "named_cli": "release staging-status",
     "callers": [
       "acceptance/card-categories.test.mjs",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "apps/ingestion/test/staging-release-http.spec.ts",
       "cli/staging-release.mjs"
     ]
   },
@@ -2107,7 +2138,7 @@
     "family": "ingestion",
     "method": "POST",
     "path": "/v1/staging-releases",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Maintenance and runtime operations",
     "named_cli": "release staging",
     "callers": [
@@ -2124,12 +2155,13 @@
     "family": "ingestion",
     "method": "GET",
     "path": "/v1/staging-releases/{release}",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Maintenance and runtime operations",
     "named_cli": "release staging-status",
     "callers": [
       "acceptance/card-categories.test.mjs",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "apps/ingestion/test/staging-release-http.spec.ts",
       "cli/staging-release.mjs"
     ]
   },
@@ -2138,7 +2170,7 @@
     "family": "ingestion",
     "method": "GET",
     "path": "/v1/status",
-    "contract": "legacy",
+    "contract": "generated",
     "slice": "Maintenance and runtime operations",
     "named_cli": "status",
     "callers": [
@@ -2150,10 +2182,10 @@
       "acceptance/helpers/cli-http.mjs",
       "acceptance/helpers/native-fresh-baseline.mjs",
       "acceptance/ingestion-cli.test.mjs",
+      "acceptance/maintenance-owner-http.test.mjs",
       "acceptance/native-request-pacing.test.mjs",
       "acceptance/operational-diagnostics-leak.test.mjs",
       "acceptance/production-release-cli.test.mjs",
-      "acceptance/riftbound-catalogue.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
       "apps/ingestion/test/lifecycle.spec.ts",
       "apps/ingestion/test/production-release-bootstrap.spec.ts",
@@ -2167,7 +2199,6 @@
       "apps/ingestion/test/runtime-diagnostics.spec.ts",
       "apps/ingestion/test/runtime-health.spec.ts",
       "apps/ingestion/test/runtime-public-mount.spec.ts",
-      "cli/curated-revisions.mjs",
       "cli/keepr.mjs"
     ]
   },
@@ -2248,6 +2279,7 @@
     "treatment": "unauthenticated-liveness",
     "named_cli": null,
     "callers": [
+      "acceptance/maintenance-owner-http.test.mjs",
       "acceptance/operational-diagnostics-leak.test.mjs",
       "acceptance/production-release-smoke.test.mjs",
       "acceptance/runtime-health.test.mjs",
@@ -2268,6 +2300,7 @@
     "treatment": "unauthenticated-liveness",
     "named_cli": null,
     "callers": [
+      "acceptance/maintenance-owner-http.test.mjs",
       "acceptance/operational-diagnostics-leak.test.mjs",
       "acceptance/production-release-smoke.test.mjs",
       "acceptance/runtime-health.test.mjs",

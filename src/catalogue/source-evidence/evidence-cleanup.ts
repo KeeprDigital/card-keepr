@@ -34,6 +34,8 @@ export type Cleanup = {
   terminal_at: string;
   eligible_at: string;
   created_at: string;
+  completed_at: string | null;
+  last_attempt_at: string | null;
   state: "pending" | "running" | "paused" | "completed";
   cursor: string;
   retry_cursor: string;
@@ -173,8 +175,11 @@ export async function assertEvidenceAvailable(db: CatalogueStore, key: string) {
 
 export async function inspectEvidenceCleanupResults(db: CatalogueStore, id: string, after: string) {
   await inspectEvidenceCleanup(db, id);
-  return (await cleanupResults(db, id, after).all<{ object_key: string; state: string; reason: string | null }>())
-    .results;
+  const results = (
+    await cleanupResults(db, id, after).all<{ object_key: string; state: string; reason: string | null }>()
+  ).results;
+  const objects = results.slice(0, 50);
+  return { objects, next_after: results.length > 50 ? objects.at(-1)!.object_key : null };
 }
 export async function resumeEvidenceCleanup(db: CatalogueStore, id: string, generation: unknown) {
   if (typeof generation !== "number" || !Number.isSafeInteger(generation) || generation < 0)

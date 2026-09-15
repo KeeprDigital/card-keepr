@@ -1,4 +1,11 @@
 import {
+  cleanupSchema,
+  cleanupObjectsSchema,
+  inspectCleanupRoute,
+  cleanupObjectsRoute,
+  advanceCleanupRoute,
+} from "./cleanup-http-contract";
+import {
   reparseRoute,
   importRecordsRoute,
   importedRecordsSchema,
@@ -39,8 +46,7 @@ import { inspectEvidenceCleanup, inspectEvidenceCleanupResults, advanceEvidenceC
 import { sourceLifecycleHistory, decideSourceLifecycle } from "./source-lifecycle";
 import { sourceAuthorities, selectSourceAuthority } from "./source-authority";
 import { publishers, sources, sourceLineages, gameProfileRegistrations, sourceAdapterRegistrations } from "../adapters";
-import { assertOnlyFields, readAdministrationBody } from "../../http/administration";
-import { type RouteContext, route } from "../../http/routes";
+import { type Route, type RouteContext } from "../../http/routes";
 import type { CatalogueStore } from "../shared";
 import { pauseEvidenceCollection, resumeEvidenceRun, terminateEvidenceCollection } from "./evidence-administration";
 import {
@@ -67,7 +73,7 @@ type Environment = {
 };
 type Context = RouteContext<Environment> & { observedAt: string };
 
-export const sourceEvidenceRoutes = [
+export const sourceEvidenceRoutes: Route<Context>[] = [
   httpRoute<Context>()(importRecordsRoute, async (c) =>
     c.json(
       importedRecordsSchema.parse(
@@ -80,25 +86,38 @@ export const sourceEvidenceRoutes = [
       200,
     ),
   ),
-  route<Context>("GET", "/v1/evidence-cleanups/:cleanup/objects", async ({ env, request }, params) =>
-    Response.json(
-      await inspectEvidenceCleanupResults(
-        env.CATALOGUE_DB,
-        params.cleanup!,
-        new URL(request.url).searchParams.get("after") ?? "",
+  httpRoute<Context>()(cleanupObjectsRoute, async (c) =>
+    c.json(
+      cleanupObjectsSchema.parse(
+        await inspectEvidenceCleanupResults(
+          c.env.env.CATALOGUE_DB,
+          c.req.valid("param").cleanup,
+          c.req.valid("query").after ?? "",
+        ),
       ),
+      200,
+      { "Cache-Control": "no-store" },
     ),
   ),
-  route<Context>("GET", "/v1/evidence-cleanups/:cleanup", async ({ env }, params) =>
-    Response.json(await inspectEvidenceCleanup(env.CATALOGUE_DB, params.cleanup!)),
+  httpRoute<Context>()(inspectCleanupRoute, async (c) =>
+    c.json(
+      cleanupSchema.parse(await inspectEvidenceCleanup(c.env.env.CATALOGUE_DB, c.req.valid("param").cleanup)),
+      200,
+      { "Cache-Control": "no-store" },
+    ),
   ),
-  route<Context>("POST", "/v1/evidence-cleanups/:cleanup/advance", async ({ request, env, observedAt }, params) => {
-    assertOnlyFields(await readAdministrationBody(request), []);
-    const intent = await inspectEvidenceCleanup(env.CATALOGUE_DB, params.cleanup!);
-    return Response.json(
-      await (intent.scope === "staging"
-        ? advanceStagingCleanup(env.CATALOGUE_DB, env, params.cleanup!, observedAt)
-        : advanceEvidenceCleanup(env.CATALOGUE_DB, env.EVIDENCE_OBJECTS, params.cleanup!, observedAt)),
+  httpRoute<Context>()(advanceCleanupRoute, async (c) => {
+    const { env, observedAt } = c.env;
+    const id = c.req.valid("param").cleanup;
+    const intent = await inspectEvidenceCleanup(env.CATALOGUE_DB, id);
+    return c.json(
+      cleanupSchema.parse(
+        await (intent.scope === "staging"
+          ? advanceStagingCleanup(env.CATALOGUE_DB, env, id, observedAt)
+          : advanceEvidenceCleanup(env.CATALOGUE_DB, env.EVIDENCE_OBJECTS, id, observedAt)),
+      ),
+      200,
+      { "Cache-Control": "no-store" },
     );
   }),
   httpRoute<Context>()(lifecycleRoute, async (c) =>

@@ -1,4 +1,23 @@
-import { httpRoute } from "../../http/openapi";
+import {
+  administrationStatusRoute,
+  resolveAdministrationTargetRoute,
+  administrationTargetSchema,
+  searchRepairRoute,
+  searchRepairSchema,
+} from "./maintenance-http-contract";
+import { administrationStatusSchema } from "./administration-status-schema";
+import { productionReleaseRoute, releaseConfirmationSchema } from "./production-http-contract";
+import { releaseReceiptSchema } from "./release-http-schemas";
+import {
+  stagingReleaseRoute,
+  stagingInspectionRoute,
+  stagingDeploymentRoute,
+  stagingReceiptSchema,
+  stagingConfirmationSchema,
+  stagingInspectionSchema,
+  stagingDeploymentSchema,
+} from "./staging-http-contract";
+import { httpRoute, retainedWireValue } from "../../http/openapi";
 import { advancePublicationExportsRoute, publicationExportPreparationSchema } from "./publication-http-contract";
 import { environmentNames } from "../../http/environment-target.mjs";
 import { validatedEnvironmentTarget } from "../../http/production-target.mjs";
@@ -53,10 +72,11 @@ export type PublicationBackupWaiter = (
 type Context = RouteContext<Environment> & { observedAt: string; publicationBackupWaiter?: PublicationBackupWaiter };
 
 export const ingestionRoutes = [
-  route<Context>("POST", "/v1/staging-releases", async ({ request, env, observedAt }) => {
+  httpRoute<Context>()(stagingReleaseRoute, async (c) => {
+    const { env, observedAt } = c.env;
     if ((env.KEEPR_ENVIRONMENT ?? "production") !== "production")
       throw new AdministrationProblem(404, "not_found", "Route not found.");
-    const body = await readAdministrationBody(request);
+    const body = c.req.valid("json");
     const result = await resolveStagingRelease(
       env.CATALOGUE_DB,
       env.CATALOGUE_EXPORTS,
@@ -73,23 +93,28 @@ export const ingestionRoutes = [
       observedAt,
       env.D1_VERIFICATION_TOKEN,
     );
-    return Response.json(result, {
-      status: body.prepare === true ? 200 : 201,
-      headers: { "cache-control": "no-store" },
-    });
+    return body.prepare === true
+      ? c.json(stagingConfirmationSchema.parse(result), 200, { "Cache-Control": "no-store" })
+      : c.json(stagingReceiptSchema.parse(result), 201, { "Cache-Control": "no-store" });
   }),
-  route<Context>("GET", "/v1/staging-releases/:release", async ({ env }, params) => {
+  httpRoute<Context>()(stagingInspectionRoute, async (c) => {
+    const { env } = c.env;
     if ((env.KEEPR_ENVIRONMENT ?? "production") !== "production")
       throw new AdministrationProblem(404, "not_found", "Route not found.");
-    return Response.json(await inspectStagingRelease(env.CATALOGUE_DB, params.release!), {
-      headers: { "cache-control": "no-store" },
-    });
+    return c.json(
+      stagingInspectionSchema.parse(await inspectStagingRelease(env.CATALOGUE_DB, c.req.valid("param").release)),
+      200,
+      { "Cache-Control": "no-store" },
+    );
   }),
-  route<Context>("GET", "/v1/staging-deployments/:release", async ({ env }, params) => {
+  httpRoute<Context>()(stagingDeploymentRoute, async (c) => {
+    const { env } = c.env;
     if (env.KEEPR_ENVIRONMENT !== "staging") throw new AdministrationProblem(404, "not_found", "Route not found.");
-    return Response.json(await showStagingDeployment(env.CATALOGUE_DB, params.release!), {
-      headers: { "cache-control": "no-store" },
-    });
+    return c.json(
+      stagingDeploymentSchema.parse(await showStagingDeployment(env.CATALOGUE_DB, c.req.valid("param").release)),
+      200,
+      { "Cache-Control": "no-store" },
+    );
   }),
   httpRoute<Context>()(advancePublicationExportsRoute, async (c) => {
     const input = c.req.valid("json");
@@ -105,47 +130,64 @@ export const ingestionRoutes = [
       200,
     );
   }),
-  route<Context>("POST", "/v1/production-releases", async ({ request, env, observedAt }) => {
+  httpRoute<Context>()(productionReleaseRoute, async (c) => {
+    const { env, observedAt } = c.env;
     if ((env.KEEPR_ENVIRONMENT ?? "production") !== "production")
       throw new AdministrationProblem(
         422,
         "production_target_required",
         "Production Release is unavailable on this environment.",
       );
-    const body = await readAdministrationBody(request);
-    return Response.json(
-      await resolveProductionRelease(env.CATALOGUE_DB, env.CATALOGUE_EXPORTS, body, productionTarget(env), observedAt),
-      {
-        status: body.prepare === true ? 200 : 201,
-      },
+    const input = c.req.valid("json");
+    const result = await resolveProductionRelease(
+      env.CATALOGUE_DB,
+      env.CATALOGUE_EXPORTS,
+      input,
+      productionTarget(env),
+      observedAt,
     );
+    return input.prepare === true
+      ? c.json(releaseConfirmationSchema.parse(result), 200, { "Cache-Control": "no-store" })
+      : c.json(releaseReceiptSchema.parse(result), 201, { "Cache-Control": "no-store" });
   }),
-  route<Context>("POST", "/v1/catalogue-search-materialization/repair", async ({ request, env, observedAt }) => {
-    const body = await readAdministrationBody(request);
-    assertOnlyFields(body, ["target_revision_id", "expected_current_revision_id", "idempotency_key"]);
-    return Response.json(
-      await runGuardedCardSearchRepair(
-        env.CATALOGUE_DB,
-        {
-          target_revision_id: requiredString(body, "target_revision_id"),
-          expected_current_revision_id: requiredString(body, "expected_current_revision_id"),
-          idempotency_key: requiredString(body, "idempotency_key"),
-        },
-        observedAt,
+  httpRoute<Context>()(searchRepairRoute, async (c) =>
+    c.json(
+      searchRepairSchema.parse(
+        await runGuardedCardSearchRepair(c.env.env.CATALOGUE_DB, c.req.valid("json"), c.env.observedAt),
       ),
-    );
-  }),
-  route<Context>("GET", "/v1/status", async ({ env, observedAt, request }) => {
-    const query = new URL(request.url).searchParams;
+      200,
+      { "Cache-Control": "no-store" },
+    ),
+  ),
+  httpRoute<Context>()(administrationStatusRoute, async (c) =>
+    c.json(
+      retainedWireValue(
+        administrationStatusSchema,
+        await administrationStatus(
+          c.env.env.CATALOGUE_DB,
+          c.env.env.CATALOGUE_EXPORTS,
+          c.env.observedAt,
+          productionTarget(c.env.env),
+        ),
+      ),
+      200,
+      { "Cache-Control": "no-store" },
+    ),
+  ),
+  httpRoute<Context>()(resolveAdministrationTargetRoute, async (c) => {
+    const { env, observedAt } = c.env;
+    const input = c.req.valid("json");
     const status = await administrationStatus(
       env.CATALOGUE_DB,
       env.CATALOGUE_EXPORTS,
       observedAt,
       productionTarget(env),
-      query.size === 0,
+      false,
     );
-    return Response.json(
-      query.size === 0 ? status : await resolveAdministrationTarget(env.CATALOGUE_DB, env.BACKUPS, status, query),
+    return c.json(
+      administrationTargetSchema.parse(await resolveAdministrationTarget(env.CATALOGUE_DB, env.BACKUPS, status, input)),
+      200,
+      { "Cache-Control": "no-store" },
     );
   }),
   route<Context>("GET", "/v1/ingestion-runs/:run/candidate", async ({ env, observedAt }, params) => {

@@ -719,5 +719,12 @@
     "path": "/v1/recoveries/:recovery/acceptance",
     "slice": "Backup and recovery",
     "cli": "acceptRecovery"
+  },
+  {
+    "family": "ingestion",
+    "method": "POST",
+    "path": "/v1/administration-targets/resolve",
+    "slice": "Maintenance and runtime operations",
+    "cli": null
   }
 ]

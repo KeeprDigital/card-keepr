@@ -6,9 +6,36 @@ import { validatedProductionTarget } from "../../src/http/production-target.mjs"
  * Related fixture documents remain at their ordinary read routes. */
 export function createServer(listener) {
   return httpServer((request, response) => {
+    void handle(request, response).catch((error) => response.destroy(error));
+  });
+  async function handle(request, response) {
     const url = new URL(request.url, "http://fixture.invalid");
-    const query = url.pathname === "/v1/status" ? url.searchParams : new URLSearchParams();
-    if (query.size) request.url = url.pathname;
+    if (url.pathname === "/v1/administration-targets/resolve" && request.method === "POST") {
+      let bytes = "";
+      for await (const chunk of request) bytes += chunk;
+      const choices = JSON.parse(bytes);
+      const query = new URLSearchParams();
+      for (const [key, value] of Object.entries(choices))
+        query.set(key, key === "curated_binding" ? JSON.stringify(value) : String(value));
+      const status = await fetch(`http://${request.headers.host}/v1/status`, {
+        headers: { authorization: request.headers.authorization },
+      });
+      const document = await status.json();
+      const resolved = status.ok
+        ? await resolveFixtureTarget(request, document, query)
+        : { status: status.status, document };
+      response.statusCode = resolved.status;
+      response.setHeader("content-type", "application/json");
+      response.setHeader("cache-control", "no-store");
+      response.end(
+        JSON.stringify(
+          request.headers.accept === "application/vnd.card-keepr.cli+json" && resolved.status < 300
+            ? administrationPresentation(resolved.document, resolved.status)
+            : resolved.document,
+        ),
+      );
+      return;
+    }
     const end = response.end.bind(response);
     response.end = (body, ...arguments_) => {
       const finish = async () => {
@@ -18,11 +45,6 @@ export function createServer(listener) {
             document = JSON.parse(body);
           } catch {
             return end(body, ...arguments_);
-          }
-          if (query.size) {
-            const result = await resolveFixtureTarget(request, document, query);
-            document = result.document;
-            response.statusCode = result.status;
           }
           if (request.headers.accept === "application/vnd.card-keepr.cli+json" && response.statusCode < 300) {
             document = administrationPresentation(document, response.statusCode);
@@ -38,8 +60,9 @@ export function createServer(listener) {
       return response;
     };
     listener(request, response);
-  });
+  }
 }
+
 async function resolveFixtureTarget(request, document, query) {
   const target = validatedProductionTarget(document.production_target);
   if (target === null) return { status: 200, document };
@@ -101,5 +124,11 @@ async function resolveFixtureTarget(request, document, query) {
       ...binding,
     });
   }
-  return { status: 200, document: { ...document, resolved_target: { production_target: target, confirmation } } };
+  return {
+    status: 200,
+    document: {
+      contract: "card-keepr-administration-target@1",
+      resolved_target: { production_target: target, confirmation },
+    },
+  };
 }

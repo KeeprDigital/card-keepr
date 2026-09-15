@@ -1,0 +1,62 @@
+{
+  "choices": {
+    "release_id": "stage-http-array",
+    "idempotency_key": "stage-http-owner-array",
+    "expected_head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "expected_actor": "owner",
+    "ci_run_id": "123",
+    "validation_scope": ["full"]
+  },
+  "request_json": "{\"ci_run_id\":\"123\",\"expected_actor\":\"owner\",\"expected_head_sha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"idempotency_key\":\"stage-http-owner-array\",\"release_id\":\"stage-http-array\",\"validation_scope\":[\"full\"]}",
+  "response": {
+    "contract": "card-keepr-staging-release-request@1",
+    "release_id": "stage-http-array",
+    "intent": {
+      "release_id": "stage-http-array",
+      "idempotency_key": "stage-http-owner-array",
+      "expected_head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expected_actor": "owner",
+      "ci_run_id": "123",
+      "validation_scope": "full",
+      "validation_reason": "unknown_transition",
+      "required_checks": ["exact-commit-ci", "migration-rehearsal", "retained-source-rehearsal", "live-smoke"],
+      "extended_scenarios": ["composed-recovery", "one-piece-two-source", "riftbound-catalogue"],
+      "production_start": {
+        "target": {
+          "cloudflare_account_id": "0123456789abcdef0123456789abcdef",
+          "worker_scripts": ["card-keepr-api", "card-keepr-ingestion"],
+          "d1_databases": [
+            {
+              "name": "card-keepr-catalogue",
+              "id": "00000000-0000-0000-0000-000000000001"
+            },
+            {
+              "name": "card-keepr-disposable-verification",
+              "id": "00000000-0000-0000-0000-000000000002"
+            }
+          ],
+          "r2_buckets": [
+            "card-keepr-evidence",
+            "card-keepr-printing-images",
+            "card-keepr-catalogue-exports",
+            "card-keepr-backups"
+          ]
+        },
+        "target_digest": "cb1294f4b716c1b943e997f74a80595cc9fba075b17fec7aba2d1d4c0c6eefe6",
+        "migration_level": 37,
+        "head_sha": null,
+        "worker_versions": null,
+        "comparison_sha256": null
+      },
+      "authorized_at": "2026-09-15T00:00:00.000Z",
+      "expires_at": "2026-09-16T00:00:00.000Z"
+    },
+    "intent_digest": "7883d27c6dc6ae5ce18e7ca4403cb48c8e08a6d9eeac756e968b8f2376fb297b",
+    "confirmation": "{\"ci_run_id\":\"123\",\"expected_actor\":\"owner\",\"expected_head_sha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"extended_scenarios\":[\"composed-recovery\",\"one-piece-two-source\",\"riftbound-catalogue\"],\"idempotency_key\":\"stage-http-owner-array\",\"production_start\":{\"comparison_sha256\":null,\"head_sha\":null,\"migration_level\":37,\"target\":{\"cloudflare_account_id\":\"0123456789abcdef0123456789abcdef\",\"d1_databases\":[{\"id\":\"00000000-0000-0000-0000-000000000001\",\"name\":\"card-keepr-catalogue\"},{\"id\":\"00000000-0000-0000-0000-000000000002\",\"name\":\"card-keepr-disposable-verification\"}],\"r2_buckets\":[\"card-keepr-evidence\",\"card-keepr-printing-images\",\"card-keepr-catalogue-exports\",\"card-keepr-backups\"],\"worker_scripts\":[\"card-keepr-api\",\"card-keepr-ingestion\"]},\"target_digest\":\"cb1294f4b716c1b943e997f74a80595cc9fba075b17fec7aba2d1d4c0c6eefe6\",\"worker_versions\":null},\"release_id\":\"stage-http-array\",\"required_checks\":[\"exact-commit-ci\",\"migration-rehearsal\",\"retained-source-rehearsal\",\"live-smoke\"],\"validation_reason\":\"unknown_transition\",\"validation_scope\":\"full\"}",
+    "dispatch_inputs": {
+      "release_id": "stage-http-array",
+      "expected_head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "intent_digest": "7883d27c6dc6ae5ce18e7ca4403cb48c8e08a6d9eeac756e968b8f2376fb297b"
+    }
+  }
+}

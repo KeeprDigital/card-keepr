@@ -32,17 +32,21 @@ export function insertCleanup(
   at: string,
 ) {
   const statement = repositoryStatements(db)
-    .prepare(`INSERT INTO evidence_cleanup_operations
+    .prepare(
+      `INSERT INTO evidence_cleanup_operations
     (id, ingestion_run_id, idempotency_key, retention_days, terminal_at, eligible_at, created_at)
     SELECT ?,id,?,?,?,?,? FROM ingestion_run_read WHERE id=? AND terminal_at=?
-    AND state IN ('failed','rejected','expired') ON CONFLICT DO NOTHING`)
+    AND state IN ('failed','rejected','expired') ON CONFLICT DO NOTHING`,
+    )
     .bind(id, key, days, terminal, eligible, at, run, terminal);
   return atomicRepositoryStatement(db, { statement, before: [runCurrentIntegrityGuardStatement(db, run)] });
 }
 export function nextCleanupObject(db: CatalogueStore, run: string, cursor: string) {
   return repositoryStatements(db)
-    .prepare(`SELECT object_key FROM evidence_cleanup_inventory
-    WHERE ingestion_run_id=? AND object_key>? ORDER BY object_key LIMIT 1`)
+    .prepare(
+      `SELECT object_key FROM evidence_cleanup_inventory
+    WHERE ingestion_run_id=? AND object_key>? ORDER BY object_key LIMIT 1`,
+    )
     .bind(run, cursor);
 }
 export function finishCleanup(db: CatalogueStore, id: string, at: string) {
@@ -56,8 +60,10 @@ export function cleanupObject(db: CatalogueStore, key: string) {
 }
 export function claimCleanupObject(db: CatalogueStore, id: string, key: string, at: string) {
   const statement = repositoryStatements(db)
-    .prepare(`INSERT INTO evidence_cleanup_objects(object_key,cleanup_id,state,claimed_at)
-    VALUES (?,?,'reserved',?) ON CONFLICT(object_key) DO NOTHING`)
+    .prepare(
+      `INSERT INTO evidence_cleanup_objects(object_key,cleanup_id,state,claimed_at)
+    VALUES (?,?,'reserved',?) ON CONFLICT(object_key) DO NOTHING`,
+    )
     .bind(key, id, at);
   return atomicRepositoryStatement(db, { statement, before: [cleanupOwnerIntegrity(db, key)] });
 }
@@ -77,17 +83,21 @@ export function cleanupResultStatements(
   const sql = repositoryStatements(db);
   return [
     sql
-      .prepare(`UPDATE evidence_cleanup_operations SET
+      .prepare(
+        `UPDATE evidence_cleanup_operations SET
     deleted_objects=deleted_objects+CASE WHEN ?='deleted' AND NOT EXISTS(SELECT 1 FROM evidence_cleanup_results WHERE cleanup_id=? AND object_key=? AND state='deleted') THEN 1 ELSE 0 END,
     protected_objects=protected_objects+CASE WHEN ?='protected' AND NOT EXISTS(SELECT 1 FROM evidence_cleanup_results WHERE cleanup_id=? AND object_key=? AND state='protected') THEN 1 ELSE 0 END,
     cursor=CASE WHEN ?=0 AND cursor<? THEN ? ELSE cursor END,
     retry_cursor=CASE WHEN ?=1 AND retry_cursor<? THEN ? ELSE retry_cursor END,
-    state='running',failure_code=NULL WHERE id=? AND state<>'completed'`)
+    state='running',failure_code=NULL WHERE id=? AND state<>'completed'`,
+      )
       .bind(state, id, key, state, id, key, retry ? 1 : 0, key, key, retry ? 1 : 0, key, key, id),
     sql
-      .prepare(`INSERT INTO evidence_cleanup_results VALUES (?,?,?,?)
+      .prepare(
+        `INSERT INTO evidence_cleanup_results VALUES (?,?,?,?)
     ON CONFLICT(cleanup_id,object_key) DO UPDATE SET state=excluded.state,reason=excluded.reason
-    WHERE evidence_cleanup_results.state='waiting'`)
+    WHERE evidence_cleanup_results.state='waiting'`,
+      )
       .bind(id, key, state, reason),
   ];
 }
@@ -108,7 +118,7 @@ export function waitingCleanupReason(db: CatalogueStore, id: string) {
 export function cleanupResults(db: CatalogueStore, id: string, after: string) {
   return repositoryStatements(db)
     .prepare(
-      `SELECT object_key,state,reason FROM evidence_cleanup_results WHERE cleanup_id=? AND object_key>? ORDER BY object_key LIMIT 50`,
+      `SELECT object_key,state,reason FROM evidence_cleanup_results WHERE cleanup_id=? AND object_key>? ORDER BY object_key LIMIT 51`,
     )
     .bind(id, after);
 }
@@ -121,11 +131,13 @@ export function pauseCleanup(db: CatalogueStore, id: string, code: string, gener
 }
 export function cleanupDeleteGuard(db: CatalogueStore, key: string) {
   const statement = repositoryStatements(db)
-    .prepare(`SELECT CASE WHEN EXISTS(SELECT 1 FROM evidence_cleanup_objects WHERE object_key=?)
+    .prepare(
+      `SELECT CASE WHEN EXISTS(SELECT 1 FROM evidence_cleanup_objects WHERE object_key=?)
     AND NOT EXISTS(SELECT 1 FROM evidence_cleanup_retained_keys WHERE object_key=?)
     AND NOT EXISTS(SELECT 1 FROM evidence_object_writers WHERE object_key=? AND completed_at IS NULL)
     AND NOT EXISTS(SELECT 1 FROM operation_state WHERE recovery_restore_guard='blocked')
-    THEN 1 ELSE json_extract('{}','evidence_cleanup_reference_protected') END`)
+    THEN 1 ELSE json_extract('{}','evidence_cleanup_reference_protected') END`,
+    )
     .bind(key, key, key);
   return atomicRepositoryStatement(db, { statement, before: [cleanupOwnerIntegrity(db, key)] });
 }
@@ -182,13 +194,15 @@ export function retainEvidenceObjectReferenceStatement(
 
 function cleanupOwnerIntegrity(db: CatalogueStore, key: string) {
   return repositoryStatements(db)
-    .prepare(`SELECT CASE WHEN EXISTS(
+    .prepare(
+      `SELECT CASE WHEN EXISTS(
  SELECT 1 FROM (
  SELECT ingestion_run_id FROM evidence_cleanup_inventory WHERE object_key=?1
  UNION SELECT ref.ingestion_run_id FROM source_capture_operations ref JOIN evidence_cleanup_snapshot_keys keys ON keys.snapshot_id=ref.reused_source_snapshot_id WHERE keys.object_key=?1
  ) owners LEFT JOIN ingestion_run_current current ON current.ingestion_run_id=owners.ingestion_run_id
  WHERE (${verifiedRunCurrentSql}) IS NOT 1
- ) THEN json_extract('{}','ingestion_run_projection_mismatch') ELSE 1 END`)
+ ) THEN json_extract('{}','ingestion_run_projection_mismatch') ELSE 1 END`,
+    )
     .bind(key);
 }
 

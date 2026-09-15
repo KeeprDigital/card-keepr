@@ -194,7 +194,9 @@ The complete catalogue-read interface, including published Game Profile discover
 and API utilities, uses executable Zod OpenAPI definitions. Source and collection
 administration, publication preparation/execution, and per-game candidate
 preparation and inspection, identity review, corrections, Entity Proposals and
-Curated Revisions are also registered. Other administration families continue to migrate;
+Curated Revisions, maintenance and owner software-release operations are also registered.
+Typed owner target resolution is separate from current status inspection.
+Other administration families continue to migrate;
 generated inventory names the remaining operations. Complete administration
 migration and documentation hosting remain accepted direction;
 retained-document validation and domain transitions stay independent of Zod.

@@ -361,10 +361,11 @@ test("retained Riot catalogue: qualified intake, owner corrections, publication 
     if (failed.state !== "verified") {
       assert.equal(failed.state, "failed");
       const idempotency = "riftbound-signed-transport-backup-retry";
-      const statusResponse = await pacedFetch(
-        `${worker.url}/v1/status?${new URLSearchParams({ expected_current_revision_id: publication.resulting_revision_id })}`,
-        { headers: { authorization: `Bearer ${key}` } },
-      );
+      const statusResponse = await pacedFetch(`${worker.url}/v1/administration-targets/resolve`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+        body: JSON.stringify({ expected_current_revision_id: publication.resulting_revision_id }),
+      });
       assert.equal(statusResponse.status, 200);
       const status = await statusResponse.json();
       const binding = {
@@ -586,8 +587,10 @@ test("retained Riot catalogue: qualified intake, owner corrections, publication 
         idempotency_key: idempotency,
       }),
     });
-    const status = await pacedFetch(`${worker.url}/v1/status?${query}`, {
-      headers: { authorization: `Bearer ${key}` },
+    const status = await pacedFetch(`${worker.url}/v1/administration-targets/resolve`, {
+      method: "POST",
+      body: JSON.stringify({ ...Object.fromEntries(query), curated_binding: JSON.parse(query.get("curated_binding")) }),
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
     });
     assert.equal(status.status, 200);
     const confirmation = (await status.json()).resolved_target.confirmation;
@@ -629,10 +632,15 @@ test("retained Riot catalogue: qualified intake, owner corrections, publication 
         replacement_target: proposal.target,
         replacement_content_digest: replacement.proposal_digest,
       };
-      const resolved = await pacedFetch(
-        `${worker.url}/v1/status?${new URLSearchParams({ expected_current_revision_id: publication.resulting_revision_id, curated_operation: "supersede", curated_binding: JSON.stringify(binding) })}`,
-        { headers: { authorization: `Bearer ${key}` } },
-      );
+      const resolved = await pacedFetch(`${worker.url}/v1/administration-targets/resolve`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          expected_current_revision_id: publication.resulting_revision_id,
+          curated_operation: "supersede",
+          curated_binding: binding,
+        }),
+      });
       assert.equal(resolved.status, 200);
       const result = await call([
         "supersede",
