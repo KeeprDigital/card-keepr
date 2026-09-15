@@ -15,6 +15,7 @@ import {
   captureProposalArtifacts,
   verifyProposalArtifacts,
 } from "../../src/catalogue/backup-recovery/composition-proposal-artifacts";
+import * as proposalEvidenceQueries from "./query-helpers/proposal-evidence";
 
 // Frozen by the capture implementation at 07e51db, before the optional proposal receipt existed.
 const historical = (name: string): CompositionSnapshotEvidence =>
@@ -70,16 +71,9 @@ test.each(["exact", "digest", "length", "kind", "missing"] as const)(
   async (collision) => {
     const database = new DatabaseSync(":memory:");
     try {
-      database.exec(`CREATE TABLE source_snapshots(id TEXT,content_object_key TEXT,content_digest TEXT,content_byte_length INTEGER);
-      CREATE TABLE source_observation_sets(source_snapshot_id TEXT,content_object_key TEXT,content_digest TEXT,content_byte_length INTEGER);
-      CREATE TABLE source_parse_operations(source_snapshot_id TEXT,content_object_key TEXT);
-      CREATE TABLE source_archive_blocks(source_snapshot_id TEXT,object_key TEXT,sha256 TEXT,byte_length INTEGER,state TEXT);
-      CREATE TABLE source_archive_decodes(source_snapshot_id TEXT,state TEXT);
-      CREATE TABLE entity_proposal_source_evidence(source_snapshot_id TEXT);
-      CREATE TABLE entity_proposals(id TEXT);
-      CREATE TABLE evidence_object_references(owner_id TEXT,owner_kind TEXT,object_key TEXT);`);
-      const insert = database.prepare("INSERT INTO source_snapshots VALUES (?,?,?,?)");
-      const select = database.prepare("INSERT INTO entity_proposal_source_evidence VALUES (?)");
+      database.exec(proposalEvidenceQueries.proposalEvidenceSchema);
+      const insert = proposalEvidenceQueries.insertSourceSnapshot(database);
+      const select = proposalEvidenceQueries.insertProposalSourceEvidence(database);
       for (let index = 0; index < 65; index++) {
         const id = `source-${index}`;
         insert.run(id, `raw/${String(index).padStart(3, "0")}`, "a".repeat(64), 1);
@@ -87,13 +81,11 @@ test.each(["exact", "digest", "length", "kind", "missing"] as const)(
       }
       // The alias itself is unselected; every receipt for a selected physical key must still agree.
       if (collision === "kind")
-        database
-          .prepare("INSERT INTO source_observation_sets VALUES (?,?,?,?)")
-          .run("alias", "raw/063", "a".repeat(64), 1);
+        proposalEvidenceQueries.insertSourceObservationSet(database).run("alias", "raw/063", "a".repeat(64), 1);
       else
         insert.run("alias", "raw/063", (collision === "digest" ? "b" : "a").repeat(64), collision === "length" ? 2 : 1);
-      database.prepare("INSERT INTO entity_proposals VALUES (?)").run("proposal");
-      const pin = database.prepare("INSERT INTO evidence_object_references VALUES (?,?,?)");
+      proposalEvidenceQueries.insertProposal(database).run("proposal");
+      const pin = proposalEvidenceQueries.insertEvidenceObjectReference(database);
       if (collision === "missing") pin.run("proposal", "entity_proposal", "raw/063-missing");
       const query: CompositionQuery = async (input) => {
         const request = compositionVerificationQuery(input);
@@ -108,8 +100,8 @@ test.each(["exact", "digest", "length", "kind", "missing"] as const)(
       expect(await captureProposalArtifacts(query)).toMatchObject({ objects: 65, bytes: 65 });
       insert.run("parent", "raw/parent", "a".repeat(64), 1);
       insert.run("unreferenced-child", "raw/child", "a".repeat(64), 1);
-      database
-        .prepare("INSERT INTO source_observation_sets VALUES (?,?,?,?)")
+      proposalEvidenceQueries
+        .insertSourceObservationSet(database)
         .run("parent", "observations/parent", "b".repeat(64), 2);
       pin.run("proposal", "entity_proposal", "raw/parent");
       // The literal pin adds its owner's raw and observation sibling, without adopting another snapshot.
