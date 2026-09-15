@@ -5,10 +5,53 @@ import { nativePreparationDriver } from "./native-preparation-driver";
 import { assertHttpResponse } from "../../../test/support/http-contract";
 import { prepareNativeCandidate, seedNativePredecessor } from "./native-publication-helpers";
 import { replaceGameHeadForFence } from "./query-helpers/game-candidates";
-import { get } from "./reconciliation-helpers";
+import { get, post } from "./reconciliation-helpers";
 import contract from "../../../contracts/admin-openapi.json";
 
 installReconciliationSuite();
+
+test("candidate input and unresolved admission evidence retain their explicitly nullable positions", async () => {
+  const proposal = await post("/v1/entity-proposals", {
+    game: "one-piece",
+    source_lineage: "owner",
+    reference: "nullable-intake",
+    content: { card: { name: "Incomplete owner intake" } },
+    evidence: { attestation: "Synthetic owner intake awaits required structure." },
+    idempotency_key: "nullable-intake",
+  });
+  expect(proposal.response.status).toBe(201);
+  const source = await collect("/reconciliation/card-without-printing", "nullable-input");
+  const candidate = await prepareNativeCandidate(source.id, "one-piece", "catrev_spine_000", "nullable-candidate");
+  const path = `/v1/game-candidates/${candidate.id}`;
+  const inputs = await get(`${path}/inputs`);
+  const partition = (inputs.document.partitions as { ordinal: number; kind: string }[]).find(
+    ({ kind }) => kind === "observations",
+  )!;
+  const detail = await get(`${path}/inputs/${partition.ordinal}`);
+  expect(detail.document.records).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ observedCardAndPrinting: expect.objectContaining({ printing: null }) }),
+    ]),
+  );
+  await assertHttpResponse(
+    contract,
+    "/v1/game-candidates/{candidate}/inputs/{ordinal}",
+    "get",
+    detail.response,
+    detail.document,
+  );
+  const evidence = await get(`${path}/inspection/evidence/admission`);
+  expect(evidence.document.records).toEqual([
+    expect.objectContaining({ proposal_id: proposal.document.id, decision: null }),
+  ]);
+  await assertHttpResponse(
+    contract,
+    "/v1/game-candidates/{candidate}/inspection/evidence/{kind}",
+    "get",
+    evidence.response,
+    evidence.document,
+  );
+});
 
 test("owner preparation receipts replay unchanged across pause, resume and sealed status", async () => {
   const source = await collect("/reconciliation/base", "candidate-http-source");

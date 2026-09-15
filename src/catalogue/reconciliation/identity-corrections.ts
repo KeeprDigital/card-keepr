@@ -46,9 +46,12 @@ function proposal(value: Record<string, unknown>): IdentityCorrectionProposal {
   ];
   if (Object.keys(value).some((k) => !fields.includes(k))) invalid("Unknown correction proposal field.");
   if (
-    !["one-piece", "fusion-world", "digimon", "gundam", "riftbound", "magic"].includes(String(value.game)) ||
-    !["card", "printing"].includes(String(value.entity_kind)) ||
-    !["merge", "split", "assign"].includes(String(value.action))
+    typeof value.game !== "string" ||
+    !["one-piece", "fusion-world", "digimon", "gundam", "riftbound", "magic"].includes(value.game) ||
+    typeof value.entity_kind !== "string" ||
+    !["card", "printing"].includes(value.entity_kind) ||
+    typeof value.action !== "string" ||
+    !["merge", "split", "assign"].includes(value.action)
   )
     invalid("Select a Supported Game, Card or Printing, and merge, split or assign.");
   for (const key of ["source_ids", "replacement_ids"] as const) {
