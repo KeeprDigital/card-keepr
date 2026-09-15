@@ -1,0 +1,100 @@
+{
+  "version": "source-discovery-admission@1",
+  "populations": [8192, 17408],
+  "replays": 7,
+  "chunk_size": 64,
+  "padding_namespace": "00000000-0327-4000-8000-",
+  "padding_timestamp": "1783906901",
+  "padding_chain_seed": "327-native-admission-padding-v1",
+  "root": {
+    "id": "scryfall-magic-en:bulk-data",
+    "url": "https://api.scryfall.com/bulk-data",
+    "method": "GET",
+    "headers": {
+      "accept": "application/json",
+      "user-agent": "Card-Keepr/0.1 (+https://github.com/KeeprDigital/card-keepr)"
+    },
+    "representation_fingerprint": "b6bef9e23484ed26eb9426e86d70fed5bf634b924f0c33c1a09d57b74fe454a7",
+    "role": "surface"
+  },
+  "listing": {
+    "id": "scryfall-magic-en:listing:bulk-20260914090527-78247919:332fada43adefbda4bc234597df42f31dd3437344a095d963cf85b00d1f21bc6",
+    "url": "https://data.scryfall.io/default-cards/default-cards-20260914090527.jsonl.gz",
+    "headers_json": "{\"accept\":\"application/gzip, application/octet-stream;q=0.9\",\"accept-encoding\":\"identity\",\"user-agent\":\"Card-Keepr/0.1 (+https://github.com/KeeprDigital/card-keepr); request-role=listing\"}",
+    "representation_fingerprint": "36385776639450a56dca29f75010aa3edf7cc99e1dbd84a97b872dd227bad6e2",
+    "role": "listing",
+    "sequence_floor": 1000000,
+    "method": "GET",
+    "parent_request_id": "scryfall-magic-en:bulk-data",
+    "discovery_key": "bulk-20260914090527-78247919"
+  },
+  "proposals": [
+    {
+      "role": "image",
+      "url": "https://cards.scryfall.io/normal/front/6/c/6c1bfbcb-3f33-4c5c-81f5-141664fd1da5.jpg?1783906901",
+      "headers": {
+        "accept": "image/jpeg",
+        "user-agent": "Card-Keepr/0.1 (+https://github.com/KeeprDigital/card-keepr)"
+      }
+    },
+    {
+      "role": "image",
+      "url": "https://cards.scryfall.io/normal/front/0/d/0d4b46a3-847a-44a7-9f68-2cb4657cad61.jpg?1783907372",
+      "headers": {
+        "accept": "image/jpeg",
+        "user-agent": "Card-Keepr/0.1 (+https://github.com/KeeprDigital/card-keepr)"
+      }
+    },
+    {
+      "role": "image",
+      "url": "https://cards.scryfall.io/normal/front/1/0/10e0a9a3-f63a-4f92-a083-9d181580e498.jpg?1783907345",
+      "headers": {
+        "accept": "image/jpeg",
+        "user-agent": "Card-Keepr/0.1 (+https://github.com/KeeprDigital/card-keepr)"
+      }
+    },
+    {
+      "role": "image",
+      "url": "https://cards.scryfall.io/normal/front/3/d/3d6a17d7-53c3-43da-a274-34ba1ef9dcbb.jpg?1783906894",
+      "headers": {
+        "accept": "image/jpeg",
+        "user-agent": "Card-Keepr/0.1 (+https://github.com/KeeprDigital/card-keepr)"
+      }
+    },
+    {
+      "role": "image",
+      "url": "https://cards.scryfall.io/normal/front/6/8/685d2b12-d45a-400b-b582-8b184a6eee13.jpg?1783906903",
+      "headers": {
+        "accept": "image/jpeg",
+        "user-agent": "Card-Keepr/0.1 (+https://github.com/KeeprDigital/card-keepr)"
+      }
+    }
+  ],
+  "proposal_identities": [
+    {
+      "id": "scryfall-magic-en:image:970839b45dfc5a72200c7d331901cee304b97fb810f17289b70ec2b3e8727cb6",
+      "fingerprint": "80b1ab230a3c33bd3644df612ff04eda260dda3ba4dcd223b801530f584c1f21"
+    },
+    {
+      "id": "scryfall-magic-en:image:ac184d76a1cbfd57629ecb140b30cb655539e4129323f01d67c39284bf25ed9d",
+      "fingerprint": "40b07ece378fe7eb51b3c642d54eae5ce485630a0d54d56800de04da4380e086"
+    },
+    {
+      "id": "scryfall-magic-en:image:c1d4e1c31d3304d28ef76270f8abed6929c936e919641ec54b45403936994498",
+      "fingerprint": "be40d7977c4bfe04672b617b4bc4771194fbecd6da2d91e6455683052d54f4f4"
+    },
+    {
+      "id": "scryfall-magic-en:image:ea4cf36dc7fa9be40e326a5be67ba4ab6e5bfb97dccbc69cdfe6926cb9a9d2a4",
+      "fingerprint": "1fbf22cf93cb048dfaff9ff1134e1913ac3faf31b945075ce2c8c47752b97734"
+    },
+    {
+      "id": "scryfall-magic-en:image:745f3c6974eff7222a4dc308ab59d0c520934a114f80241b8465327c951bff8f",
+      "fingerprint": "6856e14d9c8f10936ddb446e40c2559a66abfdb13400641e4f1f5497861b9896"
+    }
+  ],
+  "population_digests": {
+    "8192": "5ed41475daa30c4cef297a202948878261f9ec5f336fd3e8b516605f6d8c44f2",
+    "17408": "6f2b1b0335d8c8ca926cc64868328d6ebc2c8f92783595f1c9ff5ae8d9655bf1"
+  },
+  "proposal_json_sha256": "b2d97dd9913b731a8466d94c4248f3332eb0ce71780dbf5bfd110fe6fc3a36ac"
+}
