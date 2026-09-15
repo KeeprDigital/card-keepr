@@ -196,8 +196,15 @@ seconds; routine acceptance to two minutes. Explicit scenario bounds live with
 the tests. Hosted ingestion, acceptance, smoke and bounded stress use disposable
 512 MiB tmpfs; full stress and memory-based stress diagnostics use 2 GiB. Local
 storage is unchanged. `scripts/ci-test.sh` owns allocation, occupancy reporting
-and cleanup. Retain the existing three large-suite shards until measurements
-justify a change. Test/operational results are never cached.
+and cleanup. Routine ingestion balances its three shards using source-derived
+native fixture/setup call sites, with checkout-relative paths breaking ties.
+Every selected file has a base weight, including newly added files without known
+fixtures. This estimate does not expand loops or parameter tables, follow aliases,
+or distinguish matching text in comments/strings. The [partitioner](../test/support/ingestion-shards.ts)
+owns the exact heuristic; measured timings stay in diagnostic artifacts. Default
+within-shard sorting, unsharded runs and stress selection remain unchanged.
+Retain the existing three large-suite shards until measurements justify a change.
+Test/operational results are never cached.
 
 For CI-only failures, select the failing file first, fix the cause, then rerun it
 before full validation. Do not chase green with repeated full runs, automatic
