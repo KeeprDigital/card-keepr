@@ -189,6 +189,20 @@ key to agree, and verifies those bytes again against the restored database.
 This storage foundation leaves the registered Magic pilot scope unchanged; the
 complete declared import remains [separate launch work](https://github.com/KeeprDigital/card-keepr/issues/327).
 
+Adapters may opt into bounded retained discovery context. Before interpretation,
+the parse operation atomically fixes its complete chain of ancestor Source
+Snapshots from the same Ingestion Run and exact adapter binding. Replays use
+those snapshots even if a later capture changes the request's current pointer;
+ambiguous completed parent captures prevent a new binding. A retained child
+protects its ancestors, and a permanent object reference also protects the direct
+siblings owned by that snapshot. Reverse ownership uses only literal stored keys,
+so a parent reference cannot retain otherwise unreferenced descendants. Backup
+verification fingerprints the context receipts and verifies required ancestor
+bytes against both the fenced source and restored database. Context receipts
+alone do not permanently retain evidence. The Pokémon discovery and content
+qualification work exercises this opt-in through a test adapter; production
+coverage remains the [registered pilot](https://github.com/KeeprDigital/card-keepr/issues/329).
+
 Collection scheduling reads a bounded page containing the next pending shard
 for each hostname. It retains Workflow identities only for dispatched shards;
 later shards are selected after their predecessors finish. Hostname grouping

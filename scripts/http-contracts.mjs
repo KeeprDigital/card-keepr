@@ -172,21 +172,38 @@ for (const [path, treatment] of [
   });
 inventory.sort((a, b) => `${a.worker} ${a.path} ${a.method}`.localeCompare(`${b.worker} ${b.path} ${b.method}`, "en"));
 output("contracts/http-route-inventory.json", JSON.stringify(inventory, null, 2) + "\n");
-const code = standaloneCode(ajv, validators);
-const compiled = await build({
-  stdin: {
-    contents: `import { fullFormats as formats } from "ajv-formats/dist/formats.js";\n${code}`,
-    resolveDir: process.cwd(),
-  },
-  bundle: true,
-  format: "esm",
-  platform: "neutral",
-  write: false,
-  minify: true,
-});
+// Vite transports each module with its source map to the test Worker. Keep the
+// separate schema roots in separate modules so their combined validation code
+// does not exceed the Worker's per-message limit during test startup.
+const validatorModules = [];
+for (const worker of Object.keys(workerFamilies)) {
+  const names = new Set(
+    Object.entries(validatorKeys)
+      .filter(([key]) => key.startsWith(`${worker} `))
+      .map(([, name]) => name),
+  );
+  const code = standaloneCode(ajv, Object.fromEntries([...names].map((name) => [name, name])));
+  const compiled = await build({
+    stdin: {
+      contents: `import { fullFormats as formats } from "ajv-formats/dist/formats.js";\n${code}`,
+      resolveDir: process.cwd(),
+    },
+    bundle: true,
+    format: "esm",
+    platform: "neutral",
+    write: false,
+    minify: true,
+  });
+  const filename = `http-response-validators.${worker}.mjs`;
+  output(
+    `test/support/${filename}`,
+    `// Generated from HTTP registrations; run pnpm generate:http.\n${compiled.outputFiles[0].text}`,
+  );
+  validatorModules.push(`export * from "./${filename}";`);
+}
 output(
   "test/support/http-response-validators.mjs",
-  `// Generated from HTTP registrations; run pnpm generate:http.\n${compiled.outputFiles[0].text}\nexport const responseValidators = ${JSON.stringify(validatorKeys)};\n`,
+  `// Generated from HTTP registrations; run pnpm generate:http.\n${validatorModules.join("\n")}\nexport const responseValidators = ${JSON.stringify(validatorKeys)};\n`,
 );
 output(
   "test/support/http-response-validators.d.mts",

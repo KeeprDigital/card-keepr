@@ -141,3 +141,63 @@ for (const parenthesized of [false, true]) {
     }
   });
 }
+
+for (const [label, comment] of [
+  ["block", "/* c */"],
+  ["line", "-- c\n"],
+]) {
+  test(`native SQL splitter counts CASE once beside an immediate ${label} comment`, () => {
+    const statements = unstable_splitSqlQuery(`SELECT CASE${comment} WHEN 1 THEN 2 ELSE 3 END; SELECT 4;`);
+    assert.equal(statements.length, 2);
+    const database = new DatabaseSync(":memory:");
+    try {
+      for (const statement of statements) database.exec(statement);
+    } finally {
+      database.close();
+    }
+  });
+}
+
+test("native SQL splitter closes CASE once before an immediate block comment inside a trigger", () => {
+  const statements = unstable_splitSqlQuery(`
+    CREATE TABLE split_values(value TEXT);
+    CREATE TRIGGER assign_case AFTER INSERT ON split_values WHEN NEW.value='start' BEGIN
+      UPDATE split_values SET value=CASE WHEN 1 THEN 'changed' ELSE 'unexpected' END/* c */ WHERE rowid=NEW.rowid;
+      INSERT INTO split_values VALUES ('after-case');
+    END;
+    INSERT INTO split_values VALUES ('start');
+    INSERT INTO split_values VALUES ('tail');
+  `);
+  assert.equal(statements.length, 4);
+  const database = new DatabaseSync(":memory:");
+  try {
+    for (const statement of statements) database.exec(statement);
+    assert.deepEqual(
+      recoveryQueries
+        .retainedSplitValues(database)
+        .all()
+        .map((row) => row.value),
+      ["changed", "after-case", "tail"],
+    );
+  } finally {
+    database.close();
+  }
+});
+
+test("native SQL splitter preserves square-bracket keyword identifiers inside a trigger", () => {
+  const statements = unstable_splitSqlQuery(`
+    CREATE TABLE split_values([END] TEXT);
+    CREATE TRIGGER quoted_keyword AFTER INSERT ON split_values BEGIN
+      UPDATE split_values SET [END]='ok';
+    END;
+    INSERT INTO split_values VALUES ('start');
+  `);
+  assert.equal(statements.length, 3);
+  const database = new DatabaseSync(":memory:");
+  try {
+    for (const statement of statements) database.exec(statement);
+    assert.equal(recoveryQueries.retainedBracketValue(database).get().END, "ok");
+  } finally {
+    database.close();
+  }
+});

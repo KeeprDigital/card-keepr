@@ -21,6 +21,19 @@ selected Garchomp Erratum updates Sonic Slip in both `effective_rules_text` and
 `game_data.attributes.abilities`; original physical wording stays on the Printing's
 `printed_rules_text`, with the original Source Observation retained privately.
 
+Within the Pokémon profile, Trainer `trainer_type` preserves the evidenced subtype;
+null means the subtype remains unknown. Trainer and Energy `effect_text` describes
+accepted Card wording when known, independently of original Printing text. Their
+creature-only fields use the profile's explicit null or empty values. Trainer
+`hp` can preserve an evidenced printed value, such as Mysterious Fossil's 10 HP,
+without changing its Trainer category or inventing a subtype. Its rules for
+counting as a Pokémon while in play remain in `effect_text`. Energy
+`energy_kind` distinguishes Basic, Special and unknown. `provided_energy` contains
+nonempty `units` only when unconditional provision is established (`state: fixed`);
+otherwise `state: unknown` and an empty `units` array leave provision unresolved.
+Conditional effects remain complete in `effect_text`. These profile semantics do
+not establish physical issuance, Card equivalence or complete source coverage.
+
 Card and Printing browsing includes gameplay, token and art categories by default.
 Card relationships identify evidenced associated Cards; a Printing's `card_id`
 identifies its parent. Collection cursors bind normalized filters to one exact

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { verifyCompositionArtifacts } from "./composition-artifacts";
 import { verifyCompositionSourceArtifacts } from "./composition-source-artifacts";
+import { verifyParentContextArtifacts } from "./composition-parent-context-artifacts";
 import {
   captureCompositionSnapshot,
   verifyCompositionSnapshot,
@@ -598,6 +599,12 @@ export async function createVerifiedCatalogueBackup(
               options.sourceEvidenceObjects,
               snapshot.source_evidence,
             );
+            await verifyParentContextArtifacts(
+              async (request) =>
+                (await catalogueVerificationStatement(database, request).all<Record<string, unknown>>()).results,
+              options.sourceEvidenceObjects,
+              snapshot.parent_context_evidence,
+            );
             expectedVerification.composition_snapshot = snapshot;
             const content = canonicalJson(snapshot);
             snapshotDigest = await sha256(content);
@@ -891,6 +898,7 @@ async function verifyRestoredCatalogueQueries(
     if (integrity?.quick_check !== "ok") throw new Error("Restored D1 integrity failed.");
     await verifyCompositionSnapshot(query, snapshot);
     await verifyCompositionSourceArtifacts(query, input.sourceEvidenceObjects, snapshot.source_evidence);
+    await verifyParentContextArtifacts(query, input.sourceEvidenceObjects, snapshot.parent_context_evidence);
     return completeRestoredVerification();
   }
   const [row] = await query({

@@ -3,13 +3,34 @@ import { type CatalogueStore, repositoryStatements } from "../shared";
 
 export function sourceSnapshotForParsingStatement(database: CatalogueStore, snapshotId: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`SELECT snapshots.*, requests.request_role
+    .prepare(
+      `SELECT snapshots.*, requests.request_role, requests.discovered_from_request_id
       FROM source_snapshots AS snapshots
       JOIN source_requests AS requests
         ON requests.ingestion_run_id = snapshots.ingestion_run_id
        AND requests.request_id = snapshots.request_id
-      WHERE snapshots.id = ?`)
+      WHERE snapshots.id = ?`,
+    )
     .bind(snapshotId);
+}
+
+export function retainedParentSnapshotStatement(database: CatalogueStore, runId: string, requestId: string) {
+  return repositoryStatements(database)
+    .prepare(
+      `SELECT snapshots.*, requests.request_role,
+      requests.discovered_from_request_id, requests.source_snapshot_id AS selected_snapshot_id
+    FROM source_requests requests JOIN source_snapshots snapshots
+      ON snapshots.ingestion_run_id=requests.ingestion_run_id AND snapshots.request_id=requests.request_id
+    WHERE requests.ingestion_run_id=? AND requests.request_id=?
+      AND snapshots.ingestion_run_id=requests.ingestion_run_id AND snapshots.request_id=requests.request_id
+      AND snapshots.request_url=requests.url
+      AND EXISTS (SELECT 1 FROM source_parse_operations p
+        JOIN source_record_progress progress ON progress.observation_set_id=p.observation_set_id
+        WHERE p.source_snapshot_id=snapshots.id AND p.intent='collection'
+          AND p.state='finalized' AND progress.sealed=1)
+    LIMIT 2`,
+    )
+    .bind(runId, requestId);
 }
 
 export function uploadedParseStatement(
@@ -17,10 +38,12 @@ export function uploadedParseStatement(
   input: Readonly<{ digest: string; byteLength: number; observationCount: number; operationId: string }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`UPDATE source_parse_operations
+    .prepare(
+      `UPDATE source_parse_operations
          SET state = 'uploaded', content_digest = ?,
              content_byte_length = ?, observation_count = ?
-         WHERE id = ? AND state = 'planned'`)
+         WHERE id = ? AND state = 'planned'`,
+    )
     .bind(input.digest, input.byteLength, input.observationCount, input.operationId);
 }
 
@@ -38,10 +61,12 @@ export function createParseOperationStatement(
   }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`INSERT OR IGNORE INTO source_parse_operations (
+    .prepare(
+      `INSERT OR IGNORE INTO source_parse_operations (
         id, source_snapshot_id, adapter_version, intent, idempotency_key,
         observation_set_id, content_object_key, parsed_at, state
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'planned')`)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'planned')`,
+    )
     .bind(
       input.operationId,
       input.snapshotId,
@@ -72,12 +97,14 @@ export function finalizedObservationSetStatement(
   }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`INSERT OR IGNORE INTO source_observation_sets (
+    .prepare(
+      `INSERT OR IGNORE INTO source_observation_sets (
           id, parse_operation_id, source_snapshot_id, source_lineage,
           supported_game, game_profile_version, adapter_version, parsed_at,
           content_digest, content_byte_length, content_object_key,
           observation_count
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
     .bind(
       input.observationSetId,
       input.operationId,
@@ -96,8 +123,10 @@ export function finalizedObservationSetStatement(
 
 export function finalizeParseStatement(database: CatalogueStore, operationId: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare(`UPDATE source_parse_operations SET state = 'finalized'
-         WHERE id = ? AND state = 'uploaded'`)
+    .prepare(
+      `UPDATE source_parse_operations SET state = 'finalized'
+         WHERE id = ? AND state = 'uploaded'`,
+    )
     .bind(operationId);
 }
 

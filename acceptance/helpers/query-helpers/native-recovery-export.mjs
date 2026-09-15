@@ -17,3 +17,7 @@ export function retainedIndex(database) {
 export function retainedSplitValues(database) {
   return database.prepare("SELECT value FROM split_values ORDER BY rowid");
 }
+
+export function retainedBracketValue(database) {
+  return database.prepare("SELECT [END] FROM split_values");
+}

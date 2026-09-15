@@ -30,7 +30,9 @@ The native backup regression in [#323](https://github.com/KeeprDigital/card-keep
 found an index grouped with hundreds of recovery triggers. Moving that group
 before retained data activated the original recovery fence during import.
 The patch recognizes punctuation while excluding identifier characters and
-parameter prefixes; it does not replace text in SQL literals. Native recovery
+parameter prefixes. Block comments remain whitespace separators, and square-bracket
+identifiers are consumed as quoted tokens, so each keyword is counted once. It
+does not replace text in SQL literals. Native recovery
 exports restore data before installing the original indexes and triggers.
 
 Keep this patch, `pnpm-workspace.yaml` and the lockfile together. Remove the patch
