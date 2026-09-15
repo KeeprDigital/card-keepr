@@ -95,6 +95,34 @@ test("the capacity extension mutation requires the administration key", async ()
   });
 });
 
+test("a capacity extension admits the final bounded capacity without changing adapter defaults", async () => {
+  const { runId } = await pauseRunAtCapacity("capacity_extension_large_bound_001");
+  const body = { ...extensionBody, request_capacity: 249_999, idempotency_key: "capacity_extension_large_001" };
+  const extended = await administrationRequest(`/v1/ingestion-runs/${runId}/capacity/extension`, "POST", body);
+  expect(extended.status).toBe(200);
+  const document = await extended.json();
+  expect(document).toMatchObject({
+    previous_request_capacity: fusionWorldRequestCapacity,
+    request_capacity: 249_999,
+    capacity_generation: 2,
+  });
+  await assertHttpResponse(contract, "/v1/ingestion-runs/{run}/capacity/extension", "post", extended, document);
+  const replayed = await administrationRequest(`/v1/ingestion-runs/${runId}/capacity/extension`, "POST", body);
+  expect(replayed.status).toBe(200);
+  await expect(replayed.json()).resolves.toEqual(document);
+  const rejected = await administrationRequest(`/v1/ingestion-runs/${runId}/capacity/extension`, "POST", {
+    expected_request_capacity: 249_999,
+    expected_capacity_generation: 2,
+    request_capacity: 250_000,
+    idempotency_key: "capacity_extension_hard_stop_001",
+  });
+  expect(rejected.status).toBe(422);
+  await expect(rejected.json()).resolves.toMatchObject({ code: "request_capacity_exceeds_global_ceiling" });
+  const stored = await sourceEvidenceQueries.readIngestionRunCapacityExtensions(env.CATALOGUE_DB).bind(runId).all();
+  expect(stored.results).toHaveLength(1);
+  expect(stored.results[0]).toMatchObject({ request_capacity: 249_999, capacity_generation: 2 });
+});
+
 test("every invalid capacity extension returns its explicit problem document", async () => {
   // A run that is not capacity-paused refuses extension outright.
   const collecting = await fixtureEvidenceRequest({
@@ -181,7 +209,7 @@ test("every invalid capacity extension returns its explicit problem document", a
       {
         expected_request_capacity: fusionWorldRequestCapacity,
         expected_capacity_generation: 1,
-        request_capacity: 25_000,
+        request_capacity: 250_000,
         idempotency_key: "capacity_extension_ceiling_001",
       },
       422,

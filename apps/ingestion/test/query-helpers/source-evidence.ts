@@ -326,6 +326,16 @@ export function setSourceRequestsState(database: D1Database): D1PreparedStatemen
      WHERE ingestion_run_id = ? AND sequence_number BETWEEN 1 AND 199`);
 }
 
+export function completeFirstEvidenceHostShard(database: D1Database): D1PreparedStatement {
+  return database.prepare(`UPDATE source_requests SET state = 'observed'
+    WHERE ingestion_run_id = ? AND sequence_number BETWEEN 0 AND 199`);
+}
+
+export function completeSelectedEvidenceHosts(database: D1Database): D1PreparedStatement {
+  return database.prepare(`UPDATE source_requests SET state='observed' WHERE ingestion_run_id=?
+    AND substr(substr(url,instr(url,'://')+3),1,instr(substr(url,instr(url,'://')+3),'/')-1) IN (SELECT value FROM json_each(?))`);
+}
+
 export function readSourceSnapshotsId(database: D1Database): D1PreparedStatement {
   return database.prepare(`SELECT snapshot.id
      FROM source_snapshots AS snapshot
@@ -1198,10 +1208,12 @@ export function setIngestionRunsStateTerminalAtForTerminalEvidenceDiagnosticsExp
   return runEventStatement(store, {
     event,
     statement: database
-      .prepare(`UPDATE ingestion_run_current
+      .prepare(
+        `UPDATE ingestion_run_current
       SET ${runEventIdentitySql}, state = 'failed', terminal_at = ?,
           failure_code = 'source_request_retries_exhausted'
-      WHERE ingestion_run_id = ? AND state = 'collecting'`)
+      WHERE ingestion_run_id = ? AND state = 'collecting'`,
+      )
       .bind(event.eventId, terminalAt, runId),
     guards: [runTransitionGuardStatement(store, { runId, from: "collecting", to: "failed" })],
   });

@@ -26,6 +26,8 @@ import {
   finalizeEvidenceRun,
   isCurrentCollectionWorkflowAttempt,
   pendingEvidenceRequestPage,
+  pendingEvidenceHostShards,
+  evidenceHostShardRequestCapacity,
   recordIngestionWorkflowProgress,
   recordWorkflowIds,
   requiredEvidenceRun,
@@ -57,7 +59,7 @@ const collectionBatchStep = {
 // collection costs one durable step per `collectionBatchSize` requests, and
 // only a retry wait adds a durable sleep plus a fresh batch step.
 const workflowRequestPageSize = 100;
-const hostShardRequestCapacity = 200;
+const hostShardRequestCapacity = evidenceHostShardRequestCapacity;
 // One stable hostname identity plus three replacement identities exceeds the
 // deepest discovery chain while placing a hard ceiling on durable recovery.
 const maximumHostWorkflowIdentities = 4;
@@ -67,6 +69,7 @@ type HostShard = Readonly<{
   minimumSequenceNumber: number;
   maximumSequenceNumber: number;
   pendingRequestCount?: number;
+  pendingShardCount?: number;
 }>;
 
 export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceParentWorkflowParams> {
@@ -108,27 +111,13 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
           runId,
           barrierStage,
         );
-        const pendingChildren = await Promise.all(
+        const activeChildren = await Promise.all(
           pendingShards.map(async (shard) => ({
             ...shard,
             id: await evidenceHostWorkflowId(runId, shard),
           })),
         );
-        const activeChildren = [
-          ...pendingChildren
-            .reduce((byHostname, child) => {
-              if (!byHostname.has(child.hostname)) {
-                byHostname.set(child.hostname, child);
-              }
-              return byHostname;
-            }, new Map<string, (typeof pendingChildren)[number]>())
-            .values(),
-        ];
-        const shardDepths = new Map<string, number>();
-        for (const child of pendingChildren) {
-          shardDepths.set(child.hostname, (shardDepths.get(child.hostname) ?? 0) + 1);
-        }
-        const maximumShardDepth = Math.max(0, ...shardDepths.values());
+        const maximumShardDepth = Math.max(0, ...activeChildren.map((child) => child.pendingShardCount ?? 0));
         const maximumActiveRequestCount = Math.max(0, ...activeChildren.map((child) => child.pendingRequestCount ?? 0));
         let selectedChildIds: string[] = [];
         if (activeChildren.length > 0) {
@@ -248,15 +237,14 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
             },
           );
         }
-        for (const child of pendingChildren) allChildIds.add(child.id);
         for (const id of selectedChildIds) allChildIds.add(id);
         const recordedChildIds = [...allChildIds].sort();
         await step.do(
-          workflowStepName(workflowSteps.parent.record, { stage: barrierStage }),
+          workflowStepName(workflowSteps.parent.recordSummary, { stage: barrierStage }),
           deterministicDatabaseStep,
           async () => {
             await recordWorkflowIds(catalogueStore(this.env.CATALOGUE_DB), runId, event.instanceId, recordedChildIds);
-            return recordedChildIds;
+            return { child_workflow_count: recordedChildIds.length };
           },
         );
         const run = await step.do(
@@ -387,43 +375,18 @@ async function loadPendingHostShards(
   runId: string,
   barrierStage: number,
 ): Promise<HostShard[]> {
-  const shards = new Map<string, HostShard>();
-  let afterSequenceNumber = -1;
-  let pageNumber = 0;
-  for (;;) {
-    const page = await step.do(
-      workflowStepName(workflowSteps.parent.pending, { page: pageNumber, stage: barrierStage }),
-      deterministicDatabaseStep,
-      () =>
-        pendingEvidenceRequestPage(
-          database,
-          runId,
-          afterSequenceNumber,
-          Number.MAX_SAFE_INTEGER,
-          workflowRequestPageSize,
-        ),
-    );
-    for (const request of page) {
-      const minimumSequenceNumber =
-        Math.floor(request.sequence_number / hostShardRequestCapacity) * hostShardRequestCapacity;
-      const shardKey = `${new URL(request.url).hostname}\u0000${minimumSequenceNumber}`;
-      const prior = shards.get(shardKey);
-      const shard: HostShard = {
-        hostname: new URL(request.url).hostname,
-        minimumSequenceNumber,
-        maximumSequenceNumber: minimumSequenceNumber + hostShardRequestCapacity - 1,
-        pendingRequestCount: (prior?.pendingRequestCount ?? 0) + 1,
-      };
-      shards.set(shardKey, shard);
-    }
-    if (page.length < workflowRequestPageSize) break;
-    afterSequenceNumber = page.at(-1)!.sequence_number;
-    pageNumber += 1;
-  }
-  return [...shards.values()].sort(
-    (left, right) =>
-      left.minimumSequenceNumber - right.minimumSequenceNumber || left.hostname.localeCompare(right.hostname),
+  const shards = await step.do(
+    workflowStepName(workflowSteps.parent.shards, { stage: barrierStage }),
+    deterministicDatabaseStep,
+    () => pendingEvidenceHostShards(database, runId),
   );
+  return shards.map((shard) => ({
+    hostname: shard.hostname,
+    minimumSequenceNumber: shard.minimum_sequence_number,
+    maximumSequenceNumber: shard.minimum_sequence_number + hostShardRequestCapacity - 1,
+    pendingRequestCount: shard.pending_request_count,
+    pendingShardCount: shard.pending_shard_count,
+  }));
 }
 
 async function loadPendingShardRequests(

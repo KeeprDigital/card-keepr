@@ -6,6 +6,7 @@ import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
 import {
   appendDiscoveredEvidenceRequests,
   pendingEvidenceRequestPage,
+  pendingEvidenceHostShards,
   pendingEvidenceRequests,
   requiredEvidenceRun,
   officialCollectionRequestsFromDiscovery,
@@ -20,6 +21,140 @@ import {
 } from "./runtime-helpers";
 
 installRuntimeSuite();
+
+test.each([
+  {
+    hostname: "official-source.invalid",
+    urls: [
+      "https://OFFICIAL-SOURCE.invalid:443/cards",
+      "https://official-source.invalid:8443/cards",
+      "https://official-source.invalid:9443/cards",
+    ],
+  },
+  {
+    hostname: "[2001:db8::1]",
+    urls: [
+      "https://[2001:0db8:0:0:0:0:0:1]:443/cards",
+      "https://[2001:db8::1]:8443/cards",
+      "https://[2001:db8::1]:9443/cards",
+    ],
+  },
+])("host scheduling and child capture share the canonical hostname $hostname", async ({ hostname, urls }) => {
+  const started = await injectFixtureEvidencePlan(env.CATALOGUE_DB, {
+    supported_game: "one-piece",
+    source_lineage: "one-piece-en",
+    adapter_version: "fixture-one-piece-json@3",
+    idempotency_key: "source_port_hostname_collection_001",
+    requests: urls.map((url, index) => ({ id: `cards-${index}`, method: "GET", url })),
+  });
+  const runId = String(started.id);
+  const db = catalogueStore(env.CATALOGUE_DB);
+  expect(await pendingEvidenceHostShards(db, runId)).toEqual([
+    { hostname, minimum_sequence_number: 0, pending_request_count: 3, pending_shard_count: 1 },
+  ]);
+  const completed = await resumeCollection(runId);
+  expect(completed.collection_completed_at).not.toBeNull();
+  expect(completed.snapshots.map(({ request }) => request.url).sort()).toEqual(
+    urls.map((url) => new URL(url).href).sort(),
+  );
+  expect(completed.observation_sets).toHaveLength(3);
+  expect(completed.workflow.child_ids).toHaveLength(1);
+  expect(await pendingEvidenceHostShards(db, runId)).toEqual([]);
+});
+
+test("host scheduling retains bounded next-shard receipts across completed prefixes", async () => {
+  const started = await injectFixtureEvidencePlan(env.CATALOGUE_DB, {
+    supported_game: "fusion-world",
+    source_lineage: "fusion-world-en",
+    adapter_version: "fixture-fusion-world-json@2",
+    idempotency_key: "source_next_host_shard_receipts_001",
+    requests: [{ id: "root", method: "GET", url: "https://official-source.invalid/cards/0" }],
+  });
+  const runId = String(started.id);
+  const db = catalogueStore(env.CATALOGUE_DB);
+  const run = await requiredEvidenceRun(db, runId);
+  const [root] = await pendingEvidenceRequests(db, runId);
+  if (!root) throw new Error("Pending root missing");
+  for (let offset = 0; offset < 201; offset += 100) {
+    await appendDiscoveredEvidenceRequests(
+      db,
+      run,
+      root,
+      Array.from({ length: Math.min(100, 201 - offset) }, (_, index) => ({
+        role: "detail" as const,
+        url: `https://${offset + index === 200 ? "second-source.invalid" : "official-source.invalid"}/cards/${offset + index + 1}`,
+        headers: { accept: "application/json" },
+      })),
+    );
+  }
+  const first = await pendingEvidenceHostShards(db, runId);
+  expect(first).toEqual([
+    {
+      hostname: "official-source.invalid",
+      minimum_sequence_number: 0,
+      pending_request_count: 200,
+      pending_shard_count: 2,
+    },
+    {
+      hostname: "second-source.invalid",
+      minimum_sequence_number: 200,
+      pending_request_count: 1,
+      pending_shard_count: 1,
+    },
+  ]);
+  await sourceEvidenceQueries.completeFirstEvidenceHostShard(env.CATALOGUE_DB).bind(runId).run();
+  expect(await pendingEvidenceHostShards(db, runId)).toEqual([
+    {
+      hostname: "official-source.invalid",
+      minimum_sequence_number: 200,
+      pending_request_count: 1,
+      pending_shard_count: 1,
+    },
+    {
+      hostname: "second-source.invalid",
+      minimum_sequence_number: 200,
+      pending_request_count: 1,
+      pending_shard_count: 1,
+    },
+  ]);
+  expect(utf8(canonicalJson(first)).byteLength).toBeLessThan(1024);
+  expect(await pendingEvidenceRequestPage(db, runId, -1, Number.MAX_SAFE_INTEGER, 100)).toHaveLength(2);
+});
+
+test("host scheduling admits a bounded host page without skipping the remaining host", async () => {
+  const run = await createCollection("source_host_page_continuation_001", "https://official-source.invalid/cards");
+  const db = catalogueStore(env.CATALOGUE_DB);
+  const stored = await requiredEvidenceRun(db, run.id);
+  const [root] = await pendingEvidenceRequests(db, run.id);
+  if (!root) throw new Error("Pending root missing");
+  await appendDiscoveredEvidenceRequests(
+    db,
+    stored,
+    root,
+    Array.from({ length: 100 }, (_, index) => ({
+      role: "detail" as const,
+      url: `https://source-${String(index).padStart(3, "0")}.invalid/cards`,
+      headers: { accept: "application/json" },
+    })),
+  );
+  const first = await pendingEvidenceHostShards(db, run.id);
+  expect(first).toHaveLength(100);
+  expect(
+    first.every(
+      ({ pending_request_count, pending_shard_count }) => pending_request_count === 1 && pending_shard_count === 1,
+    ),
+  ).toBe(true);
+  await sourceEvidenceQueries
+    .completeSelectedEvidenceHosts(env.CATALOGUE_DB)
+    .bind(run.id, JSON.stringify(first.map(({ hostname }) => hostname)))
+    .run();
+  const remaining = await pendingEvidenceHostShards(db, run.id);
+  expect(remaining).toHaveLength(1);
+  expect(first.some(({ hostname }) => hostname === remaining[0]!.hostname)).toBe(false);
+  const requests = await pendingEvidenceRequestPage(db, run.id, -1, Number.MAX_SAFE_INTEGER, 100);
+  expect(requests).toHaveLength(1);
+  expect(new URL(requests[0]!.url).hostname).toBe(remaining[0]!.hostname);
+});
 
 test("each request uses its owning Evidence Plan adapter capture cap", async () => {
   const started = await injectFixtureEvidencePlan(env.CATALOGUE_DB, {

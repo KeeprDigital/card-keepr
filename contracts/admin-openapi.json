@@ -39893,7 +39893,8 @@
                   },
                   "request_capacity": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "description": "Absolute per-lineage capacity, greater than the current capacity and below 250000. A capacity at or above this ceiling returns request_capacity_exceeds_global_ceiling."
                   }
                 },
                 "required": [

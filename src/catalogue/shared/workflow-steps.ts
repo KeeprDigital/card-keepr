@@ -3,8 +3,10 @@ export const workflowSteps = {
   parent: {
     identities: "load retained hostname Workflow identities",
     pending: "load pending evidence page {page} barrier {stage}",
+    shards: "load next hostname shard receipts barrier {stage}",
     recover: "recover pending hostname workflows stage {stage}",
     record: "record hostname Workflow identities stage {stage}",
+    recordSummary: "record hostname Workflow identity count stage {stage}",
     finalize: "finalize collection barrier stage {stage}",
     wait: "await collection barrier stage {stage}",
     reconcile: "reconcile retained Official Source evidence",
