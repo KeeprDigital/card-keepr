@@ -754,6 +754,16 @@ remaining allowance and bounded unsettled identities. A budget pause uses
 remain intact. An exact replay returns its retained result. Extension stays
 paused; resume rejects an absent or still-exhausted policy.
 
+For a legacy run without an account, the same action requires
+`expected_generation: 0` and `expected_budget: null`. It accepts only an unstarted
+or paused, quiescent collection with positively settled earlier ownership.
+Initialization verifies and deduplicates retained raw-source keys into its byte
+baseline; earlier dispatch counts remain unknown. It neither dispatches nor
+resumes collection. Terminal history remains inspectable without an account.
+Resume may settle a pending reservation by verifying the exact earlier stored
+body and writer identity. Missing bodies, unreadable receipts, supersession and
+timeouts cannot return uncertain allowance.
+
 Creation and linked retry return 201 with `card-keepr-evidence-acceptance@1`.
 The receipt's `state: collecting` records initial acceptance, never current state.
 Its retained run identity, initial plan, start time and predecessor link replay

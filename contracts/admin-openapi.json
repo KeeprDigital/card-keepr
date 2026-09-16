@@ -54138,10 +54138,13 @@
                 "properties": {
                   "expected_generation": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 0
                   },
                   "expected_budget": {
-                    "type": "object",
+                    "type": [
+                      "object",
+                      "null"
+                    ],
                     "properties": {
                       "max_dispatches": {
                         "type": "integer",
@@ -54241,7 +54244,10 @@
                       "minimum": 0
                     },
                     "previous_budget": {
-                      "type": "object",
+                      "type": [
+                        "object",
+                        "null"
+                      ],
                       "properties": {
                         "max_dispatches": {
                           "type": "integer",

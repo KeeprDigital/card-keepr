@@ -315,10 +315,12 @@ async function collectResumeAndShow(
 ) {
   const planFile = join(directory, `${idempotencyKey}.json`);
   const budgetFile = join(directory, `${idempotencyKey}-budget.json`);
-  await writeFile(
-    budgetFile,
-    JSON.stringify({ max_dispatches: 1000, max_source_bytes: 2 ** 30, dispatch_deadline: "2099-01-01T00:00:00.000Z" }),
-  );
+  const acquisitionBudget = {
+    max_dispatches: 1000,
+    max_source_bytes: 2 ** 30,
+    dispatch_deadline: "2099-01-01T00:00:00.000Z",
+  };
+  await writeFile(budgetFile, JSON.stringify(acquisitionBudget));
   const requests = exactOnePieceRequests();
   if (transportOutcome !== null) {
     requests[0].headers = {
@@ -362,6 +364,7 @@ async function collectResumeAndShow(
   const current = await waitForRunState(run.id, expectedState, environment, ingestion, { deadlineMs: 20_000 });
   validateSourceDocument("/v1/ingestion-runs/{run}/evidence", "get", 200, current);
   const intent = {
+    acquisition_budget: acquisitionBudget,
     plans: [
       { supported_game: "one-piece", source_lineage: "one-piece-en", adapter_version: "one-piece-en@6", requests },
     ],

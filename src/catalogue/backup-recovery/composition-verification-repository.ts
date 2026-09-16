@@ -18,9 +18,16 @@ export const compositionSourceSnapshotTables = [
   "source_archive_record_receipts",
 ] as const;
 export const compositionParentContextTables = ["source_parse_contexts", "source_parse_dependencies"] as const;
+export const compositionAcquisitionTables = [
+  "ingestion_acquisition_accounts",
+  "ingestion_acquisition_policies",
+  "source_dispatch_reservations",
+  "ingestion_acquisition_pauses",
+] as const;
 export const compositionSnapshotTables = [
   ...compositionSourceSnapshotTables,
   ...compositionParentContextTables,
+  ...compositionAcquisitionTables,
   "catalogue_revisions",
   "catalogue_exports",
   "catalogue_export_deletion_plans",

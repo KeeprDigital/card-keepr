@@ -26,8 +26,8 @@ export const acquisitionBudgetSchema = z.strictObject({
   dispatch_deadline: timestamp,
 });
 export const acquisitionExtensionInputSchema = z.strictObject({
-  expected_generation: z.number().int().min(1),
-  expected_budget: acquisitionBudgetSchema,
+  expected_generation: z.number().int().min(0),
+  expected_budget: acquisitionBudgetSchema.nullable(),
   acquisition_budget: acquisitionBudgetSchema,
   idempotency_key: identifier,
 });
@@ -36,7 +36,7 @@ export const acquisitionExtensionSchema = z.strictObject({
   ingestion_run_id: identifier,
   previous_generation: count,
   generation: count,
-  previous_budget: acquisitionBudgetSchema,
+  previous_budget: acquisitionBudgetSchema.nullable(),
   acquisition_budget: acquisitionBudgetSchema,
   extended_at: timestamp,
 });

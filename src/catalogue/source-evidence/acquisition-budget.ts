@@ -2,6 +2,7 @@ import { AdministrationProblem, canonicalJson, type CatalogueStore, sha256, utf8
 import {
   acquisitionAccount,
   acquisitionExtensionGuard,
+  acquisitionInitializationGuard,
   acquisitionIntegrityGuard,
   acquisitionPause,
   acquisitionPauseStatements,
@@ -12,13 +13,16 @@ import {
   reserveSourceDispatch,
   settleSourceDispatch,
   unsettledDispatches,
-  unsettledRequestDispatch,
+  unsettledRunDispatch,
+  unsettledRawWriter,
+  unresolvedCaptureResponse,
   type AcquisitionAccount,
   type AcquisitionDimension,
   type AcquisitionPause,
   type DispatchReservation,
 } from "./acquisition-budget-repository";
 import { assertIdentifier, type AcquisitionBudget, type CollectionWorkflowAttempt } from "./source-evidence-model";
+import { verifyLegacyAcquisition, type LegacyAcquisitionContext } from "./acquisition-legacy";
 
 export function validateAcquisitionBudget(value: AcquisitionBudget, requireFuture = true): AcquisitionBudget {
   if (
@@ -84,6 +88,20 @@ function limitingDimension(account: AcquisitionAccount | null, bytes: number): A
   return null;
 }
 
+export async function requireAcquisitionPolicy(db: CatalogueStore, runId: string, requestId: string) {
+  if (await acquisitionAccount(db, runId).first()) return true;
+  await db.batch(
+    acquisitionPauseStatements(db, {
+      runId,
+      requestId,
+      generation: null,
+      maximumBytes: 1,
+      dimension: "policy_missing",
+    }),
+  );
+  return false;
+}
+
 export async function reserveAcquisitionDispatch(
   db: CatalogueStore,
   input: {
@@ -102,8 +120,11 @@ export async function reserveAcquisitionDispatch(
   if (result.meta.changes > 0) return id;
   const account = await acquisitionAccount(db, input.runId).first<AcquisitionAccount>();
   const previous = await captureDispatch(db, input.captureId).first<DispatchReservation>();
+  const writer = await unsettledRawWriter(db, input.runId, input.objectKey).first();
   const dimension =
-    previous !== null && previous.settled_at === null ? "ownership" : limitingDimension(account, input.maximumBytes);
+    (previous !== null && previous.settled_at === null) || writer !== null
+      ? "ownership"
+      : limitingDimension(account, input.maximumBytes);
   if (dimension !== null)
     await db.batch(
       acquisitionPauseStatements(db, {
@@ -119,10 +140,32 @@ export async function settleAcquisitionDispatch(db: CatalogueStore, id: string, 
   await settleSourceDispatch(db, id, captureId, bytes, new Date().toISOString()).run();
 }
 
+export async function pauseAcquisitionOwnership(
+  db: CatalogueStore,
+  input: { runId: string; requestId: string; captureId: string; workflow?: CollectionWorkflowAttempt },
+) {
+  const account = await acquisitionAccount(db, input.runId).first<AcquisitionAccount>();
+  const dispatch = await captureDispatch(db, input.captureId).first<DispatchReservation>();
+  await db.batch(
+    acquisitionPauseStatements(db, {
+      ...input,
+      generation: account?.generation ?? null,
+      maximumBytes: dispatch?.maximum_source_bytes ?? 1,
+      dimension: account === null ? "policy_missing" : "ownership",
+    }),
+  );
+}
+
 export async function inspectAcquisitionBudget(db: CatalogueStore, runId: string) {
   const account = await acquisitionAccount(db, runId).first<AcquisitionAccount>();
   if (account === null) return null;
   const outstanding = await unsettledDispatches(db, runId).all<DispatchReservation>();
+  const pause = account.run_state === "paused" ? await acquisitionPause(db, runId).first<AcquisitionPause>() : null;
+  const ownershipPending =
+    account.run_state === "paused" &&
+    (outstanding.results.length > 0 ||
+      (await unsettledRawWriter(db, runId).first()) !== null ||
+      (await unresolvedCaptureResponse(db, runId).first()) !== null);
   return {
     generation: account.generation,
     coverage_started_at: account.coverage_started_at,
@@ -141,7 +184,7 @@ export async function inspectAcquisitionBudget(db: CatalogueStore, runId: string
       0,
       account.max_source_bytes - account.charged_source_bytes - account.reserved_source_bytes,
     ),
-    limiting_dimension: limitingDimension(account, 1),
+    limiting_dimension: ownershipPending ? "ownership" : limitingDimension(account, pause?.maximum_source_bytes ?? 1),
     unsettled: outstanding.results.slice(0, 50).map((row) => ({
       id: row.id,
       request_id: row.request_id,
@@ -176,6 +219,16 @@ export async function currentAcquisitionPause(db: CatalogueStore, runId: string)
 export async function assertAcquisitionResumable(db: CatalogueStore, runId: string) {
   const account = await acquisitionAccount(db, runId).first<AcquisitionAccount>();
   const pause = await acquisitionPause(db, runId).first<AcquisitionPause>();
+  if (
+    (await unsettledRunDispatch(db, runId).first()) ||
+    (await unsettledRawWriter(db, runId).first()) ||
+    (await unresolvedCaptureResponse(db, runId).first())
+  )
+    throw new AdministrationProblem(
+      409,
+      "source_acquisition_ownership_pending",
+      "A prior physical dispatch has not been positively settled.",
+    );
   const dimension = limitingDimension(account, pause?.maximum_source_bytes ?? 1);
   if (dimension !== null)
     throw new AdministrationProblem(
@@ -183,26 +236,23 @@ export async function assertAcquisitionResumable(db: CatalogueStore, runId: stri
       "source_acquisition_budget_exhausted",
       `Collection cannot resume: acquisition ${dimension}. Initialize or extend its budget first.`,
     );
-  if (pause?.dimension === "ownership") {
-    if (await unsettledRequestDispatch(db, runId, pause.request_id).first())
-      throw new AdministrationProblem(
-        409,
-        "source_acquisition_ownership_pending",
-        "The prior physical dispatch has not been positively settled.",
-      );
-  }
 }
 
 export type AcquisitionExtensionRequest = {
   expected_generation: number;
-  expected_budget: AcquisitionBudget;
+  expected_budget: AcquisitionBudget | null;
   acquisition_budget: AcquisitionBudget;
   idempotency_key: string;
 };
-export async function extendAcquisitionBudget(db: CatalogueStore, runId: string, input: AcquisitionExtensionRequest) {
+export async function extendAcquisitionBudget(
+  db: CatalogueStore,
+  runId: string,
+  input: AcquisitionExtensionRequest,
+  legacy: LegacyAcquisitionContext,
+) {
   assertIdentifier(input.idempotency_key, "idempotency_key");
   const budget = validateAcquisitionBudget(input.acquisition_budget, false);
-  const previous = validateAcquisitionBudget(input.expected_budget, false);
+  const previous = input.expected_budget === null ? null : validateAcquisitionBudget(input.expected_budget, false);
   const digest = await sha256(
     utf8(canonicalJson({ runId, ...input, expected_budget: previous, acquisition_budget: budget })),
   );
@@ -220,8 +270,59 @@ export async function extendAcquisitionBudget(db: CatalogueStore, runId: string,
     return JSON.parse(replay.response_json) as Record<string, unknown>;
   }
   const account = await acquisitionAccount(db, runId).first<AcquisitionAccount>();
+  if (account === null && input.expected_generation === 0 && previous === null) {
+    validateAcquisitionBudget(budget);
+    const verified = await verifyLegacyAcquisition(db, runId, legacy);
+    if (verified.baseline > budget.max_source_bytes)
+      throw new AdministrationProblem(
+        422,
+        "acquisition_budget_below_baseline",
+        "The byte allowance must cover the verified retained raw-source baseline.",
+      );
+    const at = new Date().toISOString();
+    const response = {
+      contract: "card-keepr-acquisition-budget-extension@1",
+      ingestion_run_id: runId,
+      previous_generation: 0,
+      generation: 1,
+      previous_budget: null,
+      acquisition_budget: budget,
+      extended_at: at,
+    };
+    try {
+      await db.batch([
+        acquisitionIntegrityGuard(db, runId),
+        acquisitionInitializationGuard(db, runId, verified.eventId),
+        initialAcquisitionAccount(db, runId, at, true, verified.baseline),
+        insertAcquisitionPolicy(db, {
+          runId,
+          generation: 1,
+          budget,
+          at,
+          key: input.idempotency_key,
+          digest,
+          response: canonicalJson(response),
+        }),
+      ]);
+    } catch (error) {
+      const raced = await acquisitionPolicyByKey(db, input.idempotency_key).first<{
+        request_digest: string;
+        response_json: string;
+      }>();
+      if (raced?.request_digest === digest) return JSON.parse(raced.response_json) as Record<string, unknown>;
+      if (String(error).includes("acquisition_initialization_not_quiescent"))
+        throw new AdministrationProblem(
+          409,
+          "acquisition_initialization_not_quiescent",
+          "The legacy collection must be unstarted or positively quiescent before initialization.",
+        );
+      throw error;
+    }
+    return response;
+  }
   if (
     account === null ||
+    previous === null ||
     account.generation !== input.expected_generation ||
     previous.max_dispatches !== account.max_dispatches ||
     previous.max_source_bytes !== account.max_source_bytes ||

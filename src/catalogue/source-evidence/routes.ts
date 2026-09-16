@@ -82,7 +82,11 @@ export const sourceEvidenceRoutes: HttpRoute<Context>[] = [
   httpRoute<Context>()(extendAcquisitionRoute, async (c) =>
     c.json(
       acquisitionExtensionSchema.parse(
-        await extendAcquisitionBudget(c.env.env.CATALOGUE_DB, c.req.valid("param").run, c.req.valid("json")),
+        await extendAcquisitionBudget(c.env.env.CATALOGUE_DB, c.req.valid("param").run, c.req.valid("json"), {
+          evidenceObjects: c.env.env.EVIDENCE_OBJECTS,
+          parentWorkflow: c.env.env.EVIDENCE_INGESTION_WORKFLOW,
+          hostWorkflow: c.env.env.EVIDENCE_HOST_WORKFLOW,
+        }),
       ),
       200,
     ),
@@ -244,6 +248,7 @@ export const sourceEvidenceRoutes: HttpRoute<Context>[] = [
       env.EVIDENCE_INGESTION_WORKFLOW,
       run,
       env.EVIDENCE_HOST_WORKFLOW,
+      env.EVIDENCE_OBJECTS,
     );
     const status = publicUrl(c.env.base, `/v1/ingestion-runs/${encodeURIComponent(run)}/evidence`);
     c.header("Location", status);

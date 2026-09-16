@@ -176,6 +176,15 @@ leaves the run paused. A remaining limit or unresolved physical owner can still
 block resume. Cleanup does not restore spent allowance. Do not replace uncertain
 exposure with zero based on a timeout, missing object, or superseded Workflow.
 
+An unfinished legacy run may show `acquisition: null`. For an unstarted or paused
+run with settled earlier ownership, use the same budget command with
+`--expected-generation 0` and an expected-budget file containing JSON `null`.
+Initialization verifies retained raw objects and charges each physical key once
+as a byte baseline. Earlier dispatch totals remain unknown. It leaves work
+unstarted or paused; run `source resume` separately. Ambiguous older work or
+unreadable Workflow/storage evidence blocks initialization. Completed or terminal
+history stays inspectable without inventing accounting.
+
 Stop a collecting run through its lifecycle, rather than terminating provider
 instances directly:
 

@@ -58,6 +58,7 @@ test("successful captures remain auditable when a later required response is rej
         state: "paused",
         failure_code: null,
         pause: { reason: "source_transport_retries_exhausted" },
+        acquisition: { charged_dispatches: 5, reserved_source_bytes: 0 },
       },
     },
   ]) {
@@ -152,6 +153,9 @@ test("validator revalidation creates fresh fetch evidence and reuses bytes only 
     { "accept-language": "en" },
   );
   const revalidated = await resumeCollection(revalidatedRun.id);
+  expect(revalidated).toMatchObject({
+    acquisition: { charged_dispatches: 1, charged_source_bytes: 0, reserved_source_bytes: 0 },
+  });
   const revalidatedSnapshot = revalidated.snapshots[0];
   if (revalidatedSnapshot === undefined) {
     throw new Error("missing revalidated snapshot");

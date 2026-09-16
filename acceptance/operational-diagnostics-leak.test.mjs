@@ -1,4 +1,5 @@
 import { readWorkerConfig } from "../cli/lib/config.mjs";
+import acquisitionBudget from "../test/support/acquisition-budget.json" with { type: "json" };
 import assert from "node:assert/strict";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -153,6 +154,7 @@ test("operational logs and diagnostics retain correlation fields without leaking
       method: "POST",
       headers: administrationHeaders,
       body: JSON.stringify({
+        acquisition_budget: acquisitionBudget,
         plans: [
           {
             supported_game: "one-piece",
@@ -223,6 +225,7 @@ test("operational logs and diagnostics retain correlation fields without leaking
       method: "POST",
       headers: administrationHeaders,
       body: JSON.stringify({
+        acquisition_budget: acquisitionBudget,
         plans: [
           {
             supported_game: "one-piece",

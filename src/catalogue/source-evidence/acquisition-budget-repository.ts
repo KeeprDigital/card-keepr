@@ -14,6 +14,7 @@ import { sourceParseAuthorityGuard } from "./source-parse-authority-repository";
 
 export type AcquisitionAccount = AcquisitionBudget & {
   ingestion_run_id: string;
+  run_state: string;
   generation: number;
   coverage_started_at: string;
   historical_dispatches_unknown: number;
@@ -50,9 +51,10 @@ export type AcquisitionPause = {
 export function acquisitionAccount(db: CatalogueStore, runId: string) {
   return repositoryStatements(db)
     .prepare(
-      `SELECT account.*,policy.generation,policy.max_dispatches,
+      `SELECT account.*,current.state AS run_state,policy.generation,policy.max_dispatches,
     policy.max_source_bytes,policy.dispatch_deadline FROM ingestion_acquisition_accounts account
     JOIN ingestion_acquisition_policies policy USING(ingestion_run_id)
+    JOIN ingestion_run_current current USING(ingestion_run_id)
     WHERE account.ingestion_run_id=? ORDER BY policy.generation DESC LIMIT 1`,
     )
     .bind(runId);
@@ -116,6 +118,51 @@ export function acquisitionExtensionGuard(db: CatalogueStore, runId: string, gen
     )
     .bind(runId, generation);
 }
+export function acquisitionInitializationGuard(db: CatalogueStore, runId: string, eventId: string | null = null) {
+  return repositoryStatements(db)
+    .prepare(
+      `SELECT CASE WHEN EXISTS(
+    SELECT 1 FROM ingestion_run_current current JOIN ingestion_evidence_plans plan USING(ingestion_run_id)
+    WHERE current.ingestion_run_id=?1 AND (?2 IS NULL OR current.last_event_id=?2)
+      AND (current.state='paused' OR (current.state='collecting' AND plan.parent_workflow_id IS NULL
+        AND NOT EXISTS(SELECT 1 FROM source_capture_operations WHERE ingestion_run_id=?1)
+        AND NOT EXISTS(SELECT 1 FROM ingestion_workflow_attempts WHERE ingestion_run_id=?1)))
+      AND plan.collection_completed_at IS NULL
+      AND NOT EXISTS(SELECT 1 FROM source_capture_operations WHERE ingestion_run_id=?1 AND state NOT IN ('uploaded','finalized'))
+      AND NOT EXISTS(SELECT 1 FROM evidence_object_writers WHERE ingestion_run_id=?1 AND completed_at IS NULL)
+      AND NOT EXISTS(SELECT 1 FROM ingestion_acquisition_accounts WHERE ingestion_run_id=?1)
+  ) THEN 1 ELSE json_extract('{}','acquisition_initialization_not_quiescent') END`,
+    )
+    .bind(runId, eventId);
+}
+export function acquisitionLegacyEvent(db: CatalogueStore, runId: string) {
+  return repositoryStatements(db)
+    .prepare("SELECT last_event_id FROM ingestion_run_current WHERE ingestion_run_id=?")
+    .bind(runId);
+}
+export function acquisitionLegacyWorkflows(db: CatalogueStore, runId: string, after: string) {
+  return repositoryStatements(db)
+    .prepare(
+      `SELECT * FROM (
+    SELECT workflow_instance_id AS id,workflow_kind AS kind FROM ingestion_workflow_attempts WHERE ingestion_run_id=?1
+    UNION SELECT parent_workflow_id AS id,'parent' AS kind FROM ingestion_evidence_plans WHERE ingestion_run_id=?1 AND parent_workflow_id IS NOT NULL
+  ) WHERE id>?2 ORDER BY id LIMIT 128`,
+    )
+    .bind(runId, after);
+}
+export function acquisitionLegacyRawKeys(db: CatalogueStore, runId: string, after: string) {
+  return repositoryStatements(db)
+    .prepare(
+      `SELECT content_object_key AS object_key,
+    MIN(content_digest) AS digest,MAX(content_digest) AS maximum_digest,
+    MIN(content_byte_length) AS byte_length,MAX(content_byte_length) AS maximum_byte_length FROM (
+      SELECT content_object_key,content_digest,content_byte_length FROM source_snapshots WHERE ingestion_run_id=?1
+      UNION ALL SELECT content_object_key,content_digest,content_byte_length FROM source_capture_operations
+        WHERE ingestion_run_id=?1 AND state IN ('uploaded','finalized') AND reused_source_snapshot_id IS NULL
+    ) WHERE content_object_key>?2 GROUP BY content_object_key ORDER BY content_object_key LIMIT 128`,
+    )
+    .bind(runId, after);
+}
 export function acquisitionPause(db: CatalogueStore, runId: string) {
   return repositoryStatements(db)
     .prepare(
@@ -137,12 +184,35 @@ export function captureDispatch(db: CatalogueStore, attemptId: string) {
     )
     .bind(attemptId);
 }
-export function unsettledRequestDispatch(db: CatalogueStore, runId: string, requestId: string) {
+export function storedBodyDispatch(db: CatalogueStore, token: string, runId: string, captureId: string, key: string) {
   return repositoryStatements(db)
     .prepare(
-      "SELECT id FROM source_dispatch_reservations WHERE ingestion_run_id=? AND request_id=? AND settled_at IS NULL LIMIT 1",
+      `SELECT * FROM source_dispatch_reservations WHERE id=? AND ingestion_run_id=?
+      AND capture_operation_id=? AND content_object_key=?`,
     )
-    .bind(runId, requestId);
+    .bind(token, runId, captureId, key);
+}
+export function unsettledRunDispatch(db: CatalogueStore, runId: string) {
+  return repositoryStatements(db)
+    .prepare("SELECT id FROM source_dispatch_reservations WHERE ingestion_run_id=? AND settled_at IS NULL LIMIT 1")
+    .bind(runId);
+}
+export function unresolvedCaptureResponse(db: CatalogueStore, runId: string) {
+  return repositoryStatements(db)
+    .prepare(
+      "SELECT attempt_id FROM source_capture_operations WHERE ingestion_run_id=? AND state='response_received' LIMIT 1",
+    )
+    .bind(runId);
+}
+export function unsettledRawWriter(db: CatalogueStore, runId: string, key: string | null = null) {
+  return repositoryStatements(db)
+    .prepare(
+      `SELECT writer.token FROM evidence_object_writers writer
+    WHERE writer.ingestion_run_id=?1 AND writer.completed_at IS NULL AND (?2 IS NULL OR writer.object_key=?2)
+    AND EXISTS(SELECT 1 FROM source_capture_operations capture WHERE capture.ingestion_run_id=?1 AND capture.content_object_key=writer.object_key)
+    LIMIT 1`,
+    )
+    .bind(runId, key);
 }
 export function reserveSourceDispatch(
   db: CatalogueStore,
@@ -167,6 +237,7 @@ export function reserveSourceDispatch(
       AND julianday(policy.dispatch_deadline)>julianday('now') AND account.charged_dispatches<policy.max_dispatches
       AND ?8<=policy.max_source_bytes-account.charged_source_bytes-account.reserved_source_bytes
       AND NOT EXISTS(SELECT 1 FROM source_dispatch_reservations WHERE capture_operation_id=?4 AND settled_at IS NULL)
+      AND NOT EXISTS(SELECT 1 FROM evidence_object_writers WHERE object_key=?5 AND completed_at IS NULL)
       AND EXISTS(SELECT 1 FROM source_capture_operations WHERE attempt_id=?4 AND ingestion_run_id=?2 AND request_id=?3 AND state='planned')`,
     )
     .bind(
@@ -190,6 +261,12 @@ export function reserveSourceDispatch(
         reserved_source_bytes=reserved_source_bytes+? WHERE ingestion_run_id=? AND changes()>0`,
         )
         .bind(input.maximumBytes, input.runId),
+      repositoryStatements(db)
+        .prepare(
+          `INSERT INTO evidence_object_writers(token,ingestion_run_id,object_key,started_at)
+          SELECT id,ingestion_run_id,content_object_key,reserved_at FROM source_dispatch_reservations WHERE id=?`,
+        )
+        .bind(input.id),
     ],
   });
 }
@@ -210,6 +287,15 @@ export function settleSourceDispatch(db: CatalogueStore, id: string, captureId: 
       WHERE ingestion_run_id=(SELECT ingestion_run_id FROM source_dispatch_reservations WHERE id=?2) AND changes()>0`,
         )
         .bind(bytes, id),
+      repositoryStatements(db)
+        .prepare(
+          `UPDATE evidence_object_writers SET completed_at=?1 WHERE token=?2 AND completed_at IS NULL
+          AND EXISTS(SELECT 1 FROM source_dispatch_reservations dispatch WHERE dispatch.id=?2
+            AND dispatch.capture_operation_id=?3 AND dispatch.settled_at IS NOT NULL
+            AND dispatch.ingestion_run_id=evidence_object_writers.ingestion_run_id
+            AND dispatch.content_object_key=evidence_object_writers.object_key)`,
+        )
+        .bind(at, id, captureId),
     ],
   });
 }
@@ -221,6 +307,7 @@ export function acquisitionPauseStatements(
     generation: number | null;
     maximumBytes: number;
     dimension: AcquisitionDimension;
+    workflow?: CollectionWorkflowAttempt;
   },
 ) {
   const event = runEventCommand("collection_paused", { runId: input.runId });
@@ -233,6 +320,7 @@ export function acquisitionPauseStatements(
       WHERE ingestion_run_id=? AND ${ingestionRunTransitionSql("collecting", "paused")}`,
         )
         .bind(event.eventId, input.runId),
+      before: [sourceParseAuthorityGuard(db, input.runId, { intent: "collection", workflowAttempt: input.workflow })],
       guards: [runTransitionGuardStatement(db, { runId: input.runId, from: "collecting", to: "paused" })],
     }),
     repositoryStatements(db)
