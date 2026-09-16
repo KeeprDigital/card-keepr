@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudget } from "../../../test/support/fixture-evidence-plan";
 import { expect, test } from "vitest";
 import facets from "../../../acceptance/fixtures/real-sources/2026-09-14-riftbound-db/raw/facets.json?raw";
 import promo from "../../../acceptance/fixtures/real-sources/2026-09-14-riftbound-db/raw/pr-page-1-size-3.json?raw";
@@ -25,6 +26,7 @@ test.each(["missing", "mismatched"])(
       [adapter.requestUrlForSurface!("bird-page"), bird],
     ]);
     const started = await startEvidenceRun(db, {
+      acquisition_budget: fixtureAcquisitionBudget,
       idempotency_key: "riftbound-db-missing-images",
       plans: [
         {

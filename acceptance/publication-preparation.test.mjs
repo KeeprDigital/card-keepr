@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./helpers/acquisition-budget.mjs";
 import { readWorkerConfig } from "../cli/lib/config.mjs";
 import { gunzipSync } from "node:zlib";
 import Ajv2020 from "ajv/dist/2020.js";
@@ -88,7 +89,16 @@ test("one owner CLI start verifies native artifacts without exposing any unfinis
     return { status: response.status, body };
   };
   const before = await consumer("/v1/cards?game=digimon");
-  const run = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", "native-artifact-source"]);
+  const run = await cli([
+    "source",
+    "collect",
+    "--budget-file",
+    fixtureAcquisitionBudgetPath,
+    "--plan-file",
+    planPath,
+    "--idempotency-key",
+    "native-artifact-source",
+  ]);
   await cli(["source", "resume", "--run-id", run.id]);
   let candidate;
   const deadline = Date.now() + 30000;

@@ -327,6 +327,9 @@ test("a hostname Workflow whose batch step errors is superseded by an attempt th
     30_000,
   );
   expect(completed.workflow.child_ids).toContain(`${childId}-attempt-0`);
+  expect(completed).toMatchObject({
+    acquisition: { charged_dispatches: 6, reserved_source_bytes: 0, unsettled: [] },
+  });
   expect(await attemptFacts(run.id)).toEqual(
     Array.from({ length: 6 }, (_, index) => ({
       request_id: requestIds[index]!,

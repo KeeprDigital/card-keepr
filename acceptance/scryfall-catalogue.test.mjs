@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./helpers/acquisition-budget.mjs";
 import * as responseValidators from "../test/support/http-response-validators.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -93,6 +94,8 @@ test("retained Scryfall Cards publish with stable finish identities, private evi
     const run = await cli([
       "source",
       "collect",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
       "--plan-file",
       "docs/examples/scryfall-magic-pilot-plan.json",
       "--idempotency-key",

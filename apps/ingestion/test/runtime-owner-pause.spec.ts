@@ -258,6 +258,7 @@ test("a superseded sleeping child cannot capture when termination fails and coll
       env.EVIDENCE_INGESTION_WORKFLOW,
       run.id,
       unavailableTermination,
+      env.EVIDENCE_OBJECTS,
     ),
   ).rejects.toMatchObject({ status: 409, code: "collection_workflow_supersession_pending" });
   expect((await showCollection(run.id)).state).toBe("paused");

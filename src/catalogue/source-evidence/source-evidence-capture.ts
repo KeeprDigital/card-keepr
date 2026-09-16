@@ -1,7 +1,13 @@
 import { indexedOfficialCollectionRequests } from "./source-record-discovery";
+import {
+  pauseAcquisitionOwnership,
+  requireAcquisitionPolicy,
+  reserveAcquisitionDispatch,
+  settleAcquisitionDispatch,
+} from "./acquisition-budget";
+import { captureDispatch, storedBodyDispatch, type DispatchReservation } from "./acquisition-budget-repository";
 import { discoveredSourceRecordRequests } from "./source-record-intake";
 import {
-  beginEvidenceObjectWrite,
   completeEvidenceObjectWrite,
   completeObservedEvidenceWrite,
   retainEvidenceMultipart,
@@ -32,6 +38,7 @@ import {
   revalidatedCaptureStatement,
   sourceRequestStatement,
   uploadedCaptureContentStatement,
+  unsettledAcquisitionUploads,
 } from "./source-capture-repository";
 import {
   type CollectionWorkflowAttempt,
@@ -203,7 +210,7 @@ export async function prepareCaptureAttempt(
   run: IngestionEvidenceRow,
   sourceRequest: EvidenceRequestRow,
 ): Promise<PreparedCaptureAttempt> {
-  if (!admitsCollectionWork(run)) {
+  if (!admitsCollectionWork(run) || !(await requireAcquisitionPolicy(database, run.id, sourceRequest.request_id))) {
     return { kind: "done", failure_code: null };
   }
   const request = await currentRequest(database, run.id, sourceRequest.request_id);
@@ -296,6 +303,20 @@ export async function capturePreparedAttempt(
   }
   let operation = await requiredCaptureOperation(database, prepared.attempt_id);
   if (operation.state === "uploaded") {
+    const dispatch = await captureDispatch(database, operation.attempt_id).first<DispatchReservation>();
+    if (
+      dispatch !== null &&
+      dispatch.settled_at === null &&
+      !(await recoverCompletedUpload(database, evidenceObjects, operation))
+    ) {
+      await pauseAcquisitionOwnership(database, {
+        runId: run.id,
+        requestId: sourceRequest.request_id,
+        captureId: operation.attempt_id,
+        workflow: workflowAttempt,
+      });
+      return { kind: "done", failure_code: null, request_made: false };
+    }
     return {
       kind: "uploaded",
       attempt_id: operation.attempt_id,
@@ -322,22 +343,16 @@ export async function capturePreparedAttempt(
           request_made: false,
         };
       }
-    } catch (error) {
-      return recordFailedTransportAttempt(database, run, sourceRequest, operation, {
-        outcome: "storage_failure",
-        completedAt: new Date().toISOString(),
-        status: operation.http_status,
-        headers: operation.response_headers_json === null ? {} : parseStringRecord(operation.response_headers_json),
-        diagnostic: errorMessage(error, "The staged Source Snapshot object could not be recovered."),
-      });
+    } catch {
+      // An unreadable receipt cannot prove that the earlier physical writer ended.
     }
-    return recordFailedTransportAttempt(database, run, sourceRequest, operation, {
-      outcome: "storage_failure",
-      completedAt: new Date().toISOString(),
-      status: operation.http_status,
-      headers: operation.response_headers_json === null ? {} : parseStringRecord(operation.response_headers_json),
-      diagnostic: "The staged Source Snapshot object was unavailable during recovery.",
+    await pauseAcquisitionOwnership(database, {
+      runId: run.id,
+      requestId: sourceRequest.request_id,
+      captureId: operation.attempt_id,
+      workflow: workflowAttempt,
     });
+    return { kind: "done", failure_code: null, request_made: false };
   }
 
   if (operation.state === "planned") {
@@ -364,6 +379,22 @@ export async function capturePreparedAttempt(
   )
     return { kind: "done", failure_code: null, request_made: false };
   let response: Response | null = null;
+  const capturingAdapter = requiredSourceAdapter(evidencePlan.adapter_version);
+  const archive =
+    request.request_role === "listing" &&
+    capturingAdapter.archiveExtraction?.matches({ url: request.url, requestId: request.request_id })
+      ? capturingAdapter.archiveExtraction
+      : undefined;
+  const maximumBytes = archive?.maximumSnapshotBytes ?? capturingAdapter.maximumSnapshotBytes;
+  const dispatchId = await reserveAcquisitionDispatch(database, {
+    runId: run.id,
+    requestId: request.request_id,
+    captureId: operation.attempt_id,
+    objectKey: operation.content_object_key,
+    maximumBytes,
+    workflow: workflowAttempt,
+  });
+  if (dispatchId === null) return { kind: "done", failure_code: null, request_made: false };
   let networkError: string | null = null;
   let fetchFailureOutcome: "network_failure" | "body_failure" = "network_failure";
   try {
@@ -381,6 +412,9 @@ export async function capturePreparedAttempt(
   }
   const completedAt = new Date().toISOString();
   if (response === null) {
+    // This invocation cannot reach its write path after fetch rejected. Keep
+    // uncertain acquisition exposure charged, but retire its possible writer.
+    await completeEvidenceObjectWrite(database, dispatchId, completedAt).run();
     return recordFailedTransportAttempt(database, run, request, operation, {
       outcome: fetchFailureOutcome,
       completedAt,
@@ -404,6 +438,7 @@ export async function capturePreparedAttempt(
       });
     }
     if (response.body !== null) await response.body.cancel();
+    await settleAcquisitionDispatch(database, dispatchId, operation.attempt_id, 0);
     await revalidatedCaptureStatement(database, {
       completedAt: completedAt,
       requestHeadersJson: canonicalJson(requestHeaders),
@@ -433,6 +468,7 @@ export async function capturePreparedAttempt(
     const retryAfterMs =
       rateLimitFloor === undefined ? reportedRetryAfterMs : Math.max(rateLimitFloor, reportedRetryAfterMs ?? 0);
     if (response.body !== null) await response.body.cancel();
+    await settleAcquisitionDispatch(database, dispatchId, operation.attempt_id, 0);
     return recordRejectedAttempt(database, run, request, operation, {
       outcome: redirect ? "redirect" : "http_failure",
       completedAt,
@@ -458,32 +494,21 @@ export async function capturePreparedAttempt(
     attemptId: operation.attempt_id,
   }).run();
   operation = await requiredCaptureOperation(database, operation.attempt_id);
-  const writeToken = crypto.randomUUID();
+  const writeToken = dispatchId;
   try {
-    const capturingAdapter = requiredSourceAdapter(evidencePlan.adapter_version);
-    const archive =
-      request.request_role === "listing" &&
-      capturingAdapter.archiveExtraction?.matches({ url: request.url, requestId: request.request_id })
-        ? capturingAdapter.archiveExtraction
-        : undefined;
+    if (await evidenceObjects.head(operation.content_object_key)) {
+      await response.body?.cancel();
+      throw new CaptureOwnershipError("The immutable destination belongs to an earlier physical writer.");
+    }
     const content = await streamSnapshotToR2(
       evidenceObjects,
       operation.content_object_key,
       response,
-      archive?.maximumSnapshotBytes ?? capturingAdapter.maximumSnapshotBytes,
+      maximumBytes,
       async (upload) => {
         await retainEvidenceMultipart(database, writeToken, upload).run();
       },
       writeToken,
-      async () => {
-        await beginEvidenceObjectWrite(
-          database,
-          writeToken,
-          run.id,
-          operation.content_object_key,
-          new Date().toISOString(),
-        ).run();
-      },
       async () => {
         await completeEvidenceObjectWrite(database, writeToken, new Date().toISOString()).run();
       },
@@ -494,6 +519,7 @@ export async function capturePreparedAttempt(
       byteLength: content.byteLength,
       attemptId: operation.attempt_id,
     }).run();
+    await settleAcquisitionDispatch(database, dispatchId, operation.attempt_id, content.byteLength);
     return {
       kind: "uploaded",
       attempt_id: operation.attempt_id,
@@ -512,6 +538,19 @@ export async function capturePreparedAttempt(
       }
     } catch (caught) {
       recoveryError = caught;
+    }
+    if (
+      error instanceof CaptureOwnershipError ||
+      !(error instanceof CapturePersistenceError) ||
+      error.outcome === "storage_failure"
+    ) {
+      await pauseAcquisitionOwnership(database, {
+        runId: run.id,
+        requestId: request.request_id,
+        captureId: operation.attempt_id,
+        workflow: workflowAttempt,
+      });
+      return { kind: "done", failure_code: null, request_made: true };
     }
     const failure =
       error instanceof CapturePersistenceError
@@ -768,6 +807,20 @@ async function recoverCompletedUpload(
 ): Promise<boolean> {
   const object = await bucket.get(operation.content_object_key);
   if (object === null) return false;
+  const observedToken = object.customMetadata?.cleanup_writer_token;
+  const dispatch = observedToken
+    ? await storedBodyDispatch(
+        database,
+        observedToken,
+        operation.ingestion_run_id,
+        operation.attempt_id,
+        operation.content_object_key,
+      ).first<DispatchReservation>()
+    : null;
+  if (dispatch === null) {
+    await object.body.cancel();
+    return false;
+  }
   const hash = createHash("sha256");
   let byteLength = 0;
   const reader = object.body.getReader();
@@ -775,23 +828,50 @@ async function recoverCompletedUpload(
     const read = await reader.read();
     if (read.done) break;
     byteLength += read.value.byteLength;
+    if (byteLength > dispatch.maximum_source_bytes) {
+      await reader.cancel();
+      return false;
+    }
     hash.update(read.value);
   }
-  const observedToken = object.customMetadata?.cleanup_writer_token;
-  if (observedToken)
-    await completeObservedEvidenceWrite(
-      database,
-      observedToken,
-      operation.ingestion_run_id,
-      operation.content_object_key,
-      new Date().toISOString(),
-    ).run();
+  const digest = hash.digest("hex");
+  if (
+    operation.content_digest !== null &&
+    (operation.content_digest !== digest || operation.content_byte_length !== byteLength)
+  )
+    return false;
+  await completeObservedEvidenceWrite(
+    database,
+    dispatch.id,
+    operation.ingestion_run_id,
+    operation.content_object_key,
+    new Date().toISOString(),
+  ).run();
   await uploadedCaptureContentStatement(database, {
-    digest: hash.digest("hex"),
+    digest,
     byteLength: byteLength,
     attemptId: operation.attempt_id,
   }).run();
+  await settleAcquisitionDispatch(database, dispatch.id, operation.attempt_id, byteLength);
   return true;
+}
+
+/** Resume may prove that an exact earlier upload completed after its caller lost
+ * contact. Missing or unreadable objects leave that reservation fully charged. */
+export async function recoverAcquisitionUploads(database: CatalogueStore, bucket: R2Bucket, runId: string) {
+  let after = "";
+  for (;;) {
+    const captures = (await unsettledAcquisitionUploads(database, runId, after).all<CaptureOperationRow>()).results;
+    if (captures.length === 0) return;
+    for (const capture of captures) {
+      try {
+        await recoverCompletedUpload(database, bucket, capture);
+      } catch {
+        // The subsequent admission check reports unresolved ownership.
+      }
+      after = capture.attempt_id;
+    }
+  }
 }
 
 async function streamSnapshotToR2(
@@ -801,7 +881,6 @@ async function streamSnapshotToR2(
   maximumBytes: number,
   retainMultipart: (uploadId: string) => Promise<void>,
   writeToken: string,
-  registerWriter: () => Promise<void>,
   acknowledgeSettledWriter: () => Promise<void>,
 ): Promise<{ byteLength: number; digest: string }> {
   const hash = createHash("sha256");
@@ -821,12 +900,14 @@ async function streamSnapshotToR2(
     if (response.body !== null) {
       await response.body.cancel().catch(() => undefined);
     }
+    await acknowledgeSettledWriter();
     throw new CapturePersistenceError("body_failure", "Official Source returned an invalid Content-Length.");
   }
   if (declaredByteLength !== null && declaredByteLength > maximumBytes) {
     if (response.body !== null) {
       await response.body.cancel().catch(() => undefined);
     }
+    await acknowledgeSettledWriter();
     throw new CapturePersistenceError(
       "body_failure",
       `Official Source body exceeds the ${maximumBytes}-byte adapter limit.`,
@@ -834,12 +915,12 @@ async function streamSnapshotToR2(
   }
   if (response.body === null) {
     if (declaredByteLength !== null && declaredByteLength !== 0) {
+      await acknowledgeSettledWriter();
       throw new CapturePersistenceError(
         "body_failure",
         "Official Source body ended before its declared Content-Length.",
       );
     }
-    await registerWriter();
     try {
       const stored = await bucket.put(objectKey, new Uint8Array(), {
         ...metadata,
@@ -847,9 +928,10 @@ async function streamSnapshotToR2(
       });
       if (stored === null) {
         await acknowledgeSettledWriter();
-        throw new Error("object key already exists");
+        throw new CaptureOwnershipError("Immutable evidence object key already exists.");
       }
     } catch (error) {
+      if (error instanceof CaptureOwnershipError) throw error;
       throw new CapturePersistenceError("storage_failure", errorMessage(error, "Evidence object write failed."));
     }
     return { byteLength: 0, digest: hash.digest("hex") };
@@ -871,7 +953,6 @@ async function streamSnapshotToR2(
         controller.enqueue(chunk);
       },
     });
-    await registerWriter();
     const results = await Promise.allSettled([
       bucket.put(objectKey, fixed.readable, {
         ...metadata,
@@ -882,11 +963,14 @@ async function streamSnapshotToR2(
     const storageResult = results[0]!;
     if (storageResult.status === "fulfilled" && storageResult.value === null) {
       await acknowledgeSettledWriter();
-      throw new CapturePersistenceError("storage_failure", "Immutable evidence object key already exists.");
+      throw new CaptureOwnershipError("Immutable evidence object key already exists.");
     }
     const bodyResult = results[1]!;
     if (bodyResult.status === "rejected") {
-      await bucket.delete(objectKey).catch(() => undefined);
+      const stored = await bucket.head(objectKey);
+      if (stored !== null && stored.customMetadata?.cleanup_writer_token !== writeToken)
+        throw new CaptureOwnershipError("The immutable destination belongs to another physical writer.");
+      if (stored !== null) await bucket.delete(objectKey).catch(() => undefined);
       throw new CapturePersistenceError(
         "body_failure",
         errorMessage(bodyResult.reason, "Official Source body stream failed."),
@@ -907,7 +991,6 @@ async function streamSnapshotToR2(
   try {
     multipart = await bucket.createMultipartUpload(objectKey, metadata);
     try {
-      await registerWriter();
       await retainMultipart(multipart.uploadId);
     } catch (error) {
       await multipart.abort();
@@ -1283,6 +1366,8 @@ function jitter(maximumInclusive: number): number {
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
+
+class CaptureOwnershipError extends Error {}
 
 class CapturePersistenceError extends Error {
   constructor(

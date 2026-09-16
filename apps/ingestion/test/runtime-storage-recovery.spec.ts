@@ -1,8 +1,8 @@
 import { beginEvidenceObjectWrite } from "../../../src/catalogue/source-evidence/evidence-cleanup-repository";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
-import * as ingestionQueries from "./query-helpers/ingestion";
 import * as publishedCatalogueQueries from "./query-helpers/published-catalogue";
+import { rawWriterCompletion } from "./query-helpers/acquisition-recovery";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import {
@@ -23,8 +23,9 @@ import {
 
 installRuntimeSuite();
 
-test("R2 recovery outages pause the run and resume completes the same capture", async () => {
+test("an untracked response receipt pauses on a storage outage and cannot infer fresh dispatch authority", async () => {
   const run = await createCollection("source_recovery_r2_outage_001", "https://official-source.invalid/cards");
+  const database = catalogueStore(env.CATALOGUE_DB);
   const identity = await captureOperationIdentity(run.id, "one-piece-en:discovery", 1);
   const now = new Date().toISOString();
   await sourceEvidenceQueries
@@ -33,76 +34,33 @@ test("R2 recovery outages pause the run and resume completes the same capture", 
     .run();
   const outageBucket = new Proxy(env.EVIDENCE_OBJECTS, {
     get(target, property) {
-      if (property === "get" || property === "put" || property === "createMultipartUpload") {
+      if (property === "get")
         return async () => {
           throw new Error("synthetic R2 outage");
         };
-      }
       const value = Reflect.get(target, property, target);
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
-  const evidenceRun = await requiredEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id);
-  const request = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id))[0];
-  if (request === undefined) throw new Error("missing evidence request");
-
-  for (let attempt = 1; attempt <= 4; attempt += 1) {
-    const prepared = await prepareCaptureAttempt(catalogueStore(env.CATALOGUE_DB), evidenceRun, request);
-    if (prepared.kind !== "attempt") {
-      throw new Error(`unexpected preparation result ${prepared.kind}`);
-    }
-    const result = await capturePreparedAttempt(
-      catalogueStore(env.CATALOGUE_DB),
-      outageBucket,
-      env.OFFICIAL_SOURCE_TRANSPORT,
-      evidenceRun,
-      request,
-      prepared,
-    );
-    expect(result.kind).toBe(attempt === 4 ? "done" : "wait");
-  }
-
-  // Exhausting the bounded storage retries pauses the run with its own
-  // reason instead of failing the request: transient R2 problems do not
-  // destroy the collection attempt.
-  expect(await ingestionQueries.readIngestionRunsState(env.CATALOGUE_DB).bind(run.id).first("state")).toBe("paused");
+  const evidenceRun = await requiredEvidenceRun(database, run.id);
+  const request = (await pendingEvidenceRequests(database, run.id))[0]!;
+  const prepared = await prepareCaptureAttempt(database, evidenceRun, request);
+  if (prepared.kind !== "attempt") throw new Error("Expected a retained capture");
   expect(
-    await sourceEvidenceQueries
-      .readIngestionRunRetryPausesPauseReasonFailureClassification(env.CATALOGUE_DB)
-      .bind(run.id)
-      .first(),
-  ).toMatchObject({
-    pause_reason: "source_storage_retries_exhausted",
-    failure_classification: "storage_failure",
-    retry_generation: 1,
+    await capturePreparedAttempt(database, outageBucket, env.OFFICIAL_SOURCE_TRANSPORT, evidenceRun, request, prepared),
+  ).toMatchObject({ kind: "done", request_made: false });
+  expect(await showCollection(run.id)).toMatchObject({
+    state: "paused",
+    pause: { reason: "source_acquisition_budget_exhausted", dimension: "ownership" },
+    snapshots: [],
   });
-  expect(
-    await sourceEvidenceQueries
-      .readSourceRequestsStateFailureCodeForR2RecoveryOutagesPauseRunResumeCompletesSameCapture(env.CATALOGUE_DB)
-      .bind(run.id)
-      .first(),
-  ).toMatchObject({
-    state: "pending",
-    failure_code: null,
-  });
-
-  // Resuming against the recovered bucket opens generation 2; attempt 5
-  // captures and the same run completes collection.
-  const completed = await resumeCollection(run.id);
-  expect(completed).toMatchObject({
-    collection_completed_at: expect.any(String),
-  });
-  expect(completed.snapshots).toHaveLength(1);
-  expect(completed.diagnostics.map((diagnostic) => diagnostic.outcome)).toEqual([
-    "storage_failure",
-    "storage_failure",
-    "storage_failure",
-    "storage_failure",
-    "success",
-  ]);
+  expect(await pendingEvidenceRequests(database, run.id)).toEqual([request]);
+  const resumed = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
+  expect(resumed.status).toBe(409);
+  expect(await resumed.json()).toMatchObject({ code: "source_acquisition_ownership_pending" });
 });
 
-test("resume recovers the deterministic object after an upload-before-D1 restart boundary", async () => {
+test("an observed object cannot settle untracked or unrelated physical writer identities", async () => {
   const run = await createCollection(
     "source_restart_boundary_001",
     "https://restart-official-source.invalid/must-not-refetch",
@@ -134,43 +92,14 @@ test("resume recovers the deterministic object after an upload-before-D1 restart
     .bind(identity.attemptId, run.id, identity.snapshotId, identity.objectKey, now, now)
     .run();
 
-  const completed = await resumeCollection(run.id);
-  expect(completed).toMatchObject({
-    collection_completed_at: expect.any(String),
-    diagnostics: [{ attempt_number: 1, outcome: "success" }],
-    snapshots: [
-      {
-        id: identity.snapshotId,
-        content: { object_key: identity.objectKey },
-      },
-    ],
-  });
-  const operation = await sourceEvidenceQueries
-    .readSourceCaptureOperationsStateContentDigest(env.CATALOGUE_DB)
-    .bind(identity.attemptId)
-    .first<{
-      state: string;
-      content_digest: string;
-      content_byte_length: number;
-    }>();
-  expect(operation).toMatchObject({
-    state: "finalized",
-    content_byte_length: bytes.byteLength,
-    content_digest: expect.stringMatching(/^[a-f0-9]{64}$/),
-  });
-  expect(await env.EVIDENCE_OBJECTS.head(identity.objectKey)).not.toBeNull();
-  expect(
-    (
-      await env.CATALOGUE_DB.prepare(
-        "SELECT completed_at FROM evidence_object_writers WHERE token='observed-restart-writer'",
-      ).first<{ completed_at: string | null }>()
-    )?.completed_at,
-  ).not.toBeNull();
-  expect(
-    await env.CATALOGUE_DB.prepare(
-      "SELECT completed_at FROM evidence_object_writers WHERE token='unrelated-restart-writer'",
-    ).first(),
-  ).toMatchObject({ completed_at: null });
+  const resumed = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
+  expect(resumed.status).toBe(409);
+  expect(await resumed.json()).toMatchObject({ code: "source_acquisition_ownership_pending" });
+  expect(await showCollection(run.id)).toMatchObject({ snapshots: [], diagnostics: [] });
+  expect(new Uint8Array(await (await env.EVIDENCE_OBJECTS.get(identity.objectKey))!.arrayBuffer())).toEqual(bytes);
+  for (const token of ["observed-restart-writer", "unrelated-restart-writer"]) {
+    expect(await rawWriterCompletion(env.CATALOGUE_DB, token).first()).toMatchObject({ completed_at: null });
+  }
 });
 
 test("reparse retries recover one staged immutable observation set while new intents append", async () => {
@@ -301,25 +230,33 @@ test("reparse observes and settles the exact writer after a lost successful put 
   ).toMatchObject({ n: 0 });
 });
 
-test.each([0, 2])(
-  "a conditional capture loser acknowledges its no-op without deleting the winner (%s bytes)",
-  async (size) => {
-    const run = await createCollection(`source_conditional_loser_${size}`, "https://official-source.invalid/cards");
+test.each([
+  [0, false],
+  [2, false],
+  [2, true],
+] as const)(
+  "a conditional capture loser preserves the other writer (%s bytes, lost acknowledgement %s)",
+  async (size, lostAcknowledgement) => {
+    const run = await createCollection(
+      `source_conditional_loser_${size}_${lostAcknowledgement}`,
+      "https://official-source.invalid/cards",
+    );
     const db = catalogueStore(env.CATALOGUE_DB);
     const evidenceRun = await requiredEvidenceRun(db, run.id);
     const request = (await pendingEvidenceRequests(db, run.id))[0]!;
     const prepared = await prepareCaptureAttempt(db, evidenceRun, request);
     if (prepared.kind !== "attempt") throw new Error("missing prepared capture");
     const winner = `conditional-winner-${size}`;
-    await beginEvidenceObjectWrite(db, winner, run.id, prepared.content_object_key, new Date().toISOString()).run();
     const bucket = new Proxy(env.EVIDENCE_OBJECTS, {
       get(target, property) {
         if (property === "put")
           return async (key: string, body: unknown) => {
-            // The storage boundary supplies a concurrent winner and a conclusive null
-            // response; cancelling the unused stream must not delete that winner.
+            // Cancellation with either a null or lost storage acknowledgement
+            // must not delete the concurrent winner.
+            await beginEvidenceObjectWrite(db, winner, run.id, key, new Date().toISOString()).run();
             await target.put(key, size ? "{}" : "", { customMetadata: { cleanup_writer_token: winner } });
             if (body instanceof ReadableStream) await body.cancel("conditional request did not consume the body");
+            if (lostAcknowledgement) throw new Error("conditional storage acknowledgement lost");
             return null;
           };
         const value = Reflect.get(target, property, target);
@@ -338,7 +275,12 @@ test.each([0, 2])(
       },
     });
     const result = await capturePreparedAttempt(db, bucket, transport, evidenceRun, request, prepared);
-    expect(result.kind).toBe("uploaded");
+    expect(result.kind).toBe("done");
+    expect(await showCollection(run.id)).toMatchObject({
+      state: "paused",
+      pause: { dimension: "ownership" },
+      snapshots: [],
+    });
     expect((await env.EVIDENCE_OBJECTS.head(prepared.content_object_key))?.size).toBe(size);
     expect(
       await env.CATALOGUE_DB.prepare(
@@ -346,6 +288,6 @@ test.each([0, 2])(
       )
         .bind(run.id)
         .first(),
-    ).toMatchObject({ n: 0 });
+    ).toMatchObject({ n: lostAcknowledgement ? 2 : 1 });
   },
 );

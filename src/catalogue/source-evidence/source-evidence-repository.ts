@@ -1,3 +1,11 @@
+import {
+  initialAcquisitionStatements,
+  validateAcquisitionBudget,
+  verifyInitialAcquisitionIntent,
+  inspectAcquisitionBudget,
+  currentAcquisitionPause,
+  assertAcquisitionResumable,
+} from "./acquisition-budget";
 import { nextLiveIngestionReservationSql } from "../shared";
 import { sourcesActiveGuardStatement } from "./source-lifecycle-repository";
 import { inspectSourceCoverage } from "./source-coverage";
@@ -106,6 +114,7 @@ export async function startEvidenceRun(
   database: CatalogueStore,
   request: StartEvidenceRunRequest,
 ): Promise<Record<string, unknown>> {
+  const budget = validateAcquisitionBudget(request.acquisition_budget, false);
   const plans = await validateEvidencePlans(request);
   const firstPlan = plans[0]!;
   const planJson = canonicalJson(plans.length === 1 ? firstPlan : { plans });
@@ -118,9 +127,11 @@ export async function startEvidenceRun(
         "The idempotency key was already used for a different Ingestion Run.",
       );
     }
+    await verifyInitialAcquisitionIntent(database, request.idempotency_key, budget);
     return showEvidenceRun(database, replay.id);
   }
 
+  validateAcquisitionBudget(budget);
   const runId = await evidenceRunIdentity(request.idempotency_key);
   const startedAt = new Date().toISOString();
   const catalogue = await repositoryStatements(database)
@@ -161,6 +172,7 @@ export async function startEvidenceRun(
       requestPlanJson: planJson,
       planOrigin: "production",
     }),
+    ...(await initialAcquisitionStatements(database, runId, request.idempotency_key, budget, startedAt)),
     ...requestStatements(database, runId, plans),
     repositoryStatements(database)
       .prepare(
@@ -177,6 +189,7 @@ export async function startEvidenceRun(
   } catch (error) {
     const concurrent = await evidenceRunByIdempotencyKey(database, request.idempotency_key);
     if (concurrent !== null && sameEvidencePlanIntent(concurrent.request_plan_json, planJson)) {
+      await verifyInitialAcquisitionIntent(database, request.idempotency_key, budget);
       return showEvidenceRun(database, concurrent.id);
     }
     if (errorMessage(error).includes("source_retired"))
@@ -225,7 +238,9 @@ export async function retryEvidenceRun(
   sourceRunId: string,
   idempotencyKey: string,
   operationalRequestId: string,
+  acquisitionBudget: StartEvidenceRunRequest["acquisition_budget"],
 ): Promise<Record<string, unknown>> {
+  const budget = validateAcquisitionBudget(acquisitionBudget, false);
   assertIdentifier(idempotencyKey, "idempotency_key");
   const source = await requiredEvidenceRun(database, sourceRunId);
   if (!isTerminalIngestionRunState(source.state) || source.state === "published") {
@@ -244,8 +259,10 @@ export async function retryEvidenceRun(
         "The idempotency key was already used for a different Ingestion Run.",
       );
     }
+    await verifyInitialAcquisitionIntent(database, idempotencyKey, budget);
     return showEvidenceRun(database, replay.id);
   }
+  validateAcquisitionBudget(budget);
   const plans = parseEvidencePlans(source.request_plan_json);
   const firstPlan = plans[0]!;
   const operation = await repositoryStatements(database)
@@ -284,6 +301,7 @@ export async function retryEvidenceRun(
         requestPlanJson: source.request_plan_json,
         planOrigin: source.plan_origin,
       }),
+      ...(await initialAcquisitionStatements(database, runId, idempotencyKey, budget, startedAt)),
       ...requestStatements(database, runId, plans),
       repositoryStatements(database)
         .prepare(
@@ -1669,6 +1687,7 @@ export async function resumePausedEvidenceRun(database: CatalogueStore, runId: s
     .bind(runId)
     .first<{ state: string; parent_workflow_id: string | null; attempt_number: number }>();
   if (previous === null || previous.state !== "paused") return;
+  await assertAcquisitionResumable(database, runId);
   const event = runEventCommand("collection_resumed", { runId });
   const parentWorkflowId = parentWorkflowAttemptId(runId, previous.attempt_number + 1);
   const attemptRecord = workflowAttemptRecord(runId, parentWorkflowId);
@@ -1955,6 +1974,8 @@ export type CollectionTerminationRequest = Readonly<{
 // terminal evidence run can only be retried as a new linked run.
 export function collectionActions(state: string, pauseReason: string | null): string[] {
   if (state === "paused") {
+    if (pauseReason === "source_acquisition_budget_exhausted")
+      return ["resume", "extend_acquisition_budget", "terminate"];
     return pauseReason === "source_request_capacity_exhausted"
       ? ["resume", "extend_capacity", "terminate"]
       : ["resume", "terminate"];
@@ -2009,7 +2030,7 @@ type WorkflowPauseRow = {
 // only, so the owner-facing status surface stays free of request headers,
 // payloads, and credentials.
 export async function currentPause(database: CatalogueStore, runId: string): Promise<CurrentPause | null> {
-  const [capacity, retry, workflow] = await Promise.all([
+  const [capacity, retry, workflow, acquisition] = await Promise.all([
     repositoryStatements(database)
       .prepare(
         `SELECT * FROM ingestion_run_capacity_pauses
@@ -2034,6 +2055,7 @@ export async function currentPause(database: CatalogueStore, runId: string): Pro
       )
       .bind(runId)
       .first<WorkflowPauseRow>(),
+    currentAcquisitionPause(database, runId),
   ]);
   const retryNewest = retry !== null && (capacity === null || retry.paused_at >= capacity.paused_at);
   const requestPause: CurrentPause | null =
@@ -2050,6 +2072,12 @@ export async function currentPause(database: CatalogueStore, runId: string): Pro
             paused_at: capacity.paused_at,
             document: capacityPauseDocument(capacity),
           };
+  if (
+    acquisition !== null &&
+    (requestPause === null || acquisition.paused_at >= requestPause.paused_at) &&
+    (workflow === null || acquisition.paused_at >= workflow.paused_at)
+  )
+    return acquisition;
   if (workflow !== null && (requestPause === null || workflow.paused_at >= requestPause.paused_at)) {
     return {
       reason: workflow.pause_reason,
@@ -2494,6 +2522,7 @@ export async function showEvidenceRun(
           curated_revision_ids: curatedSet.revision_ids,
           curated_revision_set_digest: curatedSet.set_digest,
         }),
+    acquisition: await inspectAcquisitionBudget(database, runId),
     collection: inspection.collection,
     workflow: await collectionWorkflowDocument(
       run,

@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudget } from "../../../test/support/fixture-evidence-plan";
 import { env } from "cloudflare:workers";
 import chillerpillar from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/raw/chillerpillar.json?raw";
 import art from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/raw/art-chillerpillar.json?raw";
@@ -32,6 +33,7 @@ export async function seedArchive(key: string, corrupt = false, input = raw, ada
   );
   if (corrupt) compressed[compressed.length - 8]! ^= 1;
   const result = await startEvidenceRun(db, {
+    acquisition_budget: fixtureAcquisitionBudget,
     supported_game: "magic",
     source_lineage: "scryfall-magic-en",
     adapter_version: adapterVersion,

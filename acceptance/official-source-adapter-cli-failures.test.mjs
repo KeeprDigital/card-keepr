@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./helpers/acquisition-budget.mjs";
 import assert from "node:assert/strict";
 import { readWorkerConfig } from "../cli/lib/config.mjs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -101,6 +102,8 @@ for (const failureCase of failureCases) {
       [
         "source",
         "collect",
+        "--budget-file",
+        fixtureAcquisitionBudgetPath,
         "--plan-file",
         planPath,
         "--idempotency-key",

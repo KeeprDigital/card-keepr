@@ -11,10 +11,18 @@ Commands and input shapes are defined by the
 keepr source registry --json
 keepr source authorities --json
 keepr source collect --plan-file docs/examples/one-piece-two-source-plan.json \
-  --idempotency-key CAPTURE_INTENT --json
+  --budget-file OWNER_SELECTED_BUDGET.json --idempotency-key CAPTURE_INTENT --json
 keepr source resume --run-id RUN --json
 keepr source show --run-id RUN --json
 ```
+
+The budget file contains `max_dispatches`, `max_source_bytes` (positive safe
+integers), and a future ISO `dispatch_deadline`. Select finite limits for the
+whole run across its Source Lineages. Every potential physical call consumes a
+dispatch, including retries and revalidation. Raw-source exposure includes
+verified retained body bytes and unresolved maximum-body reservations; it is
+not wire traffic, all account storage or a financial limit. The deadline stops
+new admission and does not cancel a call whose authority already escaped.
 
 Collection creation acknowledges the retained plan; resume dispatches its work.
 Inspect `source show` for current progress and completion. Exact creation retries
@@ -152,6 +160,31 @@ If `collection_workflow_supersession_pending` reports a live or unreadable prior
 attempt, keep the run paused and retry the same resume after the control plane
 recovers. Pacing and Retry-After waits are not stalls.
 
+For `source_acquisition_budget_exhausted`, inspect the limiting `dimension` and
+`acquisition.unsettled` entries. Save the exact current `acquisition.budget` to
+`CURRENT_BUDGET.json`; choose larger limits or a later deadline in `NEW_BUDGET.json`.
+
+```sh
+keepr source budget extend --run-id RUN --expected-generation GENERATION \
+  --expected-budget-file CURRENT_BUDGET.json --budget-file NEW_BUDGET.json \
+  --idempotency-key EXTEND_BUDGET_INTENT --json
+keepr source resume --run-id RUN --json
+```
+
+Extension decreases no limit, changes at least one, retains all charges, and
+leaves the run paused. A remaining limit or unresolved physical owner can still
+block resume. Cleanup does not restore spent allowance. Do not replace uncertain
+exposure with zero based on a timeout, missing object, or superseded Workflow.
+
+An unfinished legacy run may show `acquisition: null`. For an unstarted or paused
+run with settled earlier ownership, use the same budget command with
+`--expected-generation 0` and an expected-budget file containing JSON `null`.
+Initialization verifies retained raw objects and charges each physical key once
+as a byte baseline. Earlier dispatch totals remain unknown. It leaves work
+unstarted or paused; run `source resume` separately. Ambiguous older work or
+unreadable Workflow/storage evidence blocks initialization. Completed or terminal
+history stays inspectable without inventing accounting.
+
 Stop a collecting run through its lifecycle, rather than terminating provider
 instances directly:
 
@@ -162,7 +195,7 @@ keepr source terminate --run-id RUN --idempotency-key TERMINATE_INTENT --json
 
 Termination preserves evidence, fences late work and releases its reservation.
 A terminated/failed run cannot resume; `source retry --run-id RUN
---idempotency-key NEW_INTENT` creates a linked run. Integrity failures such as
+--budget-file OWNER_SELECTED_BUDGET.json --idempotency-key NEW_INTENT` creates a linked run. Integrity failures such as
 malformed discovery, identity collision and contradictory required surfaces are
 terminal rather than retry pauses.
 

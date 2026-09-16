@@ -8,7 +8,7 @@ import { buildCatalogueExport } from "../../../src/catalogue/export";
 import { publishReconciledErrataStatement } from "../../../src/catalogue/reconciliation/reconciliation-publication-repository";
 import { readSourceObservation } from "../../../src/catalogue/reconciliation/reconciliation-source-observation";
 import { catalogueStore } from "../../../src/catalogue/shared";
-import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
+import type { FixtureEvidenceRunRequest } from "../../../test/support/fixture-evidence-plan";
 import { fixtureCandidate } from "../../../test/support/catalogue-fixture";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { injectFixtureEvidencePlan, injectFixturePublication } from "./fixture-plan-injection";
@@ -1206,7 +1206,7 @@ function post(pathname: string, body: Record<string, unknown>, extraHeaders: Rec
   return request(pathname, body, extraHeaders);
 }
 
-async function postFixtureEvidence(body: StartEvidenceRunRequest) {
+async function postFixtureEvidence(body: FixtureEvidenceRunRequest) {
   const document = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, body);
   return {
     response: new Response(null, { status: 201 }),

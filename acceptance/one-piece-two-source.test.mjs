@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./helpers/acquisition-budget.mjs";
 import { readWorkerConfig } from "../cli/lib/config.mjs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -157,6 +158,8 @@ test("retained One Piece: expand the P-001 publication through complete five-Car
   const collected = await pacedCli([
     "source",
     "collect",
+    "--budget-file",
+    fixtureAcquisitionBudgetPath,
     "--plan-file",
     planPath,
     "--idempotency-key",
@@ -285,7 +288,16 @@ test("retained One Piece: expand the P-001 publication through complete five-Car
   assert.equal(admitted.status, "admitted");
   const cardId = admitted.history[0].decision.card.id;
   const basePrintingId = admitted.history[0].decision.printing.id;
-  const firstRun = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", "first-admitted"]);
+  const firstRun = await cli([
+    "source",
+    "collect",
+    "--budget-file",
+    fixtureAcquisitionBudgetPath,
+    "--plan-file",
+    planPath,
+    "--idempotency-key",
+    "first-admitted",
+  ]);
   await cli(["source", "resume", "--run-id", firstRun.id]);
   try {
     await waitForNativeCollection(firstRun.id, "sealed", environment, worker);
@@ -386,7 +398,16 @@ test("retained One Piece: expand the P-001 publication through complete five-Car
   ]);
   const winnerPrintingId = winnerDecision.history[0].decision.printing.id;
   assert.ok(![...printingIds.values()].includes(winnerPrintingId));
-  const secondRun = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", "eight-appearances"]);
+  const secondRun = await cli([
+    "source",
+    "collect",
+    "--budget-file",
+    fixtureAcquisitionBudgetPath,
+    "--plan-file",
+    planPath,
+    "--idempotency-key",
+    "eight-appearances",
+  ]);
   await cli(["source", "resume", "--run-id", secondRun.id]);
   await sealed(secondRun.id);
   const secondInspection = await inspectNativeCollection(secondRun.id, environment);
@@ -441,6 +462,8 @@ test("retained One Piece: expand the P-001 publication through complete five-Car
   const linkedRun = await cli([
     "source",
     "collect",
+    "--budget-file",
+    fixtureAcquisitionBudgetPath,
     "--plan-file",
     planPath,
     "--idempotency-key",
@@ -589,7 +612,16 @@ test("retained One Piece: expand the P-001 publication through complete five-Car
       fault = "outage";
     }
     await writeFile(planPath, JSON.stringify(scenarioPlan));
-    const refreshed = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", scenario]);
+    const refreshed = await cli([
+      "source",
+      "collect",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
+      "--plan-file",
+      planPath,
+      "--idempotency-key",
+      scenario,
+    ]);
     await cli(["source", "resume", "--run-id", refreshed.id]);
     await sealed(refreshed.id);
     const inspection = await inspectNativeCollection(refreshed.id, environment);
@@ -621,7 +653,16 @@ test("retained One Piece: expand the P-001 publication through complete five-Car
   await writeFile(planPath, JSON.stringify(fullPlan));
   for (const injected of ["missing-id", "conflict"]) {
     fault = injected;
-    const failed = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", injected]);
+    const failed = await cli([
+      "source",
+      "collect",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
+      "--plan-file",
+      planPath,
+      "--idempotency-key",
+      injected,
+    ]);
     await cli(["source", "resume", "--run-id", failed.id]);
     await waitForNativeCollection(failed.id, "failed", environment, worker);
     fault = null;

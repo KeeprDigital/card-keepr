@@ -20,9 +20,60 @@ export const planInputSchema = z.strictObject({
   subset: identifier.optional(),
   requests: z.array(requestSchema).min(1).max(100),
 });
+export const acquisitionBudgetSchema = z.strictObject({
+  max_dispatches: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+  max_source_bytes: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+  dispatch_deadline: timestamp,
+});
+export const acquisitionExtensionInputSchema = z.strictObject({
+  expected_generation: z.number().int().min(0),
+  expected_budget: acquisitionBudgetSchema.nullable(),
+  acquisition_budget: acquisitionBudgetSchema,
+  idempotency_key: identifier,
+});
+export const acquisitionExtensionSchema = z.strictObject({
+  contract: z.literal("card-keepr-acquisition-budget-extension@1"),
+  ingestion_run_id: identifier,
+  previous_generation: count,
+  generation: count,
+  previous_budget: acquisitionBudgetSchema.nullable(),
+  acquisition_budget: acquisitionBudgetSchema,
+  extended_at: timestamp,
+});
+const acquisitionDimensionSchema = z.enum(["dispatches", "source_bytes", "deadline", "policy_missing", "ownership"]);
+const acquisitionInspectionSchema = z.strictObject({
+  generation: count,
+  coverage_started_at: timestamp,
+  historical_dispatches_unknown: z.boolean(),
+  baseline_source_bytes: count,
+  budget: acquisitionBudgetSchema,
+  charged_dispatches: count,
+  charged_source_bytes: count,
+  reserved_source_bytes: count,
+  remaining_dispatches: count,
+  remaining_source_bytes: count,
+  limiting_dimension: acquisitionDimensionSchema.nullable(),
+  unsettled: z.array(
+    z.strictObject({
+      id: identifier,
+      request_id: identifier,
+      capture_operation_id: identifier,
+      parent_workflow_id: nullableReference,
+      workflow_instance_id: nullableReference,
+      budget_generation: count,
+      maximum_source_bytes: count,
+      reserved_at: timestamp,
+    }),
+  ),
+  unsettled_truncated: z.boolean(),
+});
 export const evidenceInputSchema = z.union([
-  planInputSchema.extend({ idempotency_key: identifier }),
-  z.strictObject({ plans: z.array(planInputSchema).min(1), idempotency_key: identifier }),
+  planInputSchema.extend({ idempotency_key: identifier, acquisition_budget: acquisitionBudgetSchema }),
+  z.strictObject({
+    plans: z.array(planInputSchema).min(1),
+    idempotency_key: identifier,
+    acquisition_budget: acquisitionBudgetSchema,
+  }),
 ]);
 const retainedRequestSchema = requestSchema.extend({
   method: z.literal("GET"),
@@ -116,7 +167,9 @@ export const collectionResumeSchema = z
     links: z.strictObject({ status: z.url() }),
   })
   .openapi("CollectionDispatch");
-const actions = z.array(z.enum(["resume", "pause", "terminate", "retry", "extend_capacity"]));
+const actions = z.array(
+  z.enum(["resume", "pause", "terminate", "retry", "extend_capacity", "extend_acquisition_budget"]),
+);
 export const collectionPauseSchema = z
   .strictObject({
     contract: z.literal("card-keepr-collection-pause@1"),
@@ -154,6 +207,15 @@ export const capacityExtensionSchema = z
   })
   .openapi("CapacityExtension");
 const pauseSchema = z.union([
+  z.strictObject({
+    reason: z.literal("source_acquisition_budget_exhausted"),
+    paused_at: timestamp,
+    generation: count.nullable(),
+    request_id: identifier,
+    maximum_source_bytes: count,
+    dimension: acquisitionDimensionSchema,
+    actions,
+  }),
   z.strictObject({
     reason: z.literal("source_request_capacity_exhausted"),
     paused_at: timestamp,
@@ -352,6 +414,7 @@ export const operationalDiagnosticsSchema = z.strictObject({
 });
 export const evidenceStatusSchema = z
   .strictObject({
+    acquisition: acquisitionInspectionSchema.nullable(),
     id: identifier,
     state,
     selected_games: z.array(identifier),

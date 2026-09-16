@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./helpers/acquisition-budget.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import readContract from "../contracts/read-openapi.json" with { type: "json" };
@@ -104,7 +105,16 @@ test("categories retain distinct identities, evidenced associations and applicab
       ],
     }),
   );
-  const run = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", "category-source"]);
+  const run = await cli([
+    "source",
+    "collect",
+    "--budget-file",
+    fixtureAcquisitionBudgetPath,
+    "--plan-file",
+    planPath,
+    "--idempotency-key",
+    "category-source",
+  ]);
   const prepare = async (key, sourceRun = run.id, predecessor = "catrev_spine_000", expected = "sealed") => {
     const result = await cli([
       "game-candidate",
@@ -350,7 +360,16 @@ test("categories retain distinct identities, evidenced associations and applicab
     exportedPrintings.map((p) => [p.id, p.gameplay_applicability, p.printed_rules_text]).sort(),
     printings.map((p) => [p.id, p.gameplay_applicability, p.printed_rules_text]).sort(),
   );
-  const refreshRun = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", "category-refresh"]);
+  const refreshRun = await cli([
+    "source",
+    "collect",
+    "--budget-file",
+    fixtureAcquisitionBudgetPath,
+    "--plan-file",
+    planPath,
+    "--idempotency-key",
+    "category-refresh",
+  ]);
   const refreshed = await prepare("refresh", refreshRun.id, publication.resulting_revision_id);
   const refreshInspection = await inspectNativeCollection(refreshRun.id, environment, {
     partitionKinds: ["cards", "printings"],
@@ -374,7 +393,16 @@ test("categories retain distinct identities, evidenced associations and applicab
   );
   for (const locator of ["art-ordinary", "missing-printing"]) {
     source.cards[1].card_relationships[0].target.locator = locator;
-    const rejectedRun = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", locator]);
+    const rejectedRun = await cli([
+      "source",
+      "collect",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
+      "--plan-file",
+      planPath,
+      "--idempotency-key",
+      locator,
+    ]);
     const rejected = await prepare(locator, rejectedRun.id, publication.resulting_revision_id, "failed");
     assert.equal(rejected.failure_code, "printing_reconciliation_blocked");
     assert.ok(rejected.outcome.diagnostics.some((diagnostic) => /Shared artwork/u.test(diagnostic.detail)));
@@ -402,6 +430,8 @@ test("categories retain distinct identities, evidenced associations and applicab
   const associatedRun = await cli([
     "source",
     "collect",
+    "--budget-file",
+    fixtureAcquisitionBudgetPath,
     "--plan-file",
     planPath,
     "--idempotency-key",

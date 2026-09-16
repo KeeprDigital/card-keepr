@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./helpers/acquisition-budget.mjs";
 import { readWorkerConfig } from "../cli/lib/config.mjs";
 import {
   inspectNativeCollection,
@@ -107,6 +108,8 @@ test("native publication: the owner publishes a complete Fusion World source for
       [
         "source",
         "collect",
+        "--budget-file",
+        fixtureAcquisitionBudgetPath,
         "--plan-file",
         planPath,
         "--idempotency-key",
@@ -130,7 +133,17 @@ test("native publication: the owner publishes a complete Fusion World source for
   }
   await setPlanMarker(planPath, fixtureMarker);
   const collected = await runCli(
-    ["source", "collect", "--plan-file", planPath, "--idempotency-key", "fusion-world-issue-32-collect", "--json"],
+    [
+      "source",
+      "collect",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
+      "--plan-file",
+      planPath,
+      "--idempotency-key",
+      "fusion-world-issue-32-collect",
+      "--json",
+    ],
     cliEnvironment,
   );
   assert.equal(collected.code, 0, `${collected.stderr}\n${ingestion.getOutput()}`);

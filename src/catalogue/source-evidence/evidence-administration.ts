@@ -1,4 +1,6 @@
 import { AdministrationProblem, type CatalogueStore, isWorkflowInstanceNotFound, workflowDriver } from "../shared";
+import { assertAcquisitionResumable } from "./acquisition-budget";
+import { recoverAcquisitionUploads } from "./source-evidence-capture";
 import {
   type CollectionProgressFacts,
   classifyCollectionProgress,
@@ -50,8 +52,11 @@ export async function resumeEvidenceRun(
   workflow: Workflow<EvidenceParentWorkflowParams>,
   runId: string,
   hostWorkflow: Workflow<EvidenceHostWorkflowParams>,
+  evidenceObjects: R2Bucket,
 ): Promise<Record<string, unknown>> {
   let run = await requiredEvidenceRun(database, runId);
+  if (run.state === "paused") await recoverAcquisitionUploads(database, evidenceObjects, runId);
+  if (run.state === "collecting" || run.state === "paused") await assertAcquisitionResumable(database, runId);
   if (run.state === "paused") {
     // A paused run resumes under a parent Workflow identity derived from the
     // count of recorded resumes. Confirming that the previous instances

@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudget } from "../../../test/support/fixture-evidence-plan";
 import { expect, test } from "vitest";
 import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
 import { catalogueStore } from "../../../src/catalogue/shared";
@@ -18,6 +19,7 @@ test.each([
   const adapter = requiredSourceAdapter("scryfall-magic-en@1");
   const database = catalogueStore(testEnv.CATALOGUE_DB);
   const started = await startEvidenceRun(database, {
+    acquisition_budget: fixtureAcquisitionBudget,
     supported_game: "magic",
     source_lineage: adapter.sourceLineage,
     adapter_version: adapter.adapterVersion,

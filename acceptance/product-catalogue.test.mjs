@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./helpers/acquisition-budget.mjs";
 import { readWorkerConfig } from "../cli/lib/config.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -109,7 +110,17 @@ test("native publication: the CLI publishes separated Product catalogue data con
     KEEPR_NATIVE_REQUEST_INTERVAL_MS: "250",
   };
   const multiCollected = await runCli(
-    ["source", "collect", "--plan-file", multiPlanPath, "--idempotency-key", "acceptance-product-multi-plan", "--json"],
+    [
+      "source",
+      "collect",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
+      "--plan-file",
+      multiPlanPath,
+      "--idempotency-key",
+      "acceptance-product-multi-plan",
+      "--json",
+    ],
     cliEnvironment,
   );
   assert.equal(multiCollected.code, 0, `${multiCollected.stdout}\n${multiCollected.stderr}\n${ingestion.getOutput()}`);
@@ -440,6 +451,8 @@ test("native publication: the CLI publishes separated Product catalogue data con
     [
       "source",
       "collect",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
       "--plan-file",
       carryPlanPath,
       "--idempotency-key",

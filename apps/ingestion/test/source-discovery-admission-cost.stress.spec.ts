@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudget } from "../../../test/support/fixture-evidence-plan";
 import { env } from "cloudflare:workers";
 import { applyD1Migrations } from "cloudflare:test";
 import { expect, test } from "vitest";
@@ -62,6 +63,7 @@ test("bounded discovered admission preserves identities and limits native batch 
       if (index === 1) await applyD1Migrations(native, env.TEST_MIGRATIONS);
       expect(await diagnosticRunExists(db).bind(idempotencyKey).first()).toEqual({ count: 0 });
       const started = await startEvidenceRun(db, {
+        acquisition_budget: fixtureAcquisitionBudget,
         supported_game: "magic",
         source_lineage: "scryfall-magic-en",
         adapter_version: "scryfall-magic-en@1",

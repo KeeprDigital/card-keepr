@@ -1,3 +1,4 @@
+import acquisitionBudget from "./acquisition-budget.json";
 import { requiredSourceAdapter, sourceAdapterForCoverage } from "../../src/catalogue/adapters";
 import { catalogueStore } from "../../src/catalogue/shared";
 import {
@@ -16,10 +17,13 @@ import { validateEvidencePlans } from "../../src/catalogue/source-evidence/sourc
  * lineage, followed by retained listing children. No graph guard is bypassed. */
 export async function injectFixtureEvidencePlan(
   database: D1Database,
-  request: StartEvidenceRunRequest,
+  request: FixtureEvidenceRunRequest,
 ): Promise<Record<string, unknown>> {
   const store = catalogueStore(database);
-  await validateEvidencePlans(request);
+  await validateEvidencePlans({
+    ...request,
+    acquisition_budget: request.acquisition_budget ?? fixtureAcquisitionBudget,
+  });
   const inputs = "plans" in request ? request.plans : [request];
   const plans = inputs.map((plan) => {
     const adapter = sourceAdapterForCoverage(requiredSourceAdapter(plan.adapter_version), plan.subset);
@@ -29,7 +33,11 @@ export async function injectFixtureEvidencePlan(
       requests: plan.requests.length === 0 ? [] : [{ ...plan.requests[0]!, id: `${plan.source_lineage}:${root}` }],
     };
   });
-  const result = await startEvidenceRun(store, { ...request, plans });
+  const result = await startEvidenceRun(store, {
+    ...request,
+    plans,
+    acquisition_budget: request.acquisition_budget ?? fixtureAcquisitionBudget,
+  });
   const runId = String(result.id);
   const run = await requiredEvidenceRun(store, runId);
   const roots = await pendingEvidenceRequests(store, runId);
@@ -82,3 +90,10 @@ export async function collectFixtureEvidence(
   }
   throw new Error(`Fixture collection ${runId} did not finish within its bounded capture window.`);
 }
+
+// A fixed deadline preserves exact idempotent intent across fixture replays.
+export const fixtureAcquisitionBudget = acquisitionBudget;
+type FixtureBudget<T> = T extends unknown
+  ? Omit<T, "acquisition_budget"> & { acquisition_budget?: StartEvidenceRunRequest["acquisition_budget"] }
+  : never;
+export type FixtureEvidenceRunRequest = FixtureBudget<StartEvidenceRunRequest>;

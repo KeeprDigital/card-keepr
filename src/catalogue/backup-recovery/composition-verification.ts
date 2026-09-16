@@ -6,6 +6,7 @@ import {
   compositionSnapshotTables,
   compositionSourceSnapshotTables,
   compositionParentContextTables,
+  compositionAcquisitionTables,
   maximumSnapshotPageRows,
   maximumSnapshotPageBytes,
   maximumSchemaSnapshotPageRows,
@@ -80,6 +81,7 @@ async function captureSnapshot(
   let schemaAfter = "";
   let hasSourceArchives = false;
   let parentContextTables = 0;
+  let acquisitionTables = 0;
   for (;;) {
     const page = await query({ kind: "composition-schema", after: schemaAfter });
     if (page.length === 0) break;
@@ -87,6 +89,8 @@ async function captureSnapshot(
     let pageBytes = 0;
     for (const entry of page) {
       hasSourceArchives ||= entry.type === "table" && entry.name === "source_archive_decodes";
+      if (entry.type === "table" && (compositionAcquisitionTables as readonly string[]).includes(String(entry.name)))
+        acquisitionTables++;
       if (entry.type === "table" && ["source_parse_contexts", "source_parse_dependencies"].includes(String(entry.name)))
         parentContextTables++;
       if (typeof entry.name !== "string" || entry.name <= schemaAfter)
@@ -102,7 +106,10 @@ async function captureSnapshot(
   const tables: CompositionSnapshotEvidence["tables"] = [];
   if (parentContextTables !== 0 && parentContextTables !== 2)
     throw new Error("Source parent context schema is incomplete.");
+  if (acquisitionTables !== (state.migration_level >= 42 ? 4 : 0))
+    throw new Error("Source acquisition accounting schema is incomplete.");
   for (const table of compositionSnapshotTables) {
+    if (state.migration_level < 42 && (compositionAcquisitionTables as readonly string[]).includes(table)) continue;
     if (!hasSourceArchives && (compositionSourceSnapshotTables as readonly string[]).includes(table)) continue;
     if (!parentContextTables && (compositionParentContextTables as readonly string[]).includes(table)) continue;
     // Schema 30 snapshots predate accepted-evidence metadata and partition fingerprints.

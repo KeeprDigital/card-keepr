@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./helpers/acquisition-budget.mjs";
 import { readWorkerConfig } from "../cli/lib/config.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -148,7 +149,17 @@ test("retained Riot catalogue: qualified intake, owner corrections, publication 
       }),
     );
     const collected = await runCli(
-      ["source", "collect", "--plan-file", planPath, "--idempotency-key", "real-riftbound", "--json"],
+      [
+        "source",
+        "collect",
+        "--budget-file",
+        fixtureAcquisitionBudgetPath,
+        "--plan-file",
+        planPath,
+        "--idempotency-key",
+        "real-riftbound",
+        "--json",
+      ],
       environment,
     );
     assert.equal(collected.code, 0, `${collected.stdout} ${collected.stderr}\n${worker.getOutput()}`);
@@ -810,7 +821,16 @@ test("retained Riot catalogue: qualified intake, owner corrections, publication 
       ],
     }),
   );
-  const fresh = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", "fresh-origins-check"]);
+  const fresh = await cli([
+    "source",
+    "collect",
+    "--budget-file",
+    fixtureAcquisitionBudgetPath,
+    "--plan-file",
+    planPath,
+    "--idempotency-key",
+    "fresh-origins-check",
+  ]);
   assert.notEqual(fresh.id, run.id);
   await cli(["source", "resume", "--run-id", fresh.id]);
   const freshCollection = await waitForAdministrationDocument(

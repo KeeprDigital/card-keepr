@@ -5,7 +5,7 @@ import { exports } from "cloudflare:workers";
 import { afterEach, beforeEach, expect } from "vitest";
 import { catalogueRoutes } from "../../../src/catalogue/read";
 import { canonicalJson, catalogueStore, sha256, sha256Text } from "../../../src/catalogue/shared";
-import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
+import type { FixtureEvidenceRunRequest } from "../../../test/support/fixture-evidence-plan";
 import { httpDispatch } from "../../../src/http/openapi";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
@@ -201,7 +201,7 @@ export function postWithControlledPublication(
   return request(pathname, body, extraHeaders, nativePreparationDriver(testEnv, "native-owner"));
 }
 
-export async function postFixtureEvidence(body: StartEvidenceRunRequest) {
+export async function postFixtureEvidence(body: FixtureEvidenceRunRequest) {
   const document = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, body);
   return {
     response: new Response(null, { status: 201 }),

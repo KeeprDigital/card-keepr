@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./acquisition-budget.mjs";
 import { readWorkerConfig } from "../../cli/lib/config.mjs";
 import * as responseValidators from "../../test/support/http-response-validators.mjs";
 import { writeFile } from "node:fs/promises";
@@ -309,7 +310,10 @@ export async function collectNativeFixtureSource(directory, environment, lineage
       ],
     }),
   );
-  const run = await cli(["source", "collect", "--plan-file", path, "--idempotency-key", key], environment);
+  const run = await cli(
+    ["source", "collect", "--budget-file", fixtureAcquisitionBudgetPath, "--plan-file", path, "--idempotency-key", key],
+    environment,
+  );
   assert.equal(run.state, "parsing");
   const prepared = await fetch(`${environment.KEEPR_INGESTION_URL}/v1/game-candidates`, {
     method: "POST",

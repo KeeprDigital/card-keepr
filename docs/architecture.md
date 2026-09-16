@@ -246,6 +246,26 @@ Historical snapshots retain their original optional receipt set; archive and
 ancestor receipt digests keep their original meanings.
 [Pokémon source assembly](https://github.com/KeeprDigital/card-keepr/issues/329).
 
+Collection acquisition requires a finite, run-wide Acquisition Budget, separate
+from the adapter's Request Capacity. A durable Dispatch Reservation is charged
+before each potential physical source call, including retries, revalidation and
+same-attempt replay. Its maximum body exposure remains reserved until that exact
+retrieval and writer are positively settled. Missing receipts, timeouts, absent
+objects or superseded Workflow identities do not establish settlement. A permit
+is never reusable after its acknowledgement could have escaped. Admission binds
+the current collection authority and budget generation; its deadline governs new
+admission, not instantaneous cancellation of escaped work.
+
+Acquisition exhaustion pauses the ordinary run while preserving its graph and
+evidence. Checked, idempotent extensions only increase limits or deadline and do
+not resume work or reset charges. Raw-source exposure is not wire traffic,
+whole-account storage or money; downstream resource planning remains separate.
+Existing runs receive no invented unlimited policy or historical dispatch count.
+Prospective initialization requires quiescent, positively settled prior ownership
+and a verified, deduplicated retained-body baseline; unresolved ownership blocks
+it. Budget and reservation evidence belongs to backup/restore verification.
+[Acquisition guard](https://github.com/KeeprDigital/card-keepr/issues/367).
+
 Collection scheduling reads a bounded page containing the next pending shard
 for each hostname. It retains Workflow identities only for dispatched shards;
 later shards are selected after their predecessors finish. Hostname grouping

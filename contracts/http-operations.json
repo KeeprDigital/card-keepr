@@ -211,6 +211,14 @@
     "worker": "admin",
     "family": "source-evidence",
     "method": "POST",
+    "path": "/v1/ingestion-runs/:run/acquisition-budget/extension",
+    "slice": "Sources and collection",
+    "cli": "extendSourceAcquisitionBudget"
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "POST",
     "path": "/v1/ingestion-runs/:run/capacity/extension",
     "slice": "Sources and collection",
     "cli": "source capacity extend"

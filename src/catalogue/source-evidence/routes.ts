@@ -1,3 +1,4 @@
+import { extendAcquisitionBudget } from "./acquisition-budget";
 import type { HttpRoute } from "../../http/openapi";
 import {
   cleanupSchema,
@@ -19,6 +20,7 @@ import {
   pauseEvidenceRoute,
   terminateEvidenceRoute,
   extendCapacityRoute,
+  extendAcquisitionRoute,
   resumeEvidenceRoute,
   lifecycleRoute,
   lifecycleSchema,
@@ -39,6 +41,7 @@ import {
   collectionTerminationSchema,
   collectionResumeSchema,
   capacityExtensionSchema,
+  acquisitionExtensionSchema,
 } from "./http-evidence-schema";
 import { publicUrl } from "../../http/public-base";
 import { httpRoute, streamingHttpRoute } from "../../http/openapi";
@@ -76,6 +79,18 @@ type Environment = {
 type Context = RouteContext<Environment> & { observedAt: string };
 
 export const sourceEvidenceRoutes: HttpRoute<Context>[] = [
+  httpRoute<Context>()(extendAcquisitionRoute, async (c) =>
+    c.json(
+      acquisitionExtensionSchema.parse(
+        await extendAcquisitionBudget(c.env.env.CATALOGUE_DB, c.req.valid("param").run, c.req.valid("json"), {
+          evidenceObjects: c.env.env.EVIDENCE_OBJECTS,
+          parentWorkflow: c.env.env.EVIDENCE_INGESTION_WORKFLOW,
+          hostWorkflow: c.env.env.EVIDENCE_HOST_WORKFLOW,
+        }),
+      ),
+      200,
+    ),
+  ),
   httpRoute<Context>()(importRecordsRoute, async (c) =>
     c.json(
       importedRecordsSchema.parse(
@@ -218,6 +233,7 @@ export const sourceEvidenceRoutes: HttpRoute<Context>[] = [
       c.req.valid("param").run,
       c.req.valid("json").idempotency_key,
       c.env.requestId,
+      c.req.valid("json").acquisition_budget,
     );
     const receipt = evidenceAcceptance(result, c.env.base);
     c.header("Location", receipt.links.status);
@@ -232,6 +248,7 @@ export const sourceEvidenceRoutes: HttpRoute<Context>[] = [
       env.EVIDENCE_INGESTION_WORKFLOW,
       run,
       env.EVIDENCE_HOST_WORKFLOW,
+      env.EVIDENCE_OBJECTS,
     );
     const status = publicUrl(c.env.base, `/v1/ingestion-runs/${encodeURIComponent(run)}/evidence`);
     c.header("Location", status);

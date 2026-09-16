@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./helpers/acquisition-budget.mjs";
 import { readWorkerConfig } from "../cli/lib/config.mjs";
 import {
   inspectNativeCollection,
@@ -73,7 +74,17 @@ test("native publication: the owner publishes a complete One Piece catalogue for
     // Keep the production 30/minute limit; reserve room for CLI actions and status polling.
   };
   const collected = await runCli(
-    ["source", "collect", "--plan-file", planPath, "--idempotency-key", "one-piece-complete-collect", "--json"],
+    [
+      "source",
+      "collect",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
+      "--plan-file",
+      planPath,
+      "--idempotency-key",
+      "one-piece-complete-collect",
+      "--json",
+    ],
     cliEnvironment,
   );
   assert.equal(collected.code, 0, `${collected.stdout}\n${collected.stderr}\n${ingestion.getOutput()}`);
@@ -122,7 +133,17 @@ test("native publication: the owner publishes a complete One Piece catalogue for
 
   await writeFile(planPath, JSON.stringify(completePlan("card-keepr-one-piece-complete-errata-v1")), { mode: 0o600 });
   const errataCollected = await runCli(
-    ["source", "collect", "--plan-file", planPath, "--idempotency-key", "one-piece-complete-errata-collect", "--json"],
+    [
+      "source",
+      "collect",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
+      "--plan-file",
+      planPath,
+      "--idempotency-key",
+      "one-piece-complete-errata-collect",
+      "--json",
+    ],
     cliEnvironment,
   );
   assert.equal(errataCollected.code, 0, errataCollected.stderr);
