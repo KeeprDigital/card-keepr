@@ -356,18 +356,23 @@ export const documentSchemas = {
       object({
         observation_type: { const: "source_admission_evidence" },
         game: { const: "riftbound" },
-        source_lineage: { const: "riftbound-db-en" },
+        source_lineage: { enum: ["riftbound-db-en", "piltover-archive-en"] },
         locator: sourceRecordAdmissionFields.locator,
         source_membership: sourceRecordAdmissionFields.source_membership,
         target: sourceRecordAdmissionFields.target,
         issues: array(
           object({
             code: {
-              enum: ["card_identity_unresolved", "printing_treatment_unresolved", "physical_issuance_unresolved"],
+              enum: [
+                "card_identity_unresolved",
+                "printing_treatment_unresolved",
+                "physical_issuance_unresolved",
+                "printing_locale_unresolved",
+              ],
             },
             source_paths: array({ ...string, minLength: 1, maxLength: 256 }, { minItems: 1, maxItems: 16 }),
           }),
-          { minItems: 1, maxItems: 3 },
+          { minItems: 1, maxItems: 4 },
         ),
         appearance_evidence: sourceRecordAdmissionFields.appearance_evidence,
         source_sidecar: sourceRecordAdmissionFields.source_sidecar,

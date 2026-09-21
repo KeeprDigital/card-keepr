@@ -413,6 +413,7 @@ function isAdministrationProblem(code) {
 const expectedRequestCapacities = {
   "limitless-one-piece-en@1": 9_559,
   "riftbound-db-en@1": 7,
+  "piltover-archive-en@1": 3,
   "riftbound-en@1": 5000,
   "scryfall-magic-en@1": 108_691,
   "tcgdex-pokemon-en@1": 4,
@@ -437,6 +438,7 @@ test("every installed adapter version carries its parser and unknown versions ar
       ...expectedProductionAdapterVersions,
       "limitless-one-piece-en@1",
       "riftbound-db-en@1",
+      "piltover-archive-en@1",
       "riftbound-en@1",
       "scryfall-magic-en@1",
       "tcgdex-pokemon-en@1",
