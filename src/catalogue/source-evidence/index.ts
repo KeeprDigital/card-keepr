@@ -17,7 +17,6 @@ export {
   type WorkflowPauseReason,
   workflowAttemptRecord,
 } from "./collection-recovery";
-export { settleTerminalOwnerDispatches } from "./acquisition-budget";
 export { pauseEvidenceCollection, resumeEvidenceRun, terminateEvidenceCollection } from "./evidence-administration";
 export type { IngestionEvidenceRow } from "./ingestion-run-repository";
 export { evidenceInspectionOptions, sourceEvidenceRoutes } from "./routes";
@@ -49,6 +48,7 @@ export {
   type PreparedCaptureAttempt,
   parseCapturedRequest,
   prepareCaptureAttempt,
+  settleTerminalOwnerDispatches,
   type SourceHostPacingMode,
   sourceHostPacingIntervalMilliseconds,
   sourceHostPacingMode,

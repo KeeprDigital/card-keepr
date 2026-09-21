@@ -10,6 +10,10 @@ export interface FailureInjection {
   // Records one more attempt for the request's scope and returns the count,
   // starting at 1.
   attempt(request: Request): number;
+  // A held response stays open until a test releases its key, so a test can
+  // act (for example terminate a Workflow) while a physical fetch is in flight.
+  released(key: string): boolean;
+  release(key: string): void;
 }
 
 export function failureInjectionScope(request: Request): string {
@@ -20,12 +24,17 @@ export function failureInjectionScope(request: Request): string {
 
 export function createFailureInjection(): FailureInjection {
   const attempts = new Map<string, number>();
+  const releases = new Set<string>();
   return {
     attempt(request) {
       const scope = failureInjectionScope(request);
       const count = (attempts.get(scope) ?? 0) + 1;
       attempts.set(scope, count);
       return count;
+    },
+    released: (key) => releases.has(key),
+    release(key) {
+      releases.add(key);
     },
   };
 }
@@ -156,6 +165,28 @@ export function transportOutcomeForPath(
         "content-type": "application/json",
       },
     });
+  }
+  if (pathname.startsWith("/hold/")) {
+    // The headers arrive at once; the body stays open until the key is
+    // released, so the caller holds a physical retrieval in flight.
+    const key = pathname.slice("/hold/".length);
+    const body = new TextEncoder().encode(`{"cards":[{"held":"${key}"}]}`);
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          while (!context.failures.released(key)) {
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+          controller.enqueue(body);
+          controller.close();
+        },
+      }),
+      { headers: { "content-type": "application/json" } },
+    );
+  }
+  if (pathname.startsWith("/release/")) {
+    context.failures.release(pathname.slice("/release/".length));
+    return new Response(null, { status: 204 });
   }
   if (pathname.startsWith("/sequence/")) {
     return new Response(`{"cards":[{"sequence":"${url.hostname}${pathname}"}]}`, {

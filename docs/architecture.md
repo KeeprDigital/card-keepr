@@ -252,11 +252,20 @@ before each potential physical source call, including retries, revalidation and
 same-attempt replay. Its maximum body exposure remains reserved until that exact
 retrieval and writer are positively settled. Missing receipts, timeouts, absent
 objects or superseded Workflow identities do not establish settlement. A
-Workflow Attempt positively observed finished or confirmed absent owns no work:
-a dispatch it still holds settles at zero bytes once its destination object is
-absent, keeping the dispatch charge, while a present object still requires the
-exact writer verification. A permit is never reusable after its acknowledgement
-could have escaped. Admission binds
+Workflow Attempt positively observed complete, errored or terminated, or whose
+instance the control plane confirms absent, has stopped executing and owns no
+work: a dispatch it still holds without a capture receipt settles at zero bytes
+once its destination object is absent, keeping the dispatch charge, and that
+attempt is recorded as failed so the replacement retrieves under a fresh
+attempt and object key. A present object still requires the exact writer
+verification, and any other control-plane failure blocks resume. This accepted
+rule keeps a run self-healing after a hostname Workflow dies mid-fetch; the
+alternative, treating only normal completion as settlement, would leave every
+such run for manual termination. A storage failure or unclassified error during
+a write likewise leaves the dispatch charged and unsettled under an Acquisition
+Pause rather than recording a failed attempt, because the destination state is
+unknown; a storage Retry Pause now arises only from abandoned attempts. A permit
+is never reusable after its acknowledgement could have escaped. Admission binds
 the current collection authority and budget generation; its deadline governs new
 admission, not instantaneous cancellation of escaped work.
 

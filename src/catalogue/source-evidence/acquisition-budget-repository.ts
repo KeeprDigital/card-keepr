@@ -7,7 +7,6 @@ import {
   runEventIdentitySql,
   runEventStatement,
   runTransitionGuardStatement,
-  runCurrentIntegrityGuardStatement,
 } from "../shared";
 import type { AcquisitionBudget, CollectionWorkflowAttempt } from "./source-evidence-model";
 import { sourceParseAuthorityGuard } from "./source-parse-authority-repository";
@@ -128,7 +127,7 @@ export function acquisitionInitializationGuard(db: CatalogueStore, runId: string
         AND NOT EXISTS(SELECT 1 FROM source_capture_operations WHERE ingestion_run_id=?1)
         AND NOT EXISTS(SELECT 1 FROM ingestion_workflow_attempts WHERE ingestion_run_id=?1)))
       AND plan.collection_completed_at IS NULL
-      AND NOT EXISTS(SELECT 1 FROM source_capture_operations WHERE ingestion_run_id=?1 AND state NOT IN ('uploaded','finalized'))
+      AND NOT EXISTS(SELECT 1 FROM source_capture_operations WHERE ingestion_run_id=?1 AND state NOT IN ('uploaded','finalized','failed'))
       AND NOT EXISTS(SELECT 1 FROM evidence_object_writers WHERE ingestion_run_id=?1 AND completed_at IS NULL)
       AND NOT EXISTS(SELECT 1 FROM ingestion_acquisition_accounts WHERE ingestion_run_id=?1)
   ) THEN 1 ELSE json_extract('{}','acquisition_initialization_not_quiescent') END`,
@@ -170,10 +169,12 @@ export function acquisitionPause(db: CatalogueStore, runId: string) {
     )
     .bind(runId);
 }
+/** Inspection lists at most this many unsettled dispatches; one extra row reveals truncation. */
+export const acquisitionUnsettledPageSize = 50;
 export function unsettledDispatches(db: CatalogueStore, runId: string) {
   return repositoryStatements(db)
     .prepare(
-      `SELECT * FROM source_dispatch_reservations WHERE ingestion_run_id=? AND settled_at IS NULL ORDER BY id LIMIT 51`,
+      `SELECT * FROM source_dispatch_reservations WHERE ingestion_run_id=? AND settled_at IS NULL ORDER BY id LIMIT ${acquisitionUnsettledPageSize + 1}`,
     )
     .bind(runId);
 }
@@ -338,7 +339,4 @@ export function acquisitionPauseStatements(
         event.occurredAt,
       ),
   ];
-}
-export function acquisitionIntegrityGuard(db: CatalogueStore, runId: string) {
-  return runCurrentIntegrityGuardStatement(db, runId);
 }

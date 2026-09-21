@@ -1,9 +1,15 @@
-import { AdministrationProblem, canonicalJson, type CatalogueStore, sha256, utf8 } from "../shared";
+import {
+  AdministrationProblem,
+  canonicalJson,
+  type CatalogueStore,
+  runCurrentIntegrityGuardStatement,
+  sha256,
+  utf8,
+} from "../shared";
 import {
   acquisitionAccount,
   acquisitionExtensionGuard,
   acquisitionInitializationGuard,
-  acquisitionIntegrityGuard,
   acquisitionPause,
   acquisitionPauseStatements,
   acquisitionPolicyByKey,
@@ -12,6 +18,7 @@ import {
   insertAcquisitionPolicy,
   reserveSourceDispatch,
   settleSourceDispatch,
+  acquisitionUnsettledPageSize,
   unsettledDispatches,
   unsettledRunDispatch,
   unsettledRawWriter,
@@ -23,6 +30,9 @@ import {
 } from "./acquisition-budget-repository";
 import { assertIdentifier, type AcquisitionBudget, type CollectionWorkflowAttempt } from "./source-evidence-model";
 import { verifyLegacyAcquisition, type LegacyAcquisitionContext } from "./acquisition-legacy";
+
+/** Admission of any dispatch needs at least one byte of allowance; used when no specific dispatch bound applies. */
+const minimalDispatchBytes = 1;
 
 export function validateAcquisitionBudget(value: AcquisitionBudget, requireFuture = true): AcquisitionBudget {
   if (
@@ -140,38 +150,6 @@ export async function settleAcquisitionDispatch(db: CatalogueStore, id: string, 
   await settleSourceDispatch(db, id, captureId, bytes, new Date().toISOString()).run();
 }
 
-/** Dispatches held by a Workflow Attempt the caller has positively observed
- * finished cannot receive a late write once their destination is absent: they
- * settle at zero bytes and keep their dispatch charge, so ordinary recovery and
- * owner resume can reserve again. A present object still needs the exact writer
- * verification; a live or unreadable owner settles nothing. */
-export async function settleTerminalOwnerDispatches(
-  db: CatalogueStore,
-  bucket: R2Bucket,
-  runId: string,
-  ownerIsTerminal: (workflowInstanceId: string) => Promise<boolean>,
-): Promise<number> {
-  let settled = 0;
-  const verdicts = new Map<string, boolean>();
-  for (;;) {
-    const outstanding = (await unsettledDispatches(db, runId).all<DispatchReservation>()).results;
-    let progressed = false;
-    for (const dispatch of outstanding) {
-      if (dispatch.workflow_instance_id === null) continue;
-      let terminal = verdicts.get(dispatch.workflow_instance_id);
-      if (terminal === undefined) {
-        terminal = await ownerIsTerminal(dispatch.workflow_instance_id);
-        verdicts.set(dispatch.workflow_instance_id, terminal);
-      }
-      if (!terminal || (await bucket.head(dispatch.content_object_key)) !== null) continue;
-      await settleAcquisitionDispatch(db, dispatch.id, dispatch.capture_operation_id, 0);
-      settled += 1;
-      progressed = true;
-    }
-    if (!progressed || outstanding.length < 51) return settled;
-  }
-}
-
 export async function pauseAcquisitionOwnership(
   db: CatalogueStore,
   input: { runId: string; requestId: string; captureId: string; workflow?: CollectionWorkflowAttempt },
@@ -182,7 +160,7 @@ export async function pauseAcquisitionOwnership(
     acquisitionPauseStatements(db, {
       ...input,
       generation: account?.generation ?? null,
-      maximumBytes: dispatch?.maximum_source_bytes ?? 1,
+      maximumBytes: dispatch?.maximum_source_bytes ?? minimalDispatchBytes,
       dimension: account === null ? "policy_missing" : "ownership",
     }),
   );
@@ -216,8 +194,10 @@ export async function inspectAcquisitionBudget(db: CatalogueStore, runId: string
       0,
       account.max_source_bytes - account.charged_source_bytes - account.reserved_source_bytes,
     ),
-    limiting_dimension: ownershipPending ? "ownership" : limitingDimension(account, pause?.maximum_source_bytes ?? 1),
-    unsettled: outstanding.results.slice(0, 50).map((row) => ({
+    limiting_dimension: ownershipPending
+      ? "ownership"
+      : limitingDimension(account, pause?.maximum_source_bytes ?? minimalDispatchBytes),
+    unsettled: outstanding.results.slice(0, acquisitionUnsettledPageSize).map((row) => ({
       id: row.id,
       request_id: row.request_id,
       capture_operation_id: row.capture_operation_id,
@@ -227,7 +207,7 @@ export async function inspectAcquisitionBudget(db: CatalogueStore, runId: string
       maximum_source_bytes: row.maximum_source_bytes,
       reserved_at: row.reserved_at,
     })),
-    unsettled_truncated: outstanding.results.length > 50,
+    unsettled_truncated: outstanding.results.length > acquisitionUnsettledPageSize,
   };
 }
 
@@ -261,13 +241,25 @@ export async function assertAcquisitionResumable(db: CatalogueStore, runId: stri
       "source_acquisition_ownership_pending",
       "A prior physical dispatch has not been positively settled.",
     );
-  const dimension = limitingDimension(account, pause?.maximum_source_bytes ?? 1);
+  const dimension = limitingDimension(account, pause?.maximum_source_bytes ?? minimalDispatchBytes);
   if (dimension !== null)
     throw new AdministrationProblem(
       409,
       "source_acquisition_budget_exhausted",
       `Collection cannot resume: acquisition ${dimension}. Initialize or extend its budget first.`,
     );
+}
+
+/** The retained response for an idempotency key: the exact replay, a conflicting reuse, or nothing yet. */
+async function retainedAcquisitionResponse(
+  db: CatalogueStore,
+  key: string,
+  digest: string,
+): Promise<Record<string, unknown> | "conflict" | null> {
+  const retained = await acquisitionPolicyByKey(db, key).first<{ request_digest: string; response_json: string }>();
+  if (retained === null) return null;
+  if (retained.request_digest !== digest) return "conflict";
+  return JSON.parse(retained.response_json) as Record<string, unknown>;
 }
 
 export type AcquisitionExtensionRequest = {
@@ -288,19 +280,14 @@ export async function extendAcquisitionBudget(
   const digest = await sha256(
     utf8(canonicalJson({ runId, ...input, expected_budget: previous, acquisition_budget: budget })),
   );
-  const replay = await acquisitionPolicyByKey(db, input.idempotency_key).first<{
-    request_digest: string;
-    response_json: string;
-  }>();
-  if (replay !== null) {
-    if (replay.request_digest !== digest)
-      throw new AdministrationProblem(
-        409,
-        "idempotency_conflict",
-        "The acquisition action key has different retained intent.",
-      );
-    return JSON.parse(replay.response_json) as Record<string, unknown>;
-  }
+  const replay = await retainedAcquisitionResponse(db, input.idempotency_key, digest);
+  if (replay === "conflict")
+    throw new AdministrationProblem(
+      409,
+      "idempotency_conflict",
+      "The acquisition action key has different retained intent.",
+    );
+  if (replay !== null) return replay;
   const account = await acquisitionAccount(db, runId).first<AcquisitionAccount>();
   if (account === null && input.expected_generation === 0 && previous === null) {
     validateAcquisitionBudget(budget);
@@ -323,7 +310,7 @@ export async function extendAcquisitionBudget(
     };
     try {
       await db.batch([
-        acquisitionIntegrityGuard(db, runId),
+        runCurrentIntegrityGuardStatement(db, runId),
         acquisitionInitializationGuard(db, runId, verified.eventId),
         initialAcquisitionAccount(db, runId, at, true, verified.baseline),
         insertAcquisitionPolicy(db, {
@@ -337,11 +324,8 @@ export async function extendAcquisitionBudget(
         }),
       ]);
     } catch (error) {
-      const raced = await acquisitionPolicyByKey(db, input.idempotency_key).first<{
-        request_digest: string;
-        response_json: string;
-      }>();
-      if (raced?.request_digest === digest) return JSON.parse(raced.response_json) as Record<string, unknown>;
+      const raced = await retainedAcquisitionResponse(db, input.idempotency_key, digest);
+      if (raced !== null && raced !== "conflict") return raced;
       if (String(error).includes("acquisition_initialization_not_quiescent"))
         throw new AdministrationProblem(
           409,
@@ -386,9 +370,12 @@ export async function extendAcquisitionBudget(
     acquisition_budget: budget,
     extended_at: at,
   };
+  // A deadline that has already passed admits nothing, so an extension that
+  // cannot resume work is refused here rather than discovered at resume.
+  validateAcquisitionBudget(budget);
   try {
     await db.batch([
-      acquisitionIntegrityGuard(db, runId),
+      runCurrentIntegrityGuardStatement(db, runId),
       acquisitionExtensionGuard(db, runId, account.generation),
       insertAcquisitionPolicy(db, {
         runId,
@@ -401,11 +388,8 @@ export async function extendAcquisitionBudget(
       }),
     ]);
   } catch (error) {
-    const raced = await acquisitionPolicyByKey(db, input.idempotency_key).first<{
-      request_digest: string;
-      response_json: string;
-    }>();
-    if (raced?.request_digest === digest) return JSON.parse(raced.response_json) as Record<string, unknown>;
+    const raced = await retainedAcquisitionResponse(db, input.idempotency_key, digest);
+    if (raced !== null && raced !== "conflict") return raced;
     if (String(error).includes("acquisition_extension_conflict"))
       throw new AdministrationProblem(
         409,

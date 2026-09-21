@@ -5,7 +5,13 @@ import {
   reserveAcquisitionDispatch,
   settleAcquisitionDispatch,
 } from "./acquisition-budget";
-import { captureDispatch, storedBodyDispatch, type DispatchReservation } from "./acquisition-budget-repository";
+import {
+  acquisitionUnsettledPageSize,
+  captureDispatch,
+  storedBodyDispatch,
+  type DispatchReservation,
+  unsettledDispatches,
+} from "./acquisition-budget-repository";
 import { discoveredSourceRecordRequests } from "./source-record-intake";
 import {
   completeEvidenceObjectWrite,
@@ -58,6 +64,7 @@ import {
   appendDiscoveredEvidenceRequests,
   captureAttemptsPerRetryGeneration,
   type EvidenceRequestRow,
+  requiredEvidenceRun,
   evidencePlanForRequest,
   type IngestionEvidenceRow,
   isCurrentCollectionWorkflowAttempt,
@@ -526,7 +533,6 @@ export async function capturePreparedAttempt(
       request_made: true,
     };
   } catch (error) {
-    let recoveryError: unknown = null;
     try {
       const recovered = await recoverCompletedUpload(database, evidenceObjects, operation);
       if (recovered) {
@@ -536,9 +542,14 @@ export async function capturePreparedAttempt(
           request_made: true,
         };
       }
-    } catch (caught) {
-      recoveryError = caught;
+    } catch {
+      // An unreadable receipt cannot prove that the physical write ended.
     }
+    // A storage failure or an unclassified error leaves the destination in an
+    // unknown state: the dispatch stays charged and unsettled under an
+    // Acquisition Pause until the exact writer is verified. Only a transport or
+    // body-contract failure, which never reached storage, records a bounded
+    // failed attempt.
     if (
       error instanceof CaptureOwnershipError ||
       !(error instanceof CapturePersistenceError) ||
@@ -552,19 +563,12 @@ export async function capturePreparedAttempt(
       });
       return { kind: "done", failure_code: null, request_made: true };
     }
-    const failure =
-      error instanceof CapturePersistenceError
-        ? error
-        : new CapturePersistenceError(
-            "storage_failure",
-            errorMessage(recoveryError ?? error, "Evidence persistence failed."),
-          );
     return recordFailedTransportAttempt(database, run, request, operation, {
-      outcome: failure.outcome,
+      outcome: error.outcome,
       completedAt,
       status: response.status,
       headers: responseHeaders,
-      diagnostic: failure.message,
+      diagnostic: error.message,
     });
   }
 }
@@ -871,6 +875,57 @@ export async function recoverAcquisitionUploads(database: CatalogueStore, bucket
       }
       after = capture.attempt_id;
     }
+  }
+}
+
+/** Dispatches held by a Workflow Attempt the caller has positively observed
+ * finished cannot receive a late write once their destination is absent. Each
+ * settles at zero bytes, keeping its dispatch charge, and its unreceipted
+ * attempt is recorded as a failed attempt so the replacement retrieves under a
+ * fresh attempt and object key instead of the abandoned destination. A present
+ * object still needs the exact writer verification, an uploaded receipt
+ * follows ordinary upload recovery, and a live or unreadable owner settles
+ * nothing. */
+export async function settleTerminalOwnerDispatches(
+  database: CatalogueStore,
+  evidenceObjects: R2Bucket,
+  runId: string,
+  ownerIsTerminal: (workflowInstanceId: string) => Promise<boolean>,
+): Promise<number> {
+  let settled = 0;
+  const verdicts = new Map<string, boolean>();
+  for (;;) {
+    const outstanding = (await unsettledDispatches(database, runId).all<DispatchReservation>()).results;
+    let progressed = false;
+    for (const dispatch of outstanding) {
+      if (dispatch.workflow_instance_id === null) continue;
+      let terminal = verdicts.get(dispatch.workflow_instance_id);
+      if (terminal === undefined) {
+        terminal = await ownerIsTerminal(dispatch.workflow_instance_id);
+        verdicts.set(dispatch.workflow_instance_id, terminal);
+      }
+      if (!terminal) continue;
+      const operation = await requiredCaptureOperation(database, dispatch.capture_operation_id);
+      if (operation.state !== "planned" && operation.state !== "response_received") continue;
+      if ((await evidenceObjects.head(dispatch.content_object_key)) !== null) continue;
+      await settleAcquisitionDispatch(database, dispatch.id, operation.attempt_id, 0);
+      await recordFailedTransportAttempt(
+        database,
+        await requiredEvidenceRun(database, runId),
+        await currentRequest(database, runId, operation.request_id),
+        operation,
+        {
+          outcome: operation.state === "planned" ? "network_failure" : "storage_failure",
+          completedAt: new Date().toISOString(),
+          status: operation.http_status,
+          headers: operation.response_headers_json === null ? {} : parseStringRecord(operation.response_headers_json),
+          diagnostic: "The owning Workflow Attempt finished before recording a capture receipt.",
+        },
+      );
+      settled += 1;
+      progressed = true;
+    }
+    if (!progressed || outstanding.length <= acquisitionUnsettledPageSize) return settled;
   }
 }
 

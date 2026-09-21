@@ -10,7 +10,13 @@ import {
   showEvidenceRun,
 } from "../../../src/catalogue/source-evidence";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
-import { administrationRequest, installRuntimeSuite } from "./runtime-helpers";
+import {
+  administrationRequest,
+  createCollection,
+  installRuntimeSuite,
+  waitForEvidenceCondition,
+  waitForWorkflowStatus,
+} from "./runtime-helpers";
 import { acquisitionLegacyFixtureStatements } from "./query-helpers/acquisition-legacy";
 
 installRuntimeSuite();
@@ -281,3 +287,64 @@ test.each(["unfinished", "missing_body", "changed_body", "unreadable_workflow", 
     });
   },
 );
+
+test("a retry-paused legacy run with failed attempts is quiescent and initializes prospectively", async () => {
+  const database = catalogueStore(env.CATALOGUE_DB);
+  // Four refusals exhaust the first retry generation: every attempt is a
+  // positively settled failure and the run rests in a Retry Pause.
+  const run = await createCollection(
+    "acquisition_legacy_failed_attempts_001",
+    "https://acquisition-official-source.invalid/unavailable-then-recovered",
+  );
+  const started = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
+  expect(started.status).toBe(202);
+  await started.body?.cancel();
+  const paused = await waitForEvidenceCondition(run.id, (current) => current.state === "paused", 15_000);
+  expect(paused).toMatchObject({ pause: { reason: "source_transport_retries_exhausted" }, snapshots: [] });
+  expect(paused.diagnostics.map(({ outcome }) => outcome)).toEqual(Array<string>(4).fill("http_failure"));
+  // Quiescence needs the Workflow Attempts themselves to have finished, not
+  // only the run row to have paused.
+  for (const [binding, id] of [
+    [env.EVIDENCE_INGESTION_WORKFLOW, paused.workflow.parent_id],
+    ...paused.workflow.child_ids.map((child) => [env.EVIDENCE_HOST_WORKFLOW, child] as const),
+  ] as const) {
+    if (id === null) throw new Error("missing Workflow identity");
+    await waitForWorkflowStatus(id, async () => (await binding.get(id)).status(), "complete", 15_000);
+  }
+  await env.CATALOGUE_DB.batch(acquisitionLegacyFixtureStatements(env.CATALOGUE_DB, run.id));
+  const initialized = await administrationRequest(`/v1/ingestion-runs/${run.id}/acquisition-budget/extension`, "POST", {
+    expected_generation: 0,
+    expected_budget: null,
+    acquisition_budget: {
+      max_dispatches: 2,
+      max_source_bytes: 32 * 1024 * 1024,
+      dispatch_deadline: new Date(Date.now() + 60_000).toISOString(),
+    },
+    idempotency_key: "legacy_failed_attempts_initialize_001",
+  });
+  expect([initialized.status, initialized.status === 200 ? "" : await initialized.text()]).toEqual([200, ""]);
+  await initialized.body?.cancel();
+  expect(await showEvidenceRun(database, run.id)).toMatchObject({
+    state: "paused",
+    acquisition: {
+      generation: 1,
+      historical_dispatches_unknown: true,
+      baseline_source_bytes: 0,
+      charged_dispatches: 0,
+      charged_source_bytes: 0,
+    },
+  });
+  const resumed = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
+  expect(resumed.status).toBe(202);
+  await resumed.body?.cancel();
+  const completed = await waitForEvidenceCondition(
+    run.id,
+    (current) => current.collection_completed_at !== null,
+    15_000,
+  );
+  expect(completed.snapshots).toHaveLength(1);
+  expect(await showEvidenceRun(database, run.id)).toMatchObject({
+    acquisition: { charged_dispatches: 1, historical_dispatches_unknown: true },
+  });
+  expect(await pendingEvidenceRequests(database, run.id)).toEqual([]);
+});

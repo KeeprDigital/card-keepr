@@ -16,7 +16,14 @@ import {
 } from "../../../src/catalogue/source-evidence";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 import { dispatchReservation, rawWriterCompletion } from "./query-helpers/acquisition-recovery";
-import { installRuntimeSuite, waitForEvidenceCondition } from "./runtime-helpers";
+import {
+  administrationRequest,
+  type CollectionDocument,
+  createCollection,
+  installRuntimeSuite,
+  waitForEvidenceCondition,
+  waitForWorkflowStatus,
+} from "./runtime-helpers";
 
 installRuntimeSuite();
 
@@ -154,9 +161,63 @@ test.each([
       15_000,
     );
     expect(completed.snapshots).toHaveLength(1);
-    // The dead attempt's dispatch stays charged; only the live retrieval carries bytes.
+    // The abandoned attempt is a recorded failure; the replacement retrieved
+    // under attempt 2 and a fresh object key. The dead dispatch stays charged.
+    expect(completed.diagnostics.map(({ attempt_number, outcome }) => ({ attempt_number, outcome }))).toEqual([
+      { attempt_number: 1, outcome: "network_failure" },
+      { attempt_number: 2, outcome: "success" },
+    ]);
     expect(await showEvidenceRun(database, runId)).toMatchObject({
       acquisition: { charged_dispatches: 2, reserved_source_bytes: 0, unsettled: [] },
     });
   },
 );
+
+function unsettledDispatchCount(current: CollectionDocument): number {
+  const acquisition = (current as unknown as { acquisition: { unsettled: unknown[] } | null }).acquisition;
+  return acquisition?.unsettled.length ?? 0;
+}
+
+test("a hostname Workflow terminated while holding a dispatch is settled by its parent and the replacement completes", async () => {
+  const run = await createCollection(
+    "acquisition_terminal_owner_workflow_001",
+    "https://acquisition-official-source.invalid/hold/terminal-owner-workflow-001",
+  );
+  const started = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
+  expect(started.status).toBe(202);
+  await started.body?.cancel();
+  const holding = await waitForEvidenceCondition(
+    run.id,
+    (current) => current.workflow.child_ids.length === 1 && unsettledDispatchCount(current) === 1,
+    15_000,
+  );
+  const childId = holding.workflow.child_ids[0]!;
+  await (await env.EVIDENCE_HOST_WORKFLOW.get(childId)).terminate();
+  await waitForWorkflowStatus(
+    childId,
+    async () => (await env.EVIDENCE_HOST_WORKFLOW.get(childId)).status(),
+    "terminated",
+    15_000,
+  );
+  // Releasing the held body lets the replacement proceed. Only the
+  // replacement's attempt can become evidence; the dead attempt was abandoned.
+  const released = await env.OFFICIAL_SOURCE_TRANSPORT.fetch(
+    "https://acquisition-official-source.invalid/release/terminal-owner-workflow-001",
+  );
+  expect(released.status).toBe(204);
+  const completed = await waitForEvidenceCondition(
+    run.id,
+    (current) => current.collection_completed_at !== null,
+    30_000,
+  );
+  expect(completed.snapshots).toHaveLength(1);
+  // Termination may land before or after the response headers arrive, so the
+  // abandoned attempt is a transport or a storage failure; never evidence.
+  expect(completed.diagnostics.map(({ attempt_number, outcome }) => ({ attempt_number, outcome }))).toEqual([
+    { attempt_number: 1, outcome: expect.stringMatching(/^(network|storage)_failure$/u) },
+    { attempt_number: 2, outcome: "success" },
+  ]);
+  expect(await showEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id)).toMatchObject({
+    acquisition: { charged_dispatches: 2, reserved_source_bytes: 0, unsettled: [] },
+  });
+});

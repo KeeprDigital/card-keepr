@@ -1311,6 +1311,7 @@
       "apps/ingestion/test/runtime-acquisition-ownership.spec.ts",
       "apps/ingestion/test/runtime-acquisition-policy.spec.ts",
       "apps/ingestion/test/runtime-acquisition-replay.spec.ts",
+      "apps/ingestion/test/runtime-acquisition-terminal-owner.spec.ts",
       "apps/ingestion/test/runtime-adapter-reparse.spec.ts",
       "apps/ingestion/test/runtime-capacity-resume.spec.ts",
       "apps/ingestion/test/runtime-capacity-resume.stress.spec.ts",

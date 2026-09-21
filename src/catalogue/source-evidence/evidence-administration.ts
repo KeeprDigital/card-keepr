@@ -1,6 +1,12 @@
-import { AdministrationProblem, type CatalogueStore, isWorkflowInstanceNotFound, workflowDriver } from "../shared";
-import { assertAcquisitionResumable, settleTerminalOwnerDispatches } from "./acquisition-budget";
-import { recoverAcquisitionUploads } from "./source-evidence-capture";
+import {
+  AdministrationProblem,
+  type CatalogueStore,
+  isWorkflowInstanceNotFound,
+  workflowAttemptSettled,
+  workflowDriver,
+} from "../shared";
+import { assertAcquisitionResumable } from "./acquisition-budget";
+import { recoverAcquisitionUploads, settleTerminalOwnerDispatches } from "./source-evidence-capture";
 import {
   type CollectionProgressFacts,
   classifyCollectionProgress,
@@ -268,8 +274,7 @@ async function hostWorkflowAttemptFinished(
   instanceId: string,
 ): Promise<boolean> {
   try {
-    const status = (await workflowDriver(hostWorkflow).inspect(instanceId)).status;
-    return ["terminated", "errored", "complete"].includes(status);
+    return workflowAttemptSettled((await workflowDriver(hostWorkflow).inspect(instanceId)).status);
   } catch (error) {
     if (isWorkflowInstanceNotFound(error)) return true;
     throw error;
@@ -301,7 +306,7 @@ async function verifyCollectionSupersession(
       await terminateWorkflowInstance(binding, id);
       try {
         const status = (await workflowDriver(binding).inspect(id)).status;
-        return ["terminated", "errored", "complete"].includes(status) ? null : `${id} (${status})`;
+        return workflowAttemptSettled(status) ? null : `${id} (${status})`;
       } catch (error) {
         return isWorkflowInstanceNotFound(error) ? null : `${id} (status unavailable)`;
       }

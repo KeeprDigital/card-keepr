@@ -1332,18 +1332,6 @@ export function insertSourceCaptureOperationsForR2RecoveryOutagesPauseRunResumeC
     )`);
 }
 
-export function readIngestionRunRetryPausesPauseReasonFailureClassification(database: D1Database): D1PreparedStatement {
-  return database.prepare(`SELECT pause_reason, failure_classification, retry_generation
-     FROM ingestion_run_retry_pauses WHERE ingestion_run_id = ?`);
-}
-
-export function readSourceRequestsStateFailureCodeForR2RecoveryOutagesPauseRunResumeCompletesSameCapture(
-  database: D1Database,
-): D1PreparedStatement {
-  return database.prepare(`SELECT state, failure_code FROM source_requests
-     WHERE ingestion_run_id = ? AND request_id = 'one-piece-en:discovery'`);
-}
-
 export function readSourceCaptureOperationsStateContentDigest(database: D1Database): D1PreparedStatement {
   return database.prepare(`SELECT state, content_digest, content_byte_length
      FROM source_capture_operations WHERE attempt_id = ?`);
