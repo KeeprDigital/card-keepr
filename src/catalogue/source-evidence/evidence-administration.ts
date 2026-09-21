@@ -1,5 +1,5 @@
 import { AdministrationProblem, type CatalogueStore, isWorkflowInstanceNotFound, workflowDriver } from "../shared";
-import { assertAcquisitionResumable } from "./acquisition-budget";
+import { assertAcquisitionResumable, settleTerminalOwnerDispatches } from "./acquisition-budget";
 import { recoverAcquisitionUploads } from "./source-evidence-capture";
 import {
   type CollectionProgressFacts,
@@ -55,9 +55,8 @@ export async function resumeEvidenceRun(
   evidenceObjects: R2Bucket,
 ): Promise<Record<string, unknown>> {
   let run = await requiredEvidenceRun(database, runId);
-  if (run.state === "paused") await recoverAcquisitionUploads(database, evidenceObjects, runId);
-  if (run.state === "collecting" || run.state === "paused") await assertAcquisitionResumable(database, runId);
   if (run.state === "paused") {
+    await recoverAcquisitionUploads(database, evidenceObjects, runId);
     // A paused run resumes under a parent Workflow identity derived from the
     // count of recorded resumes. Confirming that the previous instances
     // settled first and deriving a deterministic new identity keeps
@@ -67,6 +66,14 @@ export async function resumeEvidenceRun(
     // retry-exhausted request reopens under its next bounded retry
     // generation.
     await verifyCollectionSupersession(database, workflow, hostWorkflow, runId, run.parent_workflow_id);
+    // Attempts that are positively finished cannot complete a dispatch they
+    // still hold, so an absent destination settles it before admission.
+    await settleTerminalOwnerDispatches(database, evidenceObjects, runId, (instanceId) =>
+      hostWorkflowAttemptFinished(hostWorkflow, instanceId),
+    );
+  }
+  if (run.state === "collecting" || run.state === "paused") await assertAcquisitionResumable(database, runId);
+  if (run.state === "paused") {
     await resumePausedEvidenceRun(database, runId);
     run = await requiredEvidenceRun(database, runId);
   }
@@ -251,6 +258,21 @@ async function terminateWorkflowInstance(
     await workflowDriver(workflow).terminate(instanceId);
   } catch {
     // Already settled or unavailable.
+  }
+}
+
+// Confirmed absence, like a terminal status, means the attempt owns no work;
+// any other control-plane failure must reach the caller unchanged.
+async function hostWorkflowAttemptFinished(
+  hostWorkflow: Workflow<EvidenceHostWorkflowParams>,
+  instanceId: string,
+): Promise<boolean> {
+  try {
+    const status = (await workflowDriver(hostWorkflow).inspect(instanceId)).status;
+    return ["terminated", "errored", "complete"].includes(status);
+  } catch (error) {
+    if (isWorkflowInstanceNotFound(error)) return true;
+    throw error;
   }
 }
 

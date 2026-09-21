@@ -11,6 +11,7 @@ import {
   requiredString,
   testEnv,
 } from "./reconciliation-helpers";
+import { fixtureAcquisitionBudget } from "../../../test/support/fixture-evidence-plan";
 
 installReconciliationSuite();
 
@@ -1074,6 +1075,7 @@ test("a retained Printing Image read outage preserves preparation for owner resu
   const { collectFixtureEvidence } = await import("../../../test/support/fixture-evidence-plan");
   const { runReconciliationWorkflow } = await import("./reconciliation-workflow-driver");
   const started = await post("/v1/ingestion-runs/evidence", {
+    acquisition_budget: fixtureAcquisitionBudget,
     supported_game: "digimon",
     source_lineage: "digimon-en",
     adapter_version: "digimon-en@7",
@@ -1167,6 +1169,7 @@ test("a single Card's Erratum budget includes externally retained text", async (
   const { post, testEnv, waitForRunState } = await import("./reconciliation-helpers");
   const { collectFixtureEvidence } = await import("../../../test/support/fixture-evidence-plan");
   const started = await post("/v1/ingestion-runs/evidence", {
+    acquisition_budget: fixtureAcquisitionBudget,
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
     adapter_version: "fixture-one-piece-erratum-target@1",

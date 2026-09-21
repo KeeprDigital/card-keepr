@@ -69,7 +69,7 @@ An explicitly selected, finite allowance for one Ingestion Run's potential physi
 _Avoid_: Request Capacity, billing cap, rate limit
 
 **Dispatch Reservation**:
-Durable authority for at most one potential physical source retrieval, charged against an Acquisition Budget before that authority can escape. It retains the maximum possible raw-source body exposure until the exact retrieval and writer are settled; uncertainty remains charged.
+Durable authority for at most one potential physical source retrieval, charged against an Acquisition Budget before that authority can escape. It retains the maximum possible raw-source body exposure until the exact retrieval and writer are settled; uncertainty remains charged. A reservation whose Workflow Attempt is positively observed finished settles at zero bytes once its destination is absent, keeping its dispatch charge.
 _Avoid_: Source Request, fetch attempt, reusable permit
 
 **Acquisition Pause**:

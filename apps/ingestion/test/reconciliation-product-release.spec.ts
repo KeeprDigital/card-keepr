@@ -1,6 +1,6 @@
 import { postWithControlledPreparation } from "./reconciliation-helpers";
 import { expect, test } from "vitest";
-import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
+import { collectFixtureEvidence, fixtureAcquisitionBudget } from "../../../test/support/fixture-evidence-plan";
 import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters";
 import { compositionEntityResponse } from "../../../src/catalogue/read";
 import { catalogueStore } from "../../../src/catalogue/shared";
@@ -257,6 +257,7 @@ test("registered Product detail evidence outranks its conflicting listing throug
     },
   }));
   const started = await post("/v1/ingestion-runs/evidence", {
+    acquisition_budget: fixtureAcquisitionBudget,
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
     adapter_version: "fusion-world-en@9",
@@ -311,6 +312,7 @@ test("a registered code-less Product refresh preserves its established code", as
       },
     }));
     const started = await post("/v1/ingestion-runs/evidence", {
+      acquisition_budget: fixtureAcquisitionBudget,
       supported_game: "digimon",
       source_lineage: "digimon-en",
       adapter_version: "digimon-en@7",
@@ -375,6 +377,7 @@ test("a registered fuzzy Product link remains a review warning through publicati
     },
   }));
   const started = await post("/v1/ingestion-runs/evidence", {
+    acquisition_budget: fixtureAcquisitionBudget,
     supported_game: "digimon",
     source_lineage: "digimon-en",
     adapter_version: "digimon-en@7",

@@ -20,6 +20,7 @@ import {
   requiredString,
   testEnv,
 } from "./reconciliation-helpers";
+import { fixtureAcquisitionBudget } from "../../../test/support/fixture-evidence-plan";
 
 installReconciliationSuite();
 
@@ -383,6 +384,7 @@ test("a partial-game publication carries an unselected curation and its immutabl
 
 test("production adapters retain parser-bound coverage proof for reconciliation", async () => {
   const started = await post("/v1/ingestion-runs/evidence", {
+    acquisition_budget: fixtureAcquisitionBudget,
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
     adapter_version: "fusion-world-en@9",
@@ -411,6 +413,7 @@ test("production adapters retain parser-bound coverage proof for reconciliation"
 
 test("new collection rejects an unregistered adapter version while retained snapshots reparse with their exact capturing version", async () => {
   const blocked = await post("/v1/ingestion-runs/evidence", {
+    acquisition_budget: fixtureAcquisitionBudget,
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
     adapter_version: "fusion-world-en@8",
@@ -421,6 +424,7 @@ test("new collection rejects an unregistered adapter version while retained snap
   expect(blocked.document).toMatchObject({ code: "adapter_not_supported" });
 
   const started = await post("/v1/ingestion-runs/evidence", {
+    acquisition_budget: fixtureAcquisitionBudget,
     supported_game: "fusion-world",
     source_lineage: "fusion-world-en",
     adapter_version: "fusion-world-en@9",
@@ -462,6 +466,7 @@ test("complete image evidence publishes an unidentified artwork once without col
       },
     }));
     const started = await post("/v1/ingestion-runs/evidence", {
+      acquisition_budget: fixtureAcquisitionBudget,
       supported_game: "digimon",
       source_lineage: "digimon-en",
       adapter_version: "digimon-en@7",
@@ -564,6 +569,7 @@ test("production Evidence Plans bind discovery identity to its exact Official So
   const requests = officialSourceDiscoveryRequests("one-piece-en").map((request) => ({ ...request }));
   requests[0]!.url = "https://official-source.invalid/one-piece-en/products";
   const started = await post("/v1/ingestion-runs/evidence", {
+    acquisition_budget: fixtureAcquisitionBudget,
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
     adapter_version: "one-piece-en@6",
@@ -578,6 +584,7 @@ test("production Evidence Plans bind discovery identity to its exact Official So
 
 test("the source-plan route rejects unregistered adapters without creating provenance", async () => {
   const blocked = await post("/v1/ingestion-runs/evidence", {
+    acquisition_budget: fixtureAcquisitionBudget,
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
     adapter_version: "unregistered-source-adapter@1",

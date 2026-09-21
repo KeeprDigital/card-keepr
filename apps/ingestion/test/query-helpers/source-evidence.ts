@@ -102,17 +102,11 @@ export function countIngestionRunRetryPausesCount(database: D1Database): D1Prepa
      WHERE ingestion_run_id = ?`);
 }
 
-export function insertSourceCaptureOperations(database: D1Database): D1PreparedStatement {
+export function insertPlannedSourceCaptureOperation(database: D1Database): D1PreparedStatement {
   return database.prepare(`INSERT INTO source_capture_operations (
       attempt_id, ingestion_run_id, request_id, attempt_number,
-      source_snapshot_id, content_object_key, state, requested_at,
-      completed_at, request_headers_json, http_status,
-      response_headers_json, response_vary_json, media_type
-    ) VALUES (
-      ?, ?, 'one-piece-en:discovery', 1, ?, ?, 'response_received', ?,
-      ?, '{}', 200, '{"content-type":"application/json"}', '[]',
-      'application/json'
-    )`);
+      source_snapshot_id, content_object_key, state, requested_at
+    ) VALUES (?, ?, 'one-piece-en:discovery', 1, ?, ?, 'planned', ?)`);
 }
 
 export function readSourceRequestsRequestIdState(database: D1Database): D1PreparedStatement {

@@ -3,7 +3,7 @@ import { nativePrintingHistory } from "../../../src/catalogue/reconciliation/nat
 import { beforeEach, describe, expect, test } from "vitest";
 import { reconciliationCheckpoint } from "../../../src/catalogue/reconciliation/reconciliation-checkpoint";
 import { catalogueStore } from "../../../src/catalogue/shared";
-import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
+import { collectFixtureEvidence, fixtureAcquisitionBudget } from "../../../test/support/fixture-evidence-plan";
 import { nativeCandidateRecords, waitForNativeCandidate } from "./native-candidate-helpers";
 import { readNativeCards } from "./native-no-change-helpers";
 import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
@@ -429,6 +429,7 @@ test("generic retry rejects an evidence-backed terminal run so reconciliation pr
   const interveningPublished = await publishEvidence(intervening);
   const currentRevision = requiredString(interveningPublished.document, "resulting_revision_id");
   const evidenceRetry = await post(`/v1/ingestion-runs/${run.id}/collection/retry`, {
+    acquisition_budget: fixtureAcquisitionBudget,
     idempotency_key: "linked-retry-retains-evidence-plan",
   });
   expect(evidenceRetry.response.status).toBe(201);

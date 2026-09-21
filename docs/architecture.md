@@ -251,8 +251,12 @@ from the adapter's Request Capacity. A durable Dispatch Reservation is charged
 before each potential physical source call, including retries, revalidation and
 same-attempt replay. Its maximum body exposure remains reserved until that exact
 retrieval and writer are positively settled. Missing receipts, timeouts, absent
-objects or superseded Workflow identities do not establish settlement. A permit
-is never reusable after its acknowledgement could have escaped. Admission binds
+objects or superseded Workflow identities do not establish settlement. A
+Workflow Attempt positively observed finished or confirmed absent owns no work:
+a dispatch it still holds settles at zero bytes once its destination object is
+absent, keeping the dispatch charge, while a present object still requires the
+exact writer verification. A permit is never reusable after its acknowledgement
+could have escaped. Admission binds
 the current collection authority and budget generation; its deadline governs new
 admission, not instantaneous cancellation of escaped work.
 

@@ -22,6 +22,7 @@ import {
   requiredString,
   testEnv,
 } from "./reconciliation-helpers";
+import { fixtureAcquisitionBudget } from "../../../test/support/fixture-evidence-plan";
 
 installReconciliationSuite();
 
@@ -228,6 +229,7 @@ test("unplanned requests fail at D1 while duplicate and unplanned observation se
 test("recovery health gates fixture evidence injection and reconciliation before mutation", async () => {
   await ingestionQueries.setOperationStateRecoveryHealth(testEnv.CATALOGUE_DB).run();
   const blockedStart = await post("/v1/ingestion-runs/evidence", {
+    acquisition_budget: fixtureAcquisitionBudget,
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
     adapter_version: "one-piece-en@6",
@@ -276,6 +278,7 @@ test("degraded recovery permits evidence collection starts and retries while blo
     )
     .run();
   const started = await post("/v1/ingestion-runs/evidence", {
+    acquisition_budget: fixtureAcquisitionBudget,
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
     adapter_version: "one-piece-en@6",
@@ -291,6 +294,7 @@ test("degraded recovery permits evidence collection starts and retries while blo
     ingestionQueries.setOperationStateActiveIngestionRunIdRecoveryHealth(testEnv.CATALOGUE_DB),
   ]);
   const retried = await post(`/v1/ingestion-runs/${sourceRunId}/collection/retry`, {
+    acquisition_budget: fixtureAcquisitionBudget,
     idempotency_key: "degraded-recovery-retry",
   });
   expect(retried.response.status).toBe(201);
@@ -304,6 +308,7 @@ test("a partial Gundam refresh accepts one selected production lineage independe
   const sourceLineage = "gundam-en-asia";
   const adapterVersion = "gundam-en-asia@7";
   const oneLocale = await post("/v1/ingestion-runs/evidence", {
+    acquisition_budget: fixtureAcquisitionBudget,
     plans: [
       {
         supported_game: "gundam",

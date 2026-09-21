@@ -161,7 +161,9 @@ attempt, keep the run paused and retry the same resume after the control plane
 recovers. Pacing and Retry-After waits are not stalls.
 
 For `source_acquisition_budget_exhausted`, inspect the limiting `dimension` and
-`acquisition.unsettled` entries. Save the exact current `acquisition.budget` to
+`acquisition.unsettled` entries. An entry whose `workflow_instance_id` has
+positively finished settles on resume once its object is absent; a live or
+unreadable owner keeps `source_acquisition_ownership_pending`. Save the exact current `acquisition.budget` to
 `CURRENT_BUDGET.json`; choose larger limits or a later deadline in `NEW_BUDGET.json`.
 
 ```sh

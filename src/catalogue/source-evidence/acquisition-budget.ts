@@ -140,6 +140,38 @@ export async function settleAcquisitionDispatch(db: CatalogueStore, id: string, 
   await settleSourceDispatch(db, id, captureId, bytes, new Date().toISOString()).run();
 }
 
+/** Dispatches held by a Workflow Attempt the caller has positively observed
+ * finished cannot receive a late write once their destination is absent: they
+ * settle at zero bytes and keep their dispatch charge, so ordinary recovery and
+ * owner resume can reserve again. A present object still needs the exact writer
+ * verification; a live or unreadable owner settles nothing. */
+export async function settleTerminalOwnerDispatches(
+  db: CatalogueStore,
+  bucket: R2Bucket,
+  runId: string,
+  ownerIsTerminal: (workflowInstanceId: string) => Promise<boolean>,
+): Promise<number> {
+  let settled = 0;
+  const verdicts = new Map<string, boolean>();
+  for (;;) {
+    const outstanding = (await unsettledDispatches(db, runId).all<DispatchReservation>()).results;
+    let progressed = false;
+    for (const dispatch of outstanding) {
+      if (dispatch.workflow_instance_id === null) continue;
+      let terminal = verdicts.get(dispatch.workflow_instance_id);
+      if (terminal === undefined) {
+        terminal = await ownerIsTerminal(dispatch.workflow_instance_id);
+        verdicts.set(dispatch.workflow_instance_id, terminal);
+      }
+      if (!terminal || (await bucket.head(dispatch.content_object_key)) !== null) continue;
+      await settleAcquisitionDispatch(db, dispatch.id, dispatch.capture_operation_id, 0);
+      settled += 1;
+      progressed = true;
+    }
+    if (!progressed || outstanding.length < 51) return settled;
+  }
+}
+
 export async function pauseAcquisitionOwnership(
   db: CatalogueStore,
   input: { runId: string; requestId: string; captureId: string; workflow?: CollectionWorkflowAttempt },

@@ -10,7 +10,7 @@ import { readSourceObservation } from "../../../src/catalogue/reconciliation/rec
 import { catalogueStore } from "../../../src/catalogue/shared";
 import type { FixtureEvidenceRunRequest } from "../../../test/support/fixture-evidence-plan";
 import { fixtureCandidate } from "../../../test/support/catalogue-fixture";
-import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
+import { collectFixtureEvidence, fixtureAcquisitionBudget } from "../../../test/support/fixture-evidence-plan";
 import { injectFixtureEvidencePlan, injectFixturePublication } from "./fixture-plan-injection";
 import { recoverHistoricalPublication } from "./historical-publication-fixture";
 import { nativeCandidateRecords, waitForNativeCandidate } from "./native-candidate-helpers";
@@ -169,6 +169,7 @@ describe("Errata rules-text lifecycle", () => {
 
   test("an unregistered generic Card adapter cannot self-assert Official Errata authority", async () => {
     const started = await post("/v1/ingestion-runs/evidence", {
+      acquisition_budget: fixtureAcquisitionBudget,
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
       adapter_version: "one-piece-json-document@999",

@@ -28,6 +28,7 @@ import {
   pendingEvidenceRequestPage,
   pendingEvidenceHostShards,
   evidenceHostShardRequestCapacity,
+  settleTerminalOwnerDispatches,
   recordIngestionWorkflowProgress,
   recordWorkflowIds,
   requiredEvidenceRun,
@@ -181,6 +182,17 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
                   status.status === "errored" ||
                   status.status === "terminated"
                 ) {
+                  if (status.status === "complete" || status.status === "errored" || status.status === "terminated") {
+                    // The finished attempt cannot complete a dispatch it still
+                    // holds; an absent destination settles it so the
+                    // replacement can reserve again instead of pausing.
+                    await settleTerminalOwnerDispatches(
+                      catalogueStore(this.env.CATALOGUE_DB),
+                      this.env.EVIDENCE_OBJECTS,
+                      runId,
+                      async (instanceId) => instanceId === latestId,
+                    );
+                  }
                   if (attempts.length >= maximumHostWorkflowIdentities) {
                     await failActiveEvidenceRequestsForWorkflowExhaustion(
                       catalogueStore(this.env.CATALOGUE_DB),
