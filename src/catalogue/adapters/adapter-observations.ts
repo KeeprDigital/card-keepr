@@ -159,9 +159,10 @@ export type RiftboundSupplementarySourceAdmissionEvidenceObservation = Omit<
   "game" | "source_lineage" | "issues"
 > & {
   game: "riftbound";
-  source_lineage: "riftbound-db-en" | "piltover-archive-en";
+  source_lineage: "riftbound-db-en" | "piltover-archive-en" | "hexdeck-en";
   issues: readonly {
     code:
+      | "card_facts_incomplete"
       | "card_identity_unresolved"
       | "printing_treatment_unresolved"
       | "physical_issuance_unresolved"

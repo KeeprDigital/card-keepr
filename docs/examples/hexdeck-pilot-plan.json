@@ -1,0 +1,20 @@
+{
+  "plans": [
+    {
+      "supported_game": "riftbound",
+      "source_lineage": "hexdeck-en",
+      "adapter_version": "hexdeck-en@1",
+      "subset": "set-slice-pilot",
+      "requests": [
+        {
+          "id": "hexdeck-en:set-slice",
+          "url": "https://www.hexdeck.io/cards?displayFormat=Images&page=1&sortDirection=Ascending&sortField=Set"
+        },
+        {
+          "id": "hexdeck-en:token-page",
+          "url": "https://www.hexdeck.io/cards?displayFormat=Images&page=7&sortDirection=Ascending&sortField=Set"
+        }
+      ]
+    }
+  ]
+}

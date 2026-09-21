@@ -89,6 +89,14 @@ link, and the Vi ARC-001 lead whose retained front is a Chinese-language print
 and therefore stays an unresolved proposal. Other gallery rows are retained bytes
 only; the plan establishes neither the gallery inventory nor promo coverage.
 
+The HexDeck [pilot plan](../examples/hexdeck-pilot-plan.json) selects pages 1
+and 7 of the Images-format search sorted by Set under a four-request capacity,
+with the pinned Blazing Scorcher listing and the OGN T01 Buff token and their
+page-referenced fronts. [Evidence and scope](../../acceptance/fixtures/real-sources/2026-09-21-hexdeck/README.md)
+record the three budgeted runs, the rejected bare image locator, and why both
+records stay unresolved review records: the listing surface has no rules text,
+artist, finish or locale, and the search query parameter is not exposed.
+
 Independently complete named scopes can be collected and published successively.
 Keep each scope's exact root contract and complete Card variant inventory; a
 page slice is valid only when its adapter establishes that inventory. Prepare the
