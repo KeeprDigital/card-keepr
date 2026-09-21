@@ -189,6 +189,30 @@ creating two proposals. Selection and the bounded query/facet check do not
 establish full-source completeness or change Riot's authority.
 [Riftbound DB pilot](https://github.com/KeeprDigital/card-keepr/issues/331).
 
+Piltover Archive's bounded English pilot reads the public gallery render (one
+page and two pinned rows) as a supplementary Source under an Acquisition Budget.
+Only the inspected Blazing Scorcher row maps into the shared profile, repeating
+the retained Riot wording for that pinned record with Piltover's rendering kept in
+the sidecar; it requires an owner decision to link, and linking adds Piltover's
+front as separate retained evidence of the existing Printing rather than
+corroboration of Riot's facts. The Vi ARC-001 promo lead stays an Entity Proposal
+with an explicit locale issue: its retained front is a Chinese-language print, so
+no English Printing is evidenced and the Card, Printing and finish claims remain
+source labels. Unselected gallery rows are retained bytes only. Riot's authority
+is unchanged.
+[Piltover Archive pilot](https://github.com/KeeprDigital/card-keepr/issues/330).
+
+HexDeck's bounded English pilot reads two pages of its Images-format search
+(a set slice and the OGN token tail) as a supplementary Source under an
+Acquisition Budget, fetching a front only at the delivery variant the page itself
+renders. Its listing surface carries no rules text, artist, finish or locale, so
+no listing maps into the shared profile: the pinned Blazing Scorcher and OGN T01
+Buff records stay Entity Proposals with an explicit incomplete-facts issue and
+private retained fronts, cannot be linked, and change no accepted Catalogue Data.
+The search query parameter is client-rendered and was not guessed; the ARC promo
+rows did not appear in the retained set order. Riot's authority is unchanged.
+[HexDeck pilot](https://github.com/KeeprDigital/card-keepr/issues/332).
+
 ## Runtime and storage boundaries
 
 Two Workers separate authenticated catalogue reads from administration and
