@@ -451,6 +451,7 @@ test("a resume dispatched before termination cannot revive the terminal run", as
     delayedWorkflow,
     run.id,
     env.EVIDENCE_HOST_WORKFLOW,
+    env.EVIDENCE_OBJECTS,
   );
   // Propagate an early admission failure instead of leaving the barrier waiting.
   void resumed.catch(rejectCreate);

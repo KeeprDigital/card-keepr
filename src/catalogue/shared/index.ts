@@ -135,6 +135,7 @@ export {
   inspectWorkflowInstance,
   isWorkflowInstanceNotFound,
   type WorkflowStatus,
+  workflowAttemptSettled,
   workflowDriver,
 } from "./workflow-driver";
 export { observeWorkflowProgress, type WorkflowProgress } from "./workflow-progress";

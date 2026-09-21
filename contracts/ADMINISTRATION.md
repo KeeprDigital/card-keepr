@@ -560,7 +560,7 @@ Stable result codes are:
 ## Collection, candidate and historical states
 
 Collection starts `planning → collecting → parsing`. A collecting run may pause
-for capacity, retry, Workflow recovery or owner intent. Resume preserves its
+for request capacity, acquisition budget, retry, Workflow recovery or owner intent. Resume preserves its
 identity and evidence. Only explicit Collection Termination ends a paused run,
 retaining its audit evidence and releasing its collection reservation.
 
@@ -729,12 +729,40 @@ and does not activate/recalculate corrections when an applicability date passes.
 
 ## Source and collection HTTP
 
-All 16 source/collection operations are defined by the shared Hono registrations
+Source/collection operations are defined by the shared Hono registrations
 and the generated [administration specification](admin-openapi.json). Authority
 and lifecycle commands use JSON integer `expected_generation`; capacity commands
 use JSON integer capacities and generations. Unknown JSON fields are rejected.
 Resume accepts no body or an empty JSON object. Other commands require JSON.
 All command bodies retain the shared 16 KiB bound and problem responses.
+
+Creation and linked retry require `acquisition_budget`: positive safe-integer
+`max_dispatches` and `max_source_bytes`, and a future ISO `dispatch_deadline`.
+The run-wide budget is distinct from Request Capacity. It charges every possible
+physical transport invocation, including replay and 304 revalidation. Byte usage
+covers verified raw bodies plus unsettled maximum-body exposure, not wire traffic,
+whole-account storage or money. The deadline gates new reservation admission;
+already escaped calls may finish later.
+
+Evidence status exposes nullable `acquisition` accounting, including generation,
+coverage start, explicitly unknown historical dispatches, charges, reservations,
+remaining allowance and bounded unsettled identities. A budget pause uses
+`source_acquisition_budget_exhausted` with a limiting `dimension`.
+`POST /v1/ingestion-runs/{run}/acquisition-budget/extension` requires the exact
+`expected_generation`, `expected_budget`, larger `acquisition_budget`, and an
+`idempotency_key`. No limit may decrease, at least one must increase, and charges
+remain intact. An exact replay returns its retained result. Extension stays
+paused; resume rejects an absent or still-exhausted policy.
+
+For a legacy run without an account, the same action requires
+`expected_generation: 0` and `expected_budget: null`. It accepts only an unstarted
+or paused, quiescent collection with positively settled earlier ownership.
+Initialization verifies and deduplicates retained raw-source keys into its byte
+baseline; earlier dispatch counts remain unknown. It neither dispatches nor
+resumes collection. Terminal history remains inspectable without an account.
+Resume may settle a pending reservation by verifying the exact earlier stored
+body and writer identity. Missing bodies, unreadable receipts, supersession and
+timeouts cannot return uncertain allowance.
 
 Creation and linked retry return 201 with `card-keepr-evidence-acceptance@1`.
 The receipt's `state: collecting` records initial acceptance, never current state.

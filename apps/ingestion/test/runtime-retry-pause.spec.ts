@@ -1,5 +1,13 @@
 import { dropPausePrerequisiteGuards } from "./query-helpers/collection-resume";
-import { catalogueStore } from "../../../src/catalogue/shared";
+import { catalogueStore, sha256 } from "../../../src/catalogue/shared";
+import {
+  reserveAcquisitionDispatch,
+  settleAcquisitionDispatch,
+} from "../../../src/catalogue/source-evidence/acquisition-budget";
+import {
+  receivedCaptureResponseStatement,
+  uploadedCaptureContentStatement,
+} from "../../../src/catalogue/source-evidence/source-capture-repository";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
 import * as ingestionQueries from "./query-helpers/ingestion";
 import { env } from "cloudflare:workers";
@@ -181,15 +189,46 @@ test("a captured request crosses a retry pause without another Official Source f
   )!.request_id;
   const identity = await captureOperationIdentity(run.id, "one-piece-en:discovery", 1);
   const bytes = new TextEncoder().encode('{"cards":[{"card_number":"OP01-004"}]}');
+  const database = catalogueStore(env.CATALOGUE_DB);
+  const now = new Date().toISOString();
+  // Stage the exact durable state a settled upload leaves behind: a planned
+  // attempt, its charged Dispatch Reservation, the retained body under that
+  // writer token and the uploaded receipt. An untracked body would remain
+  // unresolved ownership and block the resume instead.
+  await sourceEvidenceQueries
+    .insertPlannedSourceCaptureOperation(env.CATALOGUE_DB)
+    .bind(identity.attemptId, run.id, identity.snapshotId, identity.objectKey, now)
+    .run();
+  const dispatchId = await reserveAcquisitionDispatch(database, {
+    runId: run.id,
+    requestId: "one-piece-en:discovery",
+    captureId: identity.attemptId,
+    objectKey: identity.objectKey,
+    maximumBytes: 16 * 1024 * 1024,
+  });
+  if (dispatchId === null) throw new Error("Expected a charged Dispatch Reservation");
   await env.EVIDENCE_OBJECTS.put(identity.objectKey, bytes, {
     onlyIf: { etagDoesNotMatch: "*" },
     httpMetadata: { contentType: "application/json" },
+    customMetadata: { cleanup_writer_token: dispatchId },
   });
-  const now = new Date().toISOString();
-  await sourceEvidenceQueries
-    .insertSourceCaptureOperations(env.CATALOGUE_DB)
-    .bind(identity.attemptId, run.id, identity.snapshotId, identity.objectKey, now, now)
-    .run();
+  await database.batch([
+    receivedCaptureResponseStatement(database, {
+      completedAt: now,
+      requestHeadersJson: "{}",
+      status: 200,
+      responseHeadersJson: '{"content-type":"application/json"}',
+      responseVaryJson: "[]",
+      mediaType: "application/json",
+      attemptId: identity.attemptId,
+    }),
+    uploadedCaptureContentStatement(database, {
+      digest: await sha256(bytes),
+      byteLength: bytes.byteLength,
+      attemptId: identity.attemptId,
+    }),
+  ]);
+  await settleAcquisitionDispatch(database, dispatchId, identity.attemptId, bytes.byteLength);
 
   const started = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(started.status).toBe(202);

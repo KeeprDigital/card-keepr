@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudget } from "../../../test/support/fixture-evidence-plan";
 import { injectFixtureEvidencePlan } from "./fixture-plan-injection";
 import { installWorkflowIsolation } from "./workflow-isolation";
 import * as ingestionQueries from "./query-helpers/ingestion";
@@ -42,6 +43,14 @@ export function fusionWorldDiscoveryRecords() {
 }
 
 export function administrationRequest(pathname: string, method: string, body?: unknown): Promise<Response> {
+  if (
+    method === "POST" &&
+    (pathname === "/v1/ingestion-runs/evidence" || pathname.endsWith("/collection/retry")) &&
+    body !== null &&
+    typeof body === "object" &&
+    !Array.isArray(body)
+  )
+    body = { acquisition_budget: fixtureAcquisitionBudget, ...body };
   return exports.default.fetch(
     new Request(`https://card-keepr.invalid${pathname}`, {
       method,

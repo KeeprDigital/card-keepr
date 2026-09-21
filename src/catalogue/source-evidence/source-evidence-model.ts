@@ -53,12 +53,7 @@ export function transportPolicyForRole(role: SourceRequestRole): SourceRequestTr
 // class maps to one stable failure code per transport policy: the
 // catalogue-fact codes fail the run, the image codes fail the request alone.
 export type SourceRequestFailureClass =
-  | "retries_exhausted"
-  | "not_found"
-  | "rejected"
-  | "redirected"
-  | "revalidation_rejected"
-  | "body_contract";
+  "retries_exhausted" | "not_found" | "rejected" | "redirected" | "revalidation_rejected" | "body_contract";
 
 const catalogueFactFailureCodes: Readonly<Record<SourceRequestFailureClass, string>> = {
   retries_exhausted: "source_request_retries_exhausted",
@@ -174,15 +169,23 @@ export type EvidencePlanInput = {
   }[];
 };
 
+export type AcquisitionBudget = Readonly<{
+  max_dispatches: number;
+  max_source_bytes: number;
+  dispatch_deadline: string;
+}>;
+
 export type StartEvidenceRunRequest =
   | (EvidencePlanInput & {
       idempotency_key: string;
       operational_request_id?: string;
+      acquisition_budget: AcquisitionBudget;
     })
   | {
       plans: readonly EvidencePlanInput[];
       idempotency_key: string;
       operational_request_id?: string;
+      acquisition_budget: AcquisitionBudget;
     };
 
 export type CollectionWorkflowAttempt = Readonly<{ parentId: string; instanceId: string }>;

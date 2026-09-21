@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudget } from "../../../test/support/fixture-evidence-plan";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import englishBody from "../../../acceptance/fixtures/real-sources/2026-09-15-pokemon-scope/raw/english-sets.body?raw";
@@ -61,6 +62,7 @@ test("production rejects competing Set/local claims for one opaque Card ID while
   } as Fetcher;
   const database = catalogueStore(env.CATALOGUE_DB);
   const started = await startEvidenceRun(database, {
+    acquisition_budget: fixtureAcquisitionBudget,
     supported_game: "pokemon",
     source_lineage: "tcgdex-pokemon-en",
     adapter_version: "tcgdex-pokemon-en@1",
@@ -162,6 +164,7 @@ test("production TCGdex preserves exact retained graph evidence through both cap
   } as unknown as Fetcher;
   const database = catalogueStore(env.CATALOGUE_DB);
   const run = await startEvidenceRun(database, {
+    acquisition_budget: fixtureAcquisitionBudget,
     supported_game: "pokemon",
     source_lineage: "tcgdex-pokemon-en",
     adapter_version: "tcgdex-pokemon-en@1",

@@ -1,3 +1,4 @@
+import { deferred } from "./acquisition-barrier";
 import httpDocument from "../../../contracts/admin-openapi.json";
 import { assertHttpResponse } from "../../../test/support/http-contract";
 import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
@@ -2236,22 +2237,6 @@ function requiredDocumentNumber(document: Record<string, unknown>, field: string
     throw new Error(`${field} is not a number`);
   }
   return value;
-}
-
-function deferred<T>(): {
-  promise: Promise<T>;
-  resolve: (value: T) => void;
-} {
-  let resolvePromise: ((value: T) => void) | undefined;
-  const promise = new Promise<T>((resolve) => {
-    resolvePromise = resolve;
-  });
-  return {
-    promise,
-    resolve(value: T) {
-      resolvePromise!(value);
-    },
-  };
 }
 
 function proxyR2Bucket(

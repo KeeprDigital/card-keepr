@@ -8,9 +8,9 @@ import { buildCatalogueExport } from "../../../src/catalogue/export";
 import { publishReconciledErrataStatement } from "../../../src/catalogue/reconciliation/reconciliation-publication-repository";
 import { readSourceObservation } from "../../../src/catalogue/reconciliation/reconciliation-source-observation";
 import { catalogueStore } from "../../../src/catalogue/shared";
-import type { StartEvidenceRunRequest } from "../../../src/catalogue/source-evidence";
+import type { FixtureEvidenceRunRequest } from "../../../test/support/fixture-evidence-plan";
 import { fixtureCandidate } from "../../../test/support/catalogue-fixture";
-import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
+import { collectFixtureEvidence, fixtureAcquisitionBudget } from "../../../test/support/fixture-evidence-plan";
 import { injectFixtureEvidencePlan, injectFixturePublication } from "./fixture-plan-injection";
 import { recoverHistoricalPublication } from "./historical-publication-fixture";
 import { nativeCandidateRecords, waitForNativeCandidate } from "./native-candidate-helpers";
@@ -169,6 +169,7 @@ describe("Errata rules-text lifecycle", () => {
 
   test("an unregistered generic Card adapter cannot self-assert Official Errata authority", async () => {
     const started = await post("/v1/ingestion-runs/evidence", {
+      acquisition_budget: fixtureAcquisitionBudget,
       supported_game: "one-piece",
       source_lineage: "one-piece-en",
       adapter_version: "one-piece-json-document@999",
@@ -1206,7 +1207,7 @@ function post(pathname: string, body: Record<string, unknown>, extraHeaders: Rec
   return request(pathname, body, extraHeaders);
 }
 
-async function postFixtureEvidence(body: StartEvidenceRunRequest) {
+async function postFixtureEvidence(body: FixtureEvidenceRunRequest) {
   const document = await injectFixtureEvidencePlan(testEnv.CATALOGUE_DB, body);
   return {
     response: new Response(null, { status: 201 }),

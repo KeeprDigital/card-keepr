@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudget } from "../../../test/support/fixture-evidence-plan";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import metadataRaw from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/raw/bulk-metadata.json?raw";
@@ -66,7 +67,7 @@ async function startGraph(key: string, sizeOffset = 0) {
       },
     ],
   };
-  const started = await startEvidenceRun(db, input),
+  const started = await startEvidenceRun(db, { ...input, acquisition_budget: fixtureAcquisitionBudget }),
     run = await requiredEvidenceRun(db, String(started.id));
   async function collect(request: EvidenceRequestRow) {
     return collectSourceRequestBatch({
@@ -155,7 +156,9 @@ test("the complete Scryfall graph retains one metadata root, its pinned archive 
   expect(sealed.observation_count).toBe(2);
   const progress = await archiveParseProgress(db, sealed.id).first();
   expect(progress).toMatchObject({ state: "complete", next_record: 1, discovery_ordinal: 2 });
-  expect(await startEvidenceRun(db, input)).toMatchObject({ id: run.id });
+  expect(await startEvidenceRun(db, { ...input, acquisition_budget: fixtureAcquisitionBudget })).toMatchObject({
+    id: run.id,
+  });
   await collect(root!);
   await collect(captured);
   expect((await requiredEvidenceRun(db, run.id)).request_plan_json).toBe(run.request_plan_json);

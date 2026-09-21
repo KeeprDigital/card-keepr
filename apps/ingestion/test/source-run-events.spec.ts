@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudget } from "../../../test/support/fixture-evidence-plan";
 import { deleteEventFixtureReservation } from "./query-helpers/run-event-projection";
 import { applyD1Migrations, type D1Migration, env } from "cloudflare:test";
 import { beforeEach, expect, test } from "vitest";
@@ -27,6 +28,7 @@ beforeEach(async () => {
 
 async function createRun(key: string): Promise<string> {
   const run = await startEvidenceRun(database, {
+    acquisition_budget: fixtureAcquisitionBudget,
     supported_game: "one-piece",
     source_lineage: "one-piece-en",
     adapter_version: "fixture-one-piece-json@3",

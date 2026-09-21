@@ -1,6 +1,5 @@
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
-import * as ingestionQueries from "./query-helpers/ingestion";
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import {
@@ -108,9 +107,8 @@ test("an image request that exhausts its transport retries fails alone and colle
   });
 });
 
-// Storage is ours to recover: exhausting R2 retries for an image pauses the
-// run exactly like any other role, with the request kept pending.
-test("an image request that exhausts its storage retries still pauses the run", async () => {
+// Ambiguous storage ownership preserves an image request just like any other role.
+test("an image request with ambiguous storage ownership pauses the whole run", async () => {
   const run = await createCollection("image_failure_storage_001", "https://official-source.invalid/cards");
   const storedRun = await requiredEvidenceRun(catalogueStore(env.CATALOGUE_DB), run.id);
   const root = (await pendingEvidenceRequests(catalogueStore(env.CATALOGUE_DB), run.id))[0];
@@ -134,28 +132,22 @@ test("an image request that exhausts its storage retries still pauses the run", 
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
-  for (let attempt = 1; attempt <= 4; attempt += 1) {
-    const prepared = await prepareCaptureAttempt(catalogueStore(env.CATALOGUE_DB), storedRun, image);
-    if (prepared.kind !== "attempt") {
-      throw new Error(`unexpected preparation result ${prepared.kind}`);
-    }
-    const result = await capturePreparedAttempt(
-      catalogueStore(env.CATALOGUE_DB),
-      outageBucket,
-      env.OFFICIAL_SOURCE_TRANSPORT,
-      storedRun,
-      image,
-      prepared,
-    );
-    expect(result.kind).toBe(attempt === 4 ? "done" : "wait");
-  }
-  expect(await ingestionQueries.readIngestionRunsState(env.CATALOGUE_DB).bind(run.id).first("state")).toBe("paused");
-  expect(
-    await sourceEvidenceQueries.readIngestionRunRetryPausesRequestIdPauseReason(env.CATALOGUE_DB).bind(run.id).first(),
-  ).toMatchObject({
-    request_id: image.request_id,
-    pause_reason: "source_storage_retries_exhausted",
-    failure_classification: "storage_failure",
+  const prepared = await prepareCaptureAttempt(catalogueStore(env.CATALOGUE_DB), storedRun, image);
+  if (prepared.kind !== "attempt") throw new Error("Expected a fresh image capture");
+  const result = await capturePreparedAttempt(
+    catalogueStore(env.CATALOGUE_DB),
+    outageBucket,
+    env.OFFICIAL_SOURCE_TRANSPORT,
+    storedRun,
+    image,
+    prepared,
+  );
+  expect(result.kind).toBe("done");
+  const inspection = await administrationRequest(`/v1/ingestion-runs/${run.id}/evidence`, "GET");
+  expect(await inspection.json()).toMatchObject({
+    state: "paused",
+    pause: { reason: "source_acquisition_budget_exhausted", dimension: "ownership" },
+    acquisition: { charged_dispatches: 1, reserved_source_bytes: 16 * 1024 * 1024 },
   });
   expect(
     await sourceEvidenceQueries

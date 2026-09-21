@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./helpers/acquisition-budget.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
@@ -47,6 +48,8 @@ test("synthetic fixture publication is unavailable through the production Worker
     [
       "source",
       "collect",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
       "--game",
       "one-piece",
       "--lineage",

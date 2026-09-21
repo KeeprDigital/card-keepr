@@ -1,6 +1,11 @@
 import { assertWorkflowRestartTarget, type WorkflowKind, type WorkflowRestartTarget } from "./workflow-steps";
 export type WorkflowStatus = Awaited<ReturnType<WorkflowInstance["status"]>>;
 
+/** A Workflow Attempt in one of these states has finished executing and owns no further work. */
+export function workflowAttemptSettled(status: string): boolean {
+  return status === "complete" || status === "errored" || status === "terminated";
+}
+
 /** Only confirmed absence permits creation; transport errors must reach the caller's retry policy. */
 export function isWorkflowInstanceNotFound(error: unknown): boolean {
   return error instanceof Error && /not[._ ]?found/iu.test(`${error.name} ${error.message}`);

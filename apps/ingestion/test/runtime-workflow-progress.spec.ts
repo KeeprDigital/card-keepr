@@ -57,7 +57,13 @@ test("a transient parent lookup failure leaves collection available for a later 
     },
   } as unknown as Workflow;
   await expect(
-    resumeEvidenceRun(catalogueStore(env.CATALOGUE_DB), binding, run.id, env.EVIDENCE_HOST_WORKFLOW),
+    resumeEvidenceRun(
+      catalogueStore(env.CATALOGUE_DB),
+      binding,
+      run.id,
+      env.EVIDENCE_HOST_WORKFLOW,
+      env.EVIDENCE_OBJECTS,
+    ),
   ).rejects.toBe(failure);
   const inspected = await showCollection(run.id);
   expect(inspected.state).toBe("collecting");

@@ -48,6 +48,7 @@ export {
   type PreparedCaptureAttempt,
   parseCapturedRequest,
   prepareCaptureAttempt,
+  settleTerminalOwnerDispatches,
   type SourceHostPacingMode,
   sourceHostPacingIntervalMilliseconds,
   sourceHostPacingMode,

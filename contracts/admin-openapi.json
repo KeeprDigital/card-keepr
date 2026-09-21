@@ -4405,6 +4405,164 @@
       "EvidenceStatus": {
         "type": "object",
         "properties": {
+          "acquisition": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "generation": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "coverage_started_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "historical_dispatches_unknown": {
+                "type": "boolean"
+              },
+              "baseline_source_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "budget": {
+                "type": "object",
+                "properties": {
+                  "max_dispatches": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "max_source_bytes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "dispatch_deadline": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "max_dispatches",
+                  "max_source_bytes",
+                  "dispatch_deadline"
+                ],
+                "additionalProperties": false
+              },
+              "charged_dispatches": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "charged_source_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "reserved_source_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "remaining_dispatches": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "remaining_source_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "limiting_dimension": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "dispatches",
+                  "source_bytes",
+                  "deadline",
+                  "policy_missing",
+                  "ownership",
+                  null
+                ]
+              },
+              "unsettled": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "capture_operation_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "parent_workflow_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1
+                    },
+                    "workflow_instance_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1
+                    },
+                    "budget_generation": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "maximum_source_bytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "reserved_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "request_id",
+                    "capture_operation_id",
+                    "parent_workflow_id",
+                    "workflow_instance_id",
+                    "budget_generation",
+                    "maximum_source_bytes",
+                    "reserved_at"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "unsettled_truncated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "generation",
+              "coverage_started_at",
+              "historical_dispatches_unknown",
+              "baseline_source_bytes",
+              "budget",
+              "charged_dispatches",
+              "charged_source_bytes",
+              "reserved_source_bytes",
+              "remaining_dispatches",
+              "remaining_source_bytes",
+              "limiting_dimension",
+              "unsettled",
+              "unsettled_truncated"
+            ],
+            "additionalProperties": false
+          },
           "id": {
             "type": "string",
             "minLength": 1
@@ -4832,6 +4990,70 @@
                   "reason": {
                     "type": "string",
                     "enum": [
+                      "source_acquisition_budget_exhausted"
+                    ]
+                  },
+                  "paused_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "generation": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0
+                  },
+                  "request_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "maximum_source_bytes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "dimension": {
+                    "type": "string",
+                    "enum": [
+                      "dispatches",
+                      "source_bytes",
+                      "deadline",
+                      "policy_missing",
+                      "ownership"
+                    ]
+                  },
+                  "actions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "resume",
+                        "pause",
+                        "terminate",
+                        "retry",
+                        "extend_capacity",
+                        "extend_acquisition_budget"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "reason",
+                  "paused_at",
+                  "generation",
+                  "request_id",
+                  "maximum_source_bytes",
+                  "dimension",
+                  "actions"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "enum": [
                       "source_request_capacity_exhausted"
                     ]
                   },
@@ -4876,7 +5098,8 @@
                         "pause",
                         "terminate",
                         "retry",
-                        "extend_capacity"
+                        "extend_capacity",
+                        "extend_acquisition_budget"
                       ]
                     }
                   }
@@ -4948,7 +5171,8 @@
                         "pause",
                         "terminate",
                         "retry",
-                        "extend_capacity"
+                        "extend_capacity",
+                        "extend_acquisition_budget"
                       ]
                     }
                   }
@@ -5019,7 +5243,8 @@
                         "pause",
                         "terminate",
                         "retry",
-                        "extend_capacity"
+                        "extend_capacity",
+                        "extend_acquisition_budget"
                       ]
                     }
                   }
@@ -5075,7 +5300,8 @@
                 "pause",
                 "terminate",
                 "retry",
-                "extend_capacity"
+                "extend_capacity",
+                "extend_acquisition_budget"
               ]
             }
           },
@@ -6200,6 +6426,7 @@
           }
         },
         "required": [
+          "acquisition",
           "id",
           "state",
           "selected_games",
@@ -7404,7 +7631,8 @@
                 "pause",
                 "terminate",
                 "retry",
-                "extend_capacity"
+                "extend_capacity",
+                "extend_acquisition_budget"
               ]
             }
           }
@@ -53882,6 +54110,511 @@
         }
       }
     },
+    "/v1/ingestion-runs/{run}/acquisition-budget/extension": {
+      "post": {
+        "operationId": "extendSourceAcquisitionBudget",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "run",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expected_generation": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "expected_budget": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "max_dispatches": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "max_source_bytes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "dispatch_deadline": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    },
+                    "required": [
+                      "max_dispatches",
+                      "max_source_bytes",
+                      "dispatch_deadline"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "acquisition_budget": {
+                    "type": "object",
+                    "properties": {
+                      "max_dispatches": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "max_source_bytes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "dispatch_deadline": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    },
+                    "required": [
+                      "max_dispatches",
+                      "max_source_bytes",
+                      "dispatch_deadline"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "idempotency_key": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "expected_generation",
+                  "expected_budget",
+                  "acquisition_budget",
+                  "idempotency_key"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Checked acquisition budget extension; collection stays paused.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "contract": {
+                      "type": "string",
+                      "enum": [
+                        "card-keepr-acquisition-budget-extension@1"
+                      ]
+                    },
+                    "ingestion_run_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "previous_generation": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "generation": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "previous_budget": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "max_dispatches": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "max_source_bytes": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "dispatch_deadline": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "max_dispatches",
+                        "max_source_bytes",
+                        "dispatch_deadline"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "acquisition_budget": {
+                      "type": "object",
+                      "properties": {
+                        "max_dispatches": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "max_source_bytes": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "dispatch_deadline": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "max_dispatches",
+                        "max_source_bytes",
+                        "dispatch_deadline"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "extended_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "contract",
+                    "ingestion_run_id",
+                    "previous_generation",
+                    "generation",
+                    "previous_budget",
+                    "acquisition_budget",
+                    "extended_at"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/source-observation-sets/{observationSet}/records": {
       "post": {
         "operationId": "importRetainedSourceRecords",
@@ -57130,6 +57863,31 @@
                       "idempotency_key": {
                         "type": "string",
                         "minLength": 1
+                      },
+                      "acquisition_budget": {
+                        "type": "object",
+                        "properties": {
+                          "max_dispatches": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "max_source_bytes": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "dispatch_deadline": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "max_dispatches",
+                          "max_source_bytes",
+                          "dispatch_deadline"
+                        ],
+                        "additionalProperties": false
                       }
                     },
                     "required": [
@@ -57137,7 +57895,8 @@
                       "source_lineage",
                       "adapter_version",
                       "requests",
-                      "idempotency_key"
+                      "idempotency_key",
+                      "acquisition_budget"
                     ],
                     "additionalProperties": false
                   },
@@ -57221,11 +57980,37 @@
                       "idempotency_key": {
                         "type": "string",
                         "minLength": 1
+                      },
+                      "acquisition_budget": {
+                        "type": "object",
+                        "properties": {
+                          "max_dispatches": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "max_source_bytes": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "dispatch_deadline": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "max_dispatches",
+                          "max_source_bytes",
+                          "dispatch_deadline"
+                        ],
+                        "additionalProperties": false
                       }
                     },
                     "required": [
                       "plans",
-                      "idempotency_key"
+                      "idempotency_key",
+                      "acquisition_budget"
                     ],
                     "additionalProperties": false
                   }
@@ -57595,10 +58380,36 @@
                   "idempotency_key": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "acquisition_budget": {
+                    "type": "object",
+                    "properties": {
+                      "max_dispatches": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "max_source_bytes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                      },
+                      "dispatch_deadline": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    },
+                    "required": [
+                      "max_dispatches",
+                      "max_source_bytes",
+                      "dispatch_deadline"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
-                  "idempotency_key"
+                  "idempotency_key",
+                  "acquisition_budget"
                 ],
                 "additionalProperties": false
               }

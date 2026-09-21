@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./helpers/acquisition-budget.mjs";
 import { readWorkerConfig } from "../cli/lib/config.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -116,7 +117,16 @@ test("qualified Riot intake keeps explicit exceptions through publication, refre
       ],
     }),
   );
-  const run = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", "bounded-source"]);
+  const run = await cli([
+    "source",
+    "collect",
+    "--budget-file",
+    fixtureAcquisitionBudgetPath,
+    "--plan-file",
+    planPath,
+    "--idempotency-key",
+    "bounded-source",
+  ]);
   await cli(["source", "resume", "--run-id", run.id]);
   const collection = await waitForAdministrationDocument(
     `/v1/ingestion-runs/${run.id}/game-candidates`,
@@ -386,7 +396,16 @@ test("qualified Riot intake keeps explicit exceptions through publication, refre
     "bounded-recovery-accept",
   ]);
   assert.equal(accepted.state, "accepted");
-  const refreshed = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", "restored-refresh"]);
+  const refreshed = await cli([
+    "source",
+    "collect",
+    "--budget-file",
+    fixtureAcquisitionBudgetPath,
+    "--plan-file",
+    planPath,
+    "--idempotency-key",
+    "restored-refresh",
+  ]);
   assert.notEqual(refreshed.id, run.id);
   await cli(["source", "resume", "--run-id", refreshed.id]);
   const refreshedCollection = await waitForAdministrationDocument(

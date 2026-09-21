@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./helpers/acquisition-budget.mjs";
 import { readWorkerConfig } from "../cli/lib/config.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -124,7 +125,16 @@ test("mixed-game composition and current plus two survive an actual SQL import",
   );
   // A declared multi-game collection selects the shipped native preparation
   // path. Single-game synthetic adapters intentionally retain the legacy path.
-  const source = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", "mixed-game-source"]);
+  const source = await cli([
+    "source",
+    "collect",
+    "--budget-file",
+    fixtureAcquisitionBudgetPath,
+    "--plan-file",
+    planPath,
+    "--idempotency-key",
+    "mixed-game-source",
+  ]);
   await cli(["source", "resume", "--run-id", source.id]);
   await waitForAdministrationDocument(
     `/v1/ingestion-runs/${source.id}/evidence`,
@@ -192,6 +202,8 @@ test("mixed-game composition and current plus two survive an actual SQL import",
     const refreshed = await cli([
       "source",
       "collect",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
       "--plan-file",
       planPath,
       "--idempotency-key",

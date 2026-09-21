@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./helpers/acquisition-budget.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -48,6 +49,8 @@ test("the repository CLI rejects Official Errata authority outside the documente
     [
       "source",
       "collect",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
       "--game",
       "one-piece",
       "--lineage",

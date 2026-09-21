@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./helpers/acquisition-budget.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -88,6 +89,8 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     [
       "source",
       "collect",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
       "--plan-file",
       heterogeneousPlan,
       "--idempotency-key",

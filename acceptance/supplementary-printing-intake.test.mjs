@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./helpers/acquisition-budget.mjs";
 import { readWorkerConfig } from "../cli/lib/config.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -94,7 +95,16 @@ test("a real supplementary-only Printing remains excluded until the owner explic
       ],
     }),
   );
-  const run = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", "supplementary-source"]);
+  const run = await cli([
+    "source",
+    "collect",
+    "--budget-file",
+    fixtureAcquisitionBudgetPath,
+    "--plan-file",
+    planPath,
+    "--idempotency-key",
+    "supplementary-source",
+  ]);
   await cli(["source", "resume", "--run-id", run.id]);
   const collection = await waitForAdministrationDocument(
     `/v1/ingestion-runs/${run.id}/game-candidates`,

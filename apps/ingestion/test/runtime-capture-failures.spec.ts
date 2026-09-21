@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudget } from "../../../test/support/fixture-evidence-plan";
 import { syntheticAdapterRegistrations } from "../../../test/support/source-adapters";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import * as sourceEvidenceQueries from "./query-helpers/source-evidence";
@@ -57,6 +58,7 @@ test("successful captures remain auditable when a later required response is rej
         state: "paused",
         failure_code: null,
         pause: { reason: "source_transport_retries_exhausted" },
+        acquisition: { charged_dispatches: 5, reserved_source_bytes: 0 },
       },
     },
   ]) {
@@ -151,6 +153,9 @@ test("validator revalidation creates fresh fetch evidence and reuses bytes only 
     { "accept-language": "en" },
   );
   const revalidated = await resumeCollection(revalidatedRun.id);
+  expect(revalidated).toMatchObject({
+    acquisition: { charged_dispatches: 1, charged_source_bytes: 0, reserved_source_bytes: 0 },
+  });
   const revalidatedSnapshot = revalidated.snapshots[0];
   if (revalidatedSnapshot === undefined) {
     throw new Error("missing revalidated snapshot");
@@ -673,11 +678,17 @@ test("initial Evidence Plans admit 500 bounded requests in one native transactio
       })),
     })),
   };
-  const run = await startEvidenceRun(catalogueStore(env.CATALOGUE_DB), request);
+  const run = await startEvidenceRun(catalogueStore(env.CATALOGUE_DB), {
+    ...request,
+    acquisition_budget: fixtureAcquisitionBudget,
+  });
   expect(typeof run.id).toBe("string");
   await expect(
     sourceEvidenceQueries.countSourceRequestsCount(env.CATALOGUE_DB).bind(run.id).first(),
   ).resolves.toMatchObject({ count: 500 });
-  const replay = await startEvidenceRun(catalogueStore(env.CATALOGUE_DB), request);
+  const replay = await startEvidenceRun(catalogueStore(env.CATALOGUE_DB), {
+    ...request,
+    acquisition_budget: fixtureAcquisitionBudget,
+  });
   expect(replay.id).toBe(run.id);
 });

@@ -246,6 +246,39 @@ Historical snapshots retain their original optional receipt set; archive and
 ancestor receipt digests keep their original meanings.
 [Pokémon source assembly](https://github.com/KeeprDigital/card-keepr/issues/329).
 
+Collection acquisition requires a finite, run-wide Acquisition Budget, separate
+from the adapter's Request Capacity. A durable Dispatch Reservation is charged
+before each potential physical source call, including retries, revalidation and
+same-attempt replay. Its maximum body exposure remains reserved until that exact
+retrieval and writer are positively settled. Missing receipts, timeouts, absent
+objects or superseded Workflow identities do not establish settlement. A
+Workflow Attempt positively observed complete, errored or terminated, or whose
+instance the control plane confirms absent, has stopped executing and owns no
+work: a dispatch it still holds without a capture receipt settles at zero bytes
+once its destination object is absent, keeping the dispatch charge, and that
+attempt is recorded as failed so the replacement retrieves under a fresh
+attempt and object key. A present object still requires the exact writer
+verification, and any other control-plane failure blocks resume. This accepted
+rule keeps a run self-healing after a hostname Workflow dies mid-fetch; the
+alternative, treating only normal completion as settlement, would leave every
+such run for manual termination. A storage failure or unclassified error during
+a write likewise leaves the dispatch charged and unsettled under an Acquisition
+Pause rather than recording a failed attempt, because the destination state is
+unknown; a storage Retry Pause now arises only from abandoned attempts. A permit
+is never reusable after its acknowledgement could have escaped. Admission binds
+the current collection authority and budget generation; its deadline governs new
+admission, not instantaneous cancellation of escaped work.
+
+Acquisition exhaustion pauses the ordinary run while preserving its graph and
+evidence. Checked, idempotent extensions only increase limits or deadline and do
+not resume work or reset charges. Raw-source exposure is not wire traffic,
+whole-account storage or money; downstream resource planning remains separate.
+Existing runs receive no invented unlimited policy or historical dispatch count.
+Prospective initialization requires quiescent, positively settled prior ownership
+and a verified, deduplicated retained-body baseline; unresolved ownership blocks
+it. Budget and reservation evidence belongs to backup/restore verification.
+[Acquisition guard](https://github.com/KeeprDigital/card-keepr/issues/367).
+
 Collection scheduling reads a bounded page containing the next pending shard
 for each hostname. It retains Workflow identities only for dispatched shards;
 later shards are selected after their predecessors finish. Hostname grouping

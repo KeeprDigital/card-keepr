@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./helpers/acquisition-budget.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -358,7 +359,16 @@ test("populated category migration preserves history and permits sequential refr
         ],
       }),
     );
-    const run = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", `refresh-${game}`]);
+    const run = await cli([
+      "source",
+      "collect",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
+      "--plan-file",
+      planPath,
+      "--idempotency-key",
+      `refresh-${game}`,
+    ]);
     const preparing = await cli([
       "game-candidate",
       "prepare",

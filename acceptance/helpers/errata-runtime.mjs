@@ -1,3 +1,4 @@
+import { fixtureAcquisitionBudgetPath } from "./acquisition-budget.mjs";
 import { readWorkerConfig } from "../../cli/lib/config.mjs";
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
@@ -33,6 +34,8 @@ export async function collectSource(input, environment, runtime) {
     [
       "source",
       "collect",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
       "--game",
       "one-piece",
       "--lineage",
