@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { URL } from "node:url";
 import { expect, test } from "vitest";
 import fullScope from "../../docs/examples/one-piece-limitless-full-scope-plan.json";
+import composed from "../../docs/examples/one-piece-full-scope-plan.json";
+import { requiredSourceAdapter } from "../../src/catalogue/adapters";
 import { limitlessOnePieceSourceAdapterRegistration as adapter } from "../../src/catalogue/adapters/limitless-one-piece-source-adapter";
 import { validateEvidencePlan } from "../../src/catalogue/source-evidence/source-evidence-model";
 
@@ -51,6 +53,27 @@ test("the example full-scope plan validates as the complete Limitless coverage o
     { id: "limitless-one-piece-en:products-index", url: `${origin}/cards` },
     { id: "limitless-one-piece-en:promos-index", url: `${origin}/cards/promos` },
   ]);
+});
+
+test("the composed One Piece plan pairs Bandai's complete discovery with the complete Limitless roots", async () => {
+  expect(composed.plans.map((plan) => [plan.source_lineage, plan.subset, plan.participation])).toEqual([
+    ["one-piece-en", "complete", "required"],
+    ["limitless-one-piece-en", "complete", "required"],
+  ]);
+  const bandai = requiredSourceAdapter("one-piece-en@6");
+  const { plan: official } = await validateEvidencePlan({ ...composed.plans[0]!, idempotency_key: "composed-bandai" });
+  expect(official.requests.map(({ id, url }) => ({ id, url }))).toEqual([
+    { id: "one-piece-en:discovery", url: bandai.requestUrlForDiscovery!() },
+  ]);
+  expect(official.coverage).toEqual({ locale: "en", area: "catalogue", subset: "complete" });
+  const { plan: limitless } = await validateEvidencePlan({
+    ...composed.plans[1]!,
+    idempotency_key: "composed-limitless",
+  });
+  expect(limitless.requests.map(({ id, url }) => ({ id, url }))).toEqual(
+    fullScope.plans[0]!.requests.map(({ id, url }) => ({ id, url })),
+  );
+  expect(limitless.coverage).toEqual({ locale: "en", area: "catalogue", subset: "complete" });
 });
 
 test("each index root is a discovery role: no observations, one listing request per bucket row", async () => {

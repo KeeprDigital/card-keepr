@@ -62,9 +62,14 @@ front. Index roots and buckets are discovery roles that yield only Source
 Requests; any card page parses into one observation through the same selectors
 the pilot proved. A grid entry whose only front is the Japanese print is retained
 as evidence without an English image request. The registration's finite capacity
-is the dated census envelope (9,559); the plan is Limitless-only and supplementary,
-so Bandai keeps every authority area and each new Card or Printing remains an
-Entity Proposal until the owner admits it. Acquire the scope in budgeted tranches:
+is the dated census envelope (9,559). The plan is Limitless-only and supplementary:
+Bandai keeps every authority area, each new Card or Printing remains an Entity
+Proposal until the owner admits it, and a run without the selected card-facts
+authority cannot prepare a One Piece candidate. The
+[composed full-scope plan](../examples/one-piece-full-scope-plan.json) pairs
+Bandai's complete discovery with the same Limitless roots in one Ingestion Run so
+the whole-game candidate can reconcile; Bandai's requests count against its own
+registered capacity. Acquire either scope in budgeted tranches:
 size `max_dispatches` for the roots, buckets and the pages plus fronts you intend
 to reach, let the run pause on `source_acquisition_budget_exhausted`, inspect the
 receipt, then extend the budget and resume. Collection must reach every discovered
