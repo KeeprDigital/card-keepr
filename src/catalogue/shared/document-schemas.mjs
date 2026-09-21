@@ -356,7 +356,7 @@ export const documentSchemas = {
       object({
         observation_type: { const: "source_admission_evidence" },
         game: { const: "riftbound" },
-        source_lineage: { enum: ["riftbound-db-en", "piltover-archive-en"] },
+        source_lineage: { enum: ["riftbound-db-en", "piltover-archive-en", "hexdeck-en"] },
         locator: sourceRecordAdmissionFields.locator,
         source_membership: sourceRecordAdmissionFields.source_membership,
         target: sourceRecordAdmissionFields.target,
@@ -364,6 +364,7 @@ export const documentSchemas = {
           object({
             code: {
               enum: [
+                "card_facts_incomplete",
                 "card_identity_unresolved",
                 "printing_treatment_unresolved",
                 "physical_issuance_unresolved",

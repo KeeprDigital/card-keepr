@@ -16,6 +16,7 @@ export const sources = [
   { id: "riot-riftbound", publisher_id: "riot-games", name: "Riot Riftbound" },
   { id: "riftbound-db", publisher_id: null, name: "Riftbound DB" },
   { id: "piltover-archive", publisher_id: null, name: "Piltover Archive" },
+  { id: "hexdeck", publisher_id: null, name: "HexDeck" },
   ...(["one-piece", "fusion-world", "digimon", "gundam"] as const).map((game) => ({
     id: `bandai-${game}`,
     publisher_id: "bandai",
@@ -50,6 +51,7 @@ export const sourceLineages: readonly SourceLineageRegistration[] = [
     locale: "en",
     release_region: "unknown",
   },
+  { id: "hexdeck-en", source_id: "hexdeck", game: "riftbound", locale: "en", release_region: "unknown" },
   { id: "one-piece-en", source_id: "bandai-one-piece", game: "one-piece", locale: "en", release_region: "OCEANIA" },
   {
     id: "limitless-one-piece-en",

@@ -1,6 +1,7 @@
 import { riftboundSourceAdapterRegistration } from "./riftbound-source-adapter";
 import { riftboundDbSourceAdapterRegistration } from "./riftbound-db-source-adapter";
 import { piltoverArchiveSourceAdapterRegistration } from "./piltover-archive-source-adapter";
+import { hexdeckSourceAdapterRegistration } from "./hexdeck-source-adapter";
 import { scryfallSourceAdapterRegistration } from "./scryfall-source-adapter";
 import { tcgdexPokemonSourceAdapterRegistration } from "./tcgdex-pokemon-source-adapter";
 import { pokemonOfficialSourceAdapterRegistration } from "./pokemon-official-source-adapter";
@@ -124,6 +125,7 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
     riftboundSourceAdapterRegistration,
     riftboundDbSourceAdapterRegistration,
     piltoverArchiveSourceAdapterRegistration,
+    hexdeckSourceAdapterRegistration,
     scryfallSourceAdapterRegistration,
     tcgdexPokemonSourceAdapterRegistration,
     pokemonOfficialSourceAdapterRegistration,

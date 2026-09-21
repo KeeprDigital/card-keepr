@@ -134,7 +134,7 @@ test("actual old Pokémon definitions preserve published history and require fre
   await applyMigrations(statePath, configPath);
   const migrated = new DatabaseSync(databasePath, { readOnly: true });
   try {
-    assert.equal(schemaMigrationLevel(migrated).get().migration_level, 44);
+    assert.equal(schemaMigrationLevel(migrated).get().migration_level, 45);
     assert.deepEqual(queries.candidateDefinition(migrated).get(pending.id), pending);
     assert.deepEqual(immutablePokemonHistory(migrated), history);
     assert.deepEqual(queries.foreignKeyViolations(migrated).all(), []);
