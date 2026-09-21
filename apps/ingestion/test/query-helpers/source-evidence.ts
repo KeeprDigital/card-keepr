@@ -1418,3 +1418,47 @@ export function sourceRequestIdentitiesInSequence(database: D1Database, runId: s
     .prepare("SELECT request_id, url FROM source_requests WHERE ingestion_run_id = ? ORDER BY sequence_number")
     .bind(runId);
 }
+
+export function insertSourceSnapshotsForComposedCollectionPlanSequences(database: D1Database): D1PreparedStatement {
+  return database.prepare(`INSERT INTO source_snapshots (
+         id, ingestion_run_id, request_id, fetch_attempt_id,
+         request_method, request_url, request_headers_json,
+         representation_fingerprint, response_vary_json, retrieved_at,
+         http_status, response_headers_json, media_type, content_digest,
+         content_byte_length, content_object_key, source_lineage,
+         supported_game, game_profile_version, adapter_version,
+         reused_source_snapshot_id
+       ) VALUES (?, ?, ?, ?, 'GET', ?, '{}', ?, '[]',
+         '2026-09-21T00:00:01.000Z', 200, '{}', 'text/html', ?, ?, ?,
+         'one-piece-en', 'one-piece', 'one-piece@1', 'one-piece-en@6', NULL)`);
+}
+
+export function insertSourceParseOperationsForComposedCollectionPlanSequences(
+  database: D1Database,
+): D1PreparedStatement {
+  return database.prepare(`INSERT INTO source_parse_operations (
+         id, source_snapshot_id, adapter_version, intent, idempotency_key,
+         observation_set_id, content_object_key, parsed_at, state,
+         content_digest, content_byte_length, observation_count
+       ) VALUES (?, ?, 'one-piece-en@6', 'collection', ?, ?, ?,
+         '2026-09-21T00:00:02.000Z', 'finalized', 'digest', 2, 1)`);
+}
+
+export function insertSourceObservationSetsForComposedCollectionPlanSequences(
+  database: D1Database,
+): D1PreparedStatement {
+  return database.prepare(`INSERT INTO source_observation_sets (
+         id, parse_operation_id, source_snapshot_id, source_lineage,
+         supported_game, game_profile_version, adapter_version, parsed_at,
+         content_digest, content_byte_length, content_object_key,
+         observation_count
+       ) VALUES (?, ?, ?, 'one-piece-en', 'one-piece', 'one-piece@1',
+         'one-piece-en@6', '2026-09-21T00:00:02.000Z', 'digest', 2, ?, 1)`);
+}
+
+export function readSourceRequestSequencesForComposedCollectionPlanSequences(
+  database: D1Database,
+): D1PreparedStatement {
+  return database.prepare(`SELECT request_id, sequence_number, request_role
+       FROM source_requests WHERE ingestion_run_id = ? ORDER BY sequence_number`);
+}
