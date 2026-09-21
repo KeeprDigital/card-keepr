@@ -8,7 +8,10 @@ dashboard reconciliation; [issue #236](https://github.com/KeeprDigital/card-keep
 records the shared-account decision that bounds every Cloudflare token below.
 
 Every Cloudflare token here is issued on the one account that hosts production,
-dev and staging. Cloudflare's D1 and R2 permission groups apply account-wide, so
+dev and staging. D1 tokens must be user-owned (My Profile): the D1 API answers
+401 to account-owned tokens while the Workers endpoints accept them (probe,
+2026-09-21), so `reissue` defaults to the user store and an account-owned D1
+token never passes the probe. Cloudflare's D1 and R2 permission groups apply account-wide, so
 a token's name and its environment word never enforce a boundary; the application's
 exact-name and exact-ID checks do. Grant each token only what its cited code path
 calls, and keep each environment's values independently issued.

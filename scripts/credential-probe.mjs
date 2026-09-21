@@ -72,7 +72,7 @@ export function probePlan(target, { exerciseExport = false } = {}) {
   const add = (slot, check, source, entry) => plan.push({ slot, token: tokenLabels[slot], check, source, ...entry });
 
   // Deployment token: the release executor and provider scripts.
-  add("deployment", "token-verify", "scripts/production-release-provider.mjs:43", { path: "/user/tokens/verify" });
+  add("deployment", "token-verify", "scripts/production-release-provider.mjs:43", verifyEntry());
   for (const database of [target.catalogueDatabaseId]) {
     add("deployment", "d1-database-read", "scripts/production-release-provider.mjs:252", {
       path: `${account}/d1/database/${database}`,
@@ -126,9 +126,7 @@ export function probePlan(target, { exerciseExport = false } = {}) {
   });
 
   // Export token: only the SQL export of the catalogue database.
-  add("d1Export", "token-verify", "src/catalogue/backup-recovery/backup-recovery.ts:1046", {
-    path: "/user/tokens/verify",
-  });
+  add("d1Export", "token-verify", "src/catalogue/backup-recovery/backup-recovery.ts:1046", verifyEntry());
   add("d1Export", "d1-database-read", "src/catalogue/backup-recovery/backup-recovery.ts:1046", {
     path: `${account}/d1/database/${target.catalogueDatabaseId}`,
   });
@@ -136,9 +134,7 @@ export function probePlan(target, { exerciseExport = false } = {}) {
 
   // Verification token: Disposable Restore lifecycle, recovery and, in
   // production, the staging transition observer.
-  add("d1Verification", "token-verify", "src/catalogue/backup-recovery/backup-recovery.ts:1163", {
-    path: "/user/tokens/verify",
-  });
+  add("d1Verification", "token-verify", "src/catalogue/backup-recovery/backup-recovery.ts:1163", verifyEntry());
   add("d1Verification", "d1-list-by-name", "src/catalogue/backup-recovery/backup-recovery.ts:1163", {
     path: `${account}/d1/database?name=${encodeURIComponent(names.disposable)}`,
     resolves: "disposable",
@@ -166,6 +162,11 @@ export function probePlan(target, { exerciseExport = false } = {}) {
     notProbed: "write: disposable create/delete, import, query and time-travel restore are not exercised",
   });
   return plan;
+
+  // User-owned tokens verify at /user/tokens/verify; account-owned ones only at the account endpoint.
+  function verifyEntry() {
+    return { path: "/user/tokens/verify", fallback: `${account}/tokens/verify` };
+  }
 
   function exportEntry() {
     return exerciseExport
@@ -207,7 +208,14 @@ export async function probeCredentials({ target, tokens, exerciseExport = false 
       }
       path = path.replace(/\{[a-z]+\}/u, encodeURIComponent(dependency));
     }
-    const observed = await observe(fetchImpl, token, base.method, path, check.body);
+    let observed = await observe(fetchImpl, token, base.method, path, check.body);
+    if (check.fallback && observed.document?.success !== true) {
+      const fallback = await observe(fetchImpl, token, base.method, check.fallback, check.body);
+      if (fallback.document?.success === true) {
+        observed = fallback;
+        path = check.fallback;
+      }
+    }
     const accepted = (check.accept ?? [200]).includes(observed.status);
     const pass =
       accepted && observed.document !== null && (observed.status === 404 || observed.document.success === true);

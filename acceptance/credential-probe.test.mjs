@@ -30,7 +30,8 @@ function fakeFetch(overrides = {}) {
     calls.push({ method, url, headers: new Headers(options.headers) });
     const key = `${method} ${url.pathname}`;
     for (const [pattern, response] of Object.entries(overrides)) {
-      if (new RegExp(pattern, "u").test(key)) return respond(response);
+      if (new RegExp(pattern, "u").test(key))
+        return response?.__status ? respond(null, response.__status, false) : respond(response);
     }
     if (url.pathname === "/client/v4/user/tokens/verify") return respond({ status: "active" });
     if (url.pathname === `/client/v4/accounts/${account}/d1/database` && url.searchParams.has("name"))
@@ -198,4 +199,22 @@ test("the target resolves from the checked-in production configuration or from t
   });
   await assert.rejects(resolveProbeTarget("dev", {}), /DEV_CLOUDFLARE_ACCOUNT_ID/u);
   await assert.rejects(resolveProbeTarget("local", {}), /environment/u);
+});
+
+test("an account-owned token verifies at the account endpoint when the user endpoint rejects it", async () => {
+  const { fetchImpl, calls } = fakeFetch({
+    "GET /client/v4/user/tokens/verify": { __status: 401 },
+    [`GET /client/v4/accounts/${account}/tokens/verify`]: { status: "active" },
+  });
+  const result = await probeCredentials(
+    { target: target("production"), tokens: { deployment: tokens.deployment } },
+    fetchImpl,
+  );
+  const verify = result.rows.find((row) => row.token === "deployment" && row.check === "token-verify");
+  assert.equal(verify.outcome, "pass");
+  assert.equal(verify.path, `/accounts/${account}/tokens/verify`);
+  assert.deepEqual(
+    calls.filter((call) => call.url.pathname.endsWith("/tokens/verify")).map((call) => call.url.pathname),
+    ["/client/v4/user/tokens/verify", `/client/v4/accounts/${account}/tokens/verify`],
+  );
 });
