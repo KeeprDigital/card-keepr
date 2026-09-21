@@ -288,8 +288,11 @@ jobs:
           smoke="$(KEEPR_SMOKE_INPUT="${smoke_input}" node scripts/production-smoke.mjs)"
           KEEPR_RELEASE_EVIDENCE="${smoke}" node scripts/production-release.mjs evidence-sql smoke "${RELEASE_ID}" /tmp/production-release/smoke.sql
           result="$(node scripts/production-release-d1.mjs execute --config "${RELEASE_STATE_CONFIG}" --file /tmp/production-release/smoke.sql)"
-          test "$(jq -r '.[-2].results[0].changed_rows' <<<"${result}")" = 1
-          test "$(jq -r '.[-2].results[0].transitioned' <<<"${result}")" = 1
+          # smoke.sql is four statements (mutation, SELECT, UPDATE, SELECT) and the
+          # D1 query API returns one entry per statement, so the transition
+          # receipt is the third-from-last entry and the fence receipt the last.
+          test "$(jq -r '.[-3].results[0].changed_rows' <<<"${result}")" = 1
+          test "$(jq -r '.[-3].results[0].transitioned' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].fence_released' <<<"${result}")" = 1
       - name: Run reduced Bootstrap Mode smoke checks
@@ -304,8 +307,11 @@ jobs:
           smoke="$(KEEPR_SMOKE_INPUT="${smoke_input}" node scripts/production-smoke.mjs bootstrap)"
           KEEPR_RELEASE_EVIDENCE="${smoke}" node scripts/production-release.mjs evidence-sql smoke "${RELEASE_ID}" /tmp/production-release/smoke.sql
           result="$(node scripts/production-release-d1.mjs execute --config "${RELEASE_STATE_CONFIG}" --file /tmp/production-release/smoke.sql)"
-          test "$(jq -r '.[-2].results[0].changed_rows' <<<"${result}")" = 1
-          test "$(jq -r '.[-2].results[0].transitioned' <<<"${result}")" = 1
+          # smoke.sql is four statements (mutation, SELECT, UPDATE, SELECT) and the
+          # D1 query API returns one entry per statement, so the transition
+          # receipt is the third-from-last entry and the fence receipt the last.
+          test "$(jq -r '.[-3].results[0].changed_rows' <<<"${result}")" = 1
+          test "$(jq -r '.[-3].results[0].transitioned' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].fence_released' <<<"${result}")" = 1
       - name: Record compatible roll-forward requirement on failure
