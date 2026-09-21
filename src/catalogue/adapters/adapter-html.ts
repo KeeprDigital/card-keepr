@@ -3,6 +3,28 @@ import { nullableText, requiredArray, requiredRecord, requiredText } from "./ada
 import type { CardObservation, CatalogueObservation, OfficialSourceObservation } from "./adapter-observations";
 import { AdapterParseFailure, adapterUrl } from "./adapter-parse-failure";
 import { partitionMappedOfficialLeaves } from "./official-source-field-coverage";
+import { createHash } from "node:crypto";
+import { canonicalJson, utf8 } from "../shared";
+
+// The bounded source intake retains one observation at a time, within 512,000
+// canonical bytes and 16,384 JSON nodes (source-record-intake.ts and
+// source-record-text.ts). A surface document within this inline budget is
+// retained as an object with its enumerated leaf coverage; a larger one (a full
+// One Piece series page is ~263 KB / 7,262 nodes) is retained once as canonical
+// JSON text, which the intake partitions into digest-verified auxiliary text
+// parts, so the first observation of any page stays within the intake bounds
+// by construction: at most 128 KiB of document plus 2,048 enumerated leaves
+// (about 270 KB of paths and values) beside the observation itself. The exact
+// page bytes remain the retained Source Snapshot.
+const inlineSurfaceDocumentBudget = { bytes: 131_072, nodes: 2_048 };
+
+function countJsonNodes(value: unknown): number {
+  let count = 1;
+  if (Array.isArray(value)) for (const item of value) count += countJsonNodes(item);
+  else if (value !== null && typeof value === "object")
+    for (const item of Object.values(value as Record<string, unknown>)) count += countJsonNodes(item);
+  return count;
+}
 export function fusionWorldFullLocatorFromUrl(url: URL, exactLiveQuery: boolean): string | null {
   const entries = [...url.searchParams.entries()];
   const identities = entries.filter(([key]) => /^(?:card(?:[_-]?(?:id|no|number))?|detailSearch|popup)$/iu.test(key));
@@ -285,12 +307,28 @@ export function attachRawSurfaceEvidenceV1<T extends OfficialSourceObservation>(
   const raw = existing.raw === undefined ? {} : requiredRecord(existing.raw, "Source sidecar raw fields");
   const consumed = Array.isArray(existing.consumed_fields) ? existing.consumed_fields : [];
   const unmapped = Array.isArray(existing.unmapped_optional_fields) ? existing.unmapped_optional_fields : [];
-  const retainedMappedLeaves = retainDocument
+  const documentJson = retainDocument ? canonicalJson(document) : null;
+  const documentBytes = documentJson === null ? 0 : utf8(documentJson).byteLength;
+  const inline =
+    documentJson !== null &&
+    documentBytes <= inlineSurfaceDocumentBudget.bytes &&
+    countJsonNodes(document) <= inlineSurfaceDocumentBudget.nodes;
+  const retainedMappedLeaves = inline
     ? mappedRootFields.flatMap((field) =>
         partitionMappedOfficialLeaves(document[field], `source_sidecar.raw.official_surfaces[0].document.${field}`),
       )
     : [];
   const explicitlyUnmappedPaths = new Set(explicitUnmappedFields.map(({ path }) => path));
+  const retainedSurface =
+    documentJson === null
+      ? { retained_by_observation_ordinal: 1 }
+      : inline
+        ? { document }
+        : {
+            document_json: documentJson,
+            document_sha256: createHash("sha256").update(documentJson).digest("hex"),
+            document_byte_length: documentBytes,
+          };
   return {
     ...observation,
     source_sidecar: {
@@ -299,11 +337,7 @@ export function attachRawSurfaceEvidenceV1<T extends OfficialSourceObservation>(
         ...raw,
         official_surfaces: [
           ...(Array.isArray(raw.official_surfaces) ? raw.official_surfaces : []),
-          {
-            source_lineage: sourceLineage,
-            surface,
-            ...(retainDocument ? { document } : { retained_by_observation_ordinal: 1 }),
-          },
+          { source_lineage: sourceLineage, surface, ...retainedSurface },
         ],
       },
       consumed_fields: [
@@ -311,6 +345,13 @@ export function attachRawSurfaceEvidenceV1<T extends OfficialSourceObservation>(
           ...consumed,
           "source_sidecar.raw.official_surfaces[].source_lineage",
           "source_sidecar.raw.official_surfaces[].surface",
+          ...(documentJson !== null && !inline
+            ? [
+                "source_sidecar.raw.official_surfaces[].document_json",
+                "source_sidecar.raw.official_surfaces[].document_sha256",
+                "source_sidecar.raw.official_surfaces[].document_byte_length",
+              ]
+            : []),
           ...retainedMappedLeaves.flatMap(({ consumed }) =>
             consumed.filter((path) => !explicitlyUnmappedPaths.has(path)),
           ),
@@ -320,12 +361,22 @@ export function attachRawSurfaceEvidenceV1<T extends OfficialSourceObservation>(
         ...unmapped,
         ...retainedMappedLeaves.flatMap(({ unmapped }) => unmapped),
         ...(retainDocument ? explicitUnmappedFields : []),
-        ...(retainDocument ? Object.entries(document) : [])
+        ...(inline ? Object.entries(document) : [])
           .filter(([field]) => !mappedRootFields.includes(field))
           .flatMap(([field, value]) => leafEntries(value, `source_sidecar.raw.official_surfaces[0].document.${field}`)),
       ],
     },
   };
+}
+
+/** The retained surface document, whether inline or retained as canonical JSON text. */
+export function retainedSurfaceDocument(surface: unknown): Record<string, unknown> | null {
+  if (surface === null || typeof surface !== "object") return null;
+  const record = surface as Record<string, unknown>;
+  if (isPlainRecord(record.document)) return record.document;
+  if (typeof record.document_json !== "string") return null;
+  const parsed: unknown = JSON.parse(record.document_json);
+  return isPlainRecord(parsed) ? parsed : null;
 }
 
 export function cardObservation(

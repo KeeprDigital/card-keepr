@@ -6,6 +6,12 @@ range with offsets, full-body size/hash and range hash. Verify bytes before
 passing them to the current production adapter. The metadata owns capture dates
 and provenance; filenames distinguish the publisher and source shape.
 
+`one-piece-en-card-list-op16-series.json` is the complete live OP16 series page
+(155 Cards, 414,702 bytes) captured on 2026-09-21 by the first composed One
+Piece Ingestion Run for [#334](https://github.com/KeeprDigital/card-keepr/issues/334);
+it shares the discovery fixture's URL and proves that a full series page parses
+within the bounded source intake. It is one dated page, not series coverage.
+
 Standalone HTML fragments are focused parser examples, sometimes with normalized
 line endings; they are not recapturable HTTP goldens. A retained range cannot
 establish whole-response equivalence unless a complete golden of the exact same
