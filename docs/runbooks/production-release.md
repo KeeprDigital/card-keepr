@@ -22,13 +22,18 @@ Install `API_BEARER_KEY` and its replacement only on the API Worker;
 `ADMINISTRATION_KEY`, its replacement, `D1_EXPORT_TOKEN` and
 `D1_VERIFICATION_TOKEN` only on ingestion. Both bearer slots must exist because
 release verifies the inventory. Bearer values use token68 and at least 128 bits
-(22 characters without padding). Set the exact owner CORS origins. Use the
-existing secret stores; credentials never belong in command arguments or Git.
+(22 characters without padding). The [credentials inventory](credentials.md)
+records each secret's consumer, each Cloudflare token's minimum grant, the
+GitHub `production` secrets and the rotation and probe procedures. Set the exact
+owner CORS origins. Use the existing secret stores; credentials never belong in
+command arguments or Git.
 
 ## Prepare
 
 1. Confirm GitHub's `production` environment branch policy and the Cloudflare
-   deployment token's least-privilege grants outside the repository. The exact confirmation
+   deployment token's least-privilege grants outside the repository
+   ([credentials](credentials.md); `node scripts/credential-probe.mjs production`
+   checks the read paths). The exact confirmation
    envelope demanded by the CLI remains the owner gate; do not assume the
    environment has required reviewers enabled.
 2. Confirm the public mounts' prerequisites. Zone routes do not
