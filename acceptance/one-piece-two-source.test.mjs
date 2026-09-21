@@ -482,7 +482,16 @@ test("retained One Piece: expand the P-001 publication through complete five-Car
   let finalPublication = linkedPublication;
   await writeFile(planPath, await readFile("docs/examples/one-piece-five-card-plan.json"));
   const collectPilot = async (intent) => {
-    const collection = await cli(["source", "collect", "--plan-file", planPath, "--idempotency-key", intent]);
+    const collection = await cli([
+      "source",
+      "collect",
+      "--budget-file",
+      fixtureAcquisitionBudgetPath,
+      "--plan-file",
+      planPath,
+      "--idempotency-key",
+      intent,
+    ]);
     await cli(["source", "resume", "--run-id", collection.id]);
     await sealed(collection.id);
     return inspectNativeCollection(collection.id, environment);
