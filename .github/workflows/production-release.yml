@@ -147,7 +147,7 @@ jobs:
             identical|behind) ;;
             *) printf 'expected_head_sha %s is not contained in main: %s\n' "${EXPECTED_HEAD_SHA}" "$(jq -c '{status, ahead_by, behind_by}' <<<"${compare}")"; exit 1 ;;
           esac
-          runs="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${EXPECTED_HEAD_SHA}/check-runs?filter=latest&per_page=100" --paginate --slurp --jq '[.[].check_runs[] | select(.app.slug == "github-actions") | {name, head_sha, status, conclusion}]')"
+          runs="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${EXPECTED_HEAD_SHA}/check-runs?filter=latest&per_page=100" --paginate --slurp | jq -c '[.[].check_runs[] | select(.app.slug == "github-actions") | {name, head_sha, status, conclusion}]')"
           while IFS= read -r job; do
             matched="$(jq -c --arg job "${job}" '[.[] | select(.name == $job)]' <<<"${runs}")"
             if test "$(jq 'length' <<<"${matched}")" != 1; then
@@ -283,13 +283,16 @@ jobs:
         if: env.FRESH_BASELINE_HANDOFF != 'true' && (inputs.bootstrap != 'true')
         run: |
           set -euo pipefail
-          ingestion_url="$(node --input-type=module -e 'import { readFile } from "node:fs/promises"; process.stdout.write(String(JSON.parse(await readFile(process.argv[1], "utf8")).vars.PUBLIC_BASE_URL));' "${INGESTION_RELEASE_CONFIG}")"
+          ingestion_url="$(node --input-type=module -e 'import { readWorkerConfig } from "./cli/lib/config.mjs"; process.stdout.write(String((await readWorkerConfig(process.argv[1])).vars.PUBLIC_BASE_URL));' "${INGESTION_RELEASE_CONFIG}")"
           smoke_input="$(jq -cn --arg url "${API_BASE_URL}" --arg ingestion "${ingestion_url}" --arg key "${API_TRAFFIC_TOKEN}" --arg revision "${EXPECTED_CURRENT_REVISION}" --argjson targets "${SMOKE_TARGETS_JSON}" '{apiUrl:$url,ingestionUrl:$ingestion,apiKey:$key,currentRevisionId:$revision,revisions:$targets.revisions,printingImageId:$targets.printing_image_id,staleCursor:$targets.stale_cursor,staleRevisionId:$targets.stale_revision_id}')"
           smoke="$(KEEPR_SMOKE_INPUT="${smoke_input}" node scripts/production-smoke.mjs)"
           KEEPR_RELEASE_EVIDENCE="${smoke}" node scripts/production-release.mjs evidence-sql smoke "${RELEASE_ID}" /tmp/production-release/smoke.sql
           result="$(node scripts/production-release-d1.mjs execute --config "${RELEASE_STATE_CONFIG}" --file /tmp/production-release/smoke.sql)"
-          test "$(jq -r '.[-2].results[0].changed_rows' <<<"${result}")" = 1
-          test "$(jq -r '.[-2].results[0].transitioned' <<<"${result}")" = 1
+          # smoke.sql is four statements (mutation, SELECT, UPDATE, SELECT) and the
+          # D1 query API returns one entry per statement, so the transition
+          # receipt is the third-from-last entry and the fence receipt the last.
+          test "$(jq -r '.[-3].results[0].changed_rows' <<<"${result}")" = 1
+          test "$(jq -r '.[-3].results[0].transitioned' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].fence_released' <<<"${result}")" = 1
       - name: Run reduced Bootstrap Mode smoke checks
@@ -299,13 +302,16 @@ jobs:
         if: env.FRESH_BASELINE_HANDOFF != 'true' && (inputs.bootstrap == 'true')
         run: |
           set -euo pipefail
-          ingestion_url="$(node --input-type=module -e 'import { readFile } from "node:fs/promises"; process.stdout.write(String(JSON.parse(await readFile(process.argv[1], "utf8")).vars.PUBLIC_BASE_URL));' "${INGESTION_RELEASE_CONFIG}")"
+          ingestion_url="$(node --input-type=module -e 'import { readWorkerConfig } from "./cli/lib/config.mjs"; process.stdout.write(String((await readWorkerConfig(process.argv[1])).vars.PUBLIC_BASE_URL));' "${INGESTION_RELEASE_CONFIG}")"
           smoke_input="$(jq -cn --arg url "${API_BASE_URL}" --arg key "${API_TRAFFIC_TOKEN}" --arg ingestion "${ingestion_url}" --arg revision "${EXPECTED_CURRENT_REVISION}" '{apiUrl:$url,apiKey:$key,ingestionUrl:$ingestion,currentRevisionId:$revision}')"
           smoke="$(KEEPR_SMOKE_INPUT="${smoke_input}" node scripts/production-smoke.mjs bootstrap)"
           KEEPR_RELEASE_EVIDENCE="${smoke}" node scripts/production-release.mjs evidence-sql smoke "${RELEASE_ID}" /tmp/production-release/smoke.sql
           result="$(node scripts/production-release-d1.mjs execute --config "${RELEASE_STATE_CONFIG}" --file /tmp/production-release/smoke.sql)"
-          test "$(jq -r '.[-2].results[0].changed_rows' <<<"${result}")" = 1
-          test "$(jq -r '.[-2].results[0].transitioned' <<<"${result}")" = 1
+          # smoke.sql is four statements (mutation, SELECT, UPDATE, SELECT) and the
+          # D1 query API returns one entry per statement, so the transition
+          # receipt is the third-from-last entry and the fence receipt the last.
+          test "$(jq -r '.[-3].results[0].changed_rows' <<<"${result}")" = 1
+          test "$(jq -r '.[-3].results[0].transitioned' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].changed_rows' <<<"${result}")" = 1
           test "$(jq -r '.[-1].results[0].fence_released' <<<"${result}")" = 1
       - name: Record compatible roll-forward requirement on failure
