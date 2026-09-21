@@ -283,7 +283,7 @@ jobs:
         if: env.FRESH_BASELINE_HANDOFF != 'true' && (inputs.bootstrap != 'true')
         run: |
           set -euo pipefail
-          ingestion_url="$(node --input-type=module -e 'import { readFile } from "node:fs/promises"; process.stdout.write(String(JSON.parse(await readFile(process.argv[1], "utf8")).vars.PUBLIC_BASE_URL));' "${INGESTION_RELEASE_CONFIG}")"
+          ingestion_url="$(node --input-type=module -e 'import { readWorkerConfig } from "./cli/lib/config.mjs"; process.stdout.write(String((await readWorkerConfig(process.argv[1])).vars.PUBLIC_BASE_URL));' "${INGESTION_RELEASE_CONFIG}")"
           smoke_input="$(jq -cn --arg url "${API_BASE_URL}" --arg ingestion "${ingestion_url}" --arg key "${API_TRAFFIC_TOKEN}" --arg revision "${EXPECTED_CURRENT_REVISION}" --argjson targets "${SMOKE_TARGETS_JSON}" '{apiUrl:$url,ingestionUrl:$ingestion,apiKey:$key,currentRevisionId:$revision,revisions:$targets.revisions,printingImageId:$targets.printing_image_id,staleCursor:$targets.stale_cursor,staleRevisionId:$targets.stale_revision_id}')"
           smoke="$(KEEPR_SMOKE_INPUT="${smoke_input}" node scripts/production-smoke.mjs)"
           KEEPR_RELEASE_EVIDENCE="${smoke}" node scripts/production-release.mjs evidence-sql smoke "${RELEASE_ID}" /tmp/production-release/smoke.sql
@@ -299,7 +299,7 @@ jobs:
         if: env.FRESH_BASELINE_HANDOFF != 'true' && (inputs.bootstrap == 'true')
         run: |
           set -euo pipefail
-          ingestion_url="$(node --input-type=module -e 'import { readFile } from "node:fs/promises"; process.stdout.write(String(JSON.parse(await readFile(process.argv[1], "utf8")).vars.PUBLIC_BASE_URL));' "${INGESTION_RELEASE_CONFIG}")"
+          ingestion_url="$(node --input-type=module -e 'import { readWorkerConfig } from "./cli/lib/config.mjs"; process.stdout.write(String((await readWorkerConfig(process.argv[1])).vars.PUBLIC_BASE_URL));' "${INGESTION_RELEASE_CONFIG}")"
           smoke_input="$(jq -cn --arg url "${API_BASE_URL}" --arg key "${API_TRAFFIC_TOKEN}" --arg ingestion "${ingestion_url}" --arg revision "${EXPECTED_CURRENT_REVISION}" '{apiUrl:$url,apiKey:$key,ingestionUrl:$ingestion,currentRevisionId:$revision}')"
           smoke="$(KEEPR_SMOKE_INPUT="${smoke_input}" node scripts/production-smoke.mjs bootstrap)"
           KEEPR_RELEASE_EVIDENCE="${smoke}" node scripts/production-release.mjs evidence-sql smoke "${RELEASE_ID}" /tmp/production-release/smoke.sql
