@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en" >
+
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yamato (ST09) – Limitless One Piece</title>
+    <meta name="description" content="A One Piece card database with advanced search features and up-to-date pricing data.">
+
+            <meta property="og:title" content="Yamato (ST09) – Limitless One Piece">
+        <meta property="og:description" content="A One Piece card database with advanced search features and up-to-date pricing data.">
+        <meta property="og:image" content="https://onepiece.limitlesstcg.com/images/limitlessopcg.png">
+        <meta property="og:type" content="website">
+        <meta property="og:site_name" content="Limitless TCG">
+    
+            <meta name="twitter:card" content="summary">
+        <meta name="twitter:site" content="@LimitlessOPCG">
+        <meta name="twitter:title" content="Yamato (ST09) – Limitless One Piece">
+        <meta name="twitter:description" content="A One Piece card database with advanced search features and up-to-date pricing data.">
+        <meta name="twitter:image" content="https://onepiece.limitlesstcg.com/images/limitlessopcg.png">
+    
+    <link rel="manifest" href="/app.webmanifest">
+
+            <!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-JEXRLS78TW"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-JEXRLS78TW');
+</script>    
+            <script data-cfasync="false">
+    window.ramp = window.ramp || {};
+    window.ramp.que = window.ramp.que || [];
+</script>
+
+<style>
+#pw-oop-bottom_rail, .bh-div-wrapper, .celtra-banner, div[data-gg-moat] {
+    z-index: 10 !important;
+    box-sizing: content-box;
+}
+
+@media print {
+    #pw-oop-bottom_rail, .bh-div-wrapper, .celtra-banner,
+    #pw-oop-left_rail {
+        display: none !important;
+    }
+}
+
+.top_ad {
+    min-width: 320px;
+    min-height: 50px;
+    position: relative;
+}
+
+.bottom_ad {
+    min-height: 50px;
+}
+
+@media (min-width: 768px) {
+    .top_ad {
+        min-width: 728px;
+        min-height: 90px;
+    }
+}
+
+.top_ad .ads-notice {
+    width: 100%;
+    height: 100%;
+    background-color: var(--bg-color-two);
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: -1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+</style>    
+    <link rel="preload" as="style" href="https://onepiece.limitlesstcg.com/build/assets/main-e98f9745.css" /><link rel="modulepreload" href="https://onepiece.limitlesstcg.com/build/assets/main-0198dafa.js" /><link rel="modulepreload" href="https://onepiece.limitlesstcg.com/build/assets/dom-7f7df130.js" /><link rel="modulepreload" href="https://onepiece.limitlesstcg.com/build/assets/fetch-a833fccf.js" /><link rel="modulepreload" href="https://onepiece.limitlesstcg.com/build/assets/limitless-79f393e8.js" /><link rel="modulepreload" href="https://onepiece.limitlesstcg.com/build/assets/ws-search-21f06e8f.js" /><link rel="modulepreload" href="https://onepiece.limitlesstcg.com/build/assets/suggest-4ff36e79.js" /><link rel="stylesheet" href="https://onepiece.limitlesstcg.com/build/assets/main-e98f9745.css" /><script type="module" src="https://onepiece.limitlesstcg.com/build/assets/main-0198dafa.js"></script>
+            <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400..700&family=Open+Sans+Condensed:wght@700&display=swap">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400..700&family=Open+Sans+Condensed:wght@700&display=swap">
+        <link rel="stylesheet" href="/inc/fontawesome/css/all.min.css?v=5.11.2">
+    
+        
+    <script>var LS_SEARCH_RESULTS = '~ search results', LS_NO_SEARCH_RESULTS = 'no search results found';</script>
+    <script>var LMT_RNT = false;</script>
+</head>
+
+<body>
+    <header>
+    <div class="header-top" data-mini-bar>
+        <div class="container top">
+            <div class="flex gap-4 items-center">
+                
+                <div class="site-news"> Latest Updates:
+                                            <a href="/cards/op17-the-worlds-strongest-warriors">OP17</a>                                      </div>
+            </div>
+
+            <div class="site-settings">
+                <select class="language-switch" data-site-language>
+                    <option value="en_US"  selected >English</option>
+                    <option value="jp_JP" >日本語</option>
+                </select>
+                <button class="darkmode-toggle" aria-label="darkmode toggle" data-site-theme data-tooltip="Toggle Darkmode">
+                    <i class="fas fa-lg fa-moon" data-icon></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container header">
+        <a class="site-logo" href="/">
+            <img src="/images/limitless.png" alt="Limitless">
+        </a>
+
+                <form class="site-search" method="get" action="/" data-lang="en">
+            <div class="category-label">
+                <span class="selected-category">Cards</span>
+                <i class="fas fa-sm fa-caret-down"></i>
+            </div>
+
+            <select name="type" class="category-select">
+                <option value="cards"  selected >Cards</option>
+                <option value="tournaments" >Tournaments</option>
+                <option value="decks" >Decks</option>
+                <option value="players" >Players</option>
+            </select>
+
+            <input type="text" name="q" placeholder="Search database" autocomplete="off" autocapitalize="off"
+                autocorrect="off" >
+
+            <button type="submit" aria-label="submit search">
+                <i class="fas fa-lg fa-search"></i>
+            </button>
+
+            <div class="search-suggestions" data-suggestions>
+                <span class="suggestions-message" data-message></span>
+                <div class="suggestions-list" data-options>
+                </div>
+            </div>
+        </form>
+
+        <nav class="site-nav resp-nav" data-site-nav>
+            <button class="nav-toggle">
+                <i data-open class="fas fa-lg fa-bars"></i>
+                <i data-close class="fas fa-lg fa-times" style="display: none"></i>
+            </button>
+
+            <ul class="links">
+                
+                <li><a href="/tournaments">Tournaments</a></li>
+                <li><a href="/decks">Decks</a></li>
+                <li><a href="/cards">Cards</a></li>
+                <li class="sub-category">
+                    <a href="/tools">Tools</a>
+                    <ul class="sub-menu shift">
+                        <li><a href="/tools/imggen">Image Generator</a></li>
+                        <li><a href="/tools/proxies">Proxy Printer</a></li>
+                        <li><a href="/tools/swisscalc">Swiss Calculator</a></li>
+                        <li><a href="https://my.limitlesstcg.com/builder?game=OP">Deck Builder (Beta)</a></li>
+                        <li><a href="/tools/mfy">Metafy Hub</a></li>
+                    </ul>
+                </li>
+                <li class="sub-category more">
+                    <a class="expand">More</a>
+                    <ul class="sub-menu shift">
+                        <li><a href="/players">Rankings</a></li>
+                        <li><a href="https://play.limitlesstcg.com">Play</a></li>
+                    </ul>
+                </li>
+            </ul>
+        </nav>
+    </div>
+</header>
+    <div class="before-content"></div>
+
+            <div id="top_lb_placeholder" class="container dont-print top_ad">
+            <div class="ads-notice">This website is supported by ads.</div>
+        </div>
+    
+    <main>
+        <div class="container content">
+<div class="card-options">
+
+    <button class="toggle regular small">Edit search options</button>
+
+    <div class="content options-group">
+
+        <div class="options-row">
+    <label for="unique-select">Show</label>
+    <select id="unique-select" name="unique"  data-reload   >
+                    <option value="prints"  selected >All prints</option>
+                    <option value="cards" >1 print per card</option>
+                    <option value="text" >1 print per language</option>
+                              </select>
+</div>        <div class="options-row">
+    <label for="display-select">Display</label>
+    <select id="display-select" name="display"  data-reload   >
+                    <option value="grid"  selected >Images</option>
+                    <option value="imgs" >Small images</option>
+                    <option value="list" >List</option>
+                    <option value="full" >Full</option>
+                    <option value="compact" >Compact</option>
+                    <option value="text" >Text only</option>
+                              </select>
+</div>        <div class="options-row">
+    <label for="sort-select">Sort by</label>
+    <select id="sort-select" name="sort"  data-reload   >
+                    <option value="set"  selected >Set Release</option>
+                    <option value="id" >Card Number</option>
+                    <option value="name" >Name</option>
+                    <option value="category" >Category</option>
+                    <option value="color" >Color</option>
+                    <option value="cost" >Cost</option>
+                    <option value="power" >Power</option>
+                    <option value="rarity" >Rarity</option>
+                    <option value="usd" >USD price</option>
+                    <option value="eur" >EUR price</option>
+                              </select>
+</div>
+                    <div class="options-row">
+    <label for="lang-select">Language</label>
+    <select id="lang-select" name="lang"   data-card-language="data-card-language" data-location="ST09">
+                    <option value="all" >All languages</option>
+                    <option value="en"  selected >English</option>
+                    <option value="jp" >Japanese</option>
+                              </select>
+</div>        
+        <div class="options-row">
+            <label for="cpp-select">Cards per page</label>
+            <select id="cpp-select" name="show"  data-reload>
+                <option value="default" >Default</option>
+                <option value="all"  selected >All results</option>
+                <option value="25" >25</option>
+                <option value="50" >50</option>
+                <option value="100" >100</option>
+                            </select>
+        </div>
+
+    </div>
+</div>
+
+ <div class="infobox">
+                    <div class="infobox-heading sm">Yamato (ST09)</div>
+            <div class="infobox-line">
+                                     11th August 2023
+                                                     •                  15 Cards                  • $7.56 • 4.31€             </div>
+                                    </div> 
+<section>
+            
+        <div class="card-search-grid">
+                            <a href="/cards/ST09-001"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/ST09/ST09-001_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/ST09-002"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/ST09/ST09-002_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/ST09-003"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/ST09/ST09-003_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/ST09-004"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/ST09/ST09-004_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/ST09-005"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/ST09/ST09-005_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/ST09-006"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/ST09/ST09-006_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/ST09-007"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/ST09/ST09-007_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/ST09-008"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/ST09/ST09-008_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/ST09-009"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/ST09/ST09-009_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/ST09-010"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/ST09/ST09-010_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/ST09-011"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/ST09/ST09-011_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/ST09-012"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/ST09/ST09-012_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/ST09-013"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/ST09/ST09-013_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/ST09-014"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/ST09/ST09-014_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/ST09-015"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/ST09/ST09-015_EN.webp"
+                    width=600 height=838></a>
+                    </div>
+
+    
+</section>
+
+
+</div>
+    </main>
+
+    
+            <div id="bottom_ad_placeholder" class="container dont-print bottom_ad"></div>
+    
+    <div class="after-content"></div>
+
+    <footer>
+    <div class="container footer">
+        <div class="menus">
+            <div class="column">
+                <h2><a href="https://limitlesstcg.com">Limitless TCG</a></h2>
+                <ul>
+                    <li><a href="https://limitlesstcg.com/about">About</a></li>
+                    <li><a href="https://limitlesstcg.com/contact">Contact</a></li>
+                    <li><a href="https://limitlesstcg.com/privacy">Privacy Policy</a></li>
+                    <li><a href="https://limitlesstcg.com/legal">Site Notice</a></li>
+                </ul>
+            </div>
+            <div class="column">
+                <h2>Our Other Sites</h2>
+                <ul>
+                    <li><a href="https://my.limitlesstcg.com/?game=OP">Deck Builder</a></li>
+                    <li><a href="https://play.limitlesstcg.com/">Tournament Platform</a></li>
+                    <li><a href="https://limitlesstcg.com/">Pokémon Database</a></li>
+                </ul>
+            </div>
+            <div class="column">
+                <h2>Follow</h2>
+                <ul>
+                    <li><a href="https://twitter.com/LimitlessOPCG"><i class="fab fa-twitter"></i> Twitter</a></li>
+                    <li><a href="https://www.patreon.com/limitlesstcg"><i class="fab fa-patreon"></i> Patreon</a></li>
+                </ul>
+            </div>
+            <div class="column full">
+                                                    <h2>TCGplayer</h2>
+                    <a class="promo" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">
+                        <img src="/images/tcgplayer.png?1" alt="tcgplayer logo" />
+                        <p>You can support us by using our Affiliate Link when buying on TCGplayer!</p>
+                    </a>
+                            </div>
+
+                            <a class="cookie-link" onclick="window.ramp.showCmpModal();">Manage Cookies</a>
+                    </div>
+
+        <div class="disclaimer">The literal and graphical information presented on this website about the One Piece Card Game, including card images and text, is copyright Eiichiro Oda/Shueisha, Toei Animation and/or Bandai. This website is not produced by, endorsed by, supported by, or affiliated with any of those copyright holders.</div>
+
+                    <script data-cfasync="false" async src="//cdn.intergient.com/1025537/76057/ramp.js"></script>
+            </div>
+</footer>
+
+    <div id="jsg">
+        <div class="overlay"></div>
+    </div>
+</body>
+
+</html>

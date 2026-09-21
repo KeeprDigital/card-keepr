@@ -52,6 +52,13 @@ owner admission or linking; the serial Luffy appearance needs its own reviewed
 supplementary-only admission. These named scopes do not select the full Products
 and Promos indexes or establish token/art Card coverage.
 
+The retained [Limitless bucket census](../../acceptance/fixtures/real-sources/2026-09-21-limitless-buckets/README.md)
+holds every Products and Promos bucket page, including Prize Cards and Misc.
+Promos. The registration's finite capacity is that dated envelope of index roots,
+buckets, unique grid detail pages and unique referenced fronts. No registered
+scope yet selects those buckets; the adapter parses only the named Card pages,
+so the census establishes acquisition bounds and inventory, not publication.
+
 The Pokémon [Card and Product plan](../examples/pokemon-card-product-plan.json)
 checks the complete detailed treatment inventories of TCGdex Snorlax `svp-051`
 and Charizard `base1-4`, plus the selected official Garchomp card and 151 Pokémon

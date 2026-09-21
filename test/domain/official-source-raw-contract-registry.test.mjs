@@ -411,7 +411,7 @@ function isAdministrationProblem(code) {
 }
 
 const expectedRequestCapacities = {
-  "limitless-one-piece-en@1": 100,
+  "limitless-one-piece-en@1": 9_559,
   "riftbound-db-en@1": 7,
   "riftbound-en@1": 5000,
   "scryfall-magic-en@1": 108_691,
