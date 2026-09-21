@@ -223,7 +223,7 @@ export async function revokeToken({ admin, accountId, id, apply = false, force =
  * wrangler or reach Cloudflare; both receive the value and never return it.
  */
 export async function reissueToken(
-  { admin, target, purpose, owner, apply = false, install = installWorkerSecret, probe },
+  { admin, target, purpose, owner, apply = false, install = installWorkerSecret, probe, wait = sleep },
   fetchImpl = fetch,
 ) {
   const environment = target.environment;
@@ -253,13 +253,32 @@ export async function reissueToken(
   const created = await call(admin, "POST", store.base, { name, policies }, fetchImpl);
   const value = created.value;
   const runProbe = probe ?? ((values) => probeCredentials({ target, tokens: values }, fetchImpl));
-  const probeResult = await runProbe({ [probeSlots[purpose]]: value });
+  // A token can take a moment to reach every backend; only pure 401 failures are retried.
+  let probeResult = await runProbe({ [probeSlots[purpose]]: value });
+  let probeAttempts = 1;
+  while (!probeResult.ok && probeAttempts < probeRetries && onlyUnauthenticated(probeResult)) {
+    await wait(probeRetryDelayMs);
+    probeResult = await runProbe({ [probeSlots[purpose]]: value });
+    probeAttempts += 1;
+  }
   if (!probeResult.ok) {
     await call(admin, "DELETE", `${store.base}/${created.id}`, undefined, fetchImpl);
-    return { ...plan, applied: true, created: null, probe: probeResult };
+    return { ...plan, applied: true, created: null, probe: probeResult, probeAttempts };
   }
   await install({ secretName: secretNames[purpose], worker, accountId: target.accountId, value });
-  return { ...plan, applied: true, created: created.id, probe: probeResult };
+  return { ...plan, applied: true, created: created.id, probe: probeResult, probeAttempts };
+}
+
+const probeRetries = 5;
+const probeRetryDelayMs = 15_000;
+
+function onlyUnauthenticated(probeResult) {
+  const failed = probeResult.rows.filter((row) => row.outcome === "fail");
+  return failed.length > 0 && failed.every((row) => row.status === 401);
+}
+
+function sleep(ms) {
+  return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
 }
 
 /** `wrangler secret put <NAME> --name <worker>` with the value on stdin. */
@@ -325,11 +344,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         renderProbeTable({ environment, accountId: target.accountId, rows: result.probe.rows, ok: result.probe.ok }),
       );
       if (result.created === null) {
-        process.stdout.write("probe failed: the new token was deleted and the Worker secret is unchanged\n");
+        process.stdout.write(
+          `probe failed after ${result.probeAttempts} attempt(s): the new token was deleted and the Worker secret is unchanged\n`,
+        );
         process.exit(1);
       }
       process.stdout.write(
-        `created ${result.created} and installed; revoke ${result.previous.join(", ") || "nothing"} once a release proves it\n`,
+        `created ${result.created} and installed after ${result.probeAttempts} probe attempt(s); revoke ${result.previous.join(", ") || "nothing"} once a release proves it\n`,
       );
     }
   } else usage();

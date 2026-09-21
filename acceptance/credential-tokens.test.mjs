@@ -396,3 +396,58 @@ test("re-issue honours an explicit owner when nothing is being replaced", async 
   assert.deepEqual(result.policies[0].permission_groups, [{ id: "ag-d1" }]);
   assert.ok(calls.every((call) => call.method === "GET"));
 });
+
+test("an applied re-issue retries a probe that fails only with 401 before giving up", async () => {
+  const { fetchImpl, calls } = fakeFetch([]);
+  const installed = [];
+  const waits = [];
+  let attempts = 0;
+  const result = await reissueToken(
+    {
+      admin,
+      target: target("production"),
+      purpose: "d1-export",
+      apply: true,
+      install: async (input) => installed.push(input),
+      probe: async () => {
+        attempts += 1;
+        return attempts < 3
+          ? { ok: false, rows: [{ check: "d1-database-read", status: 401, outcome: "fail" }] }
+          : { ok: true, rows: [{ check: "d1-database-read", status: 200, outcome: "pass" }] };
+      },
+      wait: async (ms) => waits.push(ms),
+    },
+    fetchImpl,
+  );
+  assert.equal(attempts, 3);
+  assert.deepEqual(waits, [15_000, 15_000]);
+  assert.equal(result.created, "t-new");
+  assert.equal(result.probeAttempts, 3);
+  assert.equal(installed.length, 1);
+  assert.ok(calls.every((call) => call.method !== "DELETE"));
+});
+
+test("a probe that fails with anything but 401 is not retried", async () => {
+  const { fetchImpl, calls } = fakeFetch([]);
+  const waits = [];
+  let attempts = 0;
+  const result = await reissueToken(
+    {
+      admin,
+      target: target("production"),
+      purpose: "d1-export",
+      apply: true,
+      install: async () => {},
+      probe: async () => {
+        attempts += 1;
+        return { ok: false, rows: [{ check: "d1-database-read", status: 403, outcome: "fail" }] };
+      },
+      wait: async (ms) => waits.push(ms),
+    },
+    fetchImpl,
+  );
+  assert.equal(attempts, 1);
+  assert.deepEqual(waits, []);
+  assert.equal(result.created, null);
+  assert.equal(calls.filter((call) => call.method === "DELETE").length, 1);
+});
