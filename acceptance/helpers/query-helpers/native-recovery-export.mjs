@@ -33,3 +33,13 @@ export function insertParseContext(database) {
 export function retainedKeywordSuffixValues(database) {
   return database.prepare("SELECT long_prefix_BEGIN, éCASE, long_prefix_END FROM keyword_suffix_values");
 }
+
+export function retainedWithdrawalAssertionIds(database) {
+  return database.prepare(
+    "SELECT source_observation_id FROM reconciled_withdrawal_assertions ORDER BY source_observation_id",
+  );
+}
+
+export function insertWithdrawalAssertion(database) {
+  return database.prepare("INSERT INTO reconciled_withdrawal_assertions VALUES (?, ?, ?)");
+}

@@ -14,11 +14,14 @@ export function nativeRecoveryExportSql(exported) {
   return (
     "PRAGMA defer_foreign_keys=ON;\n" +
     [
-      ...statements.filter((sql) => /^CREATE TABLE/i.test(sql.trim())),
+      // Tables and their indexes form the schema retained rows are checked
+      // against: D1 keeps foreign keys enforced, and a composite FOREIGN KEY
+      // is a "foreign key mismatch" until the parent UNIQUE index exists.
+      ...statements.filter((sql) => /^CREATE (?:TABLE|(?:UNIQUE )?INDEX)/i.test(sql.trim())),
       ...statements.filter((sql) => !/^CREATE (?:TABLE|(?:UNIQUE )?INDEX|TRIGGER)/i.test(sql.trim())),
-      // Restore retained rows before installing indexes and the original write
-      // fences. Those triggers must govern later writes, not replayed data.
-      ...statements.filter((sql) => /^CREATE (?:(?:UNIQUE )?INDEX|TRIGGER)/i.test(sql.trim())),
+      // Restore retained rows before installing the original write fences.
+      // Those triggers must govern later writes, not replayed data.
+      ...statements.filter((sql) => /^CREATE TRIGGER/i.test(sql.trim())),
     ].join(";\n") +
     ";"
   );
