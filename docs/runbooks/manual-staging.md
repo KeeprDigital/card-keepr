@@ -58,20 +58,17 @@ intent/authorization endpoints before owner initiation can work. Install the
 staging runtime and configure its GitHub environment before dispatching the
 first real manual release. Initial installation is not evidence of that release.
 
-| Location                         | Required values                                                                                                                                                 |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GitHub `staging` variables       | `STAGING_CLOUDFLARE_ACCOUNT_ID`, `STAGING_CATALOGUE_DATABASE_ID`, initial `STAGING_DISPOSABLE_DATABASE_ID`                                                      |
-| GitHub `staging` secrets         | `STAGING_DEPLOYMENT_TOKEN`, `STAGING_API_TRAFFIC_TOKEN`                                                                                                         |
-| Owner-held API secret file       | `API_BEARER_KEY`, `API_BEARER_KEY_REPLACEMENT`                                                                                                                  |
-| Owner-held ingestion secret file | `ADMINISTRATION_KEY`, `ADMINISTRATION_KEY_REPLACEMENT`, `D1_EXPORT_TOKEN`, `D1_VERIFICATION_TOKEN`                                                              |
-| Owner CLI                        | Separate `KEEPR_PRODUCTION_ADMINISTRATION_KEY`, `KEEPR_STAGING_ADMINISTRATION_KEY`, scoped API keys, `KEEPR_GITHUB_RELEASE_TOKEN`, `KEEPR_GITHUB_RELEASE_ACTOR` |
+The [credentials inventory](credentials.md) lists every staging value: the
+GitHub `staging` variables and secrets, the owner-held API and ingestion secret
+files, and the owner CLI profile (`KEEPR_STAGING_*`, `KEEPR_GITHUB_RELEASE_TOKEN`,
+`KEEPR_GITHUB_RELEASE_ACTOR`), with each token's minimum grant and the read-only
+probe to run after issuing or rotating one.
 
 Issue credentials independently; no administration key belongs in Actions.
-The separate export and restore-verification credentials need D1 Write, as
-described in the dev procedure. Automatic scope classification also needs
-read access to the active production Worker versions; if that access is absent,
-the server explicitly selects full validation. Do not silently enlarge a token's
-authority to avoid this fallback.
+Automatic scope classification needs **production's** `D1_VERIFICATION_TOKEN` to
+read the active production Worker versions; if that access is absent, the server
+explicitly selects full validation with `unknown_transition`. Grant exactly that
+read (see the inventory); do not enlarge any other token to avoid the fallback.
 
 ## Same-zone authorization fetch
 

@@ -69,13 +69,10 @@ resets data, accepts a recovery, or approves a Catalogue Candidate.
 
 ## Credentials and resources
 
-| Location                                 | Required configuration                                                                             |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| GitHub `dev` environment variables       | `DEV_CLOUDFLARE_ACCOUNT_ID`, `DEV_CATALOGUE_DATABASE_ID`, `DEV_DISPOSABLE_DATABASE_ID`             |
-| GitHub `dev` environment secrets         | `DEV_DEPLOYMENT_TOKEN`, `DEV_API_TRAFFIC_TOKEN`                                                    |
-| API Worker secret file, owner-held       | `API_BEARER_KEY`, `API_BEARER_KEY_REPLACEMENT`                                                     |
-| Ingestion Worker secret file, owner-held | `ADMINISTRATION_KEY`, `ADMINISTRATION_KEY_REPLACEMENT`, `D1_EXPORT_TOKEN`, `D1_VERIFICATION_TOKEN` |
-| Owner CLI dev profile                    | `KEEPR_DEV_API_KEY`, `KEEPR_DEV_ADMINISTRATION_KEY`                                                |
+The [credentials inventory](credentials.md) lists every dev value: the GitHub
+`dev` variables and secrets, the owner-held API and ingestion secret files and
+the owner CLI profile (`KEEPR_DEV_*`), with each token's minimum grant, its code
+path and the read-only probe to run after issuing or rotating one.
 
 `DEV_DISPOSABLE_DATABASE_ID` starts with the provisioned UUID for first installation.
 Automatic deployment replaces that value for its job from authenticated preparation;
