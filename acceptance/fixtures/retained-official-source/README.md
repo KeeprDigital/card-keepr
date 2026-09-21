@@ -79,11 +79,19 @@ checking URL, completeness and digests; historical parser fixtures remain unchan
 `expected_full_body_sha256` still describe the original regression capture, so
 `status: drift` with `category: unchanged` is valid.
 
-Raw comparisons include all observations and requests. Two reviewed display-only
+Raw comparisons include all observations and requests. Three reviewed display-only
 equivalences are separate: complete Fusion Product-item permutations within one
-status section, and version tokens on three exact decorative Gundam thumbnail
-paths. Other facts, statuses, URLs and tokens remain exact. The earlier partial
-Gundam capture never established complete-response equivalence.
+status section, complete Gundam news-item permutations among items sharing one
+publication date, and version tokens on three exact decorative Gundam thumbnail
+paths. Other facts, statuses, URLs, tokens and date order remain exact. Printing
+Image query tokens stay actionable and are refreshed only through a reviewed
+baseline. The earlier partial Gundam capture never established complete-response
+equivalence.
+
+`history/<date>/` retains the complete recaptures and run reports that reviewed
+baselines and comparison rules were derived from; `history/2026-09-15/` holds
+the scheduled run 34952843408 report and the errata listing whose same-day
+rotation the comparison rule recognizes.
 
 Offline replay uses historical baselines unless explicitly selected:
 
