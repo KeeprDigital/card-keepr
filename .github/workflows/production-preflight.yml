@@ -26,8 +26,8 @@ jobs:
         run: |
           set -euo pipefail
           target="$(node --input-type=module -e '
-            import { readFile } from "node:fs/promises";
-            const ingestion = JSON.parse(await readFile("apps/ingestion/wrangler.jsonc", "utf8"));
+            import { readWorkerConfig } from "./cli/lib/config.mjs";
+            const ingestion = await readWorkerConfig("apps/ingestion/wrangler.jsonc");
             const d1 = ingestion.d1_databases[0];
             process.stdout.write(JSON.stringify({
               cloudflare_account_id: ingestion.vars.CLOUDFLARE_ACCOUNT_ID,
@@ -51,7 +51,7 @@ jobs:
           set -euo pipefail
           printf 'SELECT 1 AS ready;\n' > /tmp/production-preflight-ready.sql
           result="$(CLOUDFLARE_ACCOUNT_ID="$(node --input-type=module -e '
-            import { readFile } from "node:fs/promises";
-            process.stdout.write(JSON.parse(await readFile("apps/ingestion/wrangler.jsonc", "utf8")).vars.CLOUDFLARE_ACCOUNT_ID);
+            import { readWorkerConfig } from "./cli/lib/config.mjs";
+            process.stdout.write((await readWorkerConfig("apps/ingestion/wrangler.jsonc")).vars.CLOUDFLARE_ACCOUNT_ID);
           ')" node scripts/production-release-d1.mjs execute --config apps/ingestion/wrangler.jsonc --file /tmp/production-preflight-ready.sql)"
           test "$(jq -r '.[-1].results[0].ready' <<<"${result}")" = 1
