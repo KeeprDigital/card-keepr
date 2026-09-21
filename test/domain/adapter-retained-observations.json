@@ -5,7 +5,7 @@
   },
   "digimon-en-card-list-bt01-leaf.json": {
     "bytes_sha256": "f0059b9115c9875b864f5df2eca80dd9767e36fa4e19c4def916825cf88a937f",
-    "observations_sha256": "79f56b678b044f4c85a05e2d5f70e273013cae3da52b56e1fafc90e248c095aa"
+    "observations_sha256": "c54eaf604a94a48a0681d8f8bc6803721b459e0be386f14d6057014bac35c3eb"
   },
   "digimon-en-card-list-popup-fragment.html": {
     "bytes_sha256": "7c4e721ebbcf8162d659aff22cafc65fdae0885404326d4cb4ee0dcf1949e7ef",
@@ -239,6 +239,10 @@
     "bytes_sha256": "4b71a77f5cd778a50cd94171cab3ffd55e8f6d208ef74bf6172a86eb1028f4c4",
     "observations_sha256": "9074b7b2fbc5547f0cdc37d18f84ceec7fdc5a513e34aa2587ca28824e684384"
   },
+  "one-piece-en-card-list-op16-series.json": {
+    "bytes_sha256": "9efff60c30161e3835e998832b2d33784359e710bdf263bad122f18c8d347a7e",
+    "observations_sha256": "78ba436e38f5d5c0a0b054eb82406552cde9c10ac609a1c2b9beaa5fb9ac278d"
+  },
   "one-piece-en-card-list.json": {
     "bytes_sha256": "93a49866c157de61bf503a81beb0b9951e98f658bf68687e060a4d616eb3872d",
     "observations_sha256": "56845268ccca7016144311646225308d53a2daee74719be75f5bd9e2a612233a"
@@ -269,7 +273,7 @@
   },
   "one-piece-en-restructured-discovery.json": {
     "bytes_sha256": "27e169e3345d29cbe60c8e4db87647a16b3adf37de299c5ca64dc3b185a09fe6",
-    "observations_sha256": "0418e2b9272f5ab3dac6e9a85b8d466d5e3281915d22ef220c3a7537da03fd85"
+    "observations_sha256": "9365f42ea8754b0f3c0ec401a4e1e308c1206b884366f84278177a5f06168fdd"
   },
   "one-piece-en-rules-hub.json": {
     "bytes_sha256": "c9de2076bf785f2a42b94aecdd6fac97540f488ae709e726b216ec0be787e916",

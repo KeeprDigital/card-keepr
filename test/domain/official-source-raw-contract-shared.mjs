@@ -44,8 +44,9 @@ export function retainedOfficialSourceFixture(slug) {
   // optional-card-field pages (Fusion Energy Markers, Digimon nested Q&A);
   // 08-12 captured the fusion live-shape pages (anchored product status
   // sections, errata-annotated details, the season Release, and the
-  // legality-history restriction lift).
-  assert.match(metadata.retrieved_at, /^2026-08-(?:0[2-7]|1[12])T/u);
+  // legality-history restriction lift); 09-21 captured the live One Piece
+  // OP16 series page that proves the bounded-intake observation contract.
+  assert.match(metadata.retrieved_at, /^2026-(?:08-(?:0[2-7]|1[12])|09-21)T/u);
   return { bytes, metadata };
 }
 

@@ -50,7 +50,7 @@ import {
 
 export type { IngestionEvidenceRow } from "./ingestion-run-repository";
 
-import { globalEmergencySourceRequestCeiling, requiredSourceAdapter } from "../adapters";
+import { globalEmergencySourceRequestCeiling, requiredSourceAdapter, sourceAdapterForCoverage } from "../adapters";
 import { curatedRevisionPinStatementsForNewRun, curatedRevisionSetForRun } from "../curated";
 import { boundedEvidenceDetail, collectionInspection, type PacingConfiguration } from "./collection-inspection";
 import {
@@ -556,15 +556,36 @@ const admittedLineageCountSql = `(
   )
 )`;
 
+// Staged discovery requests are sequenced at or above this floor. The
+// immutable-plan trigger (migrations/0001_baseline.sql) reserves the windows
+// [plan request count + 10000 × plan index, +10000) below it for each
+// lineage's Official Source Collection Plan, which is derived only after that
+// lineage's staged discovery completes. A production run that composes such a
+// lineage with one discovering dynamically must sequence every discovered
+// request above the floor too, or the later plan collides (issue #334).
+const stagedDiscoverySequenceFloor = 1_000_000;
+
+function reservesOfficialCollectionPlanWindows(run: Pick<IngestionEvidenceRow, "request_plan_json" | "plan_origin">) {
+  return (
+    run.plan_origin === "production" &&
+    parseEvidencePlans(run.request_plan_json).some(
+      (plan) =>
+        sourceAdapterForCoverage(requiredSourceAdapter(plan.adapter_version), plan.coverage?.subset)
+          .requestUrlForDiscovery !== undefined,
+    )
+  );
+}
+
 export async function appendDiscoveredEvidenceRequests(
   database: CatalogueStore,
-  run: Pick<IngestionEvidenceRow, "id" | "request_plan_json">,
+  run: Pick<IngestionEvidenceRow, "id" | "request_plan_json" | "plan_origin">,
   parent: EvidenceRequestRow,
   discovered: readonly DiscoveredEvidenceRequest[],
   guard?: () => D1PreparedStatement,
 ): Promise<readonly EvidenceRequestRow[]> {
   const plan = evidencePlanForRequest(run, parent.request_id);
   const singleParentRoles = requiredSourceAdapter(plan.adapter_version).singleDiscoveryParentRoles ?? [];
+  const aboveCollectionPlanWindows = reservesOfficialCollectionPlanWindows(run);
   const normalizedById = new Map<
     string,
     {
@@ -609,7 +630,8 @@ export async function appendDiscoveredEvidenceRequests(
       headers_json: headersJson,
       representation_fingerprint: await sha256(utf8(canonicalJson({ method: "GET", url, headers: request.headers }))),
       role: request.role,
-      sequence_floor: request.discoveryKey === undefined ? 0 : 1_000_000,
+      sequence_floor:
+        request.discoveryKey !== undefined || aboveCollectionPlanWindows ? stagedDiscoverySequenceFloor : 0,
     });
   }
   const normalized = [...normalizedById.values()];

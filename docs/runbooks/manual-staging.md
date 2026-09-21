@@ -73,6 +73,17 @@ read access to the active production Worker versions; if that access is absent,
 the server explicitly selects full validation. Do not silently enlarge a token's
 authority to avoid this fallback.
 
+## Same-zone authorization fetch
+
+The staging ingestion Worker verifies each owner intent by fetching
+production's `/v1/staging-release-authorizations` route over public HTTPS.
+Both Workers share the `keepr.digital` zone, and Cloudflare routes a Worker's
+same-zone `fetch()` to the zone origin (the `100::` placeholder) unless the
+`global_fetch_strictly_public` compatibility flag is set. The ingestion
+configuration declares that flag; without it staging reports
+`staging_authorization_refused` while production records nothing
+(`acceptance/staging-worker-config.test.mjs`).
+
 ## One owner intent
 
 Invoke `release staging --target production` because production owns the release
