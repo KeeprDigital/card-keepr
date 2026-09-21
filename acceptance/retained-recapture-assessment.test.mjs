@@ -257,4 +257,17 @@ test("every reviewed monitoring baseline verifies its complete bytes and replays
     assert.equal(results[file].request_count, 25, file);
   }
   assert.equal(results["gundam-en-asia-card-list-complete-live.json"].request_count, 375);
+  // The 2026-09-15 Digimon product baselines carry the v=260911 asset token on
+  // every image request while the product and release observations are unchanged.
+  for (const [file, requests] of [
+    ["digimon-en-product-gift-box.json", 295],
+    ["digimon-en-product-theme-booster.json", 292],
+  ]) {
+    assert.equal(results[file].observation_count, 1, file);
+    assert.equal(results[file].request_count, requests, file);
+    const capture = JSON.parse(gunzipSync(await readFile(join(monitoring, `${file}.gz`))));
+    const html = Buffer.from(capture.body_base64, "base64").toString("utf8");
+    assert.ok(html.includes("?v=260911"), file);
+    assert.ok(!html.includes("?260818"), file);
+  }
 });

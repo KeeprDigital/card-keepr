@@ -24,16 +24,16 @@
     "reason": "Card and Printing facts unchanged; adds category 522038 listing and ver26 product image navigation."
   },
   "digimon-en-product-gift-box.json": {
-    "full_body_sha256": "03fd2d10500fd2ed4b6db57c7f159cefe328b89cfd68f6e78ec032ccb552ba06",
+    "full_body_sha256": "828bc0413e89ea7df1f34afb940acc6739455fd383ac101944e3aca478ce9b12",
     "source_url": "https://world.digimoncard.com/products/goods/gift_box.php",
-    "retrieved_at": "2026-09-09T08:50:09.687Z",
-    "reason": "Product and release unchanged; four official navigation publications added and asset query 260604 changes to 260818."
+    "retrieved_at": "2026-09-15T09:30:48.709Z",
+    "reason": "Product and release unchanged; 295 discovered requests identical apart from 17 site-wide asset query tokens 260818 changing to v=260911 on navigation images and product thumbnails. No other byte changed. Reviewed from scheduled run 34952843408."
   },
   "digimon-en-product-theme-booster.json": {
-    "full_body_sha256": "a40bf1a568b734aace146dea1ae5986aeb562aae85493b0d257ca3d40d7a0a98",
+    "full_body_sha256": "3cd2719f5eccdb1589217041a33ac91e5892b5bfa9d6dea4a739fd369ef56336",
     "source_url": "https://world.digimoncard.com/products/pack/ex-01.php",
-    "retrieved_at": "2026-09-09T08:50:12.961Z",
-    "reason": "Product and release unchanged; four official navigation publications added and asset query 260604 changes to 260818."
+    "retrieved_at": "2026-09-15T09:30:51.683Z",
+    "reason": "Product and release unchanged; 292 discovered requests identical apart from 17 site-wide asset query tokens 260818 changing to v=260911 on navigation images and product thumbnails. No other byte changed. Reviewed from scheduled run 34952843408."
   },
   "digimon-en-restructured-card-search.json": {
     "full_body_sha256": "d6e1b37e930a844cf145a1c5cc0775f8b827393dae1edcc9df2fb36301164b00",
