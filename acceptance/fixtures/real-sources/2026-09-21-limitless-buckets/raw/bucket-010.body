@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en" >
+
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Royal Blood (OP10) – Limitless One Piece</title>
+    <meta name="description" content="A One Piece card database with advanced search features and up-to-date pricing data.">
+
+            <meta property="og:title" content="Royal Blood (OP10) – Limitless One Piece">
+        <meta property="og:description" content="A One Piece card database with advanced search features and up-to-date pricing data.">
+        <meta property="og:image" content="https://onepiece.limitlesstcg.com/images/limitlessopcg.png">
+        <meta property="og:type" content="website">
+        <meta property="og:site_name" content="Limitless TCG">
+    
+            <meta name="twitter:card" content="summary">
+        <meta name="twitter:site" content="@LimitlessOPCG">
+        <meta name="twitter:title" content="Royal Blood (OP10) – Limitless One Piece">
+        <meta name="twitter:description" content="A One Piece card database with advanced search features and up-to-date pricing data.">
+        <meta name="twitter:image" content="https://onepiece.limitlesstcg.com/images/limitlessopcg.png">
+    
+    <link rel="manifest" href="/app.webmanifest">
+
+            <!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-JEXRLS78TW"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-JEXRLS78TW');
+</script>    
+            <script data-cfasync="false">
+    window.ramp = window.ramp || {};
+    window.ramp.que = window.ramp.que || [];
+</script>
+
+<style>
+#pw-oop-bottom_rail, .bh-div-wrapper, .celtra-banner, div[data-gg-moat] {
+    z-index: 10 !important;
+    box-sizing: content-box;
+}
+
+@media print {
+    #pw-oop-bottom_rail, .bh-div-wrapper, .celtra-banner,
+    #pw-oop-left_rail {
+        display: none !important;
+    }
+}
+
+.top_ad {
+    min-width: 320px;
+    min-height: 50px;
+    position: relative;
+}
+
+.bottom_ad {
+    min-height: 50px;
+}
+
+@media (min-width: 768px) {
+    .top_ad {
+        min-width: 728px;
+        min-height: 90px;
+    }
+}
+
+.top_ad .ads-notice {
+    width: 100%;
+    height: 100%;
+    background-color: var(--bg-color-two);
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: -1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+</style>    
+    <link rel="preload" as="style" href="https://onepiece.limitlesstcg.com/build/assets/main-e98f9745.css" /><link rel="modulepreload" href="https://onepiece.limitlesstcg.com/build/assets/main-0198dafa.js" /><link rel="modulepreload" href="https://onepiece.limitlesstcg.com/build/assets/dom-7f7df130.js" /><link rel="modulepreload" href="https://onepiece.limitlesstcg.com/build/assets/fetch-a833fccf.js" /><link rel="modulepreload" href="https://onepiece.limitlesstcg.com/build/assets/limitless-79f393e8.js" /><link rel="modulepreload" href="https://onepiece.limitlesstcg.com/build/assets/ws-search-21f06e8f.js" /><link rel="modulepreload" href="https://onepiece.limitlesstcg.com/build/assets/suggest-4ff36e79.js" /><link rel="stylesheet" href="https://onepiece.limitlesstcg.com/build/assets/main-e98f9745.css" /><script type="module" src="https://onepiece.limitlesstcg.com/build/assets/main-0198dafa.js"></script>
+            <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400..700&family=Open+Sans+Condensed:wght@700&display=swap">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400..700&family=Open+Sans+Condensed:wght@700&display=swap">
+        <link rel="stylesheet" href="/inc/fontawesome/css/all.min.css?v=5.11.2">
+    
+        
+    <script>var LS_SEARCH_RESULTS = '~ search results', LS_NO_SEARCH_RESULTS = 'no search results found';</script>
+    <script>var LMT_RNT = false;</script>
+</head>
+
+<body>
+    <header>
+    <div class="header-top" data-mini-bar>
+        <div class="container top">
+            <div class="flex gap-4 items-center">
+                
+                <div class="site-news"> Latest Updates:
+                                            <a href="/cards/op17-the-worlds-strongest-warriors">OP17</a>                                      </div>
+            </div>
+
+            <div class="site-settings">
+                <select class="language-switch" data-site-language>
+                    <option value="en_US"  selected >English</option>
+                    <option value="jp_JP" >日本語</option>
+                </select>
+                <button class="darkmode-toggle" aria-label="darkmode toggle" data-site-theme data-tooltip="Toggle Darkmode">
+                    <i class="fas fa-lg fa-moon" data-icon></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container header">
+        <a class="site-logo" href="/">
+            <img src="/images/limitless.png" alt="Limitless">
+        </a>
+
+                <form class="site-search" method="get" action="/" data-lang="en">
+            <div class="category-label">
+                <span class="selected-category">Cards</span>
+                <i class="fas fa-sm fa-caret-down"></i>
+            </div>
+
+            <select name="type" class="category-select">
+                <option value="cards"  selected >Cards</option>
+                <option value="tournaments" >Tournaments</option>
+                <option value="decks" >Decks</option>
+                <option value="players" >Players</option>
+            </select>
+
+            <input type="text" name="q" placeholder="Search database" autocomplete="off" autocapitalize="off"
+                autocorrect="off" >
+
+            <button type="submit" aria-label="submit search">
+                <i class="fas fa-lg fa-search"></i>
+            </button>
+
+            <div class="search-suggestions" data-suggestions>
+                <span class="suggestions-message" data-message></span>
+                <div class="suggestions-list" data-options>
+                </div>
+            </div>
+        </form>
+
+        <nav class="site-nav resp-nav" data-site-nav>
+            <button class="nav-toggle">
+                <i data-open class="fas fa-lg fa-bars"></i>
+                <i data-close class="fas fa-lg fa-times" style="display: none"></i>
+            </button>
+
+            <ul class="links">
+                
+                <li><a href="/tournaments">Tournaments</a></li>
+                <li><a href="/decks">Decks</a></li>
+                <li><a href="/cards">Cards</a></li>
+                <li class="sub-category">
+                    <a href="/tools">Tools</a>
+                    <ul class="sub-menu shift">
+                        <li><a href="/tools/imggen">Image Generator</a></li>
+                        <li><a href="/tools/proxies">Proxy Printer</a></li>
+                        <li><a href="/tools/swisscalc">Swiss Calculator</a></li>
+                        <li><a href="https://my.limitlesstcg.com/builder?game=OP">Deck Builder (Beta)</a></li>
+                        <li><a href="/tools/mfy">Metafy Hub</a></li>
+                    </ul>
+                </li>
+                <li class="sub-category more">
+                    <a class="expand">More</a>
+                    <ul class="sub-menu shift">
+                        <li><a href="/players">Rankings</a></li>
+                        <li><a href="https://play.limitlesstcg.com">Play</a></li>
+                    </ul>
+                </li>
+            </ul>
+        </nav>
+    </div>
+</header>
+    <div class="before-content"></div>
+
+            <div id="top_lb_placeholder" class="container dont-print top_ad">
+            <div class="ads-notice">This website is supported by ads.</div>
+        </div>
+    
+    <main>
+        <div class="container content">
+<div class="card-options">
+
+    <button class="toggle regular small">Edit search options</button>
+
+    <div class="content options-group">
+
+        <div class="options-row">
+    <label for="unique-select">Show</label>
+    <select id="unique-select" name="unique"  data-reload   >
+                    <option value="prints"  selected >All prints</option>
+                    <option value="cards" >1 print per card</option>
+                    <option value="text" >1 print per language</option>
+                              </select>
+</div>        <div class="options-row">
+    <label for="display-select">Display</label>
+    <select id="display-select" name="display"  data-reload   >
+                    <option value="grid"  selected >Images</option>
+                    <option value="imgs" >Small images</option>
+                    <option value="list" >List</option>
+                    <option value="full" >Full</option>
+                    <option value="compact" >Compact</option>
+                    <option value="text" >Text only</option>
+                              </select>
+</div>        <div class="options-row">
+    <label for="sort-select">Sort by</label>
+    <select id="sort-select" name="sort"  data-reload   >
+                    <option value="set"  selected >Set Release</option>
+                    <option value="id" >Card Number</option>
+                    <option value="name" >Name</option>
+                    <option value="category" >Category</option>
+                    <option value="color" >Color</option>
+                    <option value="cost" >Cost</option>
+                    <option value="power" >Power</option>
+                    <option value="rarity" >Rarity</option>
+                    <option value="usd" >USD price</option>
+                    <option value="eur" >EUR price</option>
+                              </select>
+</div>
+                    <div class="options-row">
+    <label for="lang-select">Language</label>
+    <select id="lang-select" name="lang"   data-card-language="data-card-language" data-location="OP10">
+                    <option value="all" >All languages</option>
+                    <option value="en"  selected >English</option>
+                    <option value="jp" >Japanese</option>
+                              </select>
+</div>        
+        <div class="options-row">
+            <label for="cpp-select">Cards per page</label>
+            <select id="cpp-select" name="show"  data-reload>
+                <option value="default" >Default</option>
+                <option value="all"  selected >All results</option>
+                <option value="25" >25</option>
+                <option value="50" >50</option>
+                <option value="100" >100</option>
+                            </select>
+        </div>
+
+    </div>
+</div>
+
+ <div class="infobox">
+                    <div class="infobox-heading sm">Royal Blood (OP10)</div>
+            <div class="infobox-line">
+                                     21st March 2025
+                                                     •                  151 Cards                  • $1,908.22 • 1,592.21€             </div>
+                                    </div> 
+<section>
+            
+        <div class="card-search-grid">
+                            <a href="/cards/OP10-001"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-001_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-002"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-002_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-003"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-003_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-004"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-004_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-005"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-005_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-006"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-006_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-007"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-007_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-008"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-008_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-009"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-009_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-010"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-010_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-011"><img  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-011_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-012"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-012_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-013"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-013_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-014"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-014_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-015"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-015_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-016"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-016_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-017"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-017_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-018"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-018_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-019"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-019_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-020"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-020_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-021"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-021_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-022"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-022_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-023"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-023_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-024"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-024_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-025"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-025_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-026"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-026_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-027"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-027_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-028"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-028_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-029"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-029_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-030"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-030_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-031"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-031_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-032"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-032_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-033"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-033_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-034"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-034_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-035"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-035_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-036"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-036_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-037"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-037_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-038"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-038_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-039"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-039_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-040"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-040_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-041"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-041_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-042"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-042_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-043"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-043_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-044"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-044_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-045"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-045_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-046"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-046_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-047"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-047_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-048"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-048_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-049"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-049_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-050"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-050_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-051"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-051_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-052"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-052_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-053"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-053_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-054"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-054_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-055"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-055_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-056"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-056_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-057"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-057_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-058"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-058_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-059"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-059_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-060"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-060_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-061"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-061_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-062"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-062_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-063"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-063_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-064"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-064_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-065"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-065_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-066"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-066_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-067"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-067_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-068"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-068_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-069"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-069_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-070"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-070_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-071"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-071_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-072"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-072_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-073"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-073_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-074"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-074_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-075"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-075_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-076"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-076_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-077"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-077_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-078"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-078_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-079"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-079_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-080"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-080_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-081"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-081_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-082"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-082_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-083"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-083_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-084"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-084_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-085"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-085_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-086"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-086_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-087"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-087_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-088"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-088_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-089"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-089_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-090"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-090_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-091"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-091_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-092"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-092_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-093"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-093_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-094"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-094_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-095"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-095_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-096"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-096_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-097"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-097_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-098"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-098_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-099"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-099_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-100"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-100_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-101"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-101_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-102"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-102_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-103"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-103_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-104"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-104_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-105"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-105_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-106"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-106_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-107"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-107_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-108"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-108_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-109"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-109_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-110"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-110_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-111"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-111_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-112"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-112_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-113"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-113_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-114"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-114_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-115"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-115_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-116"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-116_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-117"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-117_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-118"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-118_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-119"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-119_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-005?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-005_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-016?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-016_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-030?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-030_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-032?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-032_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-037?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-037_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-045?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-045_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-046?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-046_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-058?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-058_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-067?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-067_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-071?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-071_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-072?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-072_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-082?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-082_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-090?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-090_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-111?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-111_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-112?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-112_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-118?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-118_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-119?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-119_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-019?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-019_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-001?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-001_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-002?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-002_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-003?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-003_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-022?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-022_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-042?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-042_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-099?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-099_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP10-119?v=2"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP10/OP10-119_p2_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/EB01-056?v=2"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/EB01/EB01-056_p2_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP07-021?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP07/OP07-021_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/ST12-012?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/ST12/ST12-012_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/ST14-003?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/ST14/ST14-003_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/ST15-002?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/ST15/ST15-002_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/ST18-001?v=1"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/ST18/ST18-001_p1_EN.webp"
+                    width=600 height=838></a>
+                            <a href="/cards/OP08-052?v=2"><img  loading="lazy"  class="card shadow" src="https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/one-piece/OP08/OP08-052_p2_EN.webp"
+                    width=600 height=838></a>
+                    </div>
+
+    
+</section>
+
+
+</div>
+    </main>
+
+    
+            <div id="bottom_ad_placeholder" class="container dont-print bottom_ad"></div>
+    
+    <div class="after-content"></div>
+
+    <footer>
+    <div class="container footer">
+        <div class="menus">
+            <div class="column">
+                <h2><a href="https://limitlesstcg.com">Limitless TCG</a></h2>
+                <ul>
+                    <li><a href="https://limitlesstcg.com/about">About</a></li>
+                    <li><a href="https://limitlesstcg.com/contact">Contact</a></li>
+                    <li><a href="https://limitlesstcg.com/privacy">Privacy Policy</a></li>
+                    <li><a href="https://limitlesstcg.com/legal">Site Notice</a></li>
+                </ul>
+            </div>
+            <div class="column">
+                <h2>Our Other Sites</h2>
+                <ul>
+                    <li><a href="https://my.limitlesstcg.com/?game=OP">Deck Builder</a></li>
+                    <li><a href="https://play.limitlesstcg.com/">Tournament Platform</a></li>
+                    <li><a href="https://limitlesstcg.com/">Pokémon Database</a></li>
+                </ul>
+            </div>
+            <div class="column">
+                <h2>Follow</h2>
+                <ul>
+                    <li><a href="https://twitter.com/LimitlessOPCG"><i class="fab fa-twitter"></i> Twitter</a></li>
+                    <li><a href="https://www.patreon.com/limitlesstcg"><i class="fab fa-patreon"></i> Patreon</a></li>
+                </ul>
+            </div>
+            <div class="column full">
+                                                    <h2>TCGplayer</h2>
+                    <a class="promo" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">
+                        <img src="/images/tcgplayer.png?1" alt="tcgplayer logo" />
+                        <p>You can support us by using our Affiliate Link when buying on TCGplayer!</p>
+                    </a>
+                            </div>
+
+                            <a class="cookie-link" onclick="window.ramp.showCmpModal();">Manage Cookies</a>
+                    </div>
+
+        <div class="disclaimer">The literal and graphical information presented on this website about the One Piece Card Game, including card images and text, is copyright Eiichiro Oda/Shueisha, Toei Animation and/or Bandai. This website is not produced by, endorsed by, supported by, or affiliated with any of those copyright holders.</div>
+
+                    <script data-cfasync="false" async src="//cdn.intergient.com/1025537/76057/ramp.js"></script>
+            </div>
+</footer>
+
+    <div id="jsg">
+        <div class="overlay"></div>
+    </div>
+</body>
+
+</html>
