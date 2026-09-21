@@ -24,16 +24,16 @@
     "reason": "Card and Printing facts unchanged; adds category 522038 listing and ver26 product image navigation."
   },
   "digimon-en-product-gift-box.json": {
-    "full_body_sha256": "03fd2d10500fd2ed4b6db57c7f159cefe328b89cfd68f6e78ec032ccb552ba06",
+    "full_body_sha256": "828bc0413e89ea7df1f34afb940acc6739455fd383ac101944e3aca478ce9b12",
     "source_url": "https://world.digimoncard.com/products/goods/gift_box.php",
-    "retrieved_at": "2026-09-09T08:50:09.687Z",
-    "reason": "Product and release unchanged; four official navigation publications added and asset query 260604 changes to 260818."
+    "retrieved_at": "2026-09-15T09:30:48.709Z",
+    "reason": "Product and release unchanged; 295 discovered requests identical apart from 17 site-wide asset query tokens 260818 changing to v=260911 on navigation images and product thumbnails. No other byte changed. Reviewed from scheduled run 34952843408."
   },
   "digimon-en-product-theme-booster.json": {
-    "full_body_sha256": "a40bf1a568b734aace146dea1ae5986aeb562aae85493b0d257ca3d40d7a0a98",
+    "full_body_sha256": "3cd2719f5eccdb1589217041a33ac91e5892b5bfa9d6dea4a739fd369ef56336",
     "source_url": "https://world.digimoncard.com/products/pack/ex-01.php",
-    "retrieved_at": "2026-09-09T08:50:12.961Z",
-    "reason": "Product and release unchanged; four official navigation publications added and asset query 260604 changes to 260818."
+    "retrieved_at": "2026-09-15T09:30:51.683Z",
+    "reason": "Product and release unchanged; 292 discovered requests identical apart from 17 site-wide asset query tokens 260818 changing to v=260911 on navigation images and product thumbnails. No other byte changed. Reviewed from scheduled run 34952843408."
   },
   "digimon-en-restructured-card-search.json": {
     "full_body_sha256": "d6e1b37e930a844cf145a1c5cc0775f8b827393dae1edcc9df2fb36301164b00",
@@ -84,16 +84,16 @@
     "reason": "All 172 retained listing observations preserve product catalogue; category583011 FB11 added to discovery and source links."
   },
   "gundam-en-asia-card-detail-dash-live.json": {
-    "full_body_sha256": "ee953c992615c8667ed1c9a3b5e95c32f8569d34e0663a8b2c0a460155689f69",
+    "full_body_sha256": "d6778f712fdde5a6580390e863b267a485c90a7940bf1f8c23933593f2d028a5",
     "source_url": "https://www.gundam-gcg.com/asia-en/cards/detail.php?detailSearch=GD02-016",
-    "retrieved_at": "2026-09-09T08:50:54.026Z",
-    "reason": "Card and Printing facts unchanged; evidence-bearing image query260710 changes to260818. No new Printing inferred."
+    "retrieved_at": "2026-09-15T09:31:28.795Z",
+    "reason": "Card GD02-016 Barzam and Printing facts unchanged; evidence-bearing image query 260818 changes to 260911. No new Printing inferred. Reviewed from scheduled run 34952843408."
   },
   "gundam-en-asia-card-list-complete-live.json": {
-    "full_body_sha256": "09f2b911b7ea629c63fad5aca63e10ce465c7215b9d700a09fdbc438ca6e7e13",
+    "full_body_sha256": "929c55209ea8bb71be5ddf1976f79c7bda00d0c95738322793d9981109096298",
     "source_url": "https://www.gundam-gcg.com/asia-en/cards/index.php?package=619102",
-    "retrieved_at": "2026-09-09T08:50:55.624Z",
-    "reason": "First COMPLETE monitoring baseline; old range cannot prove whole-response equivalence. Raw187 Card-detail locators and page coverage retained; image query260818. Registered Products root detail-role bug fixed separately. Historical uncertainty preserved."
+    "retrieved_at": "2026-09-15T09:31:30.686Z",
+    "reason": "Complete GD02 listing unchanged: 187 Card-detail locators, 187/187 coverage and 188 image requests retained; image query 260818 changes to 260911. Root filters add ST11-ST14 package options that the listing surface does not emit. Reviewed from scheduled run 34952843408."
   },
   "gundam-en-asia-errata-listing.json": {
     "full_body_sha256": "9ccfff805aa30b9914d6f5ee3325cf3597e25c964f7fb43b2f99777e9c5d03d0",
@@ -106,6 +106,18 @@
     "source_url": "https://www.gundam-gcg.com/asia-en/products/gd05.html",
     "retrieved_at": "2026-09-09T08:51:03.543Z",
     "reason": "Product, release and requests unchanged; raw Rarity breakdown adds138+10 Card Types and counts retained as optional evidence."
+  },
+  "gundam-en-asia-restructured-card-search.json": {
+    "full_body_sha256": "54c23a45b2427b13de11d96ea29f1748ee32c75ce8f20be2badd323559ff771a",
+    "source_url": "https://www.gundam-gcg.com/asia-en/cards/",
+    "retrieved_at": "2026-09-15T09:31:43.638Z",
+    "reason": "First COMPLETE monitoring baseline. Publisher added starter deck packages 619011-619014 (Aquatic Assault [ST11], Raging Onslaught [ST12], Silent Barrage [ST13], Heavy Dominion [ST14]) plus GUNDAM ROGUE ORBIT title, Marine/Long-Range Weapon feature and new link filters; adapter parses 25/25 packages and discovers 25 listings. The historical 21-package golden is unchanged. Reviewed from scheduled run 34952843408."
+  },
+  "gundam-en-us-restructured-card-search.json": {
+    "full_body_sha256": "7d49d0fe1a62b1642dbc2433fe6135192ff9c726b21e6c4c50e78707d88440ae",
+    "source_url": "https://www.gundam-gcg.com/en/cards/index.php",
+    "retrieved_at": "2026-09-15T09:31:44.839Z",
+    "reason": "First COMPLETE monitoring baseline. Publisher added starter deck packages 616011-616014 (Aquatic Assault [ST11], Raging Onslaught [ST12], Silent Barrage [ST13], Heavy Dominion [ST14]) plus GUNDAM ROGUE ORBIT title, Marine/Long-Range Weapon feature and new link filters; adapter parses 25/25 packages and discovers 25 listings. The historical 21-package golden is unchanged. Reviewed from scheduled run 34952843408."
   },
   "one-piece-en-card-list.json": {
     "full_body_sha256": "9ad39cdad8993fa3564185d3536dcbd1abbc7c19e5a13b19a30465c8a9c371da",
