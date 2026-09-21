@@ -1,0 +1,11 @@
+{
+  "plans": [
+    {
+      "supported_game": "riftbound",
+      "source_lineage": "piltover-archive-en",
+      "adapter_version": "piltover-archive-en@1",
+      "subset": "promo-lead-pilot",
+      "requests": [{ "id": "piltover-archive-en:gallery", "url": "https://piltoverarchive.com/cards" }]
+    }
+  ]
+}

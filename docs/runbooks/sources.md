@@ -81,6 +81,14 @@ permit a full crawl. An owner may link the evidenced overlap, while the promo
 records remain proposals until qualification supplies complete intake. Riot's
 Source Authority is unchanged.
 
+The Piltover Archive [pilot plan](../examples/piltover-archive-pilot-plan.json)
+selects the first public gallery page and the front art of its two pinned rows
+under a three-request capacity. [Evidence and scope](../../acceptance/fixtures/real-sources/2026-09-21-piltover-archive/README.md)
+record the budgeted acquisition, the Blazing Scorcher overlap that an owner may
+link, and the Vi ARC-001 lead whose retained front is a Chinese-language print
+and therefore stays an unresolved proposal. Other gallery rows are retained bytes
+only; the plan establishes neither the gallery inventory nor promo coverage.
+
 Independently complete named scopes can be collected and published successively.
 Keep each scope's exact root contract and complete Card variant inventory; a
 page slice is valid only when its adapter establishes that inventory. Prepare the

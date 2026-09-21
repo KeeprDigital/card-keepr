@@ -113,7 +113,7 @@ export type CardObservation = CatalogueObservation & {
 export type SourceAdmissionEvidenceObservation =
   | ScryfallSourceAdmissionEvidenceObservation
   | TcgdexSourceAdmissionEvidenceObservation
-  | RiftboundDbSourceAdmissionEvidenceObservation;
+  | RiftboundSupplementarySourceAdmissionEvidenceObservation;
 
 export type ScryfallSourceAdmissionEvidenceObservation = {
   observation_type: "source_admission_evidence";
@@ -153,14 +153,19 @@ export type TcgdexSourceAdmissionEvidenceObservation = {
   completeness: ObservationCompleteness;
 };
 
-export type RiftboundDbSourceAdmissionEvidenceObservation = Omit<
+/** Riftbound's supplementary lineages retain unresolved source records for owner review. */
+export type RiftboundSupplementarySourceAdmissionEvidenceObservation = Omit<
   TcgdexSourceAdmissionEvidenceObservation,
   "game" | "source_lineage" | "issues"
 > & {
   game: "riftbound";
-  source_lineage: "riftbound-db-en";
+  source_lineage: "riftbound-db-en" | "piltover-archive-en";
   issues: readonly {
-    code: "card_identity_unresolved" | "printing_treatment_unresolved" | "physical_issuance_unresolved";
+    code:
+      | "card_identity_unresolved"
+      | "printing_treatment_unresolved"
+      | "physical_issuance_unresolved"
+      | "printing_locale_unresolved";
     source_paths: readonly string[];
   }[];
 };
