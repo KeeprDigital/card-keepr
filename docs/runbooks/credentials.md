@@ -55,12 +55,16 @@ and no consumer needs an update). Ordinary tests never need any of these values.
 ### Managing tokens with the script
 
 `scripts/credential-tokens.mjs` performs the dashboard steps above through the
-Cloudflare API with one bootstrap token. Create that token in the dashboard from
-the **Create additional tokens** template (User > API Tokens > Edit, the only
-template that offers it), give it a one-day TTL, export it as `KEEPR_TOKEN_ADMIN`
-in the owner shell, and revoke it with the script when the work is done: it can
-mint tokens with any of the owner's permissions, so it never outlives the task.
-Every command is a dry run until `--apply` is given.
+Cloudflare API with one bootstrap token. Cloudflare keeps two token stores, the
+owner's user-owned tokens (My Profile) and the account-owned tokens (Manage
+Account); the script reads and writes both and labels every row with its owner.
+Create the bootstrap token under My Profile from the **Create additional tokens**
+template (User > API Tokens > Edit, the only template that offers it) and add
+Account > Account API Tokens > Edit for this account, give it a one-day TTL,
+export it as `KEEPR_TOKEN_ADMIN` in the owner shell, and revoke it with the
+script when the work is done: it can mint tokens with any of the owner's
+permissions, so it never outlives the task. A store it cannot read is reported
+as a warning. Every command is a dry run until `--apply` is given.
 
 ```sh
 node scripts/credential-tokens.mjs inventory
@@ -73,7 +77,8 @@ node scripts/credential-tokens.mjs revoke <token-id> --apply
 `target` (named per the table), `rename` (its name normalises to a target),
 `duplicate` or `no-consumer`; it prints no values. `rename` accepts only target
 names and keeps the policies. `reissue` creates the replacement under its target
-name with the grant from the tables below, runs the [probe](#probe) with the new
+name with the grant from the tables below, in the store of the token it replaces
+(`--owner=user|account` decides when nothing is replaced or both stores hold one), runs the [probe](#probe) with the new
 value, installs it with `wrangler secret put` on the environment's ingestion Worker
 (wrangler authenticates from `CLOUDFLARE_API_TOKEN` or its own login; staging and
 dev also need the `<ENV>_*` identity variables the probe reads), and names the

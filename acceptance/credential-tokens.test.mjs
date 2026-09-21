@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   classifyTokens,
   reissuePolicies,
+  listTokens,
   reissueToken,
   renameToken,
   renderInventory,
@@ -14,6 +15,10 @@ import {
 const account = "3ec389380c7b82e6a172e6f351d4aad9";
 const admin = "admin-token-value-never-printed";
 const newValue = "new-token-value-never-printed";
+const accountGroups = [
+  { id: "ag-d1", name: "D1 Write", scopes: ["com.cloudflare.api.account"] },
+  { id: "ag-ws-read", name: "Workers Scripts Read", scopes: ["com.cloudflare.api.account"] },
+];
 const groups = [
   { id: "g-d1", name: "D1 Write", scopes: ["com.cloudflare.api.account"] },
   { id: "g-ws-read", name: "Workers Scripts Read", scopes: ["com.cloudflare.api.account"] },
@@ -48,7 +53,8 @@ function token(id, name, extra = {}) {
   };
 }
 
-function fakeFetch(tokens, overrides = {}) {
+function fakeFetch(stored, overrides = {}) {
+  const stores = Array.isArray(stored) ? { user: stored, account: [] } : { user: [], account: [], ...stored };
   const calls = [];
   const fetchImpl = async (input, options = {}) => {
     const url = new URL(input);
@@ -57,11 +63,16 @@ function fakeFetch(tokens, overrides = {}) {
     calls.push({ method, path: url.pathname, body, headers: new Headers(options.headers) });
     const key = `${method} ${url.pathname}`;
     for (const [pattern, response] of Object.entries(overrides)) {
-      if (new RegExp(pattern, "u").test(key)) return respond(response);
+      if (new RegExp(pattern, "u").test(key))
+        return response?.__status ? respond(null, response.__status, false) : respond(response);
     }
+    const accountBase = `/client/v4/accounts/${account}/tokens`;
     if (key === "GET /client/v4/user/tokens/permission_groups") return respond(groups);
-    if (key === "GET /client/v4/user/tokens") return respond(tokens);
+    if (key === `GET ${accountBase}/permission_groups`) return respond(accountGroups);
+    if (key === "GET /client/v4/user/tokens") return respond(stores.user);
+    if (key === `GET ${accountBase}`) return respond(stores.account);
     if (key === "POST /client/v4/user/tokens") return respond({ id: "t-new", name: body.name, value: newValue });
+    if (key === `POST ${accountBase}`) return respond({ id: "a-new", name: body.name, value: newValue });
     if (method === "PUT") return respond({ ...body, id: url.pathname.split("/").at(-1) });
     if (method === "DELETE") return respond({ id: url.pathname.split("/").at(-1) });
     return respond({});
@@ -69,8 +80,8 @@ function fakeFetch(tokens, overrides = {}) {
   return { fetchImpl, calls };
 }
 
-function respond(result, status = 200) {
-  return new Response(JSON.stringify({ success: true, result, errors: [] }), {
+function respond(result, status = 200, success = true) {
+  return new Response(JSON.stringify({ success, result, errors: success ? [] : [{ code: 9109 }] }), {
     status,
     headers: { "content-type": "application/json" },
   });
@@ -116,8 +127,12 @@ test("the inventory classifies target, rename and no-consumer tokens without pri
     ],
   );
   assert.deepEqual(rows[0].grants, ["D1 Write @ account"]);
+  assert.deepEqual(
+    rows.map((row) => row.owner),
+    ["user", "user", "user", "user"],
+  );
   const text = renderInventory(rows);
-  assert.match(text, /t2 {2}rename/u);
+  assert.match(text, /t2 {2}user +rename/u);
   assert.match(text, /card-keepr staging d1-verification/u);
 });
 
@@ -253,9 +268,12 @@ test("rename keeps the policies and only changes the label", async () => {
   assert.deepEqual(update.body.policies, existing.policies);
   assert.equal(update.body.status, "active");
   assert.equal(result.applied, true);
-  await assert.rejects(renameToken({ admin, id: "t2", name: "card-keepr backup", apply: true }, fetchImpl), {
-    message: /target name/u,
-  });
+  await assert.rejects(
+    renameToken({ admin, accountId: account, id: "t2", name: "card-keepr backup", apply: true }, fetchImpl),
+    {
+      message: /target name/u,
+    },
+  );
 });
 
 test("revoke refuses a target-named token unless forced", async () => {
@@ -263,17 +281,118 @@ test("revoke refuses a target-named token unless forced", async () => {
     token("t1", "card-keepr production d1-export"),
     token("t3", "card-keepr d1 backup"),
   ]);
-  await assert.rejects(revokeToken({ admin, id: "t1", apply: true }, fetchImpl), { message: /--force/u });
-  await assert.rejects(revokeToken({ admin, id: "missing", apply: true }, fetchImpl), { message: /not found/u });
-  const dry = await revokeToken({ admin, id: "t3", apply: false }, fetchImpl);
+  await assert.rejects(revokeToken({ admin, accountId: account, id: "t1", apply: true }, fetchImpl), {
+    message: /--force/u,
+  });
+  await assert.rejects(revokeToken({ admin, accountId: account, id: "missing", apply: true }, fetchImpl), {
+    message: /not found/u,
+  });
+  const dry = await revokeToken({ admin, accountId: account, id: "t3", apply: false }, fetchImpl);
   assert.equal(dry.applied, false);
   assert.ok(calls.every((call) => call.method !== "DELETE"));
-  const result = await revokeToken({ admin, id: "t3", apply: true }, fetchImpl);
+  const result = await revokeToken({ admin, accountId: account, id: "t3", apply: true }, fetchImpl);
   assert.equal(result.applied, true);
   assert.deepEqual(
     calls.filter((call) => call.method === "DELETE").map((call) => call.path),
     ["/client/v4/user/tokens/t3"],
   );
-  const forced = await revokeToken({ admin, id: "t1", apply: true, force: true }, fetchImpl);
+  const forced = await revokeToken({ admin, accountId: account, id: "t1", apply: true, force: true }, fetchImpl);
   assert.equal(forced.applied, true);
+});
+
+test("the inventory merges the user and account stores and tags each token's owner", async () => {
+  const { fetchImpl } = fakeFetch({
+    user: [token("t-boot", "card-keepr owner bootstrap")],
+    account: [token("a1", "card-keepr-staging-deploy"), token("a2", "card-keepr d1 backup")],
+  });
+  const listing = await listTokens({ admin, accountId: account }, fetchImpl);
+  assert.deepEqual(
+    listing.tokens.map((entry) => [entry.id, entry.owner]),
+    [
+      ["t-boot", "user"],
+      ["a1", "account"],
+      ["a2", "account"],
+    ],
+  );
+  assert.deepEqual(listing.warnings, []);
+  const rows = classifyTokens(listing.tokens);
+  assert.deepEqual(
+    rows.map((row) => [row.id, row.owner, row.classification]),
+    [
+      ["t-boot", "user", "no-consumer"],
+      ["a1", "account", "rename"],
+      ["a2", "account", "no-consumer"],
+    ],
+  );
+  assert.match(renderInventory(rows), /a1 +account +rename/u);
+});
+
+test("a store the bootstrap token cannot read becomes a warning, not a crash", async () => {
+  const { fetchImpl } = fakeFetch(
+    { user: [token("t-boot", "card-keepr owner bootstrap")] },
+    { [`GET /client/v4/accounts/${account}/tokens$`]: { __status: 403 } },
+  );
+  const listing = await listTokens({ admin, accountId: account }, fetchImpl);
+  assert.deepEqual(
+    listing.tokens.map((entry) => entry.id),
+    ["t-boot"],
+  );
+  assert.equal(listing.warnings.length, 1);
+  assert.match(listing.warnings[0], /account store.*Account API Tokens/u);
+});
+
+test("rename and revoke act on the store that holds the token", async () => {
+  const existing = token("a1", "card-keepr-staging-deploy");
+  const { fetchImpl, calls } = fakeFetch({ account: [existing, token("a2", "card-keepr d1 backup")] });
+  await renameToken({ admin, accountId: account, id: "a1", name: "card-keepr staging deploy", apply: true }, fetchImpl);
+  await revokeToken({ admin, accountId: account, id: "a2", apply: true }, fetchImpl);
+  assert.deepEqual(
+    calls.filter((call) => call.method !== "GET").map((call) => [call.method, call.path]),
+    [
+      ["PUT", `/client/v4/accounts/${account}/tokens/a1`],
+      ["DELETE", `/client/v4/accounts/${account}/tokens/a2`],
+    ],
+  );
+});
+
+test("re-issue creates in the store of the token it replaces, with that store's permission groups", async () => {
+  const { fetchImpl, calls } = fakeFetch({ account: [token("a-old", "card-keepr production d1-export")] });
+  const installed = [];
+  const result = await reissueToken(
+    {
+      admin,
+      target: target("production"),
+      purpose: "d1-export",
+      apply: true,
+      install: async (input) => installed.push(input),
+      probe: async () => ({ ok: true, rows: [] }),
+    },
+    fetchImpl,
+  );
+  const create = calls.find((call) => call.method === "POST");
+  assert.equal(create.path, `/client/v4/accounts/${account}/tokens`);
+  assert.deepEqual(create.body.policies[0].permission_groups, [{ id: "ag-d1" }]);
+  assert.equal(result.owner, "account");
+  assert.equal(result.created, "a-new");
+  assert.deepEqual(result.previous, ["a-old"]);
+  assert.equal(installed.length, 1);
+});
+
+test("re-issue honours an explicit owner when nothing is being replaced", async () => {
+  const { fetchImpl, calls } = fakeFetch({ account: [] });
+  const result = await reissueToken(
+    {
+      admin,
+      target: target("dev"),
+      purpose: "d1-export",
+      owner: "account",
+      apply: false,
+      install: async () => {},
+      probe: async () => ({ ok: true, rows: [] }),
+    },
+    fetchImpl,
+  );
+  assert.equal(result.owner, "account");
+  assert.deepEqual(result.policies[0].permission_groups, [{ id: "ag-d1" }]);
+  assert.ok(calls.every((call) => call.method === "GET"));
 });
