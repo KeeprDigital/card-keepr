@@ -7,6 +7,48 @@ import type { SourceAdapterParent } from "../../src/catalogue/adapters/source-ad
 
 const pack = new URL("../../acceptance/fixtures/real-sources/2026-09-15-limitless/raw/", import.meta.url);
 
+test("Limitless keeps its registered identity with the dated Products/Promos census envelope", () => {
+  // Two index roots, 143 buckets, every unique grid detail page and every unique
+  // referenced front of the retained 2026-09-21 bucket bodies; not measured throughput.
+  expect(adapter).toMatchObject({
+    adapterVersion: "limitless-one-piece-en@1",
+    sourceLineage: "limitless-one-piece-en",
+    supportedGame: "one-piece",
+    gameProfileVersion: "one-piece@1",
+    parserContract: "limitless-one-piece-p001-html@1",
+    requestCapacity: 9_559,
+  });
+});
+
+test("the registered capacity is the envelope of the retained 143-bucket census", () => {
+  const buckets = new URL("../../acceptance/fixtures/real-sources/2026-09-21-limitless-buckets/", import.meta.url);
+  const manifest = JSON.parse(readFileSync(new URL("manifest.json", buckets), "utf8")) as {
+    captures: { body: string; sha256: string; bytes: number }[];
+  };
+  const bodies = [
+    ...manifest.captures.map((capture) => {
+      const bytes = readFileSync(new URL(capture.body, buckets));
+      expect(bytes.length).toBe(capture.bytes);
+      expect(createHash("sha256").update(bytes).digest("hex")).toBe(capture.sha256);
+      return bytes.toString("utf8");
+    }),
+    readFileSync(new URL("limitless-st01-list.body", pack), "utf8"),
+    readFileSync(new URL("limitless-op16-list.body", pack), "utf8"),
+  ];
+  const detailPages = new Set<string>();
+  const fronts = new Set<string>();
+  for (const html of bodies) {
+    for (const [, path] of html.matchAll(/<a\s+href="(\/cards\/[A-Z0-9]+-[0-9]+[A-Za-z]?(?:\?v=[0-9]+)?)"/gu))
+      detailPages.add(path!);
+    for (const [, url] of html.matchAll(/src="(https:\/\/limitlesstcg\.nyc3\.cdn\.digitaloceanspaces\.com\/[^"]+)"/gu))
+      fronts.add(url!);
+  }
+  expect(bodies).toHaveLength(143);
+  expect(detailPages.size).toBe(4_707);
+  expect(fronts.size).toBe(4_707);
+  expect(2 + bodies.length + detailPages.size + fronts.size).toBe(adapter.requestCapacity);
+});
+
 test("Limitless retains the same-name Leader's own design and Life without inventing a Cost", async () => {
   const observations = await adapter.parseBytes!(readFileSync(new URL("limitless-st01-001.body", pack)), {
     url: "https://onepiece.limitlesstcg.com/cards/ST01-001",

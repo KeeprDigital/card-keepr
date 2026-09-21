@@ -174,7 +174,12 @@ export const limitlessOnePieceSourceAdapterRegistration: SourceAdapterRegistrati
   gameProfileVersion: "one-piece@1",
   parserContract: "limitless-one-piece-p001-html@1",
   maximumSnapshotBytes: 1024 * 1024,
-  requestCapacity: 100,
+  // Dated census envelope of the retained 2026-09-21 Products/Promos bucket
+  // bodies (issue #334): two index roots, 143 buckets, every unique grid detail
+  // page and every unique referenced front. Edited in place before Go-Live
+  // (ADR 0008) together with migrations/0043_limitless_full_scope_capacity.sql.
+  // It is a finite admission bound, not measured full-import throughput.
+  requestCapacity: 9_559,
   retainedParentContext: { maximumDepth: 3, maximumTotalBytes: 3 * 1024 * 1024 },
   origin: "production",
   requestSurface: { kind: "credential-free-https" },
