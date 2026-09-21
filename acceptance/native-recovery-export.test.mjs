@@ -42,6 +42,51 @@ test("native recovery restores rows when their guard reads a later view and pres
   }
 });
 
+test("native recovery export installs parent unique indexes before replaying composite foreign key rows", () => {
+  // Minimal export shape from #276 staging attempt 4: a dump emits a child's
+  // rows before the parent UNIQUE index its composite FOREIGN KEY targets.
+  // D1 cannot disable foreign keys, so the replay must keep them enforced.
+  const compositeParentExport = `
+  CREATE TABLE source_observation_sets (id TEXT PRIMARY KEY, source_snapshot_id TEXT NOT NULL);
+  INSERT INTO source_observation_sets VALUES('set-1','snapshot-1');
+  CREATE TABLE reconciled_withdrawal_assertions (
+    source_observation_id TEXT PRIMARY KEY,
+    source_observation_set_id TEXT NOT NULL REFERENCES source_observation_sets(id),
+    source_snapshot_id TEXT NOT NULL,
+    FOREIGN KEY (source_observation_set_id, source_snapshot_id)
+      REFERENCES source_observation_sets (id, source_snapshot_id)
+  );
+  INSERT INTO reconciled_withdrawal_assertions VALUES('observation-1','set-1','snapshot-1');
+  CREATE UNIQUE INDEX source_observation_set_snapshot_identity
+  ON source_observation_sets (id, source_snapshot_id);
+`;
+  const restored = new DatabaseSync(":memory:");
+  try {
+    restored.exec("PRAGMA foreign_keys=ON");
+    restored.exec("BEGIN");
+    restored.exec(nativeRecoveryExportSql(compositeParentExport));
+    restored.exec("COMMIT");
+    assert.deepEqual(
+      recoveryQueries
+        .retainedWithdrawalAssertionIds(restored)
+        .all()
+        .map((row) => row.source_observation_id),
+      ["observation-1"],
+    );
+    assert.equal(
+      recoveryQueries.retainedIndex(restored).get("source_observation_set_snapshot_identity").name,
+      "source_observation_set_snapshot_identity",
+    );
+    recoveryQueries.insertWithdrawalAssertion(restored).run("observation-2", "set-1", "snapshot-1");
+    assert.throws(
+      () => recoveryQueries.insertWithdrawalAssertion(restored).run("observation-3", "set-1", "snapshot-other"),
+      /FOREIGN KEY constraint failed/u,
+    );
+  } finally {
+    restored.close();
+  }
+});
+
 async function fixture(t, virtual = false) {
   const directory = await mkdtemp(join(tmpdir(), "native-export-check-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
