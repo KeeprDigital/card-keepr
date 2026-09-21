@@ -4,10 +4,13 @@ name: ci
 # run. That tree only matches the eventual merge when the PR was current with
 # main at run time, which parallel merges routinely violate, so main is also
 # run on push. The concurrency group below cancels a superseded main run, so
-# a burst of merges tests only the newest tree.
+# a burst of merges tests only the newest tree. merge_group runs the same
+# required checks on each merge-queue candidate once the owner enables the
+# queue on main (#374); the job names below are the queue's required checks.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+  merge_group:
   push:
     branches: [main]
   workflow_dispatch:
@@ -74,17 +77,20 @@ jobs:
   ingestion-tests:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
-    # Bound regressions and runtime teardown hangs, including setup time.
-    timeout-minutes: 12
+    # Outer backstop only. Three shards measured 7-12 minutes on standard
+    # runners (#374); four shards leave a slow runner headroom. Real hangs
+    # fail earlier through the per-test, per-hook and per-file runtime bounds
+    # in apps/ingestion/vitest.config.ts.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up repository tooling
         uses: ./.github/actions/setup-toolchain
-      - run: bash scripts/ci-test.sh pnpm run test:ingestion --shard=${{ matrix.shard }}/3 --silent=passed-only --reporter=default --reporter=json --outputFile.json=test-results/ingestion.json
+      - run: bash scripts/ci-test.sh pnpm run test:ingestion --shard=${{ matrix.shard }}/4 --silent=passed-only --reporter=default --reporter=json --outputFile.json=test-results/ingestion.json
       # Preserve per-test timings and failure details from this exact shard. A
       # failed run should be diagnosable without creating a diagnostic workflow.
       - if: always()

@@ -206,18 +206,28 @@ live publisher access. Weekly source recapture is a separate networked workflow.
 
 Worker setup hooks and ingestion bodies default to 30 seconds; API bodies to five
 seconds; routine acceptance to two minutes. Explicit scenario bounds live with
-the tests. Hosted ingestion, acceptance, smoke and bounded stress use disposable
+the tests. Each ingestion file's isolated runtime must stop within one minute or
+the file fails; the 20-minute ingestion job cap is the outer backstop, not a
+hang detector. Hosted ingestion, acceptance, smoke and bounded stress use disposable
 512 MiB tmpfs; full stress and memory-based stress diagnostics use 2 GiB. Local
 storage is unchanged. `scripts/ci-test.sh` owns allocation, occupancy reporting
-and cleanup. Routine ingestion balances its three shards using source-derived
+and cleanup. Routine ingestion balances its four shards using source-derived
 native fixture/setup call sites, with checkout-relative paths breaking ties.
 Every selected file has a base weight, including newly added files without known
 fixtures. This estimate does not expand loops or parameter tables, follow aliases,
 or distinguish matching text in comments/strings. The [partitioner](../test/support/ingestion-shards.ts)
 owns the exact heuristic; measured timings stay in diagnostic artifacts. Default
 within-shard sorting, unsharded runs and stress selection remain unchanged.
-Retain the existing three large-suite shards until measurements justify a change.
+Three ingestion shards measured 7-12 minutes against a 12-minute cap (#374);
+retain four until measurements justify another change. Acceptance keeps three.
 Test/operational results are never cached.
+
+The ingestion runtime runs workerd without `--verbose`. With it, every Workflow
+dispatch logged `uncaught exception ... Engine was never started` and
+`instance.not_found`: miniflare's Workflows binding rejects `get()` for an
+instance that does not exist, and the workflow driver probes existence before
+every create. Those lines are expected, not failures; test results and Workflow
+statuses do not depend on workerd's stderr.
 
 For CI-only failures, select the failing file first, fix the cause, then rerun it
 before full validation. Do not chase green with repeated full runs, automatic
