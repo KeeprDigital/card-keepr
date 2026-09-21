@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   classifyTokens,
+  installWorkerSecret,
   reissuePolicies,
   listTokens,
   reissueToken,
@@ -450,4 +451,40 @@ test("a probe that fails with anything but 401 is not retried", async () => {
   assert.deepEqual(waits, []);
   assert.equal(result.created, null);
   assert.equal(calls.filter((call) => call.method === "DELETE").length, 1);
+});
+
+test("the Worker secret installer feeds the value to wrangler on stdin and never on the command line", async () => {
+  const { mkdtemp, readFile, writeFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const directory = await mkdtemp(join(tmpdir(), "credential-tokens-"));
+  try {
+    const binary = join(directory, "fake-wrangler.mjs");
+    const record = join(directory, "record.json");
+    await writeFile(
+      binary,
+      [
+        "import { writeFileSync } from 'node:fs';",
+        "let stdin = '';",
+        "process.stdin.setEncoding('utf8');",
+        "process.stdin.on('data', (chunk) => { stdin += chunk; });",
+        "process.stdin.on('end', () => {",
+        `  writeFileSync(${JSON.stringify(record)}, JSON.stringify({ args: process.argv.slice(2), stdin, account: process.env.CLOUDFLARE_ACCOUNT_ID }));`,
+        "});",
+      ].join("\n"),
+    );
+    await installWorkerSecret({
+      secretName: "D1_EXPORT_TOKEN",
+      worker: "card-keepr-ingestion",
+      accountId: account,
+      value: newValue,
+      binary: [process.execPath, binary],
+    });
+    const recorded = JSON.parse(await readFile(record, "utf8"));
+    assert.deepEqual(recorded.args, ["secret", "put", "D1_EXPORT_TOKEN", "--name", "card-keepr-ingestion"]);
+    assert.equal(recorded.stdin, newValue);
+    assert.equal(recorded.account, account);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

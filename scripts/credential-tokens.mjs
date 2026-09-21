@@ -23,10 +23,9 @@
 // proven the new value. For staging and dev the probe identities come from
 // <ENV>_CLOUDFLARE_ACCOUNT_ID / <ENV>_CATALOGUE_DATABASE_ID /
 // <ENV>_DISPOSABLE_DATABASE_ID, as for the probe.
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { promisify } from "node:util";
 import { request as httpRequest } from "../cli/lib/http-client.mjs";
 import { environmentNames } from "../src/http/environment-target.mjs";
 import { probeCredentials, renderProbeTable, resolveProbeTarget } from "./credential-probe.mjs";
@@ -281,15 +280,25 @@ function sleep(ms) {
   return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
 }
 
-/** `wrangler secret put <NAME> --name <worker>` with the value on stdin. */
-async function installWorkerSecret({ secretName, worker, accountId, value }) {
-  const execute = promisify(execFile);
-  await execute(resolve("node_modules/.bin/wrangler"), ["secret", "put", secretName, "--name", worker], {
-    env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: accountId },
-    input: value,
-    maxBuffer: 1 << 20,
-  }).catch((error) => {
-    throw new Error(`wrangler secret put ${secretName} --name ${worker} failed (exit ${error.code ?? "?"})`);
+/**
+ * `wrangler secret put <NAME> --name <worker>` with the value written to stdin
+ * and stdin closed, so wrangler never waits at its interactive prompt. Stdout
+ * is discarded (wrangler echoes nothing secret, but nothing here is printed).
+ */
+export function installWorkerSecret({ secretName, worker, accountId, value, binary }) {
+  const [command, ...prefix] = binary ?? [resolve("node_modules/.bin/wrangler")];
+  return new Promise((resolveInstall, reject) => {
+    const child = spawn(command, [...prefix, "secret", "put", secretName, "--name", worker], {
+      env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: accountId },
+      stdio: ["pipe", "ignore", "inherit"],
+    });
+    child.on("error", (error) => reject(new Error(`wrangler could not start: ${error.message}`)));
+    child.on("close", (code) => {
+      if (code === 0) resolveInstall(undefined);
+      else reject(new Error(`wrangler secret put ${secretName} --name ${worker} failed (exit ${code ?? "?"})`));
+    });
+    child.stdin.on("error", () => {});
+    child.stdin.end(value);
   });
 }
 
