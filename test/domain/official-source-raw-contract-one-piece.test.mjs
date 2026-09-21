@@ -2,6 +2,7 @@ import { test } from "vitest";
 import assert from "node:assert/strict";
 import { officialSourceDiscoveryRequests } from "../../src/catalogue/adapters/product-release-source-adapters.ts";
 import { requiredSourceAdapter } from "../../src/catalogue/adapters/source-adapters.ts";
+import { retainedSurfaceDocument } from "../../src/catalogue/adapters/adapter-html.ts";
 import syntheticOfficialSource, {
   officialPublisherPayloadScript,
   officialRawSurfacePayload,
@@ -273,7 +274,9 @@ test("the restructured One Piece Card List leaf retains every live Card and its 
   });
   assert.equal(fixture.metadata.http_status, 200);
   assert.equal(observations.length, 155);
-  const document = observations[0].source_sidecar.raw.official_surfaces[0].document;
+  // A full series page exceeds the inline surface-document budget, so the
+  // page is retained once as canonical JSON text rather than an inline object.
+  const document = retainedSurfaceDocument(observations[0].source_sidecar.raw.official_surfaces[0]);
   assert.equal(document.page, "card-list");
   assert.equal(document.declared_record_count, 155);
   assert.equal(document.recording_options.length, 59);

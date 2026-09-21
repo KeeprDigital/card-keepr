@@ -1462,3 +1462,12 @@ export function readSourceRequestSequencesForComposedCollectionPlanSequences(
   return database.prepare(`SELECT request_id, sequence_number, request_role
        FROM source_requests WHERE ingestion_run_id = ? ORDER BY sequence_number`);
 }
+
+export function readParsedObservationSetForBandaiSurfaceDocumentParts(database: D1Database): D1PreparedStatement {
+  return database.prepare(`SELECT operation.state, operation.observation_count,
+         (SELECT COUNT(*) FROM source_record_auxiliary AS auxiliary
+           WHERE auxiliary.observation_set_id = operation.observation_set_id
+             AND auxiliary.kind = 'text') AS text_parts
+       FROM source_parse_operations AS operation
+       WHERE operation.source_snapshot_id = ?`);
+}
