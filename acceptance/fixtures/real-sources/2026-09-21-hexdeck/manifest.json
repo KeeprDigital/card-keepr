@@ -1,0 +1,425 @@
+{
+  "label": "hexdeck",
+  "commit": "4904d2261c1fcabd51000e5a5c38dd9d724adb6c",
+  "pacing": {
+    "mode": "production",
+    "interval_ms": 2000
+  },
+  "runs": {
+    "stage-3": {
+      "ingestion_run_id": "run_8abb665e0281c143192f8dc508f641066d24539ea8804f453dcf27847d1cb52c",
+      "acquisition_budget": {
+        "max_dispatches": 6,
+        "max_source_bytes": 6291456,
+        "dispatch_deadline": "2026-09-21T07:23:35.809Z"
+      },
+      "acquisition": {
+        "generation": 1,
+        "coverage_started_at": "2026-09-21T07:08:35.871Z",
+        "historical_dispatches_unknown": false,
+        "baseline_source_bytes": 0,
+        "budget": {
+          "max_dispatches": 6,
+          "max_source_bytes": 6291456,
+          "dispatch_deadline": "2026-09-21T07:23:35.809Z"
+        },
+        "charged_dispatches": 4,
+        "charged_source_bytes": 736891,
+        "reserved_source_bytes": 0,
+        "remaining_dispatches": 2,
+        "remaining_source_bytes": 5554565,
+        "limiting_dimension": null,
+        "unsettled": [],
+        "unsettled_truncated": false
+      }
+    },
+    "stage-1": {
+      "ingestion_run_id": "run_6d2c7629ae7d3e58f755a518d7f5bdb7fd2dde4050f98170fa56942bea259414",
+      "acquisition_budget": {
+        "max_dispatches": 6,
+        "max_source_bytes": 6291456,
+        "dispatch_deadline": "2026-09-21T07:17:42.466Z"
+      },
+      "acquisition": {
+        "generation": 1,
+        "coverage_started_at": "2026-09-21T07:02:42.544Z",
+        "historical_dispatches_unknown": false,
+        "baseline_source_bytes": 0,
+        "budget": {
+          "max_dispatches": 6,
+          "max_source_bytes": 6291456,
+          "dispatch_deadline": "2026-09-21T07:17:42.466Z"
+        },
+        "charged_dispatches": 4,
+        "charged_source_bytes": 535884,
+        "reserved_source_bytes": 0,
+        "remaining_dispatches": 2,
+        "remaining_source_bytes": 5755572,
+        "limiting_dimension": null,
+        "unsettled": [],
+        "unsettled_truncated": false
+      },
+      "captures": [
+        {
+          "url": "https://www.hexdeck.io/",
+          "status": 200,
+          "bytes": 52635,
+          "sha256": "812deab7083c1b4d387b08d6768e835d544c6a4a97ea2b6819ab82ad9d1a65d6",
+          "captured_at": "2026-09-21T07:02:43.468Z"
+        },
+        {
+          "url": "https://www.hexdeck.io/help",
+          "status": 200,
+          "bytes": 192233,
+          "sha256": "b3a5dca7bf5a499f5693260b0fa39dfd0f7ddcfd0ff676ab2dceafd60e5ff960",
+          "captured_at": "2026-09-21T07:02:45.936Z"
+        },
+        {
+          "url": "https://www.hexdeck.io/cards?displayFormat=Images&page=1&sortDirection=Ascending&sortField=Set",
+          "status": 200,
+          "bytes": 291016,
+          "sha256": "4c58afe0854d19ad515dd5c89ca073b8f12d26831cd97608d82444ee610a6c71",
+          "captured_at": "2026-09-21T07:02:49.037Z"
+        }
+      ]
+    },
+    "stage-2": {
+      "ingestion_run_id": "run_0c15c46f60a8bf9b928e0145b413a3ce62937adb297565af23440205d34f7907",
+      "acquisition_budget": {
+        "max_dispatches": 6,
+        "max_source_bytes": 6291456,
+        "dispatch_deadline": "2026-09-21T07:21:22.625Z"
+      },
+      "acquisition": {
+        "generation": 1,
+        "coverage_started_at": "2026-09-21T07:06:22.732Z",
+        "historical_dispatches_unknown": false,
+        "baseline_source_bytes": 0,
+        "budget": {
+          "max_dispatches": 6,
+          "max_source_bytes": 6291456,
+          "dispatch_deadline": "2026-09-21T07:21:22.625Z"
+        },
+        "charged_dispatches": 4,
+        "charged_source_bytes": 964371,
+        "reserved_source_bytes": 0,
+        "remaining_dispatches": 2,
+        "remaining_source_bytes": 5327085,
+        "limiting_dimension": null,
+        "unsettled": [],
+        "unsettled_truncated": false
+      },
+      "captures": [
+        {
+          "url": "https://www.hexdeck.io/cards?displayFormat=Images&page=1&sortDirection=Ascending&sortField=Set",
+          "status": 200,
+          "bytes": 291016,
+          "sha256": "4c58afe0854d19ad515dd5c89ca073b8f12d26831cd97608d82444ee610a6c71",
+          "captured_at": "2026-09-21T07:06:23.431Z"
+        },
+        {
+          "url": "https://imagedelivery.net/hLYQStpAJ2Sj9NgyRRqPTQ/3c5370d6-4818-4270-041a-7590b83f8d00/standard",
+          "status": 200,
+          "bytes": 82668,
+          "sha256": "f0655cf3301d0778b42245b27b648f9c4a49b5db9f3e71a9ae5919a6a0a72119",
+          "captured_at": "2026-09-21T07:06:24.475Z"
+        },
+        {
+          "url": "https://www.hexdeck.io/cards?displayFormat=Images&page=7&sortDirection=Ascending&sortField=Set",
+          "status": 200,
+          "bytes": 297009,
+          "sha256": "67980081c860771f365f46e3a566f86452f9b6398917895ff96197055386b248",
+          "captured_at": "2026-09-21T07:06:26.600Z"
+        },
+        {
+          "url": "https://www.hexdeck.io/cards?displayFormat=Images&page=8&sortDirection=Ascending&sortField=Set",
+          "status": 200,
+          "bytes": 293678,
+          "sha256": "b1daf59760f432eb10bc3acf4b064a8cef79394f5120c7f923c421e8df01d359",
+          "captured_at": "2026-09-21T07:06:29.291Z"
+        }
+      ]
+    }
+  },
+  "captures": [
+    {
+      "request_id": null,
+      "request_role": null,
+      "url": "https://www.hexdeck.io/cards?displayFormat=Images&page=1&sortDirection=Ascending&sortField=Set",
+      "resolved_url": "https://www.hexdeck.io/cards?displayFormat=Images&page=1&sortDirection=Ascending&sortField=Set",
+      "requested_at": "2026-09-21T07:08:35.963Z",
+      "captured_at": "2026-09-21T07:08:36.477Z",
+      "completed_at": "2026-09-21T07:08:36.477Z",
+      "status": 200,
+      "request_headers": {},
+      "response_headers": {
+        "age": "0",
+        "cache-control": "private, no-cache, no-store, max-age=0, must-revalidate",
+        "content-type": "text/html; charset=utf-8",
+        "date": "Mon, 21 Sep 2026 07:08:36 GMT",
+        "link": "</_next/static/media/3601f32897df77ee-s.p.2ad5c29d.woff2>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff2\", </_next/static/media/caa3a2e1cccd8315-s.p.3b6cae6d.woff2>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff2\"",
+        "server": "Vercel",
+        "strict-transport-security": "max-age=63072000",
+        "transfer-encoding": "chunked",
+        "vary": "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch",
+        "x-matched-path": "/cards",
+        "x-powered-by": "Next.js",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "syd1::iad1::2t7j6-1789974516188-a5641dc239f1"
+      },
+      "vary": [
+        "next-router-prefetch",
+        "next-router-segment-prefetch",
+        "next-router-state-tree",
+        "rsc"
+      ],
+      "media_type": "text/html; charset=utf-8",
+      "body": "raw/search-set-page-1.html",
+      "bytes": 291016,
+      "sha256": "4c58afe0854d19ad515dd5c89ca073b8f12d26831cd97608d82444ee610a6c71",
+      "run": "stage-3",
+      "ingestion_run_id": "run_8abb665e0281c143192f8dc508f641066d24539ea8804f453dcf27847d1cb52c"
+    },
+    {
+      "request_id": null,
+      "request_role": null,
+      "url": "https://imagedelivery.net/hLYQStpAJ2Sj9NgyRRqPTQ/3c5370d6-4818-4270-041a-7590b83f8d00/standard",
+      "resolved_url": "https://imagedelivery.net/hLYQStpAJ2Sj9NgyRRqPTQ/3c5370d6-4818-4270-041a-7590b83f8d00/standard",
+      "requested_at": "2026-09-21T07:08:36.982Z",
+      "captured_at": "2026-09-21T07:08:37.070Z",
+      "completed_at": "2026-09-21T07:08:37.070Z",
+      "status": 200,
+      "request_headers": {
+        "accept": "image/webp,image/png,image/jpeg"
+      },
+      "response_headers": {
+        "accept-ranges": "bytes",
+        "access-control-allow-origin": "*",
+        "age": "132",
+        "alt-svc": "h3=\":443\"; ma=86400",
+        "cache-control": "public,max-age=172800,stale-while-revalidate=7200",
+        "cf-cache-status": "HIT",
+        "cf-images": "internal=ok/- q=0 n=213+0 c=10+0 v=2026.9.7 l=82668 f=false c2=0",
+        "cf-ray": "a3e73d5b7b652b38-MEL",
+        "connection": "keep-alive",
+        "content-length": "82668",
+        "content-security-policy": "default-src 'none'; navigate-to 'none'; form-action 'none'; img-src data:; style-src 'unsafe-inline';",
+        "content-type": "image/webp",
+        "date": "Mon, 21 Sep 2026 07:08:37 GMT",
+        "etag": "\"cfu0FE1s9W0tDcf4ymbwegVVviuX6IYtQuUfaLXcvtDQ\"",
+        "server": "cloudflare",
+        "vary": "accept",
+        "x-content-type-options": "nosniff"
+      },
+      "vary": [
+        "accept"
+      ],
+      "media_type": "image/webp",
+      "body": "raw/ogn-001-blazing-scorcher-standard.webp",
+      "bytes": 82668,
+      "sha256": "f0655cf3301d0778b42245b27b648f9c4a49b5db9f3e71a9ae5919a6a0a72119",
+      "run": "stage-3",
+      "ingestion_run_id": "run_8abb665e0281c143192f8dc508f641066d24539ea8804f453dcf27847d1cb52c"
+    },
+    {
+      "request_id": null,
+      "request_role": null,
+      "url": "https://www.hexdeck.io/cards?displayFormat=Images&page=7&sortDirection=Ascending&sortField=Set",
+      "resolved_url": "https://www.hexdeck.io/cards?displayFormat=Images&page=7&sortDirection=Ascending&sortField=Set",
+      "requested_at": "2026-09-21T07:08:38.912Z",
+      "captured_at": "2026-09-21T07:08:39.232Z",
+      "completed_at": "2026-09-21T07:08:39.232Z",
+      "status": 200,
+      "request_headers": {},
+      "response_headers": {
+        "age": "0",
+        "cache-control": "private, no-cache, no-store, max-age=0, must-revalidate",
+        "content-type": "text/html; charset=utf-8",
+        "date": "Mon, 21 Sep 2026 07:08:39 GMT",
+        "link": "</_next/static/media/3601f32897df77ee-s.p.2ad5c29d.woff2>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff2\", </_next/static/media/caa3a2e1cccd8315-s.p.3b6cae6d.woff2>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff2\"",
+        "server": "Vercel",
+        "strict-transport-security": "max-age=63072000",
+        "transfer-encoding": "chunked",
+        "vary": "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch",
+        "x-matched-path": "/cards",
+        "x-powered-by": "Next.js",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "syd1::iad1::xll2r-1789974518938-c4bc30b670b1"
+      },
+      "vary": [
+        "next-router-prefetch",
+        "next-router-segment-prefetch",
+        "next-router-state-tree",
+        "rsc"
+      ],
+      "media_type": "text/html; charset=utf-8",
+      "body": "raw/search-set-page-7.html",
+      "bytes": 297009,
+      "sha256": "67980081c860771f365f46e3a566f86452f9b6398917895ff96197055386b248",
+      "run": "stage-3",
+      "ingestion_run_id": "run_8abb665e0281c143192f8dc508f641066d24539ea8804f453dcf27847d1cb52c"
+    },
+    {
+      "request_id": null,
+      "request_role": null,
+      "url": "https://imagedelivery.net/hLYQStpAJ2Sj9NgyRRqPTQ/8d1fe662-832a-4378-f580-1b643d064800/standard",
+      "resolved_url": "https://imagedelivery.net/hLYQStpAJ2Sj9NgyRRqPTQ/8d1fe662-832a-4378-f580-1b643d064800/standard",
+      "requested_at": "2026-09-21T07:08:40.063Z",
+      "captured_at": "2026-09-21T07:08:41.991Z",
+      "completed_at": "2026-09-21T07:08:41.991Z",
+      "status": 200,
+      "request_headers": {
+        "accept": "image/webp,image/png,image/jpeg"
+      },
+      "response_headers": {
+        "accept-ranges": "bytes",
+        "access-control-allow-origin": "*",
+        "alt-svc": "h3=\":443\"; ma=86400",
+        "cache-control": "public,max-age=172800,stale-while-revalidate=7200",
+        "cf-cache-status": "MISS",
+        "cf-images": "internal=ok/- q=0 n=1466+0 c=31+125 v=2026.9.7 l=66198 f=false c2=0",
+        "cf-ray": "a3e73d6e8ebe2b38-MEL",
+        "connection": "keep-alive",
+        "content-length": "66198",
+        "content-security-policy": "default-src 'none'; navigate-to 'none'; form-action 'none'; img-src data:; style-src 'unsafe-inline';",
+        "content-type": "image/webp",
+        "date": "Mon, 21 Sep 2026 07:08:41 GMT",
+        "etag": "\"cf2b3nfiUe-zyyeHG5tB3Cc8gEuX6IYtQuUfaLXcvtDQ\"",
+        "server": "cloudflare",
+        "vary": "accept",
+        "x-content-type-options": "nosniff"
+      },
+      "vary": [
+        "accept"
+      ],
+      "media_type": "image/webp",
+      "body": "raw/ogn-t01-buff-standard.webp",
+      "bytes": 66198,
+      "sha256": "58da926e840907f0907f5858beecd27019c8274551b8282116f36d1c1a19f0c7",
+      "run": "stage-3",
+      "ingestion_run_id": "run_8abb665e0281c143192f8dc508f641066d24539ea8804f453dcf27847d1cb52c"
+    },
+    {
+      "request_id": null,
+      "request_role": null,
+      "url": "https://www.hexdeck.io/",
+      "resolved_url": "https://www.hexdeck.io/",
+      "requested_at": "2026-09-21T07:02:42.650Z",
+      "captured_at": "2026-09-21T07:02:43.468Z",
+      "completed_at": "2026-09-21T07:02:43.468Z",
+      "status": 200,
+      "request_headers": {},
+      "response_headers": {
+        "accept-ranges": "bytes",
+        "access-control-allow-origin": "*",
+        "age": "960481",
+        "cache-control": "public, max-age=0, must-revalidate",
+        "content-disposition": "inline",
+        "content-length": "52635",
+        "content-type": "text/html; charset=utf-8",
+        "date": "Mon, 21 Sep 2026 07:02:43 GMT",
+        "etag": "\"af06fe4f396e17e04cdcba65d6972678\"",
+        "server": "Vercel",
+        "strict-transport-security": "max-age=63072000",
+        "vary": "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch",
+        "x-matched-path": "/",
+        "x-nextjs-prerender": "1",
+        "x-nextjs-stale-time": "300",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "syd1::98lf9-1789974162910-dd7890af7da9"
+      },
+      "vary": [
+        "next-router-prefetch",
+        "next-router-segment-prefetch",
+        "next-router-state-tree",
+        "rsc"
+      ],
+      "media_type": "text/html; charset=utf-8",
+      "body": "raw/homepage.html",
+      "bytes": 52635,
+      "sha256": "812deab7083c1b4d387b08d6768e835d544c6a4a97ea2b6819ab82ad9d1a65d6",
+      "run": "stage-1",
+      "ingestion_run_id": "run_6d2c7629ae7d3e58f755a518d7f5bdb7fd2dde4050f98170fa56942bea259414"
+    },
+    {
+      "request_id": null,
+      "request_role": null,
+      "url": "https://www.hexdeck.io/help",
+      "resolved_url": "https://www.hexdeck.io/help",
+      "requested_at": "2026-09-21T07:02:45.523Z",
+      "captured_at": "2026-09-21T07:02:45.936Z",
+      "completed_at": "2026-09-21T07:02:45.936Z",
+      "status": 200,
+      "request_headers": {},
+      "response_headers": {
+        "accept-ranges": "bytes",
+        "access-control-allow-origin": "*",
+        "age": "926926",
+        "cache-control": "public, max-age=0, must-revalidate",
+        "content-disposition": "inline",
+        "content-length": "192233",
+        "content-type": "text/html; charset=utf-8",
+        "date": "Mon, 21 Sep 2026 07:02:45 GMT",
+        "etag": "\"981f9b50c7852dbe999e7f9fb8292b61\"",
+        "server": "Vercel",
+        "strict-transport-security": "max-age=63072000",
+        "vary": "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch",
+        "x-matched-path": "/help",
+        "x-nextjs-prerender": "1",
+        "x-nextjs-stale-time": "300",
+        "x-vercel-cache": "HIT",
+        "x-vercel-id": "syd1::9bz98-1789974165566-ee26da592fcf"
+      },
+      "vary": [
+        "next-router-prefetch",
+        "next-router-segment-prefetch",
+        "next-router-state-tree",
+        "rsc"
+      ],
+      "media_type": "text/html; charset=utf-8",
+      "body": "raw/help.html",
+      "bytes": 192233,
+      "sha256": "b3a5dca7bf5a499f5693260b0fa39dfd0f7ddcfd0ff676ab2dceafd60e5ff960",
+      "run": "stage-1",
+      "ingestion_run_id": "run_6d2c7629ae7d3e58f755a518d7f5bdb7fd2dde4050f98170fa56942bea259414"
+    },
+    {
+      "request_id": null,
+      "request_role": null,
+      "url": "https://www.hexdeck.io/cards?displayFormat=Images&page=8&sortDirection=Ascending&sortField=Set",
+      "resolved_url": "https://www.hexdeck.io/cards?displayFormat=Images&page=8&sortDirection=Ascending&sortField=Set",
+      "requested_at": "2026-09-21T07:06:28.901Z",
+      "captured_at": "2026-09-21T07:06:29.291Z",
+      "completed_at": "2026-09-21T07:06:29.291Z",
+      "status": 200,
+      "request_headers": {},
+      "response_headers": {
+        "age": "0",
+        "cache-control": "private, no-cache, no-store, max-age=0, must-revalidate",
+        "content-type": "text/html; charset=utf-8",
+        "date": "Mon, 21 Sep 2026 07:06:29 GMT",
+        "link": "</_next/static/media/3601f32897df77ee-s.p.2ad5c29d.woff2>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff2\", </_next/static/media/caa3a2e1cccd8315-s.p.3b6cae6d.woff2>; rel=preload; as=\"font\"; crossorigin=\"\"; type=\"font/woff2\"",
+        "server": "Vercel",
+        "strict-transport-security": "max-age=63072000",
+        "transfer-encoding": "chunked",
+        "vary": "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch",
+        "x-matched-path": "/cards",
+        "x-powered-by": "Next.js",
+        "x-vercel-cache": "MISS",
+        "x-vercel-id": "syd1::iad1::qmqhk-1789974388932-f1dbaf9aebfa"
+      },
+      "vary": [
+        "next-router-prefetch",
+        "next-router-segment-prefetch",
+        "next-router-state-tree",
+        "rsc"
+      ],
+      "media_type": "text/html; charset=utf-8",
+      "body": "raw/search-set-page-8.html",
+      "bytes": 293678,
+      "sha256": "b1daf59760f432eb10bc3acf4b064a8cef79394f5120c7f923c421e8df01d359",
+      "run": "stage-2",
+      "ingestion_run_id": "run_0c15c46f60a8bf9b928e0145b413a3ce62937adb297565af23440205d34f7907"
+    }
+  ]
+}

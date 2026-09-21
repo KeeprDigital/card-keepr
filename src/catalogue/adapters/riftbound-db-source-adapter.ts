@@ -1,5 +1,5 @@
 import { AdapterParseFailure, decodeAdapterUtf8, withAdapterParseFailure } from "./adapter-parse-failure";
-import type { RiftboundDbSourceAdmissionEvidenceObservation } from "./adapter-observations";
+import type { RiftboundSupplementarySourceAdmissionEvidenceObservation } from "./adapter-observations";
 import type { SourceAdapterRegistration } from "./source-adapter-registration-types";
 import { eclipseHeraldSourceId, riftboundDbEclipseObservation, riftboundDbPromoImages } from "./riftbound-db-evidence";
 
@@ -73,7 +73,7 @@ function sourceRecords(bytes: Uint8Array, url: string) {
   return cards;
 }
 
-function reviewRecord(card: Record<string, unknown>): RiftboundDbSourceAdmissionEvidenceObservation {
+function reviewRecord(card: Record<string, unknown>): RiftboundSupplementarySourceAdmissionEvidenceObservation {
   const raw = record(card.raw);
   const id = text(card.id);
   if (raw.id !== id) throw new AdapterParseFailure("Riftbound DB source identifiers disagree.");

@@ -54,9 +54,14 @@ type PokemonSourceAdmissionEvidence = {
 };
 type RiftboundSourceAdmissionEvidence = Omit<PokemonSourceAdmissionEvidence, "game" | "source_lineage" | "issues"> & {
   game: "riftbound";
-  source_lineage: "riftbound-db-en";
+  source_lineage: "riftbound-db-en" | "piltover-archive-en" | "hexdeck-en";
   issues: {
-    code: "card_identity_unresolved" | "printing_treatment_unresolved" | "physical_issuance_unresolved";
+    code:
+      | "card_facts_incomplete"
+      | "card_identity_unresolved"
+      | "printing_treatment_unresolved"
+      | "physical_issuance_unresolved"
+      | "printing_locale_unresolved";
     source_paths: string[];
   }[];
 };
