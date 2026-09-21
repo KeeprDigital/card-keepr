@@ -27,6 +27,8 @@ const cloudflareAccountId = "0123456789abcdef0123456789abcdef";
 const catalogueD1DatabaseId = "00000000-0000-0000-0000-000000000001";
 const disposableD1DatabaseId = "00000000-0000-0000-0000-000000000002";
 const d1VerificationToken = "vitest-d1-verification-token-active";
+// Routine runtime disposal takes seconds; a minute distinguishes a hang.
+const runtimeStopTimeoutMs = 60_000;
 
 export default defineConfig({
   plugins: [
@@ -65,6 +67,14 @@ export default defineConfig({
             });
             try {
               const worker = cloudflarePool({
+                // The plugin default passes --verbose to workerd, which logs
+                // every RPC rejection inside miniflare's Workflows binding as
+                // "uncaught exception ... Engine was never started". The
+                // workflow driver's existence probe (get() before create())
+                // provokes exactly that rejection on every first dispatch, so
+                // the lines are expected and hid real failures (#374). Test
+                // failures and Workflow statuses do not travel over stderr.
+                verbose: false,
                 main: resolve(import.meta.dirname, "../../test/support/ingestion-worker.ts"),
                 wrangler: {
                   configPath: resolve(import.meta.dirname, "wrangler.jsonc"),
@@ -91,11 +101,24 @@ export default defineConfig({
                   outboundService: (request) => publisher.fetch(request as unknown as Request),
                 },
               }).createPoolWorker(options);
+              // Per-file runtime teardown bound. Test bodies and hooks are
+              // bounded below; a runtime that never stops used to hold the
+              // shard until the job cap. Fail the file instead.
               const stop = worker.stop.bind(worker);
               worker.stop = async () => {
+                let timer: NodeJS.Timeout | undefined;
                 try {
-                  await stop();
+                  await Promise.race([
+                    stop(),
+                    new Promise<never>((_, reject) => {
+                      timer = setTimeout(
+                        () => reject(new Error(`Ingestion test runtime did not stop within ${runtimeStopTimeoutMs}ms`)),
+                        runtimeStopTimeoutMs,
+                      ).unref();
+                    }),
+                  ]);
                 } finally {
+                  clearTimeout(timer);
                   dispose();
                 }
               };

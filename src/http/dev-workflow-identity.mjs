@@ -9,6 +9,7 @@ export const requiredCiChecks = [
   "ingestion-tests (1)",
   "ingestion-tests (2)",
   "ingestion-tests (3)",
+  "ingestion-tests (4)",
   "acceptance (1)",
   "acceptance (2)",
   "acceptance (3)",
