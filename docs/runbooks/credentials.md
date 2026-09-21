@@ -8,13 +8,12 @@ dashboard reconciliation; [issue #236](https://github.com/KeeprDigital/card-keep
 records the shared-account decision that bounds every Cloudflare token below.
 
 Every Cloudflare token here is issued on the one account that hosts production,
-dev and staging. Cloudflare's account-token compatibility matrix lists D1, R2 and
-Workers as supported, yet on 2026-09-21 two freshly created account-owned D1
-tokens answered 401 on every D1 endpoint while their Workers reads passed, and an
-account-owned staging deploy token could not list D1/R2 ([#237](https://github.com/KeeprDigital/card-keepr/issues/237)).
-Whether that is propagation delay or a real gap is unconfirmed; `reissue`
-retries a 401-only probe for about a minute before deleting the token, and a
-token that still fails is re-issued user-owned (`--owner=user`). Cloudflare's D1 and R2 permission groups apply account-wide, so
+dev and staging. Tokens are account-owned (Manage Account > Account API Tokens),
+Cloudflare's recommendation for durable integrations. A freshly created token
+takes about fifteen seconds to be accepted by D1 while Workers accepts it at
+once (observed 2026-09-21: 401 on the first probe, pass on the second), so
+`reissue` retries a 401-only probe before deleting the token. Manual checks
+right after creation should allow the same delay. Cloudflare's D1 and R2 permission groups apply account-wide, so
 a token's name and its environment word never enforce a boundary; the application's
 exact-name and exact-ID checks do. Grant each token only what its cited code path
 calls, and keep each environment's values independently issued.
