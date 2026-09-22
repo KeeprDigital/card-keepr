@@ -26,7 +26,18 @@ const green = (sha) =>
     status: "completed",
     conclusion: "success",
     app: { slug: "github-actions" },
+    check_suite: { id: 777 },
   }));
+const pushRun = (sha) => ({
+  id: 123,
+  path: ".github/workflows/ci.yml",
+  event: "push",
+  head_branch: "main",
+  head_sha: sha,
+  status: "completed",
+  conclusion: "success",
+  check_suite_id: 777,
+});
 
 // Synthetic GitHub responses and injected failures, not remote CI evidence.
 // Execute the actual pre-checkout gate: the CLI dispatch cannot observe the
@@ -52,6 +63,7 @@ const route = args[1];
 let data;
 if (fixture.apiFailure) process.exit(1);
 if (route.includes("/compare/")) data = { status: fixture.compare ?? "identical" };
+else if (route.includes("/actions/workflows/ci.yml/runs?")) data = { workflow_runs: fixture.ciRuns ?? [${JSON.stringify(pushRun(mergeSha))}] };
 else if (route.endsWith("/pulls")) data = [{ merged_at: "2026-09-06", base: { ref: "main" }, merge_commit_sha: "${mergeSha}", head: { sha: "${prSha}" } }];
 else if (route.includes("/check-runs?")) {
   const checks = route.includes("/${prSha}/") ? ${JSON.stringify(green(prSha))} : fixture.checks;
@@ -148,5 +160,40 @@ for (const scenario of [
     if (scenario === "invalid SHA") options.sha = "main";
     const result = gate(t, checks, options);
     assert.notEqual(result.status, 0, result.stdout);
+  });
+}
+
+test("the merge-queue duplicate suite on the same commit does not block release", (t) => {
+  // The merge_group run executes on the exact SHA that fast-forwards onto main.
+  const checks = [...green(mergeSha), ...green(mergeSha).map((check) => ({ ...check, check_suite: { id: 778 } }))];
+  const result = gate(t, checks);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+for (const scenario of [
+  "check succeeded only in another suite",
+  "no push ci run",
+  "two push ci runs",
+  "failed push ci run",
+  "push ci run without a suite",
+  "merge_group run only",
+]) {
+  test(`${scenario} cannot authorize release`, (t) => {
+    const checks = green(mergeSha);
+    const run = pushRun(mergeSha);
+    let ciRuns = [run];
+    if (scenario === "check succeeded only in another suite") {
+      checks[0].conclusion = "failure";
+      checks.push({ ...green(mergeSha)[0], check_suite: { id: 778 } });
+    }
+    if (scenario === "no push ci run") ciRuns = [];
+    if (scenario === "two push ci runs") ciRuns = [run, { ...run, id: 124, check_suite_id: 778 }];
+    if (scenario === "failed push ci run") run.conclusion = "failure";
+    if (scenario === "push ci run without a suite") run.check_suite_id = null;
+    if (scenario === "merge_group run only")
+      Object.assign(run, { event: "merge_group", head_branch: "gh-readonly-queue/main/pr-1" });
+    const result = gate(t, checks, { ciRuns });
+    assert.notEqual(result.status, 0, result.stdout);
+    assert.match(result.stdout, /push ci run|ci job/u, result.stderr);
   });
 }

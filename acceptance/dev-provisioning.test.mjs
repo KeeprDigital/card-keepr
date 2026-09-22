@@ -69,6 +69,7 @@ test("provisioned deny-only Workers use Wrangler so strict first upload accepts 
           head_sha: head,
           status: "completed",
           conclusion: "success",
+          check_suite_id: 777,
         });
       if (url.pathname.includes("/compare/")) return Response.json({ status: "identical" });
       if (url.pathname.endsWith("/check-runs"))
@@ -77,6 +78,7 @@ test("provisioned deny-only Workers use Wrangler so strict first upload accepts 
           check_runs: requiredCiChecks.map((name) => ({
             name,
             app: { slug: "github-actions" },
+            check_suite: { id: 777 },
             head_sha: head,
             status: "completed",
             conclusion: "success",

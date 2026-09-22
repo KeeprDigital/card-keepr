@@ -68,9 +68,11 @@ async function fixture(t, sha = "a".repeat(40)) {
     name,
     head_sha: sha,
     app: { slug: "github-actions" },
+    check_suite: { id: 777 },
     status: "completed",
     conclusion: "success",
   }));
+  const ciRun = { check_suite_id: 777 };
   const scratch = {
     databases: [{ name: "card-keepr-disposable-verification-dev", uuid: "00000000-0000-0000-0000-000000000002" }],
     nextId: "00000000-0000-0000-0000-000000000003",
@@ -113,6 +115,7 @@ async function fixture(t, sha = "a".repeat(40)) {
         head_branch: "main",
         status: "completed",
         conclusion: "success",
+        ...ciRun,
       };
     else if (path.includes("/compare/")) result = { status: "identical" };
     else if (path.endsWith("/check-runs")) result = { check_runs: checks, total_count: checks.length };
@@ -163,6 +166,7 @@ async function fixture(t, sha = "a".repeat(40)) {
     call,
     env,
     checks,
+    ciRun,
     database,
     scratch,
     rotateDisposable,
@@ -237,6 +241,30 @@ test("dev preparation rejects signed identity substitution, stale tokens and fai
   checks[0].conclusion = "success";
   checks.pop();
   await assert.rejects(call(), (error) => error.code === "invalid_dev_workflow_attestation");
+});
+
+test("dev preparation accepts the merge-queue duplicate suite on the same commit", async (t) => {
+  const { call, checks } = await fixture(t);
+  // The merge_group run executes on the same SHA and leaves a second suite.
+  checks.push(...checks.map((check) => ({ ...check, check_suite: { id: 778 } })));
+  assert.equal((await call()).status, 201);
+});
+
+test("dev preparation binds required checks to the named CI run's suite", async (t) => {
+  const { call, checks, ciRun } = await fixture(t);
+  const green = checks.map((check) => ({ ...check }));
+  // A check that succeeded only in another suite cannot stand in for the named run.
+  checks[0].conclusion = "failure";
+  checks.push({ ...green[0], check_suite: { id: 778 } });
+  await assert.rejects(call(), (error) => error.code === "invalid_dev_workflow_attestation");
+  checks.splice(0, 1);
+  await assert.rejects(call(), (error) => error.code === "invalid_dev_workflow_attestation");
+  // The named run must expose a positive integer suite id.
+  checks.splice(0, checks.length, ...green);
+  for (const suite of [undefined, 0, "777"]) {
+    ciRun.check_suite_id = suite;
+    await assert.rejects(call(), (error) => error.code === "invalid_dev_workflow_attestation");
+  }
 });
 
 for (const isolatedEnvironment of ["dev", "staging"])

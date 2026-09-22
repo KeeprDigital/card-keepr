@@ -65,6 +65,7 @@ export async function stagingWorkflowFixture(t, selected = "a".repeat(40)) {
         head_sha: selected,
         status: "completed",
         conclusion: "success",
+        check_suite_id: 777,
       });
     if (path.includes("/compare/")) return Response.json({ status: "behind" });
     if (path.endsWith("/check-runs"))
@@ -73,6 +74,7 @@ export async function stagingWorkflowFixture(t, selected = "a".repeat(40)) {
         check_runs: requiredCiChecks.map((name) => ({
           name,
           app: { slug: "github-actions" },
+          check_suite: { id: 777 },
           head_sha: selected,
           status: "completed",
           conclusion: state.checkConclusion,

@@ -278,7 +278,7 @@ First provisioning and first installation of dev/staging run in the owner's shel
 with `CLOUDFLARE_API_TOKEN` (the environment's deploy or provision token),
 `GH_TOKEN` (a GitHub token with **Actions: read** and **Checks: read**, used only for
 `GET …/actions/runs/{id}` and `GET …/commits/{sha}/check-runs` at
-`src/http/dev-workflow-identity.mjs:112,151,167` via `scripts/provision-dev.mjs:74`),
+`src/http/dev-workflow-identity.mjs:112,151,169` via `scripts/provision-dev.mjs:74`),
 `API_TRAFFIC_TOKEN` (= the environment's API bearer for smoke) and the two
 secret-file paths. Unset them when the installation is recorded.
 
