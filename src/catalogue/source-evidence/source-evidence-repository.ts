@@ -582,11 +582,19 @@ export async function appendDiscoveredEvidenceRequests(
   database: CatalogueStore,
   run: Pick<IngestionEvidenceRow, "id" | "request_plan_json" | "plan_origin">,
   parent: EvidenceRequestRow,
-  discovered: readonly DiscoveredEvidenceRequest[],
+  discoveredClaims: readonly DiscoveredEvidenceRequest[],
   guard?: () => D1PreparedStatement,
 ): Promise<readonly EvidenceRequestRow[]> {
+  let discovered = discoveredClaims;
   const plan = evidencePlanForRequest(run, parent.request_id);
   const singleParentRoles = requiredSourceAdapter(plan.adapter_version).singleDiscoveryParentRoles ?? [];
+  // The plan's scope selects which discovered roles it acquires; sealed
+  // observations keep the adapter's complete discovery claims regardless.
+  const acquiredRoles = sourceAdapterForCoverage(
+    requiredSourceAdapter(plan.adapter_version),
+    plan.coverage?.subset,
+  ).acquiredDiscoveryRoles;
+  if (acquiredRoles !== undefined) discovered = discovered.filter(({ role }) => acquiredRoles.includes(role));
   const aboveCollectionPlanWindows = reservesOfficialCollectionPlanWindows(run);
   const normalizedById = new Map<
     string,

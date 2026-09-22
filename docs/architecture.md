@@ -158,12 +158,21 @@ identity resolution and correction decisions do not publish a candidate.
 
 Scryfall records whose physical faces cannot establish the required logical Card
 parts retain their exact source claims and private image evidence as separate
-Entity Proposals for each declared finish. Otherwise-valid records with a token
-layout but no Token type prefix use the same path with an unresolved category;
-the layout alone does not establish that they are tokens, gameplay Cards or
-out-of-scope inserts. They contribute no Card or Printing while the required
-structure or category remains unresolved. A decision about one finish does not
-decide another, and another printing's rules text cannot fill the source's gap.
+Entity Proposals for each declared finish. A token layout alone does not
+establish a token: the Magic Game Profile requires the Token type prefix. Under
+the owner's ruling, a token-layout record with another gameplay type and rules
+text is a gameplay Card; the named World Championships advertising inserts are
+excluded as `advertising`; `Card` or `Stickers` types and self-described
+reminder cards are excluded as `non_card_insert`. Excluded raw records stay in
+the retained archive blocks and are counted by reason; a later refresh may admit
+a sub-bucket with fresh identities. Only an otherwise-valid token-layout record
+outside these rulings keeps the unresolved-category proposal path. Proposals
+contribute no Card or Printing while the required structure or category remains
+unresolved. A decision about one finish does not decide another, and another
+printing's rules text cannot fill the source's gap. The three incomplete
+reversible Adventure designs (six finishes) do not block publication; the owner
+admits them afterwards as Printings of the evidenced Card with the treatment an
+explicit unknown.
 [Magic source assembly](https://github.com/KeeprDigital/card-keepr/issues/327).
 
 TCGdex's declared English inventory graph retains exact Set/Card membership and
@@ -194,7 +203,12 @@ when its record locator, variant, set and collector number agree and retained
 front-image evidence supplies the physical proof. Other identities remain
 unresolved for explicit review. This preserves existing fingerprints and makes
 no finish, back or original printed-wording inference. A later image outage
-retains admitted identity and decisions with an explicit image gap. Owner
+retains admitted identity and decisions with an explicit image gap. A lineage
+registered with source-record novelty proof (Scryfall) instead establishes a new
+qualified Printing from its structurally complete source record, so its
+facts-only import publishes every such Printing with an explicit image gap;
+records without an illustration identity stay unqualified proposals. Other
+lineages still require retained image proof. Owner
 exceptions, prior automatic decisions and category/profile equivalence survive
 refresh and recovery. Admission remains separate from approval of the whole
 Catalogue Candidate and publication.
@@ -263,8 +277,13 @@ request's current snapshot pointer, requires every receipt for a shared physical
 key to agree, and verifies those bytes again against the restored database.
 Scryfall's default scope starts at one bulk metadata root, pins the dated
 Printing-bearing archive and its compressed length, and discovers current normal
-images from its selected records. The named four-card pilot retains its exact
-requests. Its pre-Go-Live capacity migration requires current/latest-event state
+images from its selected records. Its named `facts-only` scope reads the same
+pinned inventory but acquires no image: a scope's acquired discovery roles select
+which discovered requests enter the run, while its sealed observations keep the
+adapter's complete discovery claims. Images arrive progressively: the facts-only
+import (tranche 0) publishes first, then image tranches run as ordinary complete
+collections metered by the Acquisition Budget. The named four-card pilot retains
+its exact requests. Its pre-Go-Live capacity migration requires current/latest-event state
 agreement and completed or terminal collection, except permanently abandoned
 restored collections; reservation absence alone does not establish completion.
 The dated request envelope is separate from measured full-import capacity,

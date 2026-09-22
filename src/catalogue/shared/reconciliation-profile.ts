@@ -508,7 +508,7 @@ export function gameProfileCardClassification(
 ) {
   requiredProfileContract(profile);
   const token =
-    (profile === "magic@1" && ["token", "double_faced_token"].includes(String(attributes.layout))) ||
+    (profile === "magic@1" && magicTokenAttributes(attributes)) ||
     (profile === "gundam@1" && attributes.card_type === "unit_token") ||
     (profile === "riftbound@1" && Array.isArray(attributes.supertypes) && attributes.supertypes.includes("token"));
   const resolved = category === undefined ? (token ? "token" : "gameplay") : category;
@@ -522,6 +522,13 @@ export function gameProfileCardClassification(
     category: resolved as CardCategory,
     gameplay_applicability: resolved === "art" ? ("inapplicable" as const) : ("applicable" as const),
   };
+}
+
+// A token layout establishes a token only with the Token type prefix (#327 owner
+// ruling): a token-layout gameplay type with rules text is a gameplay Card.
+function magicTokenAttributes(attributes: Record<string, unknown>) {
+  if (attributes.layout === "double_faced_token") return true;
+  return attributes.layout === "token" && /^Token(?: |$)/u.test(String(attributes.type_line));
 }
 
 /** Parse equality against a scalar profile leaf; arrays mean membership. */

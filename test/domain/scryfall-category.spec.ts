@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
 import { URL } from "node:url";
+import { gunzipSync } from "node:zlib";
 import { expect, test } from "vitest";
 import { requiredSourceAdapter } from "../../src/catalogue/adapters";
 import { AdapterParseFailure } from "../../src/catalogue/adapters/adapter-parse-failure";
 import { parseSourceAdmissionEvidence } from "../../src/catalogue/reconciliation/source-admission-evidence";
+import { gameProfileCardClassification } from "../../src/catalogue/shared";
 
 const adapter = requiredSourceAdapter("scryfall-magic-en@1");
 const bytes = readFileSync(
@@ -11,32 +13,40 @@ const bytes = readFileSync(
 );
 const original = JSON.parse(bytes.toString());
 
-test("a retained token-layout reminder keeps its category unresolved without changing its source claims", async () => {
+test("the bulk scope excludes a token-layout reminder as a non-card insert without changing its bytes", () => {
   const before = Buffer.from(bytes);
-  const parsed = adapter.archiveExtraction!.record(bytes, "2026-09-14");
-  expect(parsed).toMatchObject({ sourceKey: "01104ab1-84e1-4c78-853d-637c6554bdf9", exclusion: null });
-  expect(parsed.observations).toHaveLength(1);
-  const review = parseSourceAdmissionEvidence(parsed.observations[0]!.value, adapter);
-  expect(review).toMatchObject({
+  expect(adapter.archiveExtraction!.record(bytes, "2026-09-14")).toEqual({
+    sourceKey: "01104ab1-84e1-4c78-853d-637c6554bdf9",
+    exclusion: "non_card_insert",
+    observations: [],
+    requests: [],
+  });
+  expect(bytes).toEqual(before);
+});
+
+test("the per-record pilot path keeps an excluded kind reviewable without changing its source claims", async () => {
+  const [review] = (await adapter.parseBytes!(bytes, {
+    url: original.uri,
+    mediaType: "application/json",
+  })) as unknown[];
+  expect(parseSourceAdmissionEvidence(review, adapter)).toMatchObject({
     observation_type: "source_admission_evidence",
     locator: "01104ab1-84e1-4c78-853d-637c6554bdf9",
     declared_finishes: ["nonfoil", "foil"],
     issues: [{ code: "category_unresolved", source_paths: ["layout", "type_line"] }],
     source_sidecar: { source_record_json: JSON.stringify(original) },
+    appearance_evidence: {
+      images: [
+        {
+          role: "front",
+          source_url: original.image_uris.normal,
+          artwork_fingerprint: `scryfall:illustration:${original.illustration_id}`,
+        },
+      ],
+    },
   });
   expect(review).not.toHaveProperty("card");
   expect(review).not.toHaveProperty("printing");
-  expect(review).not.toHaveProperty("category");
-  expect(review.appearance_evidence.images).toEqual([
-    {
-      role: "front",
-      source_url: original.image_uris.normal,
-      artwork_fingerprint: `scryfall:illustration:${original.illustration_id}`,
-    },
-  ]);
-  expect(parsed.requests).toHaveLength(1);
-  expect(await adapter.parseBytes!(bytes, { url: original.uri, mediaType: "application/json" })).toEqual([review]);
-  expect(bytes).toEqual(before);
 });
 
 test.each([
@@ -105,4 +115,55 @@ test.each([
       mediaType: "application/json",
     }),
   ).toThrow(AdapterParseFailure);
+});
+
+test("the retained 210-record cohort follows the owner's token-layout category ruling", () => {
+  const directory = new URL("../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/", import.meta.url);
+  const expected = JSON.parse(readFileSync(new URL("category-cohort.json", directory), "utf8")) as {
+    records: { id: string; ruling: string }[];
+  };
+  const lines = gunzipSync(readFileSync(new URL("category-cohort.jsonl.gz", directory)))
+    .toString("utf8")
+    .split("\n")
+    .filter(Boolean);
+  expect(lines).toHaveLength(expected.records.length);
+  const outcomes: Record<string, number> = {};
+  for (const [index, line] of lines.entries()) {
+    const { id, ruling } = expected.records[index]!;
+    const source = JSON.parse(line) as { layout: string };
+    const parsed = adapter.archiveExtraction!.record(new TextEncoder().encode(line), "2026-09-14");
+    const values = parsed.observations.map(({ value }) => value as Record<string, unknown>);
+    const review = values[0]?.observation_type === "source_admission_evidence";
+    const outcome =
+      parsed.exclusion ??
+      (review
+        ? (values[0]!.issues as { code: string }[]).map(({ code }) => code).join(",")
+        : source.layout === "token" &&
+            values.every((value) => (value.card as { category: string }).category === "gameplay")
+          ? "gameplay"
+          : "ordinary");
+    expect({ id: parsed.sourceKey, outcome }).toEqual({ id, outcome: ruling });
+    outcomes[outcome] = (outcomes[outcome] ?? 0) + 1;
+  }
+  expect(outcomes).toEqual({
+    gameplay: 45,
+    advertising: 8,
+    non_card_insert: 145,
+    logical_parts_unresolved: 3,
+    ordinary: 9,
+  });
+});
+
+test("a token-layout gameplay type is a gameplay Card while Token-typed records stay tokens", () => {
+  expect(gameProfileCardClassification("magic@1", { layout: "token", type_line: "Creature — Minotaur" })).toEqual({
+    category: "gameplay",
+    gameplay_applicability: "applicable",
+  });
+  expect(gameProfileCardClassification("magic@1", { layout: "token", type_line: "Token Creature — Goblin" })).toEqual({
+    category: "token",
+    gameplay_applicability: "applicable",
+  });
+  expect(() =>
+    gameProfileCardClassification("magic@1", { layout: "token", type_line: "Creature — Minotaur" }, "token"),
+  ).toThrow("Card category conflicts with its Game Profile.");
 });

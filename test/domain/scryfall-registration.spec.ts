@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import pilot from "../../docs/examples/scryfall-magic-pilot-plan.json";
 import bulk from "../../docs/examples/scryfall-magic-bulk-plan.json";
+import facts from "../../docs/examples/scryfall-magic-facts-plan.json";
 import { requiredSourceAdapter } from "../../src/catalogue/adapters";
 import { validateEvidencePlan } from "../../src/catalogue/source-evidence/source-evidence-model";
 
@@ -30,6 +31,18 @@ test("the complete Scryfall plan starts from one exact bulk metadata root", asyn
       method: "GET",
     }),
   ]);
+});
+
+test("the facts-only Scryfall plan reads the same bulk root and acquires only its archive listing", async () => {
+  const input = facts.plans[0]!;
+  const { plan, adapter } = await validateEvidencePlan({ ...input, idempotency_key: "scryfall-facts-only-root" });
+  expect(plan.coverage).toEqual({ locale: "en", area: "catalogue", subset: "facts-only" });
+  expect(plan.requests.map(({ id, url }) => ({ id, url }))).toEqual([
+    { id: "scryfall-magic-en:bulk-data", url: "https://api.scryfall.com/bulk-data" },
+  ]);
+  expect(adapter.acquiredDiscoveryRoles).toEqual(["listing"]);
+  expect(adapter.printingAdmission).toBe("source_qualification");
+  expect(requiredSourceAdapter("scryfall-magic-en@1").acquiredDiscoveryRoles).toBeUndefined();
 });
 
 test("the named Scryfall pilot preserves its four card requests and identities", async () => {

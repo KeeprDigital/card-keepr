@@ -66,6 +66,7 @@ import { pinCorrectionDecisions, pinnedCardIdentityResolver, type CorrectionPin 
 import {
   assessSourceAdmission,
   completeSourceAdmission,
+  printingNoveltyEstablished,
   publisherConfirmation,
   publisherLineage,
 } from "./entity-admission-source";
@@ -495,6 +496,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   const checkedCardScopes: CheckedCardScope[] = [];
   const printingAdmissionPolicies = new Map<string, "owner_review" | "source_qualification" | "unqualified">();
   const printingIdentityQualifications = new Map<string, SourceAdapterRegistration["qualifiesPrintingIdentity"]>();
+  const printingNoveltyProofs = new Map<string, SourceAdapterRegistration["printingNoveltyProof"]>();
   const cardDesignQualifications = new Map<string, SourceAdapterRegistration["qualifiesCardDesignIdentity"]>();
   let errataOnlyEvidence = true;
   const evidencePlanSnapshot: unknown[] = [];
@@ -510,6 +512,13 @@ export async function reconcileRetainedCardPrintingEvidence(
     cardDesignQualifications.set(
       plan.sourceLineage,
       requiredSourceAdapter(plan.adapterVersion).qualifiesCardDesignIdentity,
+    );
+    // Source-record novelty is meaningful only where source qualification governs admission.
+    printingNoveltyProofs.set(
+      plan.sourceLineage,
+      plan.printingAdmission === "source_qualification"
+        ? requiredSourceAdapter(plan.adapterVersion).printingNoveltyProof
+        : undefined,
     );
     if ((plan.subset ?? "complete") === "complete") completeLineages.add(plan.sourceLineage);
     if (plan.reconciliationCapability !== "errata") {
@@ -783,6 +792,7 @@ export async function reconcileRetainedCardPrintingEvidence(
           const admission = await assessSourceAdmission(database, runId, observation, observedAt, {
             cardDesignKey,
             qualifiesPrintingIdentity: printingIdentityQualifications.get(observation.sourceLineage),
+            printingNoveltyProof: printingNoveltyProofs.get(observation.sourceLineage),
             printingAdmission: printingAdmissionPolicies.get(observation.sourceLineage) ?? "unqualified",
           });
           if (admission?.identityExceptionConflict) {
@@ -1378,9 +1388,12 @@ export async function reconcileRetainedCardPrintingEvidence(
                     "The claimed novel appearance already exists with materially incompatible rules, rarity, lineage, or treatment evidence.",
                 });
               } else if (
-                !observation.demonstrablyNovel ||
                 !observation.structurallyComplete ||
-                !observation.noveltyProofComplete
+                !printingNoveltyEstablished(
+                  observation,
+                  printingNoveltyProofs.get(observation.sourceLineage),
+                  printingIdentityQualifications.get(observation.sourceLineage),
+                )
               ) {
                 await diagnostics.push({
                   code: "printing_match_insufficient_evidence",

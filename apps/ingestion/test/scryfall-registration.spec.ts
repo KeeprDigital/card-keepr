@@ -17,6 +17,7 @@ import {
 } from "../../../src/catalogue/source-evidence/source-evidence-repository";
 import { archiveParseProgress } from "../../../src/catalogue/source-evidence/source-archive-repository";
 import { parseSnapshotBatch } from "../../../src/catalogue/source-evidence/source-evidence-parsing";
+import { discoveredSourceRecordRequests } from "../../../src/catalogue/source-evidence/source-record-intake";
 import * as archiveQueries from "./query-helpers/source-archive";
 import { archiveReplayRequests } from "./query-helpers/source-archive-replay";
 import { installRuntimeSuite } from "./runtime-helpers";
@@ -27,7 +28,7 @@ const metadataUrl = "https://api.scryfall.com/bulk-data";
 const archiveUrl = "https://data.scryfall.io/default-cards/default-cards-20260914090527.jsonl.gz";
 const version = "scryfall-magic-en@1";
 
-async function startGraph(key: string, sizeOffset = 0) {
+async function startGraph(key: string, sizeOffset = 0, subset?: string) {
   const db = catalogueStore(env.CATALOGUE_DB);
   const compressed = new Uint8Array(
     await new Response(new Blob([utf8(delverRaw)]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer(),
@@ -59,6 +60,7 @@ async function startGraph(key: string, sizeOffset = 0) {
     source_lineage: "scryfall-magic-en",
     adapter_version: version,
     idempotency_key: key,
+    ...(subset === undefined ? {} : { subset }),
     requests: [
       {
         id: "scryfall-magic-en:bulk-data",
@@ -165,6 +167,50 @@ test("the complete Scryfall graph retains one metadata root, its pinned archive 
   expect((await archiveReplayRequests(db).bind(run.id).all()).results).toEqual(requests);
   expect(await archiveParseProgress(db, sealed.id).first()).toEqual(progress);
   expect(fetched).toHaveLength(2);
+});
+
+test("tranche 0 retains the complete pinned inventory and its image claims while acquiring no image", async () => {
+  const { db, run, fetched, collect } = await startGraph("scryfall-facts-only-small-graph", 0, "facts-only");
+  expect(JSON.parse(run.request_plan_json)).toMatchObject({ coverage: { subset: "facts-only" } });
+  const [root] = await pendingEvidenceRequests(db, run.id);
+  await collect(root!);
+  const [archive] = await pendingEvidenceRequests(db, run.id);
+  expect(archive).toMatchObject({ request_role: "listing", url: archiveUrl });
+  for (let callback = 0; callback < 6; callback++) {
+    const retained = (await pendingEvidenceRequests(db, run.id)).find(
+      ({ request_id }) => request_id === archive!.request_id,
+    );
+    if (!retained) break;
+    await collect(retained);
+  }
+  expect(await pendingEvidenceRequests(db, run.id)).toEqual([]);
+  const requests = (await archiveReplayRequests(db).bind(run.id).all<EvidenceRequestRow>()).results;
+  expect(requests.map(({ request_role, state }) => ({ request_role, state }))).toEqual([
+    { request_role: "surface", state: "observed" },
+    { request_role: "listing", state: "observed" },
+  ]);
+  const captured = requests[1]!;
+  const sealed = await parseSnapshotBatch(db, env.EVIDENCE_OBJECTS, captured.source_snapshot_id!, version, {
+    intent: "collection",
+    idempotencyKey: `${run.id}:${captured.request_id}`,
+  });
+  if ("kind" in sealed) throw new Error("One-record archive did not seal within six callbacks.");
+  // The sealed interpretation keeps both image claims for a later budgeted tranche.
+  expect(sealed.observation_count).toBe(2);
+  const claims = [];
+  for await (const page of discoveredSourceRecordRequests(db, sealed.id)) claims.push(...page);
+  expect(claims.map(({ role, url }) => ({ role, url }))).toEqual([
+    {
+      role: "image",
+      url: "https://cards.scryfall.io/normal/front/6/9/6904ea20-e504-47da-95a0-08739fdde260.jpg?1783908173",
+    },
+    {
+      role: "image",
+      url: "https://cards.scryfall.io/normal/back/6/9/6904ea20-e504-47da-95a0-08739fdde260.jpg?1783908173",
+    },
+  ]);
+  expect(await archiveParseProgress(db, sealed.id).first()).toMatchObject({ state: "complete", discovery_ordinal: 2 });
+  expect(fetched.map(({ url }) => url)).toEqual([metadataUrl, archiveUrl]);
 });
 
 test("an archive whose retained length disagrees with metadata never decodes or discovers images", async () => {

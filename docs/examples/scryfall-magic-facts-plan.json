@@ -1,0 +1,21 @@
+{
+  "plans": [
+    {
+      "supported_game": "magic",
+      "source_lineage": "scryfall-magic-en",
+      "adapter_version": "scryfall-magic-en@1",
+      "subset": "facts-only",
+      "participation": "required",
+      "requests": [
+        {
+          "id": "scryfall-magic-en:bulk-data",
+          "url": "https://api.scryfall.com/bulk-data",
+          "headers": {
+            "accept": "application/json",
+            "user-agent": "Card-Keepr/0.1 (+https://github.com/KeeprDigital/card-keepr)"
+          }
+        }
+      ]
+    }
+  ]
+}

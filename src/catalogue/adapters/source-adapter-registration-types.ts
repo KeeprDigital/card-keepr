@@ -90,6 +90,12 @@ export type SourceAdapterRegistration = Readonly<{
     maximumSnapshotBytes: number;
   };
   requestCapacity: number;
+  /**
+   * Discovered request roles this scope admits into a run's collection. Absent
+   * means every role. Dropped requests stay in the sealed observations as the
+   * adapter's discovery claims; they are never acquired by this scope.
+   */
+  acquiredDiscoveryRoles?: readonly ExtractedSourceRequest["role"][];
   /** Retained access-policy floor after HTTP 429; longer Retry-After remains binding. */
   minimumRateLimitBackoffMilliseconds?: number;
   coverageLossThreshold?: Readonly<{ absolute: number; fraction: number }>;
@@ -100,6 +106,14 @@ export type SourceAdapterRegistration = Readonly<{
   printingAdmission?: "owner_review" | "source_qualification";
   /** Proven source-specific identity rule; retained physical evidence is checked separately. */
   qualifiesPrintingIdentity?: (evidence: SourcePrintingIdentityEvidence) => boolean;
+  /**
+   * What establishes a new source-qualified Printing's appearance. The default
+   * requires retained Printing Image proof of a demonstrably novel appearance.
+   * `qualified_source_record` admits a Printing that `qualifiesPrintingIdentity`
+   * accepts from its structurally complete source record alone; it publishes
+   * with an explicit image gap until image bytes are acquired.
+   */
+  printingNoveltyProof?: "printing_image" | "qualified_source_record";
   /** Source-scoped design evidence may associate Cards only under this exact parser qualification. */
   qualifiesCardDesignIdentity?: (evidence: SourcePrintingIdentityEvidence) => boolean;
   reconciliationAreas?: readonly ("catalogue" | "errata")[];
@@ -148,6 +162,8 @@ export type SourceAdapterRegistration = Readonly<{
         reconciliationAreas?: readonly ("catalogue" | "errata")[];
         reconciliationCapability?: "catalogue" | "errata";
         printingAdmission?: "owner_review" | "source_qualification";
+        /** Overrides the registration's acquired discovery roles for this named scope. */
+        acquiredDiscoveryRoles?: readonly ExtractedSourceRequest["role"][];
         /** Exact Card identities whose complete variant inventory belongs to this scope. */
         cardIdentities?: readonly { kind: string; value: string }[];
         requiredSurfaces: readonly string[];

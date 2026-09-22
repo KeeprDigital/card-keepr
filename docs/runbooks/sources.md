@@ -160,6 +160,13 @@ it does not establish full-import throughput, image bytes, publication or recove
 Inspect any capacity pause before choosing an extension. The remaining full-scope
 evidence is tracked in [#327](https://github.com/KeeprDigital/card-keepr/issues/327).
 
+The [Scryfall facts plan](../examples/scryfall-magic-facts-plan.json) is the
+first Magic import (tranche 0). Its `facts-only` scope reads the same root and
+archive but admits no image request, so the run needs only the metadata and
+archive dispatches and each Printing publishes with an explicit image gap.
+Later image tranches use the bulk plan under an owner-approved budget; see
+[paused collection](#paused-or-failed-collection) for extensions.
+
 `source show` reports coverage, request counts, successful check time and actual
 content capture time. A partial check never advances successful freshness. A
 complete named check can report a Printing no longer observed without deleting it.
@@ -281,7 +288,9 @@ the exact semantic evidence and do not approve publication.
 Qualified, sufficiently evidenced authoritative observations can enter a candidate
 automatically. For Riot, matching publisher Printing code, locator, set and
 collector number plus retained front-image proof establish eligible intake;
-unknown finish, back and original printed wording remain unknown. An unqualified
+unknown finish, back and original printed wording remain unknown. For Scryfall,
+the exact record, finish and illustration identity qualify a Printing without
+image bytes; it publishes with an explicit image gap. An unqualified
 adapter, insufficient identity or supplementary-only discovery retains an Entity
 Proposal for explicit owner review. Existing admission decisions are reused after
 refresh and recovery, including when a new image request fails. Inspect those
