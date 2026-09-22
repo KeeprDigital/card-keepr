@@ -37,6 +37,18 @@ test("the required PR title check accepts exactly the conventional release-pleas
 test("release-please only opens the release PR and tags; it holds no deployment authority", async () => {
   const workflow = await readFile(".github/workflows/release-please.yml", "utf8");
   assert.doesNotMatch(workflow, /secrets\.|environment:|id-token/u);
+  // A created release records its tag commit's extended scenarios (#238), with only
+  // the status write that workflow needs.
+  const extended = workflow.split("\n  extended:\n")[1];
+  assert.ok(extended);
+  assert.match(extended, /^ {4}needs: release-please$/mu);
+  assert.match(extended, /^ {4}if: needs\.release-please\.outputs\.release_created == 'true'$/mu);
+  assert.match(extended, /^ {4}permissions:\n {6}contents: read\n {6}statuses: write\n {4}uses:/mu);
+  assert.match(
+    extended,
+    /^ {4}uses: \.\/\.github\/workflows\/extended-scenarios\.yml\n {4}with:\n {6}sha: \$\{\{ needs\.release-please\.outputs\.sha \}\}$/mu,
+  );
+  assert.match(workflow, /^ {6}sha: \$\{\{ steps\.release\.outputs\.sha \}\}$/mu);
   const config = JSON.parse(await readFile("release-please.json", "utf8"));
   const root = config.packages["."];
   assert.equal(root["include-component-in-tag"], false);

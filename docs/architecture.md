@@ -588,13 +588,20 @@ live acceptance under [#237](https://github.com/KeeprDigital/card-keepr/issues/2
 that intent through fresh production guards; a short-lived staging plan cannot
 authorize a later production deployment.
 
-The owner's staging initiation is the single routine approval. A successful
-staging release promotes the same commit automatically, without a second owner
-confirmation ([lean scope](https://github.com/KeeprDigital/card-keepr/issues/238#issuecomment-5771506566)).
-The promotion credential is the production-environment OIDC identity of the
-staging workflow run that claimed the intent, so no new secret is needed.
-Production binds that run to its own claim, fetches the staging outcome itself,
-and verifies the commit's extended-scenarios run and CI. It rechecks the intent's
-target and schema level and resolves a fresh plan. The promotion record stands in
-for the owner's confirmation envelope, and the unchanged guarded executor deploys.
-Promotion is available code; workflow wiring and live evidence remain with #238.
+A routine release is the owner's staging initiation, then an owner promotion
+with exactly one `y/N`
+([revised decision](https://github.com/KeeprDigital/card-keepr/issues/238#issuecomment-5773132010),
+superseding the automatic promotion of the
+[lean scope](https://github.com/KeeprDigital/card-keepr/issues/238#issuecomment-5771506566)
+and the in-workflow approval gate). `pnpm release:promote` selects the latest
+successful staging release and checks its outcome in production and staging
+and its commit's extended-scenarios run, then runs the ordinary guarded
+Production Release of that exact commit. Everything after the `y/N` is
+automatic, and every Production Release keeps one human approval. There is no
+GitHub environment reviewer and no new credential.
+
+Production's `POST /v1/production-promotions` (#411) remains deployed but
+dormant: nothing calls it. It binds the staging workflow run's OIDC identity to
+its own claim, the staging outcome it fetches itself, the extended-scenarios run
+and CI, rechecks the intent's target and schema level and resolves a fresh plan.
+It is kept for a possible later hands-off promotion.

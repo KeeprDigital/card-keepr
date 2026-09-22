@@ -7,9 +7,9 @@ run-name: extended-scenarios-${{ inputs.sha || github.sha }}
 # promotion requires this record alongside a successful staging outcome.
 #
 # release-please tags with GITHUB_TOKEN, and GitHub starts no workflow for a
-# tag pushed with that token, so release-please.yml calls this workflow
-# directly. The tag trigger covers a v* tag pushed by any other identity.
-# A caller must grant `statuses: write` and `contents: read`.
+# tag pushed with that token, so release-please.yml calls this workflow for the
+# tag commit when it creates a release. The tag trigger covers a v* tag pushed
+# by any other identity. A caller must grant `statuses: write` and `contents: read`.
 on:
   push:
     tags: ["v*"]

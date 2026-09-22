@@ -22,6 +22,7 @@ import {
 } from "./release-run-support.mjs";
 import { isReleaseIdentity } from "../src/catalogue/shared/release-input-shapes.mjs";
 import { environmentNames } from "../src/http/environment-target.mjs";
+import { verifyExtendedScenarios } from "../src/http/dev-workflow-identity.mjs";
 
 const run = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -30,6 +31,8 @@ const requiredSecrets = {
   staging: ["KEEPR_PRODUCTION_ADMINISTRATION_KEY", "KEEPR_STAGING_ADMINISTRATION_KEY", "KEEPR_GITHUB_RELEASE_TOKEN"],
   production: ["KEEPR_PRODUCTION_ADMINISTRATION_KEY", "KEEPR_PRODUCTION_API_KEY", "KEEPR_GITHUB_RELEASE_TOKEN"],
 };
+// Promotion reads the staging outcome from both environments, then releases production.
+const promoteSecrets = [...requiredSecrets.production, "KEEPR_STAGING_ADMINISTRATION_KEY"];
 const defaultTiming = {
   pollMs: 15_000,
   findRunMs: 3 * 60_000,
@@ -63,25 +66,35 @@ export async function runReleaseRunCommand(args, environment, json, deps = defau
 }
 
 async function releaseRun(args, environment, deps) {
-  const [kind, ...rest] = args;
-  const options = parseOptions(rest, ["--sha", "--tag", "--release-id"], ["--json", "--yes"]);
+  const [command, ...rest] = args;
+  // `promote` (#238) is a Production Release of the latest successful staging
+  // release's commit, so it shares the production path after selection.
+  const promote = command === "promote";
+  const kind = promote ? "production" : command;
+  const options = parseOptions(rest, promote ? ["--release-id"] : ["--sha", "--tag", "--release-id"], [
+    "--json",
+    "--yes",
+  ]);
   if (!(kind in releaseKinds) || options.error !== null || (options.values["--sha"] && options.values["--tag"]))
     stop(
       "invalid_arguments",
-      "Usage: keepr release run staging|production [--sha <sha> | --tag vX.Y.Z] [--release-id <id>] [--yes]",
+      promote
+        ? "Usage: keepr release promote [--release-id <staging release>] [--yes]"
+        : "Usage: keepr release run staging|production [--sha <sha> | --tag vX.Y.Z] [--release-id <id>] [--yes]",
       2,
     );
   const yes = options.flags.has("--yes");
   if (!yes && !deps.interactive)
     stop("confirmation_required", "No terminal to confirm on: re-run with --yes to confirm non-interactively.", 2);
-  const requestedId = options.values["--release-id"];
-  if (requestedId !== undefined && !isReleaseIdentity(requestedId))
+  if (options.values["--release-id"] !== undefined && !isReleaseIdentity(options.values["--release-id"]))
     stop("invalid_arguments", "--release-id is not a valid release identity.", 2);
+  // For promote, --release-id names the staging release; the production ID is generated.
+  const requestedId = promote ? undefined : options.values["--release-id"];
   const say = (line = "") => deps.write(`${line}\n`);
 
   // The keepr entrypoint has already added the owner env file (cli/owner-env.mjs).
   const env = environment;
-  const missing = requiredSecrets[kind].filter((name) => !env[name]);
+  const missing = (promote ? promoteSecrets : requiredSecrets[kind]).filter((name) => !env[name]);
   if (missing.length > 0)
     stop(
       "configuration_error",
@@ -91,7 +104,8 @@ async function releaseRun(args, environment, deps) {
   const github = (path) =>
     readGithub({ credential: env.KEEPR_GITHUB_RELEASE_TOKEN, path, apiUrl: env.KEEPR_GITHUB_API_URL });
 
-  const commit = await selectCommit(options.values, deps.git, github, say);
+  const staged = promote ? await selectStagedRelease(options.values["--release-id"], github, say) : null;
+  const commit = await selectCommit(promote ? { "--sha": staged.sha } : options.values, deps.git, github, say);
   say(`Commit ${commit.sha} ${commit.subject}`);
   say(`  push CI run ${commit.ciRunId}; dev delivery ${commit.devDelivered ? "succeeded" : "not observed"}`);
 
@@ -102,6 +116,7 @@ async function releaseRun(args, environment, deps) {
     const result = await deps.runKeepr(checkout, keeprArgs, childEnv);
     return { code: result.code, document: lastJsonLine(result.stdout), stderr: result.stderr };
   };
+  const promotionLines = promote ? await promotionEvidence(staged, keepr, env.KEEPR_GITHUB_RELEASE_TOKEN) : [];
 
   const workflow = releaseKinds[kind].workflow;
   const dispatchRuns = async () =>
@@ -131,7 +146,7 @@ async function releaseRun(args, environment, deps) {
     stop("invalid_administration_contract", `${error.message} Nothing was dispatched.`, 8);
   }
   say();
-  for (const line of lines) say(line);
+  for (const line of [...promotionLines, ...lines]) say(line);
   say();
   if (!yes && !(await deps.confirm("Proceed? [y/N] ")))
     stop("release_not_confirmed", "Release not confirmed; nothing was dispatched.", 3);
@@ -235,6 +250,112 @@ async function selectCommit(values, git, github, say) {
   const skipped = commits.indexOf(selected.sha);
   if (skipped > 0) say(`Skipped ${skipped} newer main commit(s) without green push CI and dev delivery.`);
   return { ...selected, subject: await git.subject(selected.sha), devDelivered: true };
+}
+
+/**
+ * The latest successful `staging-deploy.yml` run (or the named staging release's),
+ * refused when production's latest successful release already runs its commit.
+ */
+async function selectStagedRelease(requested, github, say) {
+  const parse = (kind, run) => {
+    const match = releaseKinds[kind].titlePattern.exec(String(run.display_title ?? run.name ?? ""));
+    return match === null ? null : { releaseId: match[1], sha: match[2], runId: String(run.id), run };
+  };
+  const runs = async (kind) =>
+    (
+      (
+        await github(
+          githubPaths.workflowRuns(releaseKinds[kind].workflow, { event: "workflow_dispatch", per_page: "100" }),
+        )
+      ).workflow_runs ?? []
+    )
+      .map((run) => parse(kind, run))
+      .filter((item) => item !== null)
+      .sort((a, b) => Number(b.runId) - Number(a.runId));
+  const succeeded = (item) => item.run.status === "completed" && item.run.conclusion === "success";
+  const staging = (await runs("staging")).filter((item) => requested === undefined || item.releaseId === requested);
+  const staged = staging.find(succeeded);
+  if (staged === undefined)
+    stop(
+      "staging_release_not_succeeded",
+      requested === undefined
+        ? "No staging release has succeeded; run `pnpm release:staging` first."
+        : `Staging release ${requested} has no successful staging-deploy.yml run.`,
+      6,
+    );
+  const newer = staging.indexOf(staged);
+  if (newer > 0) say(`Skipped ${newer} newer staging run(s) that did not succeed.`);
+  const deployed = (await runs("production")).find(succeeded);
+  if (deployed?.sha === staged.sha)
+    stop(
+      "already_in_production",
+      `Production already runs ${staged.sha} (Production Release ${deployed.releaseId}); nothing to promote.`,
+      7,
+    );
+  say(`Staging release ${staged.releaseId} succeeded at ${staged.sha} (${githubRunUrl(staged.runId)})`);
+  return staged;
+}
+
+/**
+ * Promotion evidence, read by the release commit's own CLI: production's intent and
+ * claim and staging's outcome must all name this run and commit, and the commit's
+ * extended-scenarios record must be the run it points to, with every scenario green
+ * (the same tamper-resistant check as production's promotion endpoint, #411).
+ */
+async function promotionEvidence(staged, keepr, githubToken) {
+  const status = async (target) =>
+    keepr(["release", "staging-status", "--target", target, "--release-id", staged.releaseId, "--json"]);
+  const production = await status("production");
+  if (production.code !== 0)
+    stop(
+      production.document?.code ?? "staging_intent_unavailable",
+      `Production has no readable intent for ${staged.releaseId}: ${production.document?.detail ?? `exit ${production.code}`}`,
+      production.code === 6 ? 6 : 7,
+    );
+  const intent = production.document;
+  if (
+    intent?.intent?.expected_head_sha !== staged.sha ||
+    String(intent?.authorization?.workflow_run_id ?? "") !== staged.runId
+  )
+    stop(
+      "staging_intent_mismatch",
+      `Production's intent for ${staged.releaseId} is not bound to ${staged.sha} and run ${staged.runId}.`,
+      7,
+    );
+  const staging = await status("staging");
+  const outcome = staging.document?.outcome;
+  if (staging.code !== 0 || outcome === null || typeof outcome !== "object")
+    stop(
+      "staging_outcome_missing",
+      `Staging has no recorded outcome for ${staged.releaseId}: ${staging.document?.detail ?? `exit ${staging.code}`}`,
+      staging.code === 0 ? 7 : staging.code,
+    );
+  if (outcome.expected_head_sha !== staged.sha || outcome.intent_digest !== intent.intent_digest)
+    stop("staging_outcome_mismatch", `The staging outcome of ${staged.releaseId} names another intent or commit.`, 7);
+  if (outcome.state !== "succeeded")
+    stop(
+      "staging_outcome_failed",
+      `Staging release ${staged.releaseId} ${outcome.state}${outcome.failure_code ? ` (${outcome.failure_code})` : ""}; nothing to promote.`,
+      7,
+    );
+  let extended;
+  try {
+    extended = await verifyExtendedScenarios(githubToken, staged.sha);
+  } catch (error) {
+    const code = String(error?.message ?? "").startsWith("extended_scenarios_")
+      ? error.message
+      : "extended_scenarios_unverified";
+    stop(
+      code,
+      `${staged.sha} has no verified successful extended-scenarios run (${code}). ${code === "extended_scenarios_pending" ? "Wait for it, then retry." : "Run or re-run extended-scenarios.yml for this commit."}`,
+      7,
+    );
+  }
+  return [
+    `Promotion of staging release ${staged.releaseId} (${githubRunUrl(staged.runId)})`,
+    `  staging outcome  ${outcome.state}; migration level ${outcome.migration?.starting_level} -> ${outcome.migration?.ending_level}; ${(outcome.checks ?? []).map((check) => `${check.name} ${check.state}`).join(", ")}`,
+    `  extended         succeeded (${githubRunUrl(extended.run_id)})`,
+  ];
 }
 
 /** Staging records the dispatching owner's login; it is the token's own account. */
