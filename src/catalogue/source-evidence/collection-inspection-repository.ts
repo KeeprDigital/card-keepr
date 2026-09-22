@@ -311,3 +311,35 @@ export function sourceRequestHostnameSql(urlColumn: string): string {
 }
 
 const hostnameSql = sourceRequestHostnameSql("url");
+
+// Explicitly deferred discovered requests (#409) by Source Lineage and role.
+export function collectionDeferredRequestsStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare(
+      `SELECT source_lineage, request_role, SUM(deferred_count) AS count
+       FROM source_discovery_deferrals WHERE ingestion_run_id = ?
+       GROUP BY source_lineage, request_role
+       ORDER BY source_lineage, request_role`,
+    )
+    .bind(runId);
+}
+
+// The largest deferred selection groups, each row carrying the exact number
+// of distinct groups so a bounded listing never hides how many exist.
+export function collectionDeferredGroupsStatement(
+  database: CatalogueStore,
+  input: Readonly<{ runId: string; limit: number }>,
+): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare(
+      `WITH groups AS (
+         SELECT deferred.key AS selection_group, SUM(deferred.value) AS count
+         FROM source_discovery_deferrals, json_each(group_counts_json) AS deferred
+         WHERE ingestion_run_id = ?
+         GROUP BY deferred.key
+       )
+       SELECT selection_group, count, (SELECT COUNT(*) FROM groups) AS total
+       FROM groups ORDER BY count DESC, selection_group LIMIT ?`,
+    )
+    .bind(input.runId, input.limit);
+}

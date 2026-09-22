@@ -375,6 +375,7 @@ export function sourceAdapterForCoverage(
     requiredSurfaces: contract.requiredSurfaces,
     printingAdmission: contract.printingAdmission ?? adapter.printingAdmission,
     acquiredDiscoveryRoles: contract.acquiredDiscoveryRoles ?? adapter.acquiredDiscoveryRoles,
+    selectableDiscoveryRoles: contract.selectableDiscoveryRoles ?? adapter.selectableDiscoveryRoles,
     requestUrlForSurface: contract.requestUrlForSurface,
     requestUrlForDiscovery: undefined,
     reconciliationCapability: contract.reconciliationCapability ?? adapter.reconciliationCapability,

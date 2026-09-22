@@ -297,7 +297,18 @@ pinned inventory but acquires no image: a scope's acquired discovery roles selec
 which discovered requests enter the run, while its sealed observations keep the
 adapter's complete discovery claims. Images arrive progressively: the facts-only
 import (tranche 0) publishes first, then image tranches run as ordinary complete
-collections metered by the Acquisition Budget. The named four-card pilot retains
+collections metered by the Acquisition Budget. A scope may declare selectable
+discovery roles; its plan's `discovery_selection` then admits only the requests
+of that role whose claiming record's adapter-declared group it lists and/or the
+first `maximum_requests` in retained discovery order. Every other request of that
+role is an explicit deferral, recorded once per discovery batch in the batch that
+admits the selection and counted by group in `source show`; it is never acquired,
+so its Printings keep explicit image gaps. A tranche candidate still carries the
+predecessor revision's images, and a re-selected image is skipped unchanged, so a
+later tranche adds only new bytes. Scryfall's `image-tranche` scope selects its
+normal JPEG images, the only form it discovers, by set code
+([image tranches](https://github.com/KeeprDigital/card-keepr/issues/409)).
+The named four-card pilot retains
 its exact requests. Its pre-Go-Live capacity migration requires current/latest-event state
 agreement and completed or terminal collection, except permanently abandoned
 restored collections; reservation absence alone does not establish completion.

@@ -113,6 +113,18 @@ export type SourceAdapterRegistration = Readonly<{
    * adapter's discovery claims; they are never acquired by this scope.
    */
   acquiredDiscoveryRoles?: readonly ExtractedSourceRequest["role"][];
+  /**
+   * Acquired discovered roles a plan under this scope may narrow with a
+   * `discovery_selection` (an image tranche, #409). Absent means none: every
+   * acquired request of that role is admitted.
+   */
+  selectableDiscoveryRoles?: readonly ExtractedSourceRequest["role"][];
+  /**
+   * The selection group of the requests one retained record observation
+   * claims, for example its set code. Read only by plans that select
+   * discovered requests by group; null leaves those requests ungrouped.
+   */
+  discoverySelectionGroup?: (observation: unknown) => string | null;
   /** Retained access-policy floor after HTTP 429; longer Retry-After remains binding. */
   minimumRateLimitBackoffMilliseconds?: number;
   /** Adaptive pacing bounds per hostname this version reads; others use the default page policy. */
@@ -183,6 +195,8 @@ export type SourceAdapterRegistration = Readonly<{
         printingAdmission?: "owner_review" | "source_qualification";
         /** Overrides the registration's acquired discovery roles for this named scope. */
         acquiredDiscoveryRoles?: readonly ExtractedSourceRequest["role"][];
+        /** Acquired discovered roles a plan under this named scope may select a bounded subset of. */
+        selectableDiscoveryRoles?: readonly ExtractedSourceRequest["role"][];
         /** Exact Card identities whose complete variant inventory belongs to this scope. */
         cardIdentities?: readonly { kind: string; value: string }[];
         requiredSurfaces: readonly string[];

@@ -1,5 +1,7 @@
 import type { CatalogueStore } from "../shared";
 import {
+  collectionDeferredGroupsStatement,
+  collectionDeferredRequestsStatement,
   collectionEvidenceCountsStatement,
   collectionFailureGroupsStatement,
   collectionHostProgressStatement,
@@ -126,68 +128,80 @@ export async function collectionInspection(
   const runId = input.run.id;
   const detailLimit = input.detailLimit ?? inspectionDetailLimit;
   const pacingEventLimit = Math.min(detailLimit, pacingDetailLimit);
-  const [groups, counts, latestFailure, currentRequest, hosts, failedImages, limits, events] = await Promise.all([
-    // Dynamically discovered and collection-plan identities carry their
-    // Source Lineage as a prefix and group by it; every other identity is
-    // an initial Evidence Plan request that resolves through its plan, so
-    // it groups by its whole identity.
-    collectionRequestGroupsStatement(database, {
-      runId: runId,
-      lineagesJson: JSON.stringify(input.plans.map((plan) => plan.source_lineage)),
-    }).all<RequestGroupRow>(),
-    collectionEvidenceCountsStatement(database, runId, unchangedImageSkipDiagnostic).first<EvidenceCounts>(),
-    latestCollectionFailureStatement(database, runId).first<{
-      request_id: string;
-      outcome: string;
-      http_status: number | null;
-      attempt_number: number;
-      completed_at: string;
-      hostname: string;
-    }>(),
-    // The request most recently worked on: the newest fetch attempt or
-    // capture operation, whichever is later.
-    latestCollectionRequestStatement(database, runId).first<{
-      request_id: string;
-      request_role: string;
-      state: string;
-      hostname: string;
-      attempt_count: number;
-      last_attempt_at: string;
-    }>(),
-    collectionHostProgressStatement(database, runId).all<{
-      hostname: string;
-      pending_request_count: number;
-      captured_request_count: number;
-      next_request_not_before: string | null;
-      interval_ms: number | null;
-      concurrency: number | null;
-    }>(),
-    // Printing Images that failed under a tolerated code (exhausted
-    // transport retries, a missing or redirected file, a rejected
-    // revalidation, a body-contract violation): failures the run completed
-    // around. The list is bounded like every other per-request detail; the
-    // count is exact.
-    failedPrintingImagesStatement(database, {
-      runId: runId,
-      toleratedCodesJson: JSON.stringify(toleratedPrintingImageFailureCodes),
-      limit: detailLimit,
-    }).all<{
-      request_id: string;
-      hostname: string;
-      failure_code: string;
-      attempt_count: number;
-      total: number;
-    }>(),
-    collectionPacingLimitsStatement(database, { runId, limit: pacingDetailLimit }).all<{
-      hostname: string;
-      interval_ms: number | null;
-      concurrency: number | null;
-      clean_streak: number | null;
-      backoff_count: number;
-      recovery_count: number;
-    }>(),
-    recentPacingEventsStatement(database, { runId, limit: pacingEventLimit }).all<PacingEventRow>(),
-  ]);
+  const [groups, counts, latestFailure, currentRequest, hosts, failedImages, limits, events, deferred, deferredGroups] =
+    await Promise.all([
+      // Dynamically discovered and collection-plan identities carry their
+      // Source Lineage as a prefix and group by it; every other identity is
+      // an initial Evidence Plan request that resolves through its plan, so
+      // it groups by its whole identity.
+      collectionRequestGroupsStatement(database, {
+        runId: runId,
+        lineagesJson: JSON.stringify(input.plans.map((plan) => plan.source_lineage)),
+      }).all<RequestGroupRow>(),
+      collectionEvidenceCountsStatement(database, runId, unchangedImageSkipDiagnostic).first<EvidenceCounts>(),
+      latestCollectionFailureStatement(database, runId).first<{
+        request_id: string;
+        outcome: string;
+        http_status: number | null;
+        attempt_number: number;
+        completed_at: string;
+        hostname: string;
+      }>(),
+      // The request most recently worked on: the newest fetch attempt or
+      // capture operation, whichever is later.
+      latestCollectionRequestStatement(database, runId).first<{
+        request_id: string;
+        request_role: string;
+        state: string;
+        hostname: string;
+        attempt_count: number;
+        last_attempt_at: string;
+      }>(),
+      collectionHostProgressStatement(database, runId).all<{
+        hostname: string;
+        pending_request_count: number;
+        captured_request_count: number;
+        next_request_not_before: string | null;
+        interval_ms: number | null;
+        concurrency: number | null;
+      }>(),
+      // Printing Images that failed under a tolerated code (exhausted
+      // transport retries, a missing or redirected file, a rejected
+      // revalidation, a body-contract violation): failures the run completed
+      // around. The list is bounded like every other per-request detail; the
+      // count is exact.
+      failedPrintingImagesStatement(database, {
+        runId: runId,
+        toleratedCodesJson: JSON.stringify(toleratedPrintingImageFailureCodes),
+        limit: detailLimit,
+      }).all<{
+        request_id: string;
+        hostname: string;
+        failure_code: string;
+        attempt_count: number;
+        total: number;
+      }>(),
+      collectionPacingLimitsStatement(database, { runId, limit: pacingDetailLimit }).all<{
+        hostname: string;
+        interval_ms: number | null;
+        concurrency: number | null;
+        clean_streak: number | null;
+        backoff_count: number;
+        recovery_count: number;
+      }>(),
+      recentPacingEventsStatement(database, { runId, limit: pacingEventLimit }).all<PacingEventRow>(),
+      // Discovered requests a plan's selection explicitly deferred (#409).
+      collectionDeferredRequestsStatement(database, runId).all<{
+        source_lineage: string;
+        request_role: string;
+        count: number;
+      }>(),
+      collectionDeferredGroupsStatement(database, { runId, limit: detailLimit }).all<{
+        selection_group: string;
+        count: number;
+        total: number;
+      }>(),
+    ]);
   if (counts === null) throw new Error("Evidence counts are unavailable.");
   const failedImageCount = failedImages.results[0]?.total ?? 0;
   const requests = groupedRequests(groups.results, input.plans);
@@ -293,6 +307,29 @@ export async function collectionInspection(
       snapshots_truncated: counts.snapshot_count > inspectionDetailLimit,
       observation_sets_truncated: counts.observation_set_count > inspectionDetailLimit,
       diagnostics_truncated: counts.fetch_attempt_count > inspectionDetailLimit,
+    },
+    // Image tranches (#409): what each plan selected and every discovered
+    // request it explicitly deferred. Deferred requests are never acquired by
+    // this run; their Printings keep explicit image gaps.
+    deferred_requests: {
+      count: deferred.results.reduce((total, row) => total + row.count, 0),
+      selections: input.plans
+        .filter((plan) => plan.discovery_selection !== undefined)
+        .map((plan) => ({
+          source_lineage: plan.source_lineage,
+          role: plan.discovery_selection!.role,
+          group_count: plan.discovery_selection!.groups?.length ?? null,
+          maximum_requests: plan.discovery_selection!.maximum_requests ?? null,
+        })),
+      by_lineage: deferred.results.map((row) => ({
+        source_lineage: row.source_lineage,
+        role: row.request_role,
+        count: row.count,
+      })),
+      group_count: deferredGroups.results[0]?.total ?? 0,
+      detail_limit: detailLimit,
+      groups_truncated: (deferredGroups.results[0]?.total ?? 0) > deferredGroups.results.length,
+      groups: deferredGroups.results.map((row) => ({ group: row.selection_group, count: row.count })),
     },
     failed_images: {
       count: failedImageCount,
