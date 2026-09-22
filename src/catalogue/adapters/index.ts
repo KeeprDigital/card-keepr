@@ -17,7 +17,11 @@ export {
   type OfficialSourceContract,
   type SourceAdapterRegistration,
 } from "./source-adapters";
-export type { ExtractedSourceRequest, ListingReconciliationTraits } from "./source-adapter-registration-types";
+export type {
+  ExtractedSourceRequest,
+  HostPacingPolicy,
+  ListingReconciliationTraits,
+} from "./source-adapter-registration-types";
 export { requiredOfficialSourceScope, type OfficialSourceScope } from "./official-source-scope";
 export { officialSourceDiscoveryRequests } from "./product-release-source-adapters";
 export { parsedOfficialArtworkIdentity, type OfficialArtworkIdentity } from "./official-artwork-identity";

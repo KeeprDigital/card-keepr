@@ -39,12 +39,22 @@ export {
   type SourceRequestBatchInput,
   type SourceRequestBatchOutcome,
 } from "./source-evidence-batch";
+export { HostPacer } from "./host-pacer";
 export {
-  advanceHostPacing,
+  adaptHostPacing,
+  currentHostPacingState,
+  hostPacingRecoveryStreak,
+  type HostPacingDecision,
+  type HostPacingEvent,
+  type HostPacingSignal,
+  type HostPacingState,
+  type ResolvedHostPacingPolicy,
+  resolveHostPacingPolicy,
+} from "./host-pacing";
+export {
   type CaptureTransportResult,
   captureOperationIdentity,
   capturePreparedAttempt,
-  hostPacingDelay,
   type PreparedCaptureAttempt,
   parseCapturedRequest,
   prepareCaptureAttempt,

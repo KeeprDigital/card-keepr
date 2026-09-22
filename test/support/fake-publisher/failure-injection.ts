@@ -120,6 +120,15 @@ export function transportOutcomeForPath(
     });
   }
   if (pathname === "/retry-after-empty") return unavailable("");
+  if (pathname === "/rate-limited-once") {
+    // One HTTP 429 with an immediate Retry-After, then the normal document:
+    // adaptive host pacing must back off and record the receipt (#389).
+    if (context.failures.attempt(request) === 1)
+      return new Response("slow down", { status: 429, headers: { "retry-after": "0" } });
+    return new Response('{"cards":[{"card_number":"OP01-004","name":"Paced Card"}]}', {
+      headers: { "content-type": "application/json" },
+    });
+  }
   if (pathname === "/retry-once") {
     if (context.failures.attempt(request) === 1) return unavailable("2");
     return new Response('{"cards":[{"card_number":"OP01-002","name":"Retry Card"}]}', {

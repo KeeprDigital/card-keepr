@@ -1476,3 +1476,9 @@ export function readParsedObservationSetForBandaiSurfaceDocumentParts(database: 
        FROM source_parse_operations AS operation
        WHERE operation.source_snapshot_id = ?`);
 }
+
+export function readRunHostPacingEvents(database: D1Database): D1PreparedStatement {
+  return database.prepare(`SELECT kind, reason, interval_before_ms, interval_after_ms,
+       concurrency_before, concurrency_after, http_status, retry_after_ms
+     FROM source_host_pacing_events WHERE ingestion_run_id = ? ORDER BY occurred_at, id`);
+}

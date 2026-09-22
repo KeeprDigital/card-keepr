@@ -13,7 +13,11 @@ import { AdapterParseFailure, adapterUrl } from "./adapter-parse-failure";
 import { parseOnePieceOfficialErrataHtml } from "./one-piece-official-errata-html.ts";
 import { officialRawAdapterContracts } from "./product-release-source-adapters.ts";
 
-import type { OfficialSourceContract, SourceAdapterRegistration } from "./source-adapter-registration-types";
+import type {
+  HostPacingPolicy,
+  OfficialSourceContract,
+  SourceAdapterRegistration,
+} from "./source-adapter-registration-types";
 export type { OfficialSourceContract, SourceAdapterRegistration } from "./source-adapter-registration-types";
 
 // No ordinary Source Adapter Version capacity may authorize discovery at or
@@ -99,6 +103,7 @@ function productionCatalogueRegistration(
     parserContract: string;
     reconciliationAreas: readonly ("catalogue" | "errata")[];
     inheritDiscoveryRequestHeaders: boolean;
+    sourceOrigin: string;
   }>,
 ) {
   return {
@@ -116,7 +121,50 @@ function productionCatalogueRegistration(
       : undefined,
     reconciliationAreas: adapter.reconciliationAreas,
     inheritDiscoveryRequestHeaders: adapter.inheritDiscoveryRequestHeaders,
+    hostPacing: [publisherPageHostPacing(adapter.sourceOrigin)],
   };
+}
+
+// #389: a publisher's catalogue origin serves both its pages and its Printing
+// Images, so the whole host stays sequential at an adaptive page interval.
+function publisherPageHostPacing(sourceOrigin: string): HostPacingPolicy {
+  return {
+    hostname: new URL(sourceOrigin).hostname,
+    kind: "page",
+    floorMs: 500,
+    ceilingMs: 4_000,
+    maximumConcurrency: 1,
+    evidence:
+      "Publisher page host; no robots or terms are retained. The 2026-09-03 production run and #334 (5,174 Bandai requests at >=2 s, all HTTP 200) observed no rate limiting, so the floor stays at the former 500 ms global interval.",
+  };
+}
+
+// Pacing bounds are part of a registration: fail closed on a bound that could
+// make a publisher page host concurrent or pacing unbounded.
+function assertHostPacing(adapter: Pick<SourceAdapterRegistration, "adapterVersion" | "hostPacing">): void {
+  const seen = new Set<string>();
+  for (const policy of adapter.hostPacing ?? []) {
+    if (
+      seen.has(policy.hostname) ||
+      policy.hostname === "" ||
+      policy.hostname !== policy.hostname.toLowerCase() ||
+      !Number.isSafeInteger(policy.floorMs) ||
+      !Number.isSafeInteger(policy.ceilingMs) ||
+      policy.floorMs < 0 ||
+      policy.ceilingMs < Math.max(1, policy.floorMs) ||
+      policy.ceilingMs > 60_000 ||
+      !Number.isSafeInteger(policy.maximumConcurrency) ||
+      policy.maximumConcurrency < 1 ||
+      policy.maximumConcurrency > (policy.kind === "page" ? 1 : 16) ||
+      policy.evidence.trim() === ""
+    ) {
+      throw new AdapterParseFailure(
+        `Source Adapter Version ${adapter.adapterVersion} declares invalid host pacing for ${policy.hostname}.`,
+        { category: "configuration" },
+      );
+    }
+    seen.add(policy.hostname);
+  }
 }
 
 export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistration[] = Object.freeze(
@@ -181,14 +229,15 @@ export const installedSourceAdapterRegistrations: readonly SourceAdapterRegistra
         requiredSurfaces: adapter.requiredSurfaces,
       },
     })),
-  ].map((adapter) =>
-    Object.freeze({
+  ].map((adapter) => {
+    assertHostPacing(adapter);
+    return Object.freeze({
       ...adapter,
       requestCapacity:
         "requestCapacity" in adapter ? adapter.requestCapacity : sourceRequestCapacity(adapter.adapterVersion),
       coverageLossThreshold: { absolute: 25, fraction: 0.2 },
-    }),
-  ),
+    });
+  }),
 );
 
 const activeOfficialRawAdapterVersions = new Set([
@@ -225,6 +274,7 @@ export function registerSourceAdapters(registrations: readonly SourceAdapterRegi
   const registered = new Set(installedAdapters.keys());
   for (const adapter of registrations) {
     assertAdapterBinding(adapter, adapter);
+    assertHostPacing(adapter);
     if (registered.has(adapter.adapterVersion))
       throw new Error(`Source Adapter Version ${adapter.adapterVersion} is already registered.`);
     if (

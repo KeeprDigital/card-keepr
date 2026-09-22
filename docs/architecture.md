@@ -342,6 +342,24 @@ ceiling is a finite admission limit, not a measured throughput or arbitrary-host
 capacity guarantee. Each Source Adapter Version keeps its separately declared
 capacity. [Source intake foundation](https://github.com/KeeprDigital/card-keepr/issues/327).
 
+Host pacing is adaptive and recorded per hostname with the Source Adapter
+registration: a page or asset kind, a floor (most aggressive interval), a
+ceiling (most polite) and a maximum concurrency, citing the retained
+robots/terms evidence. Publisher page hosts, including a publisher origin that
+also serves its images, stay sequential; static asset/CDN hosts may keep a
+bounded number in flight. A host starts at its floor and maximum concurrency,
+doubles its interval and halves concurrency on HTTP 429, 503, 502/504, any
+Retry-After on a refusal (always honoured as a hold), a transport timeout or
+connection failure, or a response clearly slower than its latency baseline,
+and recovers one step after 20 clean responses. Undeclared hosts are sequential
+page hosts starting at the deployment interval. A composed run merges declaring
+versions to the most polite bounds. The state lives in D1 per hostname and is
+written after every response, so the hostname-shard Workflow's later steps,
+replays and replacement attempts continue from it; only one shard owns a host
+at a time. Backoff and recovery are append-only receipts per run, shown with
+the per-host limits in `source show`.
+[Faster collection](https://github.com/KeeprDigital/card-keepr/issues/389).
+
 ## HTTP interface direction
 
 Both Workers use Hono for HTTP routing and middleware. Separate generated OpenAPI specifications cover the complete

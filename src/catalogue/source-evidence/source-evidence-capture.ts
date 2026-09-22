@@ -23,7 +23,6 @@ import { requiredSourceAdapter, sourceAdapterForCoverage } from "../adapters";
 import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256, utf8 } from "../shared";
 import { type AttemptOutcome, attemptStatement, sourceSnapshotStatement } from "./evidence-repository";
 import {
-  advanceHostPacingStatement,
   capturedSnapshotStatement,
   capturedSourceRequestStatement,
   captureOperationStatement,
@@ -31,7 +30,6 @@ import {
   failedCaptureTransportStatement,
   failedSourceRequestStatement,
   finalizeCaptureStatement,
-  hostPacingStatement,
   latestAttemptNumberStatement,
   latestCaptureOperationStatement,
   latestTransportAttemptStatement,
@@ -82,6 +80,8 @@ import {
   retryExhaustionPauseStatements,
 } from "./source-evidence-repository";
 import type { SnapshotRow } from "./source-evidence-repository-types";
+import type { SourceHostPacingMode } from "./host-pacer";
+import type { HostPacingSignal } from "./host-pacing";
 
 const multipartPartBytes = 5 * 1024 * 1024;
 const representedRequestHeaders = new Set(["accept", "accept-language", "user-agent"]);
@@ -161,7 +161,7 @@ export async function captureOperationIdentity(
   };
 }
 
-export type SourceHostPacingMode = "production" | "immediate";
+export type { SourceHostPacingMode };
 
 // Test-only pacing override. Production deployments pin the variable to
 // "production" (also the default when unset); test harnesses may opt in to
@@ -175,8 +175,9 @@ export function sourceHostPacingMode(value: string | undefined): SourceHostPacin
 
 export { defaultSourceHostPacingIntervalMilliseconds };
 
-// Transport-layer Retry-After and 429/5xx backoff remain the safety net if a
-// host rejects this cadence; the interval only sets the polite steady state.
+// The deployment interval is the floor of the default sequential page policy
+// for hosts no Source Adapter Version declares (#389); declared hosts use their
+// registration bounds. Retry-After and 429/5xx retries remain per request.
 export function sourceHostPacingIntervalMilliseconds(value: string | undefined): number {
   if (value === undefined) return defaultSourceHostPacingIntervalMilliseconds;
   if (/^(?:0|[1-9]\d*)$/u.test(value)) {
@@ -186,29 +187,6 @@ export function sourceHostPacingIntervalMilliseconds(value: string | undefined):
   throw new Error(
     `SOURCE_HOST_PACING_INTERVAL_MS must be an integer between 0 and 60000, got ${JSON.stringify(value)}.`,
   );
-}
-
-export async function hostPacingDelay(
-  database: CatalogueStore,
-  hostname: string,
-  mode: SourceHostPacingMode = "production",
-): Promise<number> {
-  if (mode === "immediate") return 0;
-  const row = await hostPacingStatement(database, hostname).first<{ next_request_not_before: string }>();
-  if (row === null) return 0;
-  return Math.max(0, Date.parse(row.next_request_not_before) - Date.now());
-}
-
-export async function advanceHostPacing(
-  database: CatalogueStore,
-  hostname: string,
-  mode: SourceHostPacingMode = "production",
-  intervalMilliseconds: number = defaultSourceHostPacingIntervalMilliseconds,
-): Promise<void> {
-  const next = new Date(
-    Date.now() + (mode === "immediate" ? 0 : intervalMilliseconds + jitter(Math.floor(intervalMilliseconds / 4))),
-  ).toISOString();
-  await advanceHostPacingStatement(database, { hostname: hostname, nextRequestAt: next }).run();
 }
 
 // Only a collecting run admits capture or parse work. A paused run keeps its
@@ -311,6 +289,9 @@ export async function capturePreparedAttempt(
   sourceRequest: EvidenceRequestRow,
   prepared: Extract<PreparedCaptureAttempt, { kind: "attempt" }>,
   workflowAttempt?: CollectionWorkflowAttempt,
+  // Receives the physical request's transport signal (status, time to
+  // headers, Retry-After, or transport failure) for adaptive host pacing.
+  observe?: (signal: HostPacingSignal) => void,
 ): Promise<CaptureTransportResult> {
   if (!admitsCollectionWork(run)) {
     return { kind: "done", failure_code: null, request_made: false };
@@ -411,6 +392,7 @@ export async function capturePreparedAttempt(
   if (dispatchId === null) return { kind: "done", failure_code: null, request_made: false };
   let networkError: string | null = null;
   let fetchFailureOutcome: "network_failure" | "body_failure" = "network_failure";
+  const dispatchedAt = Date.now();
   try {
     response = await officialSourceTransport.fetch(request.url, {
       method: "GET",
@@ -423,6 +405,21 @@ export async function capturePreparedAttempt(
     if (/content-length|body|stream/i.test(networkError)) {
       fetchFailureOutcome = "body_failure";
     }
+    if (fetchFailureOutcome === "network_failure") {
+      observe?.({
+        kind: "transport_failure",
+        reason: isTimeout(error) ? "timeout" : "connection",
+        latency_ms: Date.now() - dispatchedAt,
+      });
+    }
+  }
+  if (response !== null) {
+    observe?.({
+      kind: "response",
+      status: response.status,
+      latency_ms: Date.now() - dispatchedAt,
+      retry_after_ms: response.ok ? null : parseRetryAfter(response.headers.get("retry-after"), Date.now()),
+    });
   }
   const completedAt = new Date().toISOString();
   if (response === null) {
@@ -1513,6 +1510,10 @@ function jitter(maximumInclusive: number): number {
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
+}
+
+function isTimeout(error: unknown): boolean {
+  return error instanceof Error && (error.name === "TimeoutError" || /timed? ?out/iu.test(error.message));
 }
 
 class CaptureOwnershipError extends Error {}

@@ -15,23 +15,100 @@ export function unsettledAcquisitionUploads(database: CatalogueStore, runId: str
 
 export function hostPacingStatement(database: CatalogueStore, hostname: string): D1PreparedStatement {
   return repositoryStatements(database)
-    .prepare("SELECT next_request_not_before FROM source_host_pacing WHERE hostname = ?")
+    .prepare(
+      `SELECT next_request_not_before, interval_ms, concurrency, clean_streak, latency_baseline_ms
+       FROM source_host_pacing WHERE hostname = ?`,
+    )
     .bind(hostname);
 }
 
-export function advanceHostPacingStatement(
+// The adaptive pacing state of one hostname (#389), written after every
+// response so a replayed or replacement hostname shard resumes from it.
+export function saveHostPacingStatement(
   database: CatalogueStore,
-  input: Readonly<{ hostname: string; nextRequestAt: string }>,
+  input: Readonly<{
+    hostname: string;
+    nextRequestAt: string;
+    intervalMs: number;
+    concurrency: number;
+    cleanStreak: number;
+    latencyBaselineMs: number | null;
+    policyJson: string;
+    updatedAt: string;
+  }>,
 ): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(
       `INSERT INTO source_host_pacing (
-        hostname, next_request_not_before, locked_by, lease_expires_at
-       ) VALUES (?, ?, NULL, NULL)
+        hostname, next_request_not_before, locked_by, lease_expires_at,
+        interval_ms, concurrency, clean_streak, latency_baseline_ms, policy_json, updated_at
+       ) VALUES (?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(hostname) DO UPDATE SET
-         next_request_not_before = excluded.next_request_not_before`,
+         next_request_not_before = excluded.next_request_not_before,
+         interval_ms = excluded.interval_ms,
+         concurrency = excluded.concurrency,
+         clean_streak = excluded.clean_streak,
+         latency_baseline_ms = excluded.latency_baseline_ms,
+         policy_json = excluded.policy_json,
+         updated_at = excluded.updated_at`,
     )
-    .bind(input.hostname, input.nextRequestAt);
+    .bind(
+      input.hostname,
+      input.nextRequestAt,
+      input.intervalMs,
+      input.concurrency,
+      input.cleanStreak,
+      input.latencyBaselineMs,
+      input.policyJson,
+      input.updatedAt,
+    );
+}
+
+// One append-only backoff or recovery receipt; its identity is the capture
+// attempt whose response caused it, so a replayed batch records it once.
+export function hostPacingEventStatement(
+  database: CatalogueStore,
+  input: Readonly<{
+    id: string;
+    hostname: string;
+    runId: string;
+    requestId: string;
+    occurredAt: string;
+    kind: string;
+    reason: string;
+    intervalBeforeMs: number;
+    intervalAfterMs: number;
+    concurrencyBefore: number;
+    concurrencyAfter: number;
+    httpStatus: number | null;
+    retryAfterMs: number | null;
+    latencyMs: number;
+  }>,
+): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare(
+      `INSERT OR IGNORE INTO source_host_pacing_events (
+        id, hostname, ingestion_run_id, request_id, occurred_at, kind, reason,
+        interval_before_ms, interval_after_ms, concurrency_before, concurrency_after,
+        http_status, retry_after_ms, latency_ms
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      input.id,
+      input.hostname,
+      input.runId,
+      input.requestId,
+      input.occurredAt,
+      input.kind,
+      input.reason,
+      input.intervalBeforeMs,
+      input.intervalAfterMs,
+      input.concurrencyBefore,
+      input.concurrencyAfter,
+      input.httpStatus,
+      input.retryAfterMs,
+      input.latencyMs,
+    );
 }
 
 export function latestCaptureOperationStatement(

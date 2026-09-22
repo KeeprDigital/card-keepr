@@ -17,6 +17,23 @@ export type ListingReconciliationTraits = Readonly<{
   duplicateLocatorCompatibility: "semantic" | "canonical" | "never";
 }>;
 
+// Adaptive pacing bounds a Source Adapter Version records for one hostname
+// it reads (#389). A host starts at its most aggressive setting (`floorMs`,
+// `maximumConcurrency`), backs off multiplicatively on rate limiting,
+// unavailability, Retry-After, transport failures or rising latency, and
+// recovers additively after a run of clean responses, never beyond these
+// bounds. Publisher page hosts stay sequential (`maximumConcurrency: 1`);
+// static asset/CDN hosts may declare bounded concurrency. `evidence` cites the
+// retained robots/terms/policy material that justifies the bounds.
+export type HostPacingPolicy = Readonly<{
+  hostname: string;
+  kind: "page" | "asset";
+  floorMs: number;
+  ceilingMs: number;
+  maximumConcurrency: number;
+  evidence: string;
+}>;
+
 export type OfficialSourceContract = Readonly<{
   supportedGame: "one-piece" | "fusion-world" | "digimon" | "gundam" | "riftbound";
   partition: "EN-OCEANIA" | "EN-ASIA" | "EN-US";
@@ -92,6 +109,8 @@ export type SourceAdapterRegistration = Readonly<{
   requestCapacity: number;
   /** Retained access-policy floor after HTTP 429; longer Retry-After remains binding. */
   minimumRateLimitBackoffMilliseconds?: number;
+  /** Adaptive pacing bounds per hostname this version reads; others use the default page policy. */
+  hostPacing?: readonly HostPacingPolicy[];
   coverageLossThreshold?: Readonly<{ absolute: number; fraction: number }>;
   origin: "production";
   requestSurface: Readonly<{ kind: "credential-free-https" }> | Readonly<{ kind: "exact-url"; url: string }>;

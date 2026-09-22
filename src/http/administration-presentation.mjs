@@ -303,6 +303,10 @@ function formatCollectionProgress(collection) {
             Number.isSafeInteger(host.captured_request_count) && host.captured_request_count > 0
               ? `, ${host.captured_request_count} captured`
               : ""
+          }${
+            Number.isSafeInteger(host.interval_ms) && Number.isSafeInteger(host.concurrency)
+              ? ` at ${host.interval_ms}ms x${host.concurrency}`
+              : ""
           }${Number.isSafeInteger(host.waiting_ms) && host.waiting_ms > 0 ? ` (waiting ${host.waiting_ms}ms)` : ""}`;
         })
         .filter((host) => host !== null);
@@ -311,6 +315,65 @@ function formatCollectionProgress(collection) {
           hosts.length === 0 ? "" : `; ${formatCount(hosts.length, "host")}: ${hosts.join(", ")}`
         }`,
       );
+    }
+    // Per-host adaptive limits and this run's backoff/recovery receipts (#389).
+    for (const limit of Array.isArray(pacing.limits) ? pacing.limits : []) {
+      const hostname = safeDiagnosticReference(limit?.hostname);
+      const kind = safeMachineCode(limit?.kind);
+      const source = safeMachineCode(limit?.source);
+      if (
+        hostname === null ||
+        kind === null ||
+        source === null ||
+        ![
+          limit.floor_ms,
+          limit.ceiling_ms,
+          limit.maximum_concurrency,
+          limit.interval_ms,
+          limit.concurrency,
+          limit.backoff_count,
+          limit.recovery_count,
+        ].every(Number.isSafeInteger)
+      ) {
+        continue;
+      }
+      lines.push(
+        `Host pacing ${hostname}: ${kind} (${source}) ${limit.floor_ms}-${limit.ceiling_ms}ms, up to ${
+          limit.maximum_concurrency
+        } in flight; now ${limit.interval_ms}ms x${limit.concurrency}; ${formatCount(
+          limit.backoff_count,
+          "backoff",
+        )}, ${limit.recovery_count} ${limit.recovery_count === 1 ? "recovery" : "recoveries"}`,
+      );
+    }
+    const events = pacing.events;
+    const recent = Array.isArray(events?.recent) ? events.recent : [];
+    for (const event of recent.slice(0, 10)) {
+      const hostname = safeDiagnosticReference(event?.hostname);
+      const kind = safeMachineCode(event?.kind);
+      const reason = safeMachineCode(event?.reason);
+      const at = safeDiagnosticReference(event?.occurred_at);
+      if (
+        hostname === null ||
+        kind === null ||
+        reason === null ||
+        at === null ||
+        ![event.interval_before_ms, event.interval_after_ms, event.concurrency_before, event.concurrency_after].every(
+          Number.isSafeInteger,
+        )
+      ) {
+        continue;
+      }
+      lines.push(
+        `Pacing ${kind} ${hostname} (${reason}${
+          Number.isSafeInteger(event.http_status) ? `, HTTP ${event.http_status}` : ""
+        }${Number.isSafeInteger(event.retry_after_ms) ? `, Retry-After ${event.retry_after_ms}ms` : ""}): ${
+          event.interval_before_ms
+        }ms x${event.concurrency_before} -> ${event.interval_after_ms}ms x${event.concurrency_after} at ${at}`,
+      );
+    }
+    if (Number.isSafeInteger(events?.count) && events.count > Math.min(recent.length, 10)) {
+      lines.push(`Pacing events: ${events.count} recorded, newest ${Math.min(recent.length, 10)} shown`);
     }
   }
   const estimate = collection.estimate;
