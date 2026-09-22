@@ -79,7 +79,8 @@ candidate or operation without a production-target confirmation option.
 Pass `--target dev`, `--target staging` or `--target production` to select a
 canonical remote profile. It uses only `KEEPR_<TARGET>_API_KEY` and
 `KEEPR_<TARGET>_ADMINISTRATION_KEY`, with canonical environment URLs; unscoped
-credentials and URL overrides are not inherited. Curated Revision commands
+credentials and URL overrides are not inherited. Those variables may come from
+the owner env file (the main checkout's git-ignored `.env`); explicit variables win. Curated Revision commands
 retain their separate stdin-secret interface. Omitting `--target` preserves
 the existing configured URLs and unscoped credentials.
 

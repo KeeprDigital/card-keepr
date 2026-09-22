@@ -67,6 +67,8 @@ suite and validation described in [testing](docs/testing.md).
 For machine-readable CLI output, use `pnpm --silent run keepr … --json`.
 
 Set `KEEPR_API_KEY` and `KEEPR_ADMINISTRATION_KEY` in the environment for the CLI.
+Remote `--target` credentials come from the main checkout's git-ignored `.env`
+(names in [`.env.example`](.env.example), rules in [credentials](docs/runbooks/credentials.md#owner-env-file)).
 Use `KEEPR_API_URL` and `KEEPR_INGESTION_URL` to select bases including their mount
 paths. `pnpm run keepr health --json` checks authenticated readiness on both
 Workers. External liveness monitors use unauthenticated `/healthz` on each mount.
