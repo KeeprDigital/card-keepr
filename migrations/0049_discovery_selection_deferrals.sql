@@ -3,8 +3,8 @@
 -- deferred. Each discovery batch records its deferred requests' count and
 -- per-group counts once, keyed by the digest of their sorted identities, in
 -- the same atomic batch that admits the selected requests.
-SELECT CASE WHEN (SELECT migration_level FROM catalogue_schema_state WHERE singleton=1)=47
-THEN 1 ELSE json_extract('schema_level_mismatch_expected_47','$') END;
+SELECT CASE WHEN (SELECT migration_level FROM catalogue_schema_state WHERE singleton=1)=48
+THEN 1 ELSE json_extract('schema_level_mismatch_expected_48','$') END;
 
 CREATE TABLE source_discovery_deferrals (
   ingestion_run_id TEXT NOT NULL REFERENCES ingestion_runs(id),
@@ -32,5 +32,5 @@ CREATE TRIGGER restored_collector_fence_source_discovery_deferrals_insert BEFORE
 WHEN EXISTS(SELECT 1 FROM catalogue_recovery_collection_classifications WHERE ingestion_run_id=NEW.ingestion_run_id AND classification='abandoned_after_restore')
 BEGIN SELECT RAISE(ABORT,'restored_collection_abandoned'); END;
 
-UPDATE catalogue_schema_state SET migration_level=48 WHERE singleton=1 AND migration_level=47;
+UPDATE catalogue_schema_state SET migration_level=49 WHERE singleton=1 AND migration_level=48;
 SELECT CASE WHEN changes()=1 THEN 1 ELSE json_extract('schema_level_update_count_mismatch','$') END;
