@@ -1,0 +1,17 @@
+{
+  "plans": [
+    {
+      "supported_game": "riftbound",
+      "source_lineage": "hexdeck-en",
+      "adapter_version": "hexdeck-en@1",
+      "subset": "search-census",
+      "participation": "required",
+      "requests": [
+        {
+          "id": "hexdeck-en:search-census",
+          "url": "https://www.hexdeck.io/cards?displayFormat=Images&page=1&sortField=Set&sortDirection=Ascending"
+        }
+      ]
+    }
+  ]
+}
