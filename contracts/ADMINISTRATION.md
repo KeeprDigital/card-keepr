@@ -106,8 +106,10 @@ before mutation.
 `--target production`, because production records the owner intent and actual
 starting target/schema. It dispatches only the server-issued staging workflow
 inputs after one exact confirmation. Required options are `--release-id`,
-`--expected-head-sha`, `--ci-run-id`, `--validation-scope`, `--idempotency-key`
-and `--yes`; the confirmation binds the server-selected scope and required checks.
+`--expected-head-sha`, `--ci-run-id`, `--idempotency-key` and `--yes`; the
+confirmation binds the fixed required checks (exact-commit CI, migration rehearsal,
+live smoke). Extended retained-source scenarios are a per-commit CI record, not a
+staging check.
 It returns exit `10` for dispatch acknowledgement. The signed workflow protocol,
 first installation and separate immutable outcomes are defined in the
 [manual staging procedure](../docs/runbooks/manual-staging.md).

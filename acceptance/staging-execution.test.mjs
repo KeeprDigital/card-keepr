@@ -13,7 +13,7 @@ import { runStagingRelease } from "../scripts/staging-release.mjs";
 
 // Real owner intent, signed identity, production/staging SQL, migration rehearsal,
 // guarded executor and outcome. Only provider HTTP and external commands are controlled.
-for (const scenario of ["success", "validation failure", "wrong active version"])
+for (const scenario of ["success", "wrong active version"])
   test(`manual staging execution retains separate deployment and validation evidence: ${scenario}`, async (t) => {
     const head = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
     const production = await stagingStateFixture(t);
@@ -169,11 +169,6 @@ for (const scenario of ["success", "validation failure", "wrong active version"]
       commands.push({ command, args });
       return { stdout: "" };
     };
-    const runValidation = async (scenarios) => {
-      assert.deepEqual(scenarios, owner.intent.extended_scenarios);
-      if (scenario === "validation failure") throw new Error("synthetic retained-source failure");
-      return { exit_code: 0 };
-    };
     const input = {
       RELEASE_ENVIRONMENT: "staging",
       RELEASE_ID: owner.release_id,
@@ -188,9 +183,8 @@ for (const scenario of ["success", "validation failure", "wrong active version"]
       CLOUDFLARE_API_TOKEN: "synthetic-provider",
       API_TRAFFIC_TOKEN: "synthetic-traffic",
     };
-    if (scenario === "success")
-      assert.equal((await runStagingRelease(input, executeCommand, runValidation)).state, "succeeded");
-    else await assert.rejects(runStagingRelease(input, executeCommand, runValidation), /staging_release_failed/u);
+    if (scenario === "success") assert.equal((await runStagingRelease(input, executeCommand)).state, "succeeded");
+    else await assert.rejects(runStagingRelease(input, executeCommand), /staging_release_failed/u);
     assert.deepEqual(
       documentationRequests,
       scenario === "wrong active version"
@@ -201,6 +195,11 @@ for (const scenario of ["success", "validation failure", "wrong active version"]
     assert.equal(retained.outcome.state, scenario === "success" ? "succeeded" : "failed");
     assert.equal(retained.outcome.deployment.state, scenario === "wrong active version" ? "failed" : "succeeded");
     assert.equal(retained.outcome.migration.starting_level, owner.intent.production_start.migration_level);
+    // No release-time retained-source replay: extended scenarios are a per-commit CI record.
+    assert.deepEqual(
+      retained.outcome.checks.map((check) => check.name),
+      ["exact-commit-ci", "migration-rehearsal", "live-smoke"],
+    );
     assert.equal(countSuccessfulReleaseEvidence(staging.sql).get().count, scenario === "wrong active version" ? 0 : 1);
     assert.equal(countSuccessfulReleaseEvidence(production.sql).get().count, 0);
     assert.equal(activeReleaseIdentity(production.sql).get().active_production_release_id, null);

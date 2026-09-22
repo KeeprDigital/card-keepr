@@ -9,7 +9,6 @@
     "../src/http/diagnostic-display.mjs",
     "../src/http/environment-target.mjs",
     "../src/http/production-target.mjs",
-    "../src/http/staging-transition.mjs",
     "../src/runtime-capabilities.mjs",
   ],
   "include": ["../apps/ingestion/worker-configuration.d.ts"],

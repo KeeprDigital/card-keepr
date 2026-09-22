@@ -15,7 +15,6 @@ afterEach(() => vi.restoreAllMocks());
 
 test("owner HTTP intent requires administration auth and replays without a fresh provider dependency", async () => {
   const id = "fresh";
-  const validation_scope = "auto";
   const request = (path: string, body?: Record<string, unknown>, authenticated = true) =>
     new Request(`http://127.0.0.1:8788${path}`, {
       method: body === undefined ? "GET" : "POST",
@@ -31,7 +30,6 @@ test("owner HTTP intent requires administration auth and replays without a fresh
     expected_head_sha: "a".repeat(40),
     expected_actor: "owner",
     ci_run_id: "123",
-    validation_scope,
   };
   const unauthorized = await worker.fetch(
     request("/v1/staging-releases", { ...choices, prepare: true }, false),
@@ -52,7 +50,10 @@ test("owner HTTP intent requires administration auth and replays without a fresh
   expect(accepted.status).toBe(201);
   await assertHttpResponse(document, "/v1/staging-releases", "post", accepted);
   const intent = await accepted.json<{ intent_digest: string; intent: Record<string, unknown> }>();
-  expect(intent.intent).toMatchObject({ validation_scope: "full", validation_reason: "unknown_transition" });
+  // No scope classification and no production Worker-version read (#238).
+  expect(intent.intent.required_checks).toEqual(["exact-commit-ci", "migration-rehearsal", "live-smoke"]);
+  expect(intent.intent).not.toHaveProperty("validation_scope");
+  expect(provider.mock.calls.every(([url]) => !String(url).includes("/workers/scripts/"))).toBe(true);
   provider.mockImplementation(async () => {
     throw new Error("provider unavailable after accepted owner request");
   });
@@ -144,9 +145,10 @@ test("owner HTTP intent requires administration auth and replays without a fresh
 });
 
 // Captured through the unmodified owner HTTP handler at ebbdd7ab, with actual
-// schema-37 D1 storage. These fixtures retain the acknowledged JSON and receipt.
+// schema-37 D1 storage, before #238 retired the scope classifier. Retained intents
+// stay inspectable; their identities cannot be reused or replayed with a scope.
 test.each([arrayIntent, nestedIntent])(
-  "retained scope $choices.release_id replays literally after its deadline",
+  "retained classifier-era intent $choices.release_id stays inspectable and its identity stays taken",
   async (fixture) => {
     await testEnv.CATALOGUE_DB.batch(
       [`staging-intent:${fixture.choices.release_id}`, fixture.choices.idempotency_key].map((key) =>
@@ -161,34 +163,32 @@ test.each([arrayIntent, nestedIntent])(
     vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
       throw new Error("provider unavailable");
     });
+    const headers = {
+      authorization: "Bearer vitest-administration-key",
+      "content-type": "application/json",
+      "x-keepr-test-now": "2026-09-17T00:00:00.000Z",
+    };
     const send = (body: Record<string, unknown>) =>
       worker.fetch(
         new Request("http://127.0.0.1:8788/v1/staging-releases", {
           method: "POST",
-          headers: {
-            authorization: "Bearer vitest-administration-key",
-            "content-type": "application/json",
-            "x-keepr-test-now": "2026-09-17T00:00:00.000Z",
-          },
+          headers,
           body: JSON.stringify(body),
         }),
         testEnv,
       );
-    const body = { ...fixture.choices, confirmation: fixture.response.confirmation };
-    const replay = await send(body);
-    expect(replay.status).toBe(201);
-    expect(await replay.clone().json()).toEqual(fixture.response);
-    await assertHttpResponse(document, "/v1/staging-releases", "post", replay);
-    const changed = await send({ ...body, validation_scope: "full" });
-    expect(changed.status).toBe(409);
-    expect(await changed.json()).toMatchObject({ code: "staging_intent_conflict" });
-    const fresh = await send({
-      ...fixture.choices,
-      release_id: fixture.choices.release_id + "-fresh",
-      idempotency_key: fixture.choices.idempotency_key + "-fresh",
-      prepare: true,
-    });
-    expect(fresh.status).toBe(422);
-    expect(await fresh.json()).toMatchObject({ code: "invalid_staging_intent" });
+    const status = await worker.fetch(
+      new Request(`http://127.0.0.1:8788/v1/staging-releases/${fixture.choices.release_id}`, { headers }),
+      testEnv,
+    );
+    expect(status.status).toBe(200);
+    await assertHttpResponse(document, "/v1/staging-releases/{release}", "get", status);
+    expect(await status.json()).toEqual({ ...fixture.response, authorization: null });
+    const { validation_scope: _retired, ...choices } = fixture.choices;
+    const scoped = await send({ ...fixture.choices, confirmation: fixture.response.confirmation });
+    expect(scoped.status).toBe(422);
+    const reused = await send({ ...choices, confirmation: fixture.response.confirmation });
+    expect(reused.status).toBe(409);
+    expect(await reused.json()).toMatchObject({ code: "staging_intent_conflict" });
   },
 );

@@ -220,10 +220,12 @@ test("owner intent retains actual production schema and exact commit across repl
   const { database, bucket, target, choices, migrations, resolveStagingRelease, showStagingRelease } = await fixture(t);
   const now = "2026-09-14T10:00:00.000Z";
   const preview = await resolveStagingRelease(database, bucket, { ...choices, prepare: true }, target, now);
-  await assert.rejects(
-    resolveStagingRelease(database, bucket, { ...choices, validation_scope: "routine", prepare: true }, target, now),
-    (error) => error.code === "staging_validation_scope_required",
-  );
+  // The retired scope classifier's choice is no longer an owner input.
+  for (const validation_scope of ["auto", "full", "routine"])
+    await assert.rejects(
+      resolveStagingRelease(database, bucket, { ...choices, validation_scope, prepare: true }, target, now),
+      (error) => error.code === "invalid_staging_intent",
+    );
   const recorded = await resolveStagingRelease(
     database,
     bucket,
@@ -234,7 +236,15 @@ test("owner intent retains actual production schema and exact commit across repl
   assert.equal(recorded.intent.production_start.migration_level, Number.parseInt(migrations.at(-1), 10));
   assert.deepEqual(recorded.intent.production_start.target, target);
   assert.equal(recorded.intent.expected_head_sha, "a".repeat(40));
-  assert.equal(recorded.intent.validation_reason, "unknown_transition");
+  assert.deepEqual(recorded.intent.required_checks, ["exact-commit-ci", "migration-rehearsal", "live-smoke"]);
+  assert.deepEqual(Object.keys(recorded.intent.production_start).sort(), [
+    "migration_level",
+    "target",
+    "target_digest",
+  ]);
+  for (const retired of ["validation_scope", "validation_reason", "extended_scenarios"])
+    assert.equal(Object.hasOwn(recorded.intent, retired), false, retired);
+  assert.equal(JSON.parse(preview.confirmation).validation_scope, undefined);
   assert.deepEqual(await showStagingRelease(database, "staging-237"), recorded);
   assert.deepEqual(
     await resolveStagingRelease(

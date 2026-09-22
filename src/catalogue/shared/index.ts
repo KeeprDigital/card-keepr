@@ -186,13 +186,7 @@ export {
   compareSourceFreshness,
   type SourceFreshnessStorageRow,
 } from "./source-freshness";
-export {
-  stagingValidationRequirements,
-  stagingValidationScenarios,
-  selectStagingValidation,
-  validateStagingOutcome,
-  type StagingOutcome,
-} from "./staging-validation.mjs";
+export { stagingValidationChecks, validateStagingOutcome, type StagingOutcome } from "./staging-validation.mjs";
 export { sourceValue, retainedSourceObject } from "./http-source-value";
 export { magicLayouts, magicFaceRoles } from "./magic-layout";
 export { gzipJsonlRecords, gzipJsonlBlocks, SourceArchiveFailure, type SourceArchiveLimits } from "./gzip-jsonl";

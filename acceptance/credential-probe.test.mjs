@@ -53,13 +53,12 @@ function respond(result, status = 200, success = true) {
   });
 }
 
-test("the production plan proves the Worker version reads that staging scope classification needs", () => {
+test("each plan probes only the reads its code uses and cites the consuming line", () => {
   const production = probePlan(target("production"));
   const staging = probePlan(target("staging"));
   const checks = (plan, token) => plan.filter((check) => check.token === token).map((check) => check.check);
-  assert.ok(checks(production, "D1_VERIFICATION_TOKEN").includes("workers-deployments-read"));
-  assert.ok(checks(production, "D1_VERIFICATION_TOKEN").includes("workers-version-read"));
-  assert.ok(!checks(staging, "D1_VERIFICATION_TOKEN").includes("workers-deployments-read"));
+  for (const plan of [production, staging])
+    assert.ok(!checks(plan, "D1_VERIFICATION_TOKEN").some((check) => check.startsWith("workers-")));
   assert.ok(checks(staging, "deployment").includes("workflows-read"));
   assert.ok(!checks(production, "deployment").includes("workflows-read"));
   for (const check of [...production, ...staging]) {
@@ -83,35 +82,22 @@ test("every read succeeds: each row passes, only GET requests are sent, values n
   assert.match(table, /zone-routes-read .*\/zones\/[^/]+\/workers\/routes\s+200\s+pass/u);
 });
 
-test("a verification token that cannot read Worker deployments fails with its status and the unknown_transition implication", async () => {
+test("the verification token needs no Worker read: staging no longer classifies the production transition", async () => {
   const { fetchImpl } = fakeFetch();
   const denying = async (input, options = {}) => {
     const url = new URL(input);
     const token = new Headers(options.headers).get("authorization");
-    if (/\/workers\/scripts\/[^/]+\/deployments$/u.test(url.pathname) && token === `Bearer ${tokens.d1Verification}`)
+    if (/\/workers\/scripts\//u.test(url.pathname) && token === `Bearer ${tokens.d1Verification}`)
       return respond(null, 403, false);
     return fetchImpl(input, options);
   };
   const result = await probeCredentials({ target: target("production"), tokens }, denying);
-  assert.equal(result.ok, false);
-  const failed = result.rows.filter((row) => row.outcome === "fail");
-  assert.deepEqual(
-    failed.map((row) => [row.token, row.check, row.status]),
-    [
-      ["D1_VERIFICATION_TOKEN", "workers-deployments-read", 403],
-      ["D1_VERIFICATION_TOKEN", "workers-deployments-read", 403],
-    ],
-  );
-  assert.ok(failed.every((row) => row.implication.includes("unknown_transition")));
-  const versionRows = result.rows.filter(
-    (row) => row.token === "D1_VERIFICATION_TOKEN" && row.check === "workers-version-read",
-  );
-  assert.ok(versionRows.length > 0 && versionRows.every((row) => row.outcome === "skipped"));
+  assert.equal(result.ok, true);
+  assert.ok(result.rows.every((row) => row.token !== "D1_VERIFICATION_TOKEN" || !row.check.startsWith("workers-")));
   const deploymentRows = result.rows.filter(
     (row) => row.token === "deployment" && row.check === "workers-deployments-read",
   );
-  assert.ok(deploymentRows.every((row) => row.outcome === "pass"));
-  assert.match(renderProbeTable(result), /403\s+fail/u);
+  assert.ok(deploymentRows.length > 0 && deploymentRows.every((row) => row.outcome === "pass"));
 });
 
 test("a missing token skips its rows without sending a request", async () => {

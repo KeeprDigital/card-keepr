@@ -25,8 +25,6 @@ const tokenLabels = {
   d1Export: "D1_EXPORT_TOKEN",
   d1Verification: "D1_VERIFICATION_TOKEN",
 };
-const transitionImplication =
-  "production cannot read its active Worker versions: every staging release classifies unknown_transition and runs the full 90-minute scope (src/http/staging-transition.mjs:9)";
 const disposableImplication =
   "the ingestion Worker cannot resolve the live Disposable Restore database: backups, recovery and dev/staging deployments answer 500 (src/catalogue/backup-recovery/backup-recovery.ts:1163)";
 
@@ -132,8 +130,7 @@ export function probePlan(target, { exerciseExport = false } = {}) {
   });
   add("d1Export", "d1-export-exercise", "src/catalogue/backup-recovery/backup-recovery.ts:1050", exportEntry());
 
-  // Verification token: Disposable Restore lifecycle, recovery and, in
-  // production, the staging transition observer.
+  // Verification token: Disposable Restore lifecycle and recovery.
   add("d1Verification", "token-verify", "src/catalogue/backup-recovery/backup-recovery.ts:1163", verifyEntry());
   add("d1Verification", "d1-list-by-name", "src/catalogue/backup-recovery/backup-recovery.ts:1163", {
     path: `${account}/d1/database?name=${encodeURIComponent(names.disposable)}`,
@@ -143,20 +140,6 @@ export function probePlan(target, { exerciseExport = false } = {}) {
   add("d1Verification", "d1-time-travel-bookmark-read", "src/catalogue/backup-recovery/recovery.ts:1250", {
     path: `${account}/d1/database/${target.catalogueDatabaseId}/time_travel/bookmark`,
   });
-  if (!isolated) {
-    for (const worker of names.workers) {
-      add("d1Verification", "workers-deployments-read", "src/http/staging-transition.mjs:9", {
-        path: `${account}/workers/scripts/${worker}/deployments`,
-        resolves: `transition:${worker}`,
-        implication: transitionImplication,
-      });
-      add("d1Verification", "workers-version-read", "src/http/staging-transition.mjs:19", {
-        path: `${account}/workers/scripts/${worker}/versions/{version}`,
-        after: `transition:${worker}`,
-        implication: transitionImplication,
-      });
-    }
-  }
   add("d1Verification", "d1-export-exercise", "src/catalogue/backup-recovery/backup-recovery.ts:1096", exportEntry());
   add("d1Verification", "d1-restore-write", "src/catalogue/backup-recovery/backup-recovery.ts:1082", {
     notProbed: "write: disposable create/delete, import, query and time-travel restore are not exercised",

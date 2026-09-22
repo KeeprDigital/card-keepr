@@ -95,6 +95,16 @@
         "additionalProperties": false
       },
       "StagingReleaseIntent": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/CurrentStagingReleaseIntent"
+          },
+          {
+            "$ref": "#/components/schemas/RetainedClassifiedStagingReleaseIntent"
+          }
+        ]
+      },
+      "CurrentStagingReleaseIntent": {
         "type": "object",
         "properties": {
           "release_id": {
@@ -117,6 +127,150 @@
             "type": "string",
             "pattern": "^\\d+$"
           },
+          "required_checks": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "authorized_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "production_start": {
+            "type": "object",
+            "properties": {
+              "target": {
+                "$ref": "#/components/schemas/ReleaseEnvironmentTarget"
+              },
+              "target_digest": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "migration_level": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "target",
+              "target_digest",
+              "migration_level"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "release_id",
+          "idempotency_key",
+          "expected_head_sha",
+          "expected_actor",
+          "ci_run_id",
+          "required_checks",
+          "authorized_at",
+          "expires_at",
+          "production_start"
+        ],
+        "additionalProperties": false
+      },
+      "ReleaseEnvironmentTarget": {
+        "type": "object",
+        "properties": {
+          "cloudflare_account_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "worker_scripts": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "d1_databases": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "name",
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "r2_buckets": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "cloudflare_account_id",
+          "worker_scripts",
+          "d1_databases",
+          "r2_buckets"
+        ],
+        "additionalProperties": false
+      },
+      "RetainedClassifiedStagingReleaseIntent": {
+        "type": "object",
+        "properties": {
+          "release_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
+          },
+          "expected_head_sha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "expected_actor": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ci_run_id": {
+            "type": "string",
+            "pattern": "^\\d+$"
+          },
+          "required_checks": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "authorized_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
           "validation_scope": {
             "type": "string",
             "enum": [
@@ -133,13 +287,6 @@
               "shared_or_unclassified_change",
               "verified_transition"
             ]
-          },
-          "required_checks": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
           },
           "extended_scenarios": {
             "type": "array",
@@ -210,14 +357,6 @@
               "comparison_sha256"
             ],
             "additionalProperties": false
-          },
-          "authorized_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "expires_at": {
-            "type": "string",
-            "format": "date-time"
           }
         },
         "required": [
@@ -226,68 +365,13 @@
           "expected_head_sha",
           "expected_actor",
           "ci_run_id",
+          "required_checks",
+          "authorized_at",
+          "expires_at",
           "validation_scope",
           "validation_reason",
-          "required_checks",
           "extended_scenarios",
-          "production_start",
-          "authorized_at",
-          "expires_at"
-        ],
-        "additionalProperties": false
-      },
-      "ReleaseEnvironmentTarget": {
-        "type": "object",
-        "properties": {
-          "cloudflare_account_id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "worker_scripts": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            },
-            "minItems": 2,
-            "maxItems": 2
-          },
-          "d1_databases": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "id": {
-                  "type": "string",
-                  "minLength": 1
-                }
-              },
-              "required": [
-                "name",
-                "id"
-              ],
-              "additionalProperties": false
-            },
-            "minItems": 2,
-            "maxItems": 2
-          },
-          "r2_buckets": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        },
-        "required": [
-          "cloudflare_account_id",
-          "worker_scripts",
-          "d1_databases",
-          "r2_buckets"
+          "production_start"
         ],
         "additionalProperties": false
       },
@@ -354,27 +438,6 @@
           "request_id"
         ],
         "additionalProperties": false
-      },
-      "RetainedStagingScope": {
-        "anyOf": [
-          {
-            "type": "string",
-            "enum": [
-              "routine",
-              "recovery",
-              "sources",
-              "full"
-            ]
-          },
-          {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RetainedStagingScope"
-            },
-            "minItems": 1,
-            "maxItems": 1
-          }
-        ]
       },
       "StagingReleaseInspection": {
         "type": "object",
@@ -48470,28 +48533,6 @@
                     "type": "string",
                     "pattern": "^\\d+$"
                   },
-                  "validation_scope": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "enum": [
-                          "auto"
-                        ]
-                      },
-                      {
-                        "type": "string",
-                        "enum": [
-                          "routine",
-                          "recovery",
-                          "sources",
-                          "full"
-                        ]
-                      },
-                      {
-                        "$ref": "#/components/schemas/RetainedStagingScope"
-                      }
-                    ]
-                  },
                   "prepare": {
                     "type": "boolean",
                     "enum": [
@@ -48508,8 +48549,7 @@
                   "idempotency_key",
                   "expected_head_sha",
                   "expected_actor",
-                  "ci_run_id",
-                  "validation_scope"
+                  "ci_run_id"
                 ],
                 "additionalProperties": false
               }

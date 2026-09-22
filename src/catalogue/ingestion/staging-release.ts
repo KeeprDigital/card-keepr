@@ -1,5 +1,4 @@
 import { validatedEnvironmentTarget } from "../../http/production-target.mjs";
-import { observeStagingTransition } from "../../http/staging-transition.mjs";
 import {
   AdministrationProblem,
   type CatalogueStore,
@@ -7,9 +6,7 @@ import {
   isReleaseHead,
   isReleaseIdentity,
   sha256Text,
-  stagingValidationRequirements,
-  selectStagingValidation,
-  stagingValidationScenarios,
+  stagingValidationChecks,
 } from "../shared";
 import { administrationStatus } from "./administration-inspection";
 import type { ProductionTarget } from "./production-release";
@@ -17,7 +14,6 @@ import {
   recordStagingIntentStatement,
   stagingIntentStartingStateGate,
   stagingRecordStatement,
-  lastSuccessfulReleaseStatement,
 } from "./staging-release-repository";
 
 export type StagingIntent = {
@@ -26,17 +22,11 @@ export type StagingIntent = {
   expected_head_sha: string;
   expected_actor: string;
   ci_run_id: string;
-  validation_scope: string;
-  validation_reason: string;
   required_checks: string[];
-  extended_scenarios: string[];
   production_start: {
     target: ProductionTarget;
     target_digest: string;
     migration_level: number;
-    head_sha: string | null;
-    worker_versions: Array<{ worker: string; version_id: string }> | null;
-    comparison_sha256: string | null;
   };
   authorized_at: string;
   expires_at: string;
@@ -58,16 +48,9 @@ export async function resolveStagingRelease(
   request: Record<string, unknown>,
   targetInput: ProductionTarget | (() => Promise<ProductionTarget>),
   at: string,
-  providerReadToken?: string,
 ): Promise<StagingReleaseRequest | { confirmation: string }> {
-  const fields = [
-    "release_id",
-    "idempotency_key",
-    "expected_head_sha",
-    "expected_actor",
-    "ci_run_id",
-    "validation_scope",
-  ];
+  // Validation scope is retired (#238): every release runs the same fixed checks.
+  const fields = ["release_id", "idempotency_key", "expected_head_sha", "expected_actor", "ci_run_id"];
   if (
     Object.keys(request).some((key) => ![...fields, "prepare", "confirmation"].includes(key)) ||
     !isReleaseIdentity(request.release_id) ||
@@ -90,7 +73,6 @@ export async function resolveStagingRelease(
     requireConfirmation(request, response.confirmation);
     return response;
   }
-  if (typeof request.validation_scope !== "string") invalid();
   const target = typeof targetInput === "function" ? await targetInput() : targetInput;
   if (validatedEnvironmentTarget(target, "production") === null) invalid();
   const status = await administrationStatus(database, exports, at, target, false);
@@ -106,44 +88,16 @@ export async function resolveStagingRelease(
       "staging_start_not_safe",
       "Production must have a known, idle starting state.",
     );
-  const previous = await lastSuccessfulReleaseStatement(database).first<{ request_json: string }>();
-  const previousPlan = previous === null ? null : (JSON.parse(previous.request_json) as Record<string, unknown>);
-  const transition = await observeStagingTransition({
-    target,
-    selectedSha: String(request.expected_head_sha),
-    token: providerReadToken,
-    previousRelease:
-      previousPlan !== null &&
-      canonicalJson(previousPlan.production_target) === canonicalJson(target) &&
-      isReleaseHead(previousPlan.expected_head_sha) &&
-      isReleaseIdentity(previousPlan.release_id)
-        ? { release_id: previousPlan.release_id, head_sha: previousPlan.expected_head_sha }
-        : null,
-  });
-  const validation = selectStagingValidation(transition?.paths ?? null);
-  const scope = request.validation_scope === "auto" ? validation.scope : String(request.validation_scope);
-  if (scope !== validation.scope && scope !== "full")
-    throw new AdministrationProblem(
-      422,
-      "staging_validation_scope_required",
-      `The verified transition requires ${validation.scope} staging validation (${validation.reason}).`,
-    );
-  const checks = stagingValidationRequirements(scope);
+  const checks = [...stagingValidationChecks];
   const starting = {
     target,
     target_digest: await sha256Text(canonicalJson(target)),
     migration_level: Number(preflight.schema_migration_level),
-    head_sha: transition?.head_sha ?? null,
-    worker_versions: transition?.versions ?? null,
-    comparison_sha256: transition?.comparison_sha256 ?? null,
   };
   const confirmation = canonicalJson({
     ...choices,
     production_start: starting,
     required_checks: checks,
-    validation_scope: scope,
-    validation_reason: validation.reason,
-    extended_scenarios: stagingValidationScenarios(scope),
   });
   if (request.prepare === true) return { confirmation };
   requireConfirmation(request, confirmation);
@@ -153,10 +107,7 @@ export async function resolveStagingRelease(
     expected_head_sha: String(request.expected_head_sha),
     expected_actor: String(request.expected_actor),
     ci_run_id: String(request.ci_run_id),
-    validation_scope: scope,
-    validation_reason: validation.reason,
     required_checks: checks,
-    extended_scenarios: stagingValidationScenarios(scope),
     production_start: starting,
     authorized_at: at,
     expires_at: new Date(Date.parse(at) + 24 * 60 * 60_000).toISOString(),

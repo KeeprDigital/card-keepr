@@ -65,10 +65,8 @@ files, and the owner CLI profile (`KEEPR_STAGING_*`, `KEEPR_GITHUB_RELEASE_TOKEN
 probe to run after issuing or rotating one.
 
 Issue credentials independently; no administration key belongs in Actions.
-Automatic scope classification needs **production's** `D1_VERIFICATION_TOKEN` to
-read the active production Worker versions; if that access is absent, the server
-explicitly selects full validation with `unknown_transition`. Grant exactly that
-read (see the inventory); do not enlarge any other token to avoid the fallback.
+Staging needs no production Workers read: production records the intent from its
+own D1 state and never inspects its active Worker versions.
 
 ## Same-zone authorization fetch
 
@@ -86,14 +84,13 @@ configuration declares that flag; without it staging reports
 Invoke `release staging --target production` because production owns the release
 intent and actual starting state. This command dispatches only staging. Supply
 `--release-id`, `--expected-head-sha` (full SHA), `--ci-run-id`,
-`--validation-scope auto`, `--idempotency-key`, `--yes` and `--json`.
+`--idempotency-key`, `--yes` and `--json`.
 The first invocation returns `confirmation_required` and the complete resolved
 confirmation document. Repeat with `--confirm` equal to that exact document.
-This is one owner confirmation. `full` can request stronger validation; a weaker
-scope than the server requires is refused.
+This is one owner confirmation.
 
 Production records the immutable SHA, owner GitHub actor, CI run, actual target
-and schema level, validation scope/reason, required checks and a 24-hour deadline.
+and schema level, the fixed required checks and a 24-hour deadline.
 The CLI submits only server-issued release ID, intent digest and exact SHA to
 `staging-deploy.yml` on main. The workflow first checks out its trusted workflow
 SHA and claims the production intent before executing any dispatch-selected
@@ -122,31 +119,41 @@ uploads, exact pair activation, binding verification and authenticated smoke.
 
 ## Validation and retained outcomes
 
-Every scope requires exact-commit CI, an isolated real-SQL migration rehearsal
-from production's recorded starting schema level, and live staging smoke.
-The rehearsal derives its ending level and migration digests from the selected
-checkout. It constructs a synthetic predecessor baseline, applies each forward
-migration transactionally, checks previous-level rejection, foreign keys and
-integrity. It does not import production data or prove every populated migration
-case; the selected commit's routine migration tests provide that separate proof.
+Every staging release runs the same three checks: exact-commit CI, an isolated
+real-SQL migration rehearsal from production's recorded starting schema level,
+and live staging smoke. The rehearsal derives its ending level and migration
+digests from the selected checkout. It constructs a synthetic predecessor
+baseline, applies each forward migration transactionally, checks previous-level
+rejection, foreign keys and integrity. It does not import production data or
+prove every populated migration case; the selected commit's routine migration
+tests provide that separate proof. The staging job has a 30-minute limit; the
+guarded path measured about three minutes on #237.
 
-Scope classification requires the retained successful production release to
-match the actual fully active Worker pair and target bindings, plus a complete
-bounded GitHub comparison to the selected commit, including rename sources.
-Missing provider access, absent provenance, split activation or truncated
-comparison selects `full` with `unknown_transition`.
+Staging does not replay retained-source scenarios. `composed-recovery`,
+`one-piece-two-source` and `riftbound-catalogue` run once per release candidate
+in `extended-scenarios.yml`, which records the `extended-scenarios` commit status
+on that exact SHA ([#238](https://github.com/KeeprDigital/card-keepr/issues/238)).
+It runs on a `v*` tag push, when another workflow calls it, and on manual dispatch:
 
-| Verified changes                                  | Additional retained-data scenarios            |
-| ------------------------------------------------- | --------------------------------------------- |
-| Documentation, CLI or tests only                  | None (`routine`)                              |
-| Backup/recovery                                   | `composed-recovery`                           |
-| Sources/adapters                                  | `one-piece-two-source`, `riftbound-catalogue` |
-| Both families, shared model, or unclassified code | All three (`full`)                            |
+```sh
+gh workflow run extended-scenarios.yml --ref main -f sha=<full-sha-contained-in-main>
+```
 
-Extended scenarios run offline from retained fixtures without deployment,
-administration, GitHub or OIDC credentials in their child process. The workflow
-has a finite 90-minute budget and never cancels an active staging deployment.
-There is no push/merge trigger.
+It refuses a SHA outside `main` and skips a SHA that already has a successful
+record written by `github-actions[bot]`. Its scenario jobs run offline from
+retained fixtures with no deployment, administration, OIDC or status-write
+credentials. Only the trusted jobs that check out no selected code write the
+status. A staging outcome does not include this record; production promotion
+must require both. Intents recorded before this change listed
+`retained-source-rehearsal` among their required checks. No current runner or
+outcome can satisfy them, so they remain inspectable but cannot complete.
+There is no push/merge trigger for staging.
+
+Production records the intent, so production must run the fixed-check code
+before staging can use it. A production runtime from before this change still
+requires `validation_scope`; it rejects the current CLI's request and demands the
+retired replay. Ship the change through a guarded Production Release first, then
+create staging intents.
 
 The immutable staging outcome separates deployment, migration rehearsal and
 every required validation check. Missing, pending, mismatched or failed checks
@@ -164,8 +171,8 @@ and outcome. Status returns exit 0 for a retrieved document, including `failed`;
 read its outcome state. Dispatch returns exit 10, which only acknowledges the
 request. No status code substitutes for a successful immutable outcome.
 
-#238 must bind continuation to the same intent/SHA and successful required
-staging evidence, then acquire fresh production CI, state, recovery, target and
+#238 must bind continuation to the same intent/SHA, successful required staging
+evidence and a successful `extended-scenarios` record on that SHA, then acquire fresh production CI, state, recovery, target and
 lease guards. It must not reuse staging's expired preparation or ask for a routine
 second owner approval. The broader retained intent and the short deployment
 lease are separate authorities.

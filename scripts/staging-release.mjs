@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { execFile, spawn, execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, writeFile, open } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify, isDeepStrictEqual } from "node:util";
@@ -12,23 +12,18 @@ import {
   stagingDispatchIdentity,
   stagingWorkflowRequest,
 } from "./staging-workflow-client.mjs";
-import {
-  stagingValidationRequirements,
-  stagingValidationScenarios,
-  validateStagingOutcome,
-} from "../src/catalogue/shared/staging-validation.mjs";
+import { stagingValidationChecks, validateStagingOutcome } from "../src/catalogue/shared/staging-validation.mjs";
 import { environmentConfigurations } from "./dev-environment.mjs";
 import { deployEnvironment } from "./deploy-dev.mjs";
 import { rehearseStagingMigrations } from "./staging-migrations.mjs";
 
 const stageEndpoint = "https://card-staging.keepr.digital/ingest/v1/staging-deployments";
 
-/** The owner intent, deploy acknowledgement and required validation outcome remain separate evidence. */
-export async function runStagingRelease(
-  environment,
-  executeCommand = promisify(execFile),
-  runValidation = runExtendedValidation,
-) {
+/**
+ * The owner intent, deploy acknowledgement and required validation outcome remain separate evidence.
+ * Extended retained-source scenarios are a per-commit CI record (#238), not part of this release.
+ */
+export async function runStagingRelease(environment, executeCommand = promisify(execFile)) {
   const identity = stagingDispatchIdentity(environment);
   if (execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim() !== environment.EXPECTED_HEAD_SHA)
     throw new Error("staging_checkout_mismatch");
@@ -41,12 +36,9 @@ export async function runStagingRelease(
   };
   const authorization = await authorizeStagingRelease(environment);
   const intent = authorization.intent;
-  const checks = stagingValidationRequirements(intent.validation_scope);
-  const scenarios = stagingValidationScenarios(intent.validation_scope);
-  if (
-    JSON.stringify(checks) !== JSON.stringify(intent.required_checks) ||
-    JSON.stringify(scenarios) !== JSON.stringify(intent.extended_scenarios)
-  )
+  const checks = [...stagingValidationChecks];
+  // A classifier-era intent still demands the retired replay; refuse it before any deployment.
+  if (JSON.stringify(checks) !== JSON.stringify(intent.required_checks))
     throw new Error("staging_validation_policy_mismatch");
   await save("authorization", authorization);
   const outcome = {
@@ -130,11 +122,6 @@ export async function runStagingRelease(
     );
     outcome.deployment.state = "succeeded";
     await passed(activeCheck, deployment);
-    if (scenarios.length) {
-      activeCheck = "retained-source-rehearsal";
-      const result = await runValidation(scenarios, directory);
-      await passed(activeCheck, { state: "succeeded", head_sha: intent.expected_head_sha, scenarios, ...result });
-    }
     outcome.state = "succeeded";
   } catch (error) {
     outcome.failure_code = `${activeCheck.replaceAll("-", "_")}_failed`;
@@ -172,34 +159,6 @@ export async function runStagingRelease(
 function failureCause(error) {
   const code = error instanceof Error ? error.message.split(":")[0] : "";
   return /^[a-z][a-z0-9_]{0,79}$/u.test(code) ? code : "staging_operation_failed";
-}
-
-export async function runExtendedValidation(scenarios, directory) {
-  const log = await open(`${directory}/retained-source-rehearsal.log`, "w", 0o600);
-  try {
-    const results = [];
-    for (const scenario of scenarios) {
-      const code = await new Promise((resolve, reject) => {
-        const child = spawn("pnpm", ["run", "test:acceptance:extended", scenario], {
-          stdio: ["ignore", log.fd, log.fd],
-          env: {
-            PATH: process.env.PATH,
-            HOME: process.env.HOME,
-            TMPDIR: process.env.TMPDIR,
-            CI: "true",
-            WRANGLER_SEND_METRICS: "false",
-          },
-        });
-        child.once("error", reject);
-        child.once("exit", (status) => resolve(status));
-      });
-      if (code !== 0) throw new Error("retained_source_rehearsal_failed");
-      results.push({ scenario, exit_code: code });
-    }
-    return { exit_code: 0, results };
-  } finally {
-    await log.close();
-  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
