@@ -68,8 +68,14 @@ test("no allow-listed repository file is read by code or tests", () => {
   // A documentation file that a suite reads is not documentation-only; the
   // classifier must name it in testConsumedDocuments or a denied tree.
   const tracked = new Set(execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" }).split("\0"));
+  // The classifier and this test name example paths without reading them.
+  const own = new Set(["scripts/ci-change-scope.mjs", "acceptance/ci-change-scope.test.mjs"]);
   const sources = [...tracked].filter(
-    (path) => /\.(?:[cm]?js|ts|sh|ya?ml)$/u.test(path) && !path.startsWith("docs/") && !path.endsWith(".d.ts"),
+    (path) =>
+      /\.(?:[cm]?js|ts|sh|ya?ml)$/u.test(path) &&
+      !path.startsWith("docs/") &&
+      !path.endsWith(".d.ts") &&
+      !own.has(path),
   );
   const consumed = new Set();
   for (const source of sources) {
