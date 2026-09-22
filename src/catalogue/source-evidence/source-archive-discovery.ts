@@ -1,10 +1,12 @@
-import type { ExtractedSourceRequest } from "../adapters";
+import { type ExtractedSourceRequest, requiredSourceAdapter } from "../adapters";
 import { type CatalogueStore, canonicalJson, sha256Text } from "../shared";
 import { archiveParseProgress, advanceArchiveDiscovery, type ArchiveParseProgress } from "./source-archive-repository";
 import { sealedSourceRecordProgress, sourceRecordInitialDigest, sourceRecordNextDigest } from "./source-record-intake";
 import { sourceRecordPage, type SourceRecordRow } from "./source-record-repository";
 import {
   appendDiscoveredEvidenceRequests,
+  evidencePlanForRequest,
+  type DiscoveredEvidenceRequest,
   type EvidenceRequestRow,
   type IngestionEvidenceRow,
 } from "./source-evidence-repository";
@@ -27,6 +29,9 @@ export async function discoverArchiveRequestsBatch(
       ? await sourceRecordInitialDigest(set, records.header_json)
       : progress.discovery_digest;
   if (!digest) throw new Error("Archive discovery prefix is missing.");
+  const plan = evidencePlanForRequest(run, request.request_id);
+  const adapter = requiredSourceAdapter(plan.adapter_version);
+  const selectsByGroup = plan.discovery_selection !== undefined;
   let processed = 0;
   while (progress.discovery_ordinal < records.next_ordinal && processed < 512) {
     const rows = (
@@ -39,7 +44,7 @@ export async function discoverArchiveRequestsBatch(
     ).results;
     if (!rows.length) throw new Error("Archive discovery source records are incomplete.");
     let ordinal = progress.discovery_ordinal;
-    const requests: ExtractedSourceRequest[] = [];
+    const requests: DiscoveredEvidenceRequest[] = [];
     for (const row of rows) {
       if (row.ordinal !== ordinal++ || (await sha256Text(row.content)) !== row.sha256)
         throw new Error("Archive discovery source record integrity failed.");
@@ -48,7 +53,13 @@ export async function discoverArchiveRequestsBatch(
       if (retained !== null) {
         const selected = Array.isArray(retained) ? retained : [retained];
         if (selected.length > 16) throw new Error("Archive source request count is unbounded.");
-        requests.push(...(selected as ExtractedSourceRequest[]));
+        // A tranche plan (#409) selects and counts deferrals by the claiming
+        // observation's group (a record row wraps it as `value`); the retained
+        // request, and so its identity, is unchanged.
+        const selectionGroup = selectsByGroup
+          ? (adapter.discoverySelectionGroup?.((JSON.parse(row.content) as { value?: unknown }).value) ?? null)
+          : null;
+        requests.push(...(selected as ExtractedSourceRequest[]).map((request) => ({ ...request, selectionGroup })));
       }
     }
     await appendDiscoveredEvidenceRequests(db, run, request, requests, guard);

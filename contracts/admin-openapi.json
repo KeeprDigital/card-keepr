@@ -4744,6 +4744,38 @@
                     ],
                     "additionalProperties": false
                   }
+                },
+                "discovery_selection": {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "listing",
+                        "detail",
+                        "product_detail",
+                        "image"
+                      ]
+                    },
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$/u"
+                      },
+                      "minItems": 1,
+                      "maxItems": 2000
+                    },
+                    "maximum_requests": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "role"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [
@@ -5673,6 +5705,119 @@
                 ],
                 "additionalProperties": false
               },
+              "deferred_requests": {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "selections": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "source_lineage": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "role": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "group_count": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0
+                        },
+                        "maximum_requests": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "source_lineage",
+                        "role",
+                        "group_count",
+                        "maximum_requests"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "by_lineage": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "source_lineage": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "role": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "count": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "source_lineage",
+                        "role",
+                        "count"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "group_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "detail_limit": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "groups_truncated": {
+                    "type": "boolean"
+                  },
+                  "groups": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "group": {
+                          "type": "string"
+                        },
+                        "count": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "group",
+                        "count"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "count",
+                  "selections",
+                  "by_lineage",
+                  "group_count",
+                  "detail_limit",
+                  "groups_truncated",
+                  "groups"
+                ],
+                "additionalProperties": false
+              },
               "failed_images": {
                 "type": "object",
                 "properties": {
@@ -6084,6 +6229,7 @@
               "capacity",
               "requests",
               "evidence",
+              "deferred_requests",
               "failed_images",
               "progress",
               "pacing",
@@ -7673,6 +7819,38 @@
                     ],
                     "additionalProperties": false
                   }
+                },
+                "discovery_selection": {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "listing",
+                        "detail",
+                        "product_detail",
+                        "image"
+                      ]
+                    },
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$/u"
+                      },
+                      "minItems": 1,
+                      "maxItems": 2000
+                    },
+                    "maximum_requests": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "role"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [
@@ -9042,6 +9220,119 @@
                 ],
                 "additionalProperties": false
               },
+              "deferred_requests": {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "selections": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "source_lineage": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "role": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "group_count": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0
+                        },
+                        "maximum_requests": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "source_lineage",
+                        "role",
+                        "group_count",
+                        "maximum_requests"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "by_lineage": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "source_lineage": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "role": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "count": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "source_lineage",
+                        "role",
+                        "count"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "group_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "detail_limit": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "groups_truncated": {
+                    "type": "boolean"
+                  },
+                  "groups": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "group": {
+                          "type": "string"
+                        },
+                        "count": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "group",
+                        "count"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "count",
+                  "selections",
+                  "by_lineage",
+                  "group_count",
+                  "detail_limit",
+                  "groups_truncated",
+                  "groups"
+                ],
+                "additionalProperties": false
+              },
               "failed_images": {
                 "type": "object",
                 "properties": {
@@ -9453,6 +9744,7 @@
               "capacity",
               "requests",
               "evidence",
+              "deferred_requests",
               "failed_images",
               "progress",
               "pacing",
@@ -60307,6 +60599,38 @@
                         "type": "string",
                         "minLength": 1
                       },
+                      "discovery_selection": {
+                        "type": "object",
+                        "properties": {
+                          "role": {
+                            "type": "string",
+                            "enum": [
+                              "listing",
+                              "detail",
+                              "product_detail",
+                              "image"
+                            ]
+                          },
+                          "groups": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$/u"
+                            },
+                            "minItems": 1,
+                            "maxItems": 2000
+                          },
+                          "maximum_requests": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "role"
+                        ],
+                        "additionalProperties": false
+                      },
                       "requests": {
                         "type": "array",
                         "items": {
@@ -60412,6 +60736,38 @@
                             "subset": {
                               "type": "string",
                               "minLength": 1
+                            },
+                            "discovery_selection": {
+                              "type": "object",
+                              "properties": {
+                                "role": {
+                                  "type": "string",
+                                  "enum": [
+                                    "listing",
+                                    "detail",
+                                    "product_detail",
+                                    "image"
+                                  ]
+                                },
+                                "groups": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$/u"
+                                  },
+                                  "minItems": 1,
+                                  "maxItems": 2000
+                                },
+                                "maximum_requests": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "role"
+                              ],
+                              "additionalProperties": false
                             },
                             "requests": {
                               "type": "array",

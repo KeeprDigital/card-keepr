@@ -411,6 +411,14 @@ export const documentSchemas = {
       game_profile_version: string,
       adapter_version: string,
       requests: array(evidenceRequest),
+      discovery_selection: object(
+        {
+          role: { enum: ["listing", "detail", "product_detail", "image"] },
+          groups: array({ ...string, pattern: "^[a-z0-9][a-z0-9._-]{0,63}$" }, { minItems: 1, maxItems: 2000 }),
+          maximum_requests: { type: "integer", minimum: 1 },
+        },
+        ["role"],
+      ),
     },
     ["supported_game", "source_lineage", "game_profile_version", "adapter_version", "requests"],
     true,

@@ -35,6 +35,7 @@ import {
   workflowDriver,
 } from "../shared";
 import { sourceRequestHostnameSql } from "./collection-inspection-repository";
+import { selectedDiscoveryRequests } from "./discovery-selection";
 import {
   evidenceRunByIdempotencyKeyStatement,
   evidenceRunByIdStatement,
@@ -119,6 +120,8 @@ export type DiscoveredEvidenceRequest = {
   discoveryKey?: string;
   url: string;
   headers: Record<string, string>;
+  /** The claiming record's selection group (#409); never part of the request identity. */
+  selectionGroup?: string | null;
 };
 
 export async function startEvidenceRun(
@@ -614,6 +617,7 @@ export async function appendDiscoveredEvidenceRequests(
       representation_fingerprint: string;
       role: DiscoveredEvidenceRequest["role"];
       sequence_floor: number;
+      selectionGroup: string | null;
     }
   >();
   for (const request of discovered) {
@@ -651,9 +655,16 @@ export async function appendDiscoveredEvidenceRequests(
       role: request.role,
       sequence_floor:
         request.discoveryKey !== undefined || aboveCollectionPlanWindows ? stagedDiscoverySequenceFloor : 0,
+      selectionGroup: request.selectionGroup ?? null,
     });
   }
-  const normalized = [...normalizedById.values()];
+  // An image tranche (#409): the plan's selection admits a bounded subset of
+  // one role and records the rest as explicitly deferred in this same batch.
+  const {
+    selected: normalized,
+    deferral,
+    maximumGuard,
+  } = await selectedDiscoveryRequests(database, run.id, plan, parent.request_id, [...normalizedById.values()]);
   const proposedRequestIds = JSON.stringify(normalized.map(({ id }) => id));
   const capacityPolicy = await runRequestCapacityPolicy(database, run.id, plan.adapter_version);
   const requestCapacity = capacityPolicy.request_capacity;
@@ -687,7 +698,10 @@ export async function appendDiscoveredEvidenceRequests(
   if (count === null || existing === null || usedCapacity + overflowRequestCount > requestCapacity) {
     throw requestCapacityProblem(plan.source_lineage, capacityPolicy, usedCapacity, overflowRequestCount);
   }
-  if (normalized.length === 0) return [];
+  if (normalized.length === 0) {
+    if (deferral !== null) await database.batch([...(guard ? [guard()] : []), deferral.statement]);
+    return [];
+  }
   const chunks = chunked(normalized, 100);
   const statements: D1PreparedStatement[] = [
     ...(guard ? [guard()] : []),
@@ -775,9 +789,17 @@ export async function appendDiscoveredEvidenceRequests(
       }),
     );
   }
+  if (deferral !== null) statements.push(deferral.statement);
+  if (maximumGuard !== null) statements.push(maximumGuard.statement);
   try {
     await database.batch(statements);
   } catch (error) {
+    // Nothing was inserted: a concurrent batch that consumed the selection's
+    // maximum first is recounted here, and this batch is retried whole.
+    if (maximumGuard !== null && (await maximumGuard.exceeded()))
+      throw new Error("A concurrent discovery batch consumed the plan's selection maximum; retry this batch.", {
+        cause: error,
+      });
     throw await mappedDiscoveryAdmissionError(
       error,
       database,

@@ -9,6 +9,7 @@ import {
   type SourceAdapterRegistration,
 } from "../adapters";
 import { AdministrationProblem, canonicalJson, decodeDocument, sha256, utf8 } from "../shared";
+import { type DiscoverySelection, validatedDiscoverySelection } from "./discovery-selection";
 
 // The polite steady-state interval between requests to one Official Source
 // hostname when no deployment override is configured.
@@ -204,11 +205,14 @@ export type EvidencePlan = {
   game_profile_version: string;
   adapter_version: string;
   requests: EvidencePlanRequest[];
+  /** The bounded tranche of one discovered role this plan acquires (#409). */
+  discovery_selection?: DiscoverySelection;
 };
 
 export type EvidencePlanInput = {
   participation?: string;
   subset?: string;
+  discovery_selection?: unknown;
   supported_game: string;
   source_lineage: string;
   adapter_version: string;
@@ -388,6 +392,9 @@ export async function validateEvidencePlan(request: EvidencePlanInput & { idempo
       game_profile_version: adapter.gameProfileVersion,
       adapter_version: adapter.adapterVersion,
       requests,
+      ...(request.discovery_selection === undefined
+        ? {}
+        : { discovery_selection: validatedDiscoverySelection(adapter, request.discovery_selection) }),
     },
   };
 }
@@ -437,7 +444,8 @@ export async function validateEvidencePlans(request: StartEvidenceRunRequest): P
           existing.source_lineage === plan.source_lineage &&
           (existing.adapter_version !== plan.adapter_version ||
             existing.participation !== plan.participation ||
-            canonicalJson(existing.coverage) !== canonicalJson(plan.coverage)),
+            canonicalJson(existing.coverage) !== canonicalJson(plan.coverage) ||
+            canonicalJson(existing.discovery_selection ?? null) !== canonicalJson(plan.discovery_selection ?? null)),
       )
     ) {
       throw new AdministrationProblem(
@@ -638,6 +646,7 @@ export function parseEvidencePlan(json: string): EvidencePlan {
       headers: item.headers,
       representation_fingerprint: item.representation_fingerprint,
     })),
+    ...(value.discovery_selection === undefined ? {} : { discovery_selection: value.discovery_selection }),
   };
 }
 

@@ -14,10 +14,22 @@ const requestSchema = z.strictObject({
   method: z.literal("GET").optional(),
   headers: strings.optional(),
 });
+// A plan's bounded tranche of one discovered role (#409); the scope decides
+// which roles are selectable and the adapter what a group names.
+const discoverySelectionSchema = z.strictObject({
+  role: z.enum(["listing", "detail", "product_detail", "image"]),
+  groups: z
+    .array(z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/u))
+    .min(1)
+    .max(2000)
+    .optional(),
+  maximum_requests: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).optional(),
+});
 export const planInputSchema = z.strictObject({
   ...sourceFields,
   participation: z.enum(["required", "optional"]).optional(),
   subset: identifier.optional(),
+  discovery_selection: discoverySelectionSchema.optional(),
   requests: z.array(requestSchema).min(1).max(100),
 });
 export const acquisitionBudgetSchema = z.strictObject({
@@ -86,6 +98,7 @@ export const evidencePlanSchema = z.strictObject({
   participation: z.enum(["required", "optional"]).optional(),
   coverage: coverageSchema.optional(),
   requests: z.array(retainedRequestSchema),
+  discovery_selection: discoverySelectionSchema.optional(),
 });
 export const evidenceAcceptanceSchema = z
   .strictObject({
@@ -304,6 +317,22 @@ const collectionSchema = z.strictObject({
     snapshots_truncated: z.boolean(),
     observation_sets_truncated: z.boolean(),
     diagnostics_truncated: z.boolean(),
+  }),
+  deferred_requests: z.strictObject({
+    count,
+    selections: z.array(
+      z.strictObject({
+        source_lineage: identifier,
+        role: identifier,
+        group_count: count.nullable(),
+        maximum_requests: count.nullable(),
+      }),
+    ),
+    by_lineage: z.array(z.strictObject({ source_lineage: identifier, role: identifier, count })),
+    group_count: count,
+    detail_limit: count,
+    groups_truncated: z.boolean(),
+    groups: z.array(z.strictObject({ group: z.string(), count })),
   }),
   failed_images: z.strictObject({
     count,

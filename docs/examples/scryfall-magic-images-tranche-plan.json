@@ -1,0 +1,92 @@
+{
+  "plans": [
+    {
+      "supported_game": "magic",
+      "source_lineage": "scryfall-magic-en",
+      "adapter_version": "scryfall-magic-en@1",
+      "subset": "image-tranche",
+      "participation": "required",
+      "discovery_selection": {
+        "role": "image",
+        "groups": [
+          "aecl",
+          "aeoe",
+          "afic",
+          "afin",
+          "amsh",
+          "asos",
+          "aspm",
+          "atla",
+          "atle",
+          "atmt",
+          "ecc",
+          "ecl",
+          "eoc",
+          "eoe",
+          "eos",
+          "fca",
+          "fic",
+          "fin",
+          "hob",
+          "hoc",
+          "lmar",
+          "mar",
+          "msc",
+          "msh",
+          "pbig",
+          "pecl",
+          "peoe",
+          "pf26",
+          "pfin",
+          "ph23",
+          "pjsc",
+          "pl26",
+          "psos",
+          "pspm",
+          "pss5",
+          "ptla",
+          "pw26",
+          "pza",
+          "slz",
+          "soa",
+          "soc",
+          "sos",
+          "spe",
+          "spm",
+          "tecc",
+          "tecl",
+          "teoc",
+          "teoe",
+          "tfic",
+          "tfin",
+          "thob",
+          "tla",
+          "tle",
+          "tmc",
+          "tmsc",
+          "tmsh",
+          "tmt",
+          "tsoc",
+          "tsos",
+          "tspm",
+          "ttla",
+          "ttle",
+          "ttmc",
+          "ttmt",
+          "wfin"
+        ],
+        "maximum_requests": 10000
+      },
+      "requests": [
+        {
+          "id": "scryfall-magic-en:bulk-data",
+          "url": "https://api.scryfall.com/bulk-data",
+          "headers": {
+            "accept": "application/json",
+            "user-agent": "Card-Keepr/0.1 (+https://github.com/KeeprDigital/card-keepr)"
+          }
+        }
+      ]
+    }
+  ]
+}

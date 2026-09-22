@@ -312,6 +312,32 @@ function formatCollectionProgress(collection, summary = false) {
       );
     }
   }
+  // Image tranches (#409): requests a plan's selection explicitly deferred.
+  const deferred = collection.deferred_requests;
+  if (typeof deferred === "object" && deferred !== null && Number.isSafeInteger(deferred.count)) {
+    for (const selection of Array.isArray(deferred.selections) ? deferred.selections : []) {
+      const lineage = safeDiagnosticReference(selection?.source_lineage);
+      const role = safeMachineCode(selection?.role);
+      if (lineage === null || role === null) continue;
+      const bounds = [
+        Number.isSafeInteger(selection.group_count) ? formatCount(selection.group_count, "group") : null,
+        Number.isSafeInteger(selection.maximum_requests) ? `at most ${selection.maximum_requests}` : null,
+      ].filter((bound) => bound !== null);
+      lines.push(`Selection ${lineage}: ${role} requests by ${bounds.join(", ")}`);
+    }
+    if (deferred.count > 0) {
+      const groups = (Array.isArray(deferred.groups) ? deferred.groups : [])
+        .filter((group) => safeDiagnosticReference(group?.group) !== null && Number.isSafeInteger(group.count))
+        .map((group) => `${group.group} ${group.count}`);
+      lines.push(
+        `Deferred: ${formatCount(deferred.count, "discovered request")} not selected by this plan${
+          Number.isSafeInteger(deferred.group_count) ? ` across ${formatCount(deferred.group_count, "group")}` : ""
+        }; a later tranche can select them${
+          groups.length === 0 ? "" : ` (${deferred.groups_truncated === true ? "largest " : ""}${groups.join(", ")})`
+        }`,
+      );
+    }
+  }
   const failedImages = collection.failed_images;
   if (
     typeof failedImages === "object" &&

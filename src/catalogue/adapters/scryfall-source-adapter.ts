@@ -141,6 +141,21 @@ const factsOnly = {
   requestUrlForSurface: bulkSurfaceUrl,
   acquiredDiscoveryRoles: ["listing"],
 } as const;
+// Owner decision (#327, 2026-09-22): image tranches of 5k-10k original normal
+// JPEGs (the only image form this adapter discovers), newest sets first. A
+// tranche reads the same pinned inventory as tranche 0, acquires only the
+// image requests its plan's `discovery_selection` selects by set code or
+// count, and records every other image request as explicitly deferred, so
+// those Printings keep their explicit image gaps. Earlier tranches' images
+// stay published; re-selected ones are skipped unchanged (#389).
+const imageTranche = {
+  description:
+    "Every declared English paper Printing fact from the pinned bulk inventory, acquiring only the normal JPEG Printing Images its plan selects (an image tranche).",
+  requiredSurfaces: ["bulk-data"],
+  requestUrlForSurface: bulkSurfaceUrl,
+  acquiredDiscoveryRoles: ["listing", "image"],
+  selectableDiscoveryRoles: ["image"],
+} as const;
 
 export const scryfallSourceAdapterRegistration: SourceAdapterRegistration = {
   adapterVersion: "scryfall-magic-en@1",
@@ -242,7 +257,14 @@ export const scryfallSourceAdapterRegistration: SourceAdapterRegistration = {
   reconciliationAreas: ["catalogue"],
   requiredSurfaces: ["bulk-data"],
   requestUrlForSurface: bulkSurfaceUrl,
-  coverageContracts: { "representative-english-paper": coverage, "facts-only": factsOnly },
+  coverageContracts: {
+    "representative-english-paper": coverage,
+    "facts-only": factsOnly,
+    "image-tranche": imageTranche,
+  },
+  // An image tranche selects by the Scryfall set code of the record that
+  // claimed the image; a reviewable record keeps its code in the sidecar.
+  discoverySelectionGroup: scryfallSetCode,
   parseBytes(bytes, context) {
     if (context.mediaType?.startsWith("image/")) return [];
     if (context.url === scryfallBulkMetadataUrl) {
@@ -275,6 +297,23 @@ export const scryfallSourceAdapterRegistration: SourceAdapterRegistration = {
     }));
   },
 };
+
+function scryfallSetCode(observation: unknown): string | null {
+  const value = observation as {
+    printing?: { game_data?: { attributes?: { set_code?: unknown } } };
+    source_sidecar?: { source_record_json?: unknown };
+  } | null;
+  const code = value?.printing?.game_data?.attributes?.set_code;
+  if (typeof code === "string") return code;
+  const record = value?.source_sidecar?.source_record_json;
+  if (typeof record !== "string") return null;
+  try {
+    const set: unknown = (JSON.parse(record) as { set?: unknown }).set;
+    return typeof set === "string" ? set : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Owner ruling (#327, 2026-09-21) for `token`-layout records whose type line
