@@ -50,8 +50,10 @@ administrationHttp.use("*", async (c, next) => {
   if (
     platformPath === "/v1/dev-deployments" ||
     platformPath === "/v1/staging-release-authorizations" ||
+    platformPath === "/v1/production-promotions" ||
     (request.method === "POST" &&
-      (platformPath === "/v1/staging-deployments" || /^\/v1\/staging-deployments\/[^/]+\/outcome$/u.test(platformPath)))
+      (platformPath === "/v1/staging-deployments" ||
+        /^\/v1\/staging-deployments\/[^/]+\/(?:outcome|promotion-outcome)$/u.test(platformPath)))
   )
     return dispatchPlatform(request.method, platformPath, { request, requestId, base, env: catalogueEnvironment(env) });
 

@@ -1,6 +1,6 @@
 import { readAdministrationBody } from "../../http/administration";
 import { retainedWireValue } from "../../http/openapi";
-import { stagingAudience } from "../../http/dev-workflow-identity.mjs";
+import { stagingAudience, verifyPromotionWorkflow } from "../../http/dev-workflow-identity.mjs";
 import { environmentNames } from "../../http/environment-target.mjs";
 import { validatedEnvironmentTarget } from "../../http/production-target.mjs";
 import { currentDisposableRestoreDatabaseId } from "../backup-recovery";
@@ -19,6 +19,7 @@ import {
   stagingOutcomeRequestSchema,
   stagingPreparationSchema,
   stagingOutcomeReceiptSchema,
+  stagingPromotionOutcomeRequestSchema,
 } from "./platform-http-contract";
 import {
   recordStagingProtocolStatement,
@@ -320,4 +321,52 @@ function conflict(): never {
     "staging_deployment_conflict",
     "The immutable staging preparation or outcome does not match this intent.",
   );
+}
+
+/**
+ * Staging serves its recorded outcome to production's promotion check (#238). The
+ * caller is production forwarding the promotion job's signed identity, which must be
+ * the same workflow run and owner that recorded this outcome. Read-only.
+ */
+export async function handleStagingPromotionOutcome(
+  request: Request,
+  env: StagingEnvironment,
+  releaseId: string,
+  at = new Date().toISOString(),
+): Promise<Response> {
+  stagingOnly(request, env);
+  const body = stagingPromotionOutcomeRequestSchema.safeParse(await readAdministrationBody(request));
+  if (!body.success || !isReleaseIdentity(releaseId))
+    throw new AdministrationProblem(422, "invalid_staging_outcome", "The exact intent digest is required.");
+  let identity: Awaited<ReturnType<typeof verifyPromotionWorkflow>>;
+  try {
+    identity = await verifyPromotionWorkflow(
+      request.headers.get("authorization")?.replace(/^Bearer /u, "") ?? "",
+      request.headers.get("x-github-token") ?? "",
+      Date.parse(at),
+    );
+  } catch {
+    throw new AdministrationProblem(
+      403,
+      "invalid_promotion_workflow_attestation",
+      "The staging workflow's production promotion identity could not be verified.",
+    );
+  }
+  const row = await stagingRecordStatement(env.CATALOGUE_DB, `staging-outcome:${releaseId}`).first<RecordRow>();
+  if (row?.operation !== "staging_release_outcome")
+    throw new AdministrationProblem(404, "staging_outcome_not_found", "This staging release has no recorded outcome.");
+  const recorded = JSON.parse(row.response_json) as { authorization: StagingAuthorization } & Record<string, unknown>;
+  if (
+    recorded.authorization.intent_digest !== body.data.intent_digest ||
+    recorded.authorization.workflow_run_id !== identity.runId ||
+    recorded.authorization.intent.expected_actor !== identity.actor
+  )
+    throw new AdministrationProblem(
+      409,
+      "staging_outcome_mismatch",
+      "The recorded outcome belongs to another intent or workflow run.",
+    );
+  return Response.json(retainedWireValue(stagingOutcomeReceiptSchema, recorded), {
+    headers: { "cache-control": "no-store" },
+  });
 }

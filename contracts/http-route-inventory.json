@@ -1774,6 +1774,23 @@
   },
   {
     "worker": "admin",
+    "family": "platform",
+    "method": "POST",
+    "path": "/v1/production-promotions",
+    "contract": "generated",
+    "slice": "Signed Workflow deployment",
+    "treatment": "signed-workflow-deployment",
+    "named_cli": null,
+    "callers": [
+      "acceptance/composition-smoke-targets.test.mjs",
+      "acceptance/helpers/native-fresh-baseline.mjs",
+      "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/platform-contract.spec.ts",
+      "apps/ingestion/test/production-promotion.spec.ts"
+    ]
+  },
+  {
+    "worker": "admin",
     "family": "ingestion",
     "method": "POST",
     "path": "/v1/production-releases",
@@ -2307,6 +2324,20 @@
     "worker": "admin",
     "family": "platform",
     "method": "POST",
+    "path": "/v1/staging-deployments/{release}/promotion-outcome",
+    "contract": "generated",
+    "slice": "Signed Workflow deployment",
+    "treatment": "signed-workflow-deployment",
+    "named_cli": null,
+    "callers": [
+      "apps/ingestion/test/platform-contract.spec.ts",
+      "apps/ingestion/test/production-promotion.spec.ts"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "platform",
+    "method": "POST",
     "path": "/v1/staging-release-authorizations",
     "contract": "generated",
     "slice": "Signed Workflow deployment",
@@ -2320,6 +2351,7 @@
       "acceptance/staging-workflow-gate.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
       "apps/ingestion/test/platform-contract.spec.ts",
+      "apps/ingestion/test/production-promotion.spec.ts",
       "apps/ingestion/test/staging-release-http.spec.ts"
     ]
   },
@@ -2337,6 +2369,7 @@
       "acceptance/release-run-cli.test.mjs",
       "acceptance/staging-release-cli.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
+      "apps/ingestion/test/production-promotion.spec.ts",
       "apps/ingestion/test/staging-release-http.spec.ts",
       "cli/staging-release.mjs"
     ]

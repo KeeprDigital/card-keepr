@@ -50404,6 +50404,108 @@
         ],
         "additionalProperties": false
       },
+      "ProductionPromotionReceipt": {
+        "type": "object",
+        "properties": {
+          "contract": {
+            "type": "string",
+            "enum": [
+              "card-keepr-production-promotion@1"
+            ]
+          },
+          "staging_release_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
+          },
+          "intent_digest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "expected_head_sha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "confirmed_by": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workflow_run_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workflow_run_attempt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ci_run_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "staging_outcome_sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "extended_scenarios": {
+            "type": "object",
+            "properties": {
+              "status_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "run_id": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "status_id",
+              "run_id"
+            ],
+            "additionalProperties": false
+          },
+          "production_start": {
+            "type": "object",
+            "properties": {
+              "target_digest": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "migration_level": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "target_digest",
+              "migration_level"
+            ],
+            "additionalProperties": false
+          },
+          "promoted_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "production_release": {
+            "$ref": "#/components/schemas/ProductionReleaseReceipt"
+          }
+        },
+        "required": [
+          "contract",
+          "staging_release_id",
+          "intent_digest",
+          "expected_head_sha",
+          "confirmed_by",
+          "workflow_run_id",
+          "workflow_run_attempt",
+          "ci_run_id",
+          "staging_outcome_sha256",
+          "extended_scenarios",
+          "production_start",
+          "promoted_at",
+          "production_release"
+        ],
+        "additionalProperties": false
+      },
       "AdministrationReadiness": {
         "type": "object",
         "properties": {
@@ -92559,6 +92661,748 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/StagingOutcomeReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/staging-deployments/{release}/promotion-outcome": {
+      "post": {
+        "operationId": "readStagingOutcomeForPromotion",
+        "security": [
+          {
+            "workflowAttestation": [],
+            "githubWorkflowToken": []
+          }
+        ],
+        "description": "Staging only. Production forwards the promotion job's signed production-environment Workflow identity and X-GitHub-Token. Returns the immutable recorded outcome only to the same Workflow run and owner that recorded it. Read-only.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "release",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "A JSON object, limited to 16 KiB by streamed bytes. Content-Type does not change decoding.",
+          "content": {
+            "*/*": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "intent_digest": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                },
+                "required": [
+                  "intent_digest"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The first immutable staging outcome, unchanged.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StagingOutcomeReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/production-promotions": {
+      "post": {
+        "operationId": "promoteStagingRelease",
+        "security": [
+          {
+            "workflowAttestation": [],
+            "githubWorkflowToken": []
+          }
+        ],
+        "description": "Production only. Requires the signed production-environment job of the manual staging Workflow run that claimed the owner's staging intent, and its X-GitHub-Token (actions, checks and statuses read). Production fetches the staging outcome from staging, verifies the selected commit's extended-scenarios run and exact-commit CI, rechecks the intent's target and schema level and an idle lease, then resolves and records a fresh Production Release plan confirmed by this promotion. Stops are typed problems and recorded. Exact replay by the same run returns the original record; another run is refused.",
+        "requestBody": {
+          "required": true,
+          "description": "A JSON object, limited to 16 KiB by streamed bytes. Content-Type does not change decoding.",
+          "content": {
+            "*/*": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "release_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@|-]{0,255}$"
+                  },
+                  "intent_digest": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "expected_head_sha": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40}$"
+                  }
+                },
+                "required": [
+                  "release_id",
+                  "intent_digest",
+                  "expected_head_sha"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The original promotion record on exact replay.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductionPromotionReceipt"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "New promotion record with the fresh plan's dispatch inputs for the guarded executor.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductionPromotionReceipt"
                 }
               }
             }

@@ -69,6 +69,67 @@ test("workflow validator accepts only the exact durably prepared plan", async (t
   }
 });
 
+test("a promotion-confirmed plan is claimable only with its exact promotion record (#238)", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "keepr-release-promotion-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const plan = {
+    ...JSON.parse(releaseEnvironment().PREPARED_PLAN_JSON),
+    expected_actor: "github-actions[bot]",
+    idempotency_key: "promotion:staging-47:456",
+    release_id: "promotion-staging-47",
+  };
+  const environment = {
+    ...releaseEnvironment(),
+    EXPECTED_ACTOR: plan.expected_actor,
+    IDEMPOTENCY_KEY: plan.idempotency_key,
+    RELEASE_ID: plan.release_id,
+    PREPARED_PLAN_JSON: stableJson(plan),
+    DISPATCH_DIGEST: hash(stableJson(plan)),
+  };
+  await validateDispatchAndWriteSql(environment, directory);
+  const preflight = await readFile(join(directory, "live-preflight.sql"), "utf8");
+  const database = liveGateDatabase(environment);
+  t.after(() => database.close());
+  // Without the promotion record, nothing stands in for the owner's confirmation.
+  assert.equal(database.prepare(preflight).get().ready, 0);
+  const promotion = (dispatchDigest) =>
+    stableJson({
+      confirmed_by: "promotion:staging-47/456",
+      production_release: {
+        release_id: plan.release_id,
+        dispatch_digest: dispatchDigest,
+        prepared_plan_json: environment.PREPARED_PLAN_JSON,
+      },
+    });
+  productionReleaseQueries
+    .insertLegacyAdministrationEvidence(database)
+    .run("production-promotion:staging-other", "production_promotion", "{}", promotion("f".repeat(64)));
+  assert.equal(database.prepare(preflight).get().ready, 0);
+  productionReleaseQueries
+    .insertLegacyAdministrationEvidence(database)
+    .run("production-promotion:staging-47", "production_promotion", "{}", promotion(environment.DISPATCH_DIGEST));
+  assert.equal(database.prepare(preflight).get().ready, 1);
+
+  // The promotion namespace cannot carry an owner-style actor or release identity.
+  await assert.rejects(
+    validateDispatchAndWriteSql({ ...environment, EXPECTED_ACTOR: "keepr-release[bot]" }, join(directory, "actor")),
+    /invalid_promotion_dispatch|prepared_plan_mismatch/u,
+  );
+  const renamed = { ...plan, release_id: "release-47" };
+  await assert.rejects(
+    validateDispatchAndWriteSql(
+      {
+        ...environment,
+        RELEASE_ID: renamed.release_id,
+        PREPARED_PLAN_JSON: stableJson(renamed),
+        DISPATCH_DIGEST: hash(stableJson(renamed)),
+      },
+      join(directory, "renamed"),
+    ),
+    /invalid_promotion_dispatch/u,
+  );
+});
+
 test("replacement handoff exports and seeds the durable release boundary", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "keepr-release-handoff-"));
   t.after(() => rm(directory, { recursive: true, force: true }));

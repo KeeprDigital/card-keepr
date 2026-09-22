@@ -25,5 +25,6 @@ export { handleDevDeployment } from "./dev-deployment";
 
 export { administrationRoutes, administrationRouteFamilies } from "./http-routes";
 export { handleStagingAuthorization } from "./staging-authorization";
-export { handleStagingDeployment, handleStagingOutcome } from "./staging-deployment";
+export { handleStagingDeployment, handleStagingOutcome, handleStagingPromotionOutcome } from "./staging-deployment";
+export { handleProductionPromotion } from "./production-promotion";
 export { platformRoutes } from "./platform-routes";

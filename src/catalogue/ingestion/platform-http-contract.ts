@@ -1,6 +1,12 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { digest, identifier, problemResponses } from "../../http/openapi";
-import { releaseHead, releaseIdentity, releaseReceiptFields, releaseJsonResponse } from "./release-http-schemas";
+import {
+  releaseHead,
+  releaseIdentity,
+  releaseReceiptFields,
+  releaseReceiptSchema,
+  releaseJsonResponse,
+} from "./release-http-schemas";
 import { stagingAuthorizationSchema, stagingOutcomeSchema } from "./staging-http-contract";
 
 export const devDeploymentIntentSchema = z.strictObject({
@@ -9,6 +15,29 @@ export const devDeploymentIntentSchema = z.strictObject({
 });
 export const stagingIntentIdentitySchema = z.strictObject({ release_id: releaseIdentity, intent_digest: digest });
 export const stagingOutcomeRequestSchema = z.strictObject({ intent_digest: digest, outcome: stagingOutcomeSchema });
+export const stagingPromotionOutcomeRequestSchema = z.strictObject({ intent_digest: digest });
+export const productionPromotionRequestSchema = z.strictObject({
+  release_id: releaseIdentity,
+  intent_digest: digest,
+  expected_head_sha: releaseHead,
+});
+export const productionPromotionReceiptSchema = z
+  .strictObject({
+    contract: z.literal("card-keepr-production-promotion@1"),
+    staging_release_id: releaseIdentity,
+    intent_digest: digest,
+    expected_head_sha: releaseHead,
+    confirmed_by: identifier,
+    workflow_run_id: identifier,
+    workflow_run_attempt: identifier,
+    ci_run_id: identifier,
+    staging_outcome_sha256: digest,
+    extended_scenarios: z.strictObject({ status_id: identifier, run_id: identifier }),
+    production_start: z.strictObject({ target_digest: digest, migration_level: z.number().int().min(1) }),
+    promoted_at: z.string().datetime(),
+    production_release: releaseReceiptSchema,
+  })
+  .openapi("ProductionPromotionReceipt");
 export const devReceiptSchema = z
   .strictObject({
     ...releaseReceiptFields,
@@ -111,5 +140,35 @@ export const stagingOutcomeRoute = createRoute({
       "Original outcome returned on exact replay or an identical concurrent record.",
     ),
     201: response(stagingOutcomeReceiptSchema, "First immutable staging outcome and observation time."),
+  },
+});
+export const stagingPromotionOutcomeRoute = createRoute({
+  method: "post",
+  path: "/v1/staging-deployments/{release}/promotion-outcome",
+  operationId: "readStagingOutcomeForPromotion",
+  security,
+  description:
+    "Staging only. Production forwards the promotion job's signed production-environment Workflow identity and X-GitHub-Token. Returns the immutable recorded outcome only to the same Workflow run and owner that recorded it. Read-only.",
+  request: { params: z.object({ release: z.string().min(1) }), body: body(stagingPromotionOutcomeRequestSchema) },
+  responses: {
+    ...problemResponses,
+    200: response(stagingOutcomeReceiptSchema, "The first immutable staging outcome, unchanged."),
+  },
+});
+export const productionPromotionRoute = createRoute({
+  method: "post",
+  path: "/v1/production-promotions",
+  operationId: "promoteStagingRelease",
+  security,
+  description:
+    "Production only. Requires the signed production-environment job of the manual staging Workflow run that claimed the owner's staging intent, and its X-GitHub-Token (actions, checks and statuses read). Production fetches the staging outcome from staging, verifies the selected commit's extended-scenarios run and exact-commit CI, rechecks the intent's target and schema level and an idle lease, then resolves and records a fresh Production Release plan confirmed by this promotion. Stops are typed problems and recorded. Exact replay by the same run returns the original record; another run is refused.",
+  request: { body: body(productionPromotionRequestSchema) },
+  responses: {
+    ...problemResponses,
+    200: response(productionPromotionReceiptSchema, "The original promotion record on exact replay."),
+    201: response(
+      productionPromotionReceiptSchema,
+      "New promotion record with the fresh plan's dispatch inputs for the guarded executor.",
+    ),
   },
 });

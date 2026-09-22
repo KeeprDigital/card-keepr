@@ -10,6 +10,8 @@ test("signed deployment operations document their environment rejection before o
     ["/v1/staging-release-authorizations", "dev"],
     ["/v1/staging-deployments", "production"],
     ["/v1/staging-deployments/{release}/outcome", "production"],
+    ["/v1/staging-deployments/{release}/promotion-outcome", "production"],
+    ["/v1/production-promotions", "staging"],
   ] as const) {
     const response = await ingestionWorker.fetch(
       new Request(`https://alternate.invalid${path!.replace("{release}", "staging-test")}`, {
