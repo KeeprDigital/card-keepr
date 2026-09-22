@@ -86,6 +86,7 @@ export function parseProductDetail(
           releaseEvidence.region ?? normalizedOfficialRegion(field("Region", "Market", "Territory"), sourceLineage),
         precision: date.precision,
         date: date.value,
+        ...(date.tentative === true ? { tentative: true } : {}),
         status: normalizedOfficialReleaseStatus(releaseStatus),
       },
     ]);

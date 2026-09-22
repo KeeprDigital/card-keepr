@@ -271,6 +271,10 @@
     "bytes_sha256": "225c3f1014548ea14a3d34fd2aa2ee68b368c36e104a0a65e7415e380b263d7a",
     "observations_sha256": "4e279e67aa81a037cb56ac1458805da0e8d2f69661370a4238d1dc77e95e603e"
   },
+  "one-piece-en-product-starter-deck-tentative.json": {
+    "bytes_sha256": "0049b488eabaac76e97d40be2a6a30ac4cfb8ee8436cde9c2dd3775fc42d64aa",
+    "observations_sha256": "437dcf17f81f927266a3483d8e59df90b6a436551192c6a4e9156ceb4dc63452"
+  },
   "one-piece-en-restructured-discovery.json": {
     "bytes_sha256": "27e169e3345d29cbe60c8e4db87647a16b3adf37de299c5ca64dc3b185a09fe6",
     "observations_sha256": "9365f42ea8754b0f3c0ec401a4e1e308c1206b884366f84278177a5f06168fdd"

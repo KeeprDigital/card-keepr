@@ -314,12 +314,14 @@ export async function parseProductReleaseObservation(
       const precision = releasePrecision(date.precision);
       const value = nullableText(date.value, "Release date value");
       assertDatePrecision(precision, value);
+      const tentative = releaseTentative(date.tentative, value);
       const region = releaseRegion(release.region);
       return {
         eventKey: release.event_key === undefined ? region : text(release.event_key, "Release event_key"),
         region,
         precision,
         value,
+        ...(tentative ? { tentative: true as const } : {}),
         status: releaseStatus(release.status),
       };
     });
@@ -520,12 +522,23 @@ export function resolveProduct(observations: readonly ObservedProduct[], game: S
         provenance,
         disagreements,
       );
+      // A tentative marker is resolved as its own fact only when observed, so
+      // Releases never stated as subject to change keep their existing shape.
+      const tentative = factInputs.some(({ release }) => release.tentative === true)
+        ? resolveFact(
+            factInputs,
+            ({ release }) => release.tentative === true,
+            `/data/releases/${index}/date/tentative`,
+            provenance,
+            disagreements,
+          )
+        : false;
       return {
         id: releaseIdFor(first.id, groupIdentity),
         event_key: eventKey,
         product_id: first.id,
         region: region ?? "unknown",
-        date: { precision, value },
+        date: { precision, value, ...(tentative === true ? { tentative: true as const } : {}) },
         status,
       };
     });
@@ -578,6 +591,7 @@ export function sourceObservationsForProduct(product: CatalogueProduct): Product
       region: release.region,
       precision: release.date.precision ?? "unknown",
       value: release.date.value,
+      ...(release.date.tentative === true ? { tentative: true as const } : {}),
       status: release.status,
     })),
     withdrawal: product.withdrawal?.evidence.source_lineage === evidence.source ? product.withdrawal : null,
@@ -889,6 +903,12 @@ function releaseStatus(value: unknown): ReleaseStatus | null {
     throw new Error("Release status is invalid.");
   }
   return value;
+}
+
+function releaseTentative(value: unknown, date: string | null): boolean {
+  if (value === undefined) return false;
+  if (value !== true || date === null) throw new Error("Release tentative marker is invalid.");
+  return true;
 }
 
 function assertDatePrecision(precision: ReleasePrecision, value: string | null): void {

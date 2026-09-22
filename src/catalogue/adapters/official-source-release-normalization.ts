@@ -25,13 +25,35 @@ const seasonNames = new Map([
 export type OfficialReleaseDate = {
   precision: "day" | "month" | "quarter" | "season" | "year" | "unknown";
   value: string | null;
+  /** Present only when the Publisher states the date as subject to change. */
+  tentative?: true;
 };
+
+// Bandai marks some announced dates "September 30, 2022 (Subject to change)"
+// (live One Piece pre-release decks, 2026-09-21). The stated date is kept and
+// the marker becomes an explicit tentative flag (issue #334).
+const tentativeReleaseMarker = /\s*\(\s*subject to change\s*\)\s*$/iu;
+
+/** Split a trailing tentative marker from an official Release date text. */
+export function tentativeOfficialReleaseDateText(value: string): { text: string; tentative: boolean } {
+  const normalized = value.normalize("NFC").trim();
+  const text = normalized.replace(tentativeReleaseMarker, "");
+  return { text, tentative: text !== normalized };
+}
 
 // The 2026-08 live Fusion World pages publish season-precision Releases
 // ("Winter, 2026") and comma-separated display months ("September, 2025").
 // Only the live-shape generations (fusion-world-en@9) opt into
 // this vocabulary; earlier registered parser contracts keep failing closed.
 export function normalizedOfficialReleaseDate(value: string, options: { seasons?: boolean } = {}): OfficialReleaseDate {
+  const { text, tentative } = tentativeOfficialReleaseDateText(value);
+  const date = statedOfficialReleaseDate(text, options);
+  if (!tentative) return date;
+  if (date.value === null) throw new AdapterParseFailure(`Unrecognized official Release date: ${value.trim()}.`);
+  return { ...date, tentative: true };
+}
+
+function statedOfficialReleaseDate(value: string, options: { seasons?: boolean }): OfficialReleaseDate {
   const normalized = value.normalize("NFC").trim();
   if (officialReleaseDateNeedsSchemaReview(normalized)) {
     return { precision: "unknown", value: null };
