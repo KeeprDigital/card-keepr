@@ -288,6 +288,8 @@ const collectionSchema = z.strictObject({
     fetch_attempt_count: count,
     retry_attempt_count: count,
     failed_attempt_count: count,
+    revalidated_attempt_count: count,
+    skipped_request_count: count,
     latest_failure: z
       .strictObject({
         request_id: identifier,

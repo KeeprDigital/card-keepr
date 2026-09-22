@@ -200,6 +200,12 @@ export function transportOutcomeForPath(
       headers: { "content-type": "application/json" },
     });
   }
+  if (pathname.startsWith("/png/")) {
+    // Distinct non-empty image bytes per path for Printing Image requests.
+    return new Response(new TextEncoder().encode(`\u0089PNG\r\n\u001a\n${url.hostname}${pathname}`), {
+      headers: { "content-type": "image/png" },
+    });
+  }
   if (pathname === "/invalid-json") {
     return new Response("<html>not JSON</html>", {
       headers: { "content-type": "text/html" },

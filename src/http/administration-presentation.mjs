@@ -141,6 +141,17 @@ function formatEvidenceVolume(document) {
             }, ${formatCount(evidence.failed_attempt_count, "failure")})`
           : ""
       }`,
+      // Incremental refresh (#389): 304 revalidations are counted zero-byte
+      // dispatches; skipped unchanged images made no dispatch at all.
+      ...(Number.isSafeInteger(evidence.revalidated_attempt_count) &&
+      Number.isSafeInteger(evidence.skipped_request_count)
+        ? [
+            `${evidence.revalidated_attempt_count} revalidated unchanged (304), ${formatCount(
+              evidence.skipped_request_count,
+              "unchanged image",
+            )} skipped`,
+          ]
+        : []),
     ];
   }
   return [

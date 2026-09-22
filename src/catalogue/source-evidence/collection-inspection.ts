@@ -19,7 +19,11 @@ import {
 // status document. Nothing here carries request headers, credentials,
 // response bodies, or unvetted provider text: identifiers, hostnames,
 // bounded counters, timestamps, and closed machine codes only.
-import { type EvidencePlan, toleratedPrintingImageFailureCodes } from "./source-evidence-model";
+import {
+  type EvidencePlan,
+  toleratedPrintingImageFailureCodes,
+  unchangedImageSkipDiagnostic,
+} from "./source-evidence-model";
 import type {
   CurrentPause,
   ObservationSetRow,
@@ -59,6 +63,10 @@ export type EvidenceCounts = Readonly<{
   fetch_attempt_count: number;
   retry_attempt_count: number;
   failed_attempt_count: number;
+  // 304 revalidations: counted dispatches that charged zero bytes.
+  revalidated_attempt_count: number;
+  // Unchanged Printing Images reused without any dispatch (#389).
+  skipped_request_count: number;
 }>;
 
 type RequestGroupRow = {
@@ -95,7 +103,7 @@ export async function collectionInspection(
       runId: runId,
       lineagesJson: JSON.stringify(input.plans.map((plan) => plan.source_lineage)),
     }).all<RequestGroupRow>(),
-    collectionEvidenceCountsStatement(database, runId).first<EvidenceCounts>(),
+    collectionEvidenceCountsStatement(database, runId, unchangedImageSkipDiagnostic).first<EvidenceCounts>(),
     latestCollectionFailureStatement(database, runId).first<{
       request_id: string;
       outcome: string;

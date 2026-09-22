@@ -7,6 +7,7 @@ import {
   hostPacingDelay,
   parseCapturedRequest,
   prepareCaptureAttempt,
+  skipUnchangedImageCapture,
   type SourceHostPacingMode,
 } from "./source-evidence-capture";
 import type { CollectionWorkflowAttempt } from "./source-evidence-model";
@@ -140,6 +141,17 @@ export async function collectSourceRequestBatch(input: SourceRequestBatchInput):
             source_snapshot_id: snapshotId,
             request_made: false,
           }),
+        );
+        processed += 1;
+        continue;
+      }
+      // An unchanged Printing Image reuses its retained bytes without a
+      // dispatch, so it neither waits for nor advances host pacing.
+      const skipped = await skipUnchangedImageCapture(input.database, run, request, prepared);
+      if (skipped !== null) {
+        const attemptId = prepared.attempt_id;
+        enqueuePersistence(() =>
+          persistCapturedRequest(input, request, { kind: "uploaded", attempt_id: attemptId, request_made: false }),
         );
         processed += 1;
         continue;

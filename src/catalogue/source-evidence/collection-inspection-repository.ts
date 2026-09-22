@@ -22,7 +22,11 @@ export function collectionRequestGroupsStatement(
     .bind(input.runId, input.lineagesJson);
 }
 
-export function collectionEvidenceCountsStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+export function collectionEvidenceCountsStatement(
+  database: CatalogueStore,
+  runId: string,
+  skipDiagnostic: string,
+): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(
       `SELECT
@@ -44,9 +48,18 @@ export function collectionEvidenceCountsStatement(database: CatalogueStore, runI
              (SELECT COUNT(*) FROM source_fetch_attempts
               WHERE ingestion_run_id = ?1
                 AND outcome NOT IN ${successfulOutcomes}
-             ) AS failed_attempt_count`,
+             ) AS failed_attempt_count,
+             (SELECT COUNT(*) FROM source_fetch_attempts
+              WHERE ingestion_run_id = ?1
+                AND outcome = 'cache_revalidated' AND http_status = 304
+             ) AS revalidated_attempt_count,
+             (SELECT COUNT(*) FROM source_fetch_attempts
+              WHERE ingestion_run_id = ?1
+                AND outcome = 'cache_revalidated' AND http_status IS NULL
+                AND diagnostic = ?2
+             ) AS skipped_request_count`,
     )
-    .bind(runId);
+    .bind(runId, skipDiagnostic);
 }
 
 export function latestCollectionFailureStatement(database: CatalogueStore, runId: string): D1PreparedStatement {

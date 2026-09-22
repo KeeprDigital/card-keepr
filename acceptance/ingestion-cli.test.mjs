@@ -2214,6 +2214,8 @@ test("source show renders aggregated collection progress in human-readable form"
         fetch_attempt_count: 6010,
         retry_attempt_count: 7,
         failed_attempt_count: 7,
+        revalidated_attempt_count: 5,
+        skipped_request_count: 4,
         latest_failure: {
           request_id: "fusion-world-en:detail:abc",
           hostname: "www.dbs-cardgame.com",
@@ -2334,6 +2336,7 @@ test("source show renders aggregated collection progress in human-readable form"
   assert.match(out, /6003 Source Snapshots \(1234567890 bytes\)/);
   assert.match(out, /6000 Source Observation sets/);
   assert.match(out, /6010 fetch attempts \(7 retries, 7 failures\)/);
+  assert.match(out, /5 revalidated unchanged \(304\), 4 unchanged images skipped/);
   assert.match(out, /Requests: 15003 \(pending 9000, captured 3, observed 6000; surface 5, detail 12000, image 2998\)/);
   assert.match(out, /Capacity fusion-world-en: 15003 used of 20000 \(generation 2, 4997 remaining\)/);
   assert.match(

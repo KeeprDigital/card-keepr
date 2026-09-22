@@ -5591,6 +5591,14 @@
                     "type": "integer",
                     "minimum": 0
                   },
+                  "revalidated_attempt_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "skipped_request_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
                   "latest_failure": {
                     "type": [
                       "object",
@@ -5655,6 +5663,8 @@
                   "fetch_attempt_count",
                   "retry_attempt_count",
                   "failed_attempt_count",
+                  "revalidated_attempt_count",
+                  "skipped_request_count",
                   "latest_failure",
                   "detail_limit",
                   "snapshots_truncated",

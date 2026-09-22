@@ -157,6 +157,65 @@ export function revalidatedCaptureStatement(
     );
 }
 
+// A Printing Image request whose exact URL and representation already have
+// retained bytes from an earlier run records a no-change observation of those
+// bytes without an Official Source dispatch (#389). The prior snapshot's
+// request, response and digest facts are copied; `diagnostic` carries the
+// closed skip code so the finalized attempt stays explicit.
+export function skippedCaptureStatement(
+  database: CatalogueStore,
+  input: Readonly<{
+    completedAt: string;
+    diagnostic: string;
+    reusedSnapshotId: string;
+    attemptId: string;
+  }>,
+): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare(
+      `UPDATE source_capture_operations
+         SET state = 'uploaded', completed_at = ?1, diagnostic = ?2,
+             request_headers_json = prior.request_headers_json,
+             http_status = prior.http_status,
+             response_headers_json = prior.response_headers_json,
+             response_vary_json = prior.response_vary_json,
+             media_type = prior.media_type,
+             content_digest = prior.content_digest,
+             content_byte_length = prior.content_byte_length,
+             reused_source_snapshot_id = prior.id
+         FROM (SELECT * FROM source_snapshots WHERE id = ?3) AS prior
+         WHERE source_capture_operations.attempt_id = ?4
+           AND source_capture_operations.state = 'planned'`,
+    )
+    .bind(input.completedAt, input.diagnostic, input.reusedSnapshotId, input.attemptId);
+}
+
+// Retained bytes an unchanged Printing Image request may reuse without a
+// dispatch: an earlier run's successful or revalidated capture of the exact
+// URL, adapter version and represented request headers whose object has not
+// been reclaimed. Validators are not required; the decision is URL identity.
+export function unchangedImageSnapshotsStatement(
+  database: CatalogueStore,
+  input: Readonly<{
+    runId: string;
+    sourceLineage: string;
+    requestUrl: string;
+    adapterVersion: string;
+    representationFingerprint: string;
+  }>,
+): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare(
+      `SELECT * FROM source_snapshots
+       WHERE NOT EXISTS(SELECT 1 FROM evidence_cleanup_objects reclaimed WHERE reclaimed.object_key=source_snapshots.content_object_key)
+         AND source_lineage = ? AND request_url = ?
+         AND adapter_version = ? AND representation_fingerprint = ?
+         AND ingestion_run_id <> ? AND http_status IN (200, 304)
+       ORDER BY retrieved_at DESC, id DESC LIMIT 10`,
+    )
+    .bind(input.sourceLineage, input.requestUrl, input.adapterVersion, input.representationFingerprint, input.runId);
+}
+
 export function receivedCaptureResponseStatement(
   database: CatalogueStore,
   input: Readonly<{

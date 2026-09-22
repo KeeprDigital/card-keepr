@@ -320,6 +320,19 @@ and a verified, deduplicated retained-body baseline; unresolved ownership blocks
 it. Budget and reservation evidence belongs to backup/restore verification.
 [Acquisition guard](https://github.com/KeeprDigital/card-keepr/issues/367).
 
+Refresh is incremental. A request whose earlier retained snapshot carries an
+ETag or Last-Modified is sent conditionally; a `304` is retained as a no-change
+Source Snapshot reusing those bytes, with the same evidence semantics as an
+identical-digest `200`, and its dispatch is charged at zero bytes. A Printing
+Image whose exact URL, adapter version and represented headers already have
+retained bytes from an earlier run is skipped without a Dispatch Reservation:
+the run records a finalized attempt carrying `source_image_unchanged_skipped`
+and a snapshot reusing the earlier bytes and capture time, so no skip is silently
+absent and nothing new is retained. Skips charge neither dispatches nor bytes;
+`source show` counts them beside 304 revalidations. The accepted trade-off is
+that a replaced image at an unchanged URL is only observed once its URL changes.
+[Faster collection](https://github.com/KeeprDigital/card-keepr/issues/389).
+
 Collection scheduling reads a bounded page containing the next pending shard
 for each hostname. It retains Workflow identities only for dispatched shards;
 later shards are selected after their predecessors finish. Hostname grouping

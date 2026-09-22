@@ -42,7 +42,9 @@ import {
   remainingLineageRequestsStatement,
   reusableSnapshotsStatement,
   revalidatedCaptureStatement,
+  skippedCaptureStatement,
   sourceRequestStatement,
+  unchangedImageSnapshotsStatement,
   uploadedCaptureContentStatement,
   unsettledAcquisitionUploads,
 } from "./source-capture-repository";
@@ -59,6 +61,7 @@ import {
   type SourceRequestFailureClass,
   terminalHttpFailureClass,
   transportPolicyForRole,
+  unchangedImageSkipDiagnostic,
 } from "./source-evidence-model";
 import { parseSnapshotBatch } from "./source-evidence-parsing";
 import { sourceParseAuthorityGuard, type SourceParseAuthority } from "./source-parse-authority-repository";
@@ -653,6 +656,9 @@ export async function completeUploadedCapture(
     throw new Error("Revalidated Source Snapshot bytes are unavailable");
   }
   const contentObjectKey = reusedSnapshot?.content_object_key ?? operation.content_object_key;
+  // A skipped unchanged image made no request: its attempt carries no HTTP
+  // status or headers, and its snapshot keeps the reused observation's time.
+  const skipped = reusedSnapshot !== null && operation.diagnostic === unchangedImageSkipDiagnostic;
   await database.batch([
     attemptStatement(database, {
       id: operation.attempt_id,
@@ -662,10 +668,10 @@ export async function completeUploadedCapture(
       requestedAt: operation.requested_at,
       completedAt: operation.completed_at,
       outcome,
-      status: operation.http_status,
-      headers: parseStringRecord(operation.response_headers_json),
+      status: skipped ? null : operation.http_status,
+      headers: skipped ? {} : parseStringRecord(operation.response_headers_json),
       retryAfterMs: null,
-      diagnostic: null,
+      diagnostic: skipped ? unchangedImageSkipDiagnostic : null,
     }),
     capturedSnapshotStatement(database, {
       snapshotId: operation.source_snapshot_id,
@@ -676,7 +682,7 @@ export async function completeUploadedCapture(
       requestHeadersJson: operation.request_headers_json,
       representationFingerprint: sourceRequest.representation_fingerprint,
       responseVaryJson: operation.response_vary_json,
-      retrievedAt: operation.completed_at,
+      retrievedAt: skipped ? reusedSnapshot.retrieved_at : operation.completed_at,
       status: operation.http_status,
       responseHeadersJson: operation.response_headers_json,
       mediaType: operation.media_type,
@@ -1416,15 +1422,51 @@ async function findReusableSnapshot(
     adapterVersion: evidencePlan.adapter_version,
     representationFingerprint: request.representation_fingerprint,
   }).all<SnapshotRow>();
+  return priorSnapshots.results.find(representedVary) ?? null;
+}
+
+/** Incremental refresh (#389): a Printing Image request whose exact URL,
+ * adapter version and represented headers already have retained bytes from an
+ * earlier run reuses them as a no-change observation. No dispatch is reserved
+ * and no Official Source request is made, so it charges neither a dispatch nor
+ * bytes; the finalized attempt carries `unchangedImageSkipDiagnostic` so the
+ * skip is explicit in the run's receipts. Returns null when the request must
+ * be fetched. */
+export async function skipUnchangedImageCapture(
+  database: CatalogueStore,
+  run: IngestionEvidenceRow,
+  sourceRequest: EvidenceRequestRow,
+  prepared: Extract<PreparedCaptureAttempt, { kind: "attempt" }>,
+): Promise<CaptureTransportResult | null> {
+  if (sourceRequest.request_role !== "image" || !admitsCollectionWork(run)) return null;
+  const operation = await requiredCaptureOperation(database, prepared.attempt_id);
+  if (operation.state !== "planned" || operation.attempt_number !== 1) return null;
+  const evidencePlan = evidencePlanForRequest(run, sourceRequest.request_id);
+  const candidates = await unchangedImageSnapshotsStatement(database, {
+    runId: run.id,
+    sourceLineage: evidencePlan.source_lineage,
+    requestUrl: sourceRequest.url,
+    adapterVersion: evidencePlan.adapter_version,
+    representationFingerprint: sourceRequest.representation_fingerprint,
+  }).all<SnapshotRow>();
+  const prior = candidates.results.find(representedVary);
+  if (prior === undefined) return null;
+  const updated = await skippedCaptureStatement(database, {
+    completedAt: new Date().toISOString(),
+    diagnostic: unchangedImageSkipDiagnostic,
+    reusedSnapshotId: prior.id,
+    attemptId: operation.attempt_id,
+  }).run();
+  if (updated.meta.changes !== 1) return null;
+  return { kind: "uploaded", attempt_id: operation.attempt_id, request_made: false };
+}
+
+function representedVary(snapshot: SnapshotRow): boolean {
+  const vary: unknown = JSON.parse(snapshot.response_vary_json);
   return (
-    priorSnapshots.results.find((snapshot) => {
-      const vary: unknown = JSON.parse(snapshot.response_vary_json);
-      return (
-        Array.isArray(vary) &&
-        !vary.includes("*") &&
-        vary.every((name) => typeof name === "string" && representedRequestHeaders.has(name))
-      );
-    }) ?? null
+    Array.isArray(vary) &&
+    !vary.includes("*") &&
+    vary.every((name) => typeof name === "string" && representedRequestHeaders.has(name))
   );
 }
 
