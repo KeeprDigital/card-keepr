@@ -549,3 +549,14 @@ live acceptance under [#237](https://github.com/KeeprDigital/card-keepr/issues/2
 [#238](https://github.com/KeeprDigital/card-keepr/issues/238) owns continuation of
 that intent through fresh production guards; a short-lived staging plan cannot
 authorize a later production deployment.
+
+The owner's staging initiation is the single routine approval. A successful
+staging release promotes the same commit automatically, without a second owner
+confirmation ([lean scope](https://github.com/KeeprDigital/card-keepr/issues/238#issuecomment-5771506566)).
+The promotion credential is the production-environment OIDC identity of the
+staging workflow run that claimed the intent, so no new secret is needed.
+Production binds that run to its own claim, fetches the staging outcome itself,
+and verifies the commit's extended-scenarios run and CI. It rechecks the intent's
+target and schema level and resolves a fresh plan. The promotion record stands in
+for the owner's confirmation envelope, and the unchanged guarded executor deploys.
+Promotion is available code; workflow wiring and live evidence remain with #238.

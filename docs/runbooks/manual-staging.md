@@ -216,11 +216,12 @@ and outcome. Status returns exit 0 for a retrieved document, including `failed`;
 read its outcome state. Dispatch returns exit 10, which only acknowledges the
 request. No status code substitutes for a successful immutable outcome.
 
-#238 must bind continuation to the same intent/SHA, successful required staging
-evidence and a successful `extended-scenarios` record on that SHA, then acquire fresh production CI, state, recovery, target and
-lease guards. It must not reuse staging's expired preparation or ask for a routine
-second owner approval. The broader retained intent and the short deployment
-lease are separate authorities.
+Production continuation uses the
+[automatic promotion](production-release.md#automatic-promotion-from-staging)
+endpoint: the same intent/SHA, the successful staging outcome, a verified
+`extended-scenarios` record and fresh production guards, with no second owner
+approval. It never reuses staging's expired preparation. The broader retained
+intent and the short deployment lease are separate authorities.
 
 Keep #237 open until actual provisioning, first installation, owner initiation,
 successful exact-SHA staging validation and unchanged-production evidence are

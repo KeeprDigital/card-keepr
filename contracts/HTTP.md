@@ -127,7 +127,11 @@ uses mount-free, redacted route segments. Dev deployment retains its separate
 signed workflow identity and dev-only guard. Staging release authorization runs
 on production before selected code executes; deployment preparation and outcomes
 run only on staging. These platform endpoints authenticate the signed manual
-workflow separately from owner-key administration.
+workflow separately from owner-key administration. Automatic promotion
+(`POST /v1/production-promotions`, production only) accepts the same run's
+production-environment identity. Production forwards that identity to staging's
+read-only `POST /v1/staging-deployments/{release}/promotion-outcome`; see the
+[release procedure](../docs/runbooks/production-release.md#automatic-promotion-from-staging).
 
 ## Publication preparation and execution
 

@@ -280,6 +280,60 @@ After migration begins, a failure is recorded with
 roll back a Worker unless its compatibility with the migrated schema has been
 separately proven and recorded.
 
+## Automatic promotion from staging
+
+`POST /v1/production-promotions` (production only) turns a successful staging
+release into a Production Release plan for the same commit without a second
+owner confirmation. The caller is the `production`-environment job of the
+`staging-deploy.yml` run that claimed the owner's staging intent, with its OIDC
+token (audience `…/v1/production-promotions`) and a GitHub token that can read
+actions, checks and statuses. It is available code; no workflow calls it yet.
+
+Production then, in order:
+
+1. Matches the retained intent, digest, commit, actor and the claiming run.
+2. Refuses an expired intent.
+3. Fetches the outcome from staging's
+   `POST /v1/staging-deployments/{release}/promotion-outcome` by forwarding
+   that identity. The runner never supplies the outcome. The outcome must have
+   succeeded and carry production's own claim.
+4. Verifies the `extended-scenarios` evidence on the commit: the latest status,
+   written by `github-actions[bot]`, must name a completed successful
+   `extended-scenarios.yml` run (dispatch from `main` titled with the SHA, or a
+   `v*` tag push) or a `release-please.yml` push run on the SHA, and all three
+   scenario jobs must have succeeded. Any workflow token can post a status, so
+   the run is the evidence and the status only points to it.
+5. Verifies exact-commit CI.
+6. Checks that the target digest and schema level still equal the intent's
+   starting values, that no other release holds the lease, and that production
+   is idle with healthy recovery.
+7. Resolves a fresh plan with the owner resolver: current revision, Bootstrap
+   Mode or recovery evidence. It records the plan as
+   `promotion:<staging release>:<run>`, confirmed by the immutable
+   `production-promotion:<staging release>` record
+   (`confirmed_by: promotion:<release>/<run>`).
+
+The response returns the ordinary dispatch inputs for `production-release.yml`.
+`validate-dispatch` claims a `promotion:` plan only when that promotion record
+names the exact dispatch digest.
+
+**Failure and retry.** Each stop is a typed 4xx/5xx problem and is recorded as
+`production-promotion-stop:<release>:<run>:<code>`. A stop never blocks a retry:
+
+- `extended_scenarios_pending` or `staging_outcome_unavailable`: the same run may
+  retry once the evidence completes.
+- `promotion_target_changed`, `promotion_schema_changed`,
+  `promotion_intent_expired`, `staging_outcome_failed` or `_mismatch`,
+  `extended_scenarios_failed` or `_unverified`, and any substitution code need
+  a new staging intent. Fix the cause first.
+- `promotion_release_competing` or `promotion_production_not_idle`: wait for the
+  other operation to finish, then retry.
+
+Exact replay by the same run returns the original record, even if later evidence
+changed. Another run is refused with `promotion_run_mismatch`. If the executor
+refuses a recorded plan because production moved after promotion, start a new
+staging release. The CLI Production Release remains the manual path.
+
 ## Replacement-D1 handoff
 
 For a verified replacement recovery awaiting acceptance, add all three:
