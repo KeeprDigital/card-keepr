@@ -1,0 +1,56 @@
+{
+  "classification": "retained-source-evidence",
+  "issue": "https://github.com/KeeprDigital/card-keepr/issues/334",
+  "headerRepresentation": "All received header fields serialized by Python with LF; not wire framing. Entity bodies unchanged.",
+  "scope": "The two Limitless English One Piece index roots (Products and Promos) captured during the 15 September 2026 bounded read-only access assessment. Their tables name the 143 Products/Promos buckets whose pages are retained in the 2026-09-15-limitless and 2026-09-21-limitless-buckets packs.",
+  "captures": [
+    {
+      "id": "limitless-products-index",
+      "url": "https://onepiece.limitlesstcg.com/cards",
+      "method": "GET",
+      "attempt": 1,
+      "requestHeaders": {
+        "Host": "onepiece.limitlesstcg.com",
+        "User-agent": "CardKeepr bounded source-access assessment (read-only)",
+        "Accept": "text/html,text/plain;q=0.9",
+        "Accept-encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:19:12.546536+00:00",
+      "body": "raw/limitless-products-index.body",
+      "headers": "raw/limitless-products-index.headers",
+      "redirectsFollowed": false,
+      "status": 200,
+      "finalUrl": "https://onepiece.limitlesstcg.com/cards",
+      "contentType": "text/html",
+      "headersSha256": "2d36b302de9855120bb3baa2382d650e03381803c2e65f321986994cef7c0a86",
+      "bytes": 68896,
+      "sha256": "36ae3079f719f04ba43927833128b929a207fb465e0753f84206a2d23bff627b",
+      "completedAt": "2026-09-15T01:19:13.895040+00:00",
+      "truncated": false
+    },
+    {
+      "id": "limitless-promos-index",
+      "url": "https://onepiece.limitlesstcg.com/cards/promos",
+      "method": "GET",
+      "attempt": 1,
+      "requestHeaders": {
+        "Host": "onepiece.limitlesstcg.com",
+        "User-agent": "CardKeepr bounded source-access assessment (read-only)",
+        "Accept": "text/html,text/plain;q=0.9",
+        "Accept-encoding": "identity"
+      },
+      "startedAt": "2026-09-15T01:20:19.601020+00:00",
+      "body": "raw/limitless-promos-index.body",
+      "headers": "raw/limitless-promos-index.headers",
+      "redirectsFollowed": false,
+      "status": 200,
+      "finalUrl": "https://onepiece.limitlesstcg.com/cards/promos",
+      "contentType": "text/html",
+      "headersSha256": "3fa4747e14597d7ce9bac8de6b4318f8734d2070b641838864d509cd90d07028",
+      "bytes": 99156,
+      "sha256": "b8999162d6f327bd1a64c4384828a7157d024c037bed4e8e187562eb8e1cbf17",
+      "completedAt": "2026-09-15T01:20:20.743248+00:00",
+      "truncated": false
+    }
+  ]
+}

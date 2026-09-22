@@ -66,7 +66,12 @@ throughput, publication or recovery capacity, and it is not a claim that all
 Counts are source references, not unique Cards, Printings, issued physical
 inventory or image roles. Whether DON!! cards, tokens or art Cards appear in
 these buckets is not determined here; no bucket page carries the gameplay fields
-the adapter parses. No registered scope selects these buckets and the adapter
-parses only the five named Card pages, so this pack supports acquisition bounds
-and inventory, not normalization, admission or publication. The earlier
-five-page access findings remain bounded; nothing here extends them.
+the adapter parses, and every grid link is a numbered `/cards/NUMBER` page. The
+complete `limitless-one-piece-en@1` scope now discovers these buckets from the
+[retained index roots](../2026-09-15-limitless-index/README.md) and each bucket
+into its detail requests; 20 grid entries reference a Japanese-print front
+(`_JP.webp`), which the adapter retains as evidence without requesting an
+English Printing Image. This pack supports acquisition bounds, inventory and the
+discovery parser; normalization, admission and publication need the detail
+pages themselves. The earlier five-page access findings remain bounded; nothing
+here extends them.

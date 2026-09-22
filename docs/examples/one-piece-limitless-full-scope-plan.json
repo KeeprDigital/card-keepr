@@ -1,0 +1,21 @@
+{
+  "plans": [
+    {
+      "supported_game": "one-piece",
+      "source_lineage": "limitless-one-piece-en",
+      "adapter_version": "limitless-one-piece-en@1",
+      "subset": "complete",
+      "participation": "required",
+      "requests": [
+        {
+          "id": "limitless-one-piece-en:products-index",
+          "url": "https://onepiece.limitlesstcg.com/cards"
+        },
+        {
+          "id": "limitless-one-piece-en:promos-index",
+          "url": "https://onepiece.limitlesstcg.com/cards/promos"
+        }
+      ]
+    }
+  ]
+}
