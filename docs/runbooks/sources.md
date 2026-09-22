@@ -143,6 +143,17 @@ acquisition scope before using the networked plan; source selection alone does n
 permit a full crawl. An owner may link the evidenced overlap, while the promo
 records remain proposals until qualification supplies complete intake. Riot's
 Source Authority is unchanged.
+The [census plan](../examples/riftbound-db-census-plan.json) selects the
+`set-census` scope: the facets, page 1 of every set bucket they list in the
+site's own set-traversal query (`set`, `page`, `pageSize=80`), every page each
+bucket's total implies, and the original front of every record hosted on
+OpenRift, under a 2,500-request capacity. Fronts on Riot's CDN are not fetched;
+their locators stay in the record. A later page whose total differs from its
+page 1, or any page without its implied row count, fails the parse; retry the
+run rather than resuming a changed bucket. Every record becomes a source-record
+Entity Proposal for owner review, and Eclipse Herald keeps its pilot overlap while
+it fits. The retained robots file disallows `/api/`; record the owner's access
+decision on the Riftbound issue before a live census.
 
 The Piltover Archive [pilot plan](../examples/piltover-archive-pilot-plan.json)
 selects the first public gallery page and the front art of its two pinned rows

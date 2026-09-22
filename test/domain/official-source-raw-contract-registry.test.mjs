@@ -412,7 +412,7 @@ function isAdministrationProblem(code) {
 
 const expectedRequestCapacities = {
   "limitless-one-piece-en@1": 9_559,
-  "riftbound-db-en@1": 7,
+  "riftbound-db-en@1": 2_500,
   "piltover-archive-en@1": 1_400,
   "hexdeck-en@1": 1_100,
   "riftbound-en@1": 5000,

@@ -235,6 +235,16 @@ The real duplicate Bird observations retain both evidence references without
 creating two proposals. Selection and the bounded query/facet check do not
 establish full-source completeness or change Riot's authority.
 [Riftbound DB pilot](https://github.com/KeeprDigital/card-keepr/issues/331).
+Its separate `set-census` scope reads the facets and follows every set bucket
+they list in the site's own set-traversal query, checking each later page
+against its bucket's retained page 1 and its own row count and failing closed on
+drift. Every record is retained as a source-record Entity Proposal; there is no
+qualified rule from Riftbound DB identifiers, display codes or wording to Riot
+identities, so nothing is linked without owner review. Only original fronts on
+OpenRift are acquired: fronts on Riot's CDN are the Riot lineage's own publisher
+assets, not independent evidence. The census is the API's inventory, not proof
+of English print or physical issuance.
+[Riftbound launch inventory](https://github.com/KeeprDigital/card-keepr/issues/333).
 
 Piltover Archive's bounded English pilot reads the public gallery render (one
 page and two pinned rows) as a supplementary Source under an Acquisition Budget.
