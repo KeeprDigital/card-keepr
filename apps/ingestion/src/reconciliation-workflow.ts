@@ -73,7 +73,9 @@ export async function runReconciliationWorkflow(
     const root = event.payload.shard.root;
     await step.do(workflowSteps.reconciliation.notifyRoot, reconciliationStep, async () => {
       const binding = root.binding === "collection" ? env.EVIDENCE_INGESTION_WORKFLOW : env.RECONCILIATION_WORKFLOW;
-      await (await binding.get(root.id)).sendEvent({
+      await (
+        await binding.get(root.id)
+      ).sendEvent({
         type: "reconciliation-terminal",
         payload: reconciliationResultJson,
       });
@@ -107,14 +109,8 @@ export async function runReconciliationWorkUnits(
       return JSON.stringify(state);
     }),
   ) as Awaited<ReturnType<typeof reconciliationDispatchState>>;
-  if (state.terminal)
-    return durableReconciliationResult(params.ingestion_run_id, state.terminal, params.preparation_id);
-  if (state.operation?.state === "sealed" && state.operation.candidate_digest)
-    return durableReconciliationResult(
-      params.ingestion_run_id,
-      { candidate_digest: state.operation.candidate_digest },
-      params.preparation_id,
-    );
+  const settled = settledReconciliationResult(params, state);
+  if (settled) return settled;
   if (
     state.successor &&
     state.operation?.state === "preparing" &&
@@ -136,6 +132,14 @@ export async function runReconciliationWorkUnits(
       async (context) => {
         if (!Number.isInteger(context.attempt) || context.attempt < 1 || context.attempt > 4)
           throw new Error("Invalid reconciliation attempt count.");
+        // A lost response may hide a committed seal or terminal outcome; the writer fence would reject every retry.
+        if (context.attempt > 1) {
+          const settled = settledReconciliationResult(
+            params,
+            await reconciliationDispatchState(catalogueStore(env.CATALOGUE_DB), params),
+          );
+          if (settled) return settled;
+        }
         const reservedCalls = await reserveReconciliationWorkAttempt(catalogueStore(env.CATALOGUE_DB), params);
         if (reservedCalls === null) return JSON.stringify({ dispatch_required: true });
         const result = await reconcileRetainedCardPrintingEvidence(
@@ -196,6 +200,21 @@ async function finishShard(step: WorkflowStep, params: ReconciliationWorkflowPar
     ),
   });
   return terminal.payload;
+}
+
+function settledReconciliationResult(
+  params: ReconciliationWorkflowParams,
+  state: Awaited<ReturnType<typeof reconciliationDispatchState>>,
+) {
+  if (state.terminal)
+    return durableReconciliationResult(params.ingestion_run_id, state.terminal, params.preparation_id);
+  if (state.operation?.state === "sealed" && state.operation.candidate_digest)
+    return durableReconciliationResult(
+      params.ingestion_run_id,
+      { candidate_digest: state.operation.candidate_digest },
+      params.preparation_id,
+    );
+  return null;
 }
 
 export function durableReconciliationResult(
