@@ -58,6 +58,7 @@
       "acceptance/product-catalogue.test.mjs",
       "acceptance/production-release-smoke.test.mjs",
       "acceptance/publication-preparation.test.mjs",
+      "acceptance/release-run-cli.test.mjs",
       "acceptance/retained-run-owner-http.test.mjs",
       "acceptance/riftbound-bounded-intake.test.mjs",
       "acceptance/riftbound-catalogue.test.mjs",
@@ -97,6 +98,7 @@
       "apps/api/test/health.spec.ts",
       "apps/api/test/runtime.spec.ts",
       "apps/ingestion/test/runtime-health.spec.ts",
+      "cli/release-run.mjs",
       "scripts/production-smoke.mjs"
     ]
   },
@@ -117,6 +119,7 @@
       "apps/api/test/health.spec.ts",
       "apps/api/test/runtime.spec.ts",
       "apps/ingestion/test/runtime-health.spec.ts",
+      "cli/release-run.mjs",
       "scripts/production-smoke.mjs"
     ]
   },
@@ -1752,6 +1755,7 @@
       "acceptance/composition-smoke-targets.test.mjs",
       "acceptance/helpers/native-fresh-baseline.mjs",
       "acceptance/production-release-cli.test.mjs",
+      "acceptance/release-run-cli.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
       "apps/api/test/documentation.spec.ts",
       "apps/ingestion/test/documentation.spec.ts",
@@ -2301,6 +2305,7 @@
     "callers": [
       "acceptance/composition-smoke-targets.test.mjs",
       "acceptance/helpers/native-fresh-baseline.mjs",
+      "acceptance/release-run-cli.test.mjs",
       "acceptance/staging-release-cli.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
       "apps/ingestion/test/staging-release-http.spec.ts",
@@ -2342,6 +2347,7 @@
       "acceptance/maintenance-owner-http.test.mjs",
       "acceptance/operational-diagnostics-leak.test.mjs",
       "acceptance/production-release-cli.test.mjs",
+      "acceptance/release-run-cli.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
       "apps/ingestion/test/lifecycle.spec.ts",
       "apps/ingestion/test/production-release-bootstrap.spec.ts",
@@ -2428,6 +2434,7 @@
       "acceptance/product-catalogue.test.mjs",
       "acceptance/production-release-smoke.test.mjs",
       "acceptance/publication-preparation.test.mjs",
+      "acceptance/release-run-cli.test.mjs",
       "acceptance/retained-run-owner-http.test.mjs",
       "acceptance/riftbound-bounded-intake.test.mjs",
       "acceptance/riftbound-catalogue.test.mjs",
@@ -2467,6 +2474,7 @@
       "apps/api/test/health.spec.ts",
       "apps/api/test/runtime.spec.ts",
       "apps/ingestion/test/runtime-health.spec.ts",
+      "cli/release-run.mjs",
       "scripts/production-smoke.mjs"
     ]
   },
@@ -2487,6 +2495,7 @@
       "apps/api/test/health.spec.ts",
       "apps/api/test/runtime.spec.ts",
       "apps/ingestion/test/runtime-health.spec.ts",
+      "cli/release-run.mjs",
       "scripts/production-smoke.mjs"
     ]
   },
