@@ -52,12 +52,29 @@ owner admission or linking; the serial Luffy appearance needs its own reviewed
 supplementary-only admission. These named scopes do not select the full Products
 and Promos indexes or establish token/art Card coverage.
 
-The retained [Limitless bucket census](../../acceptance/fixtures/real-sources/2026-09-21-limitless-buckets/README.md)
-holds every Products and Promos bucket page, including Prize Cards and Misc.
-Promos. The registration's finite capacity is that dated envelope of index roots,
-buckets, unique grid detail pages and unique referenced fronts. No registered
-scope yet selects those buckets; the adapter parses only the named Card pages,
-so the census establishes acquisition bounds and inventory, not publication.
+The [Limitless full-scope plan](../examples/one-piece-limitless-full-scope-plan.json)
+selects the complete declared English Limitless coverage: the two retained
+[index roots](../../acceptance/fixtures/real-sources/2026-09-15-limitless-index/README.md),
+every Products and Promos bucket they list (including Prize Cards and Misc.
+Promos, see the [bucket census](../../acceptance/fixtures/real-sources/2026-09-21-limitless-buckets/README.md)),
+every linked card detail and `?v=N` variant page and every referenced English
+front. Index roots and buckets are discovery roles that yield only Source
+Requests; any card page parses into one observation through the same selectors
+the pilot proved. A grid entry whose only front is the Japanese print is retained
+as evidence without an English image request. The registration's finite capacity
+is the dated census envelope (9,559). The plan is Limitless-only and supplementary:
+Bandai keeps every authority area, each new Card or Printing remains an Entity
+Proposal until the owner admits it, and a run without the selected card-facts
+authority cannot prepare a One Piece candidate. The
+[composed full-scope plan](../examples/one-piece-full-scope-plan.json) pairs
+Bandai's complete discovery with the same Limitless roots in one Ingestion Run so
+the whole-game candidate can reconcile; Bandai's requests count against its own
+registered capacity. Acquire either scope in budgeted tranches:
+size `max_dispatches` for the roots, buckets and the pages plus fronts you intend
+to reach, let the run pause on `source_acquisition_budget_exhausted`, inspect the
+receipt, then extend the budget and resume. Collection must reach every discovered
+request before the scope can reconcile or publish; a paused tranche is retained
+evidence, not coverage. The pilot subsets keep their own request identities.
 
 The Pokémon [Card and Product plan](../examples/pokemon-card-product-plan.json)
 checks the complete detailed treatment inventories of TCGdex Snorlax `svp-051`

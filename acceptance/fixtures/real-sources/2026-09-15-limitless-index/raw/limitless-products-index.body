@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en" >
+
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Card Database – Limitless One Piece</title>
+    <meta name="description" content="A One Piece card database with advanced search features and up-to-date pricing data.">
+
+            <meta property="og:title" content="Card Database – Limitless One Piece">
+        <meta property="og:description" content="A One Piece card database with advanced search features and up-to-date pricing data.">
+        <meta property="og:image" content="https://onepiece.limitlesstcg.com/images/limitlessopcg.png">
+        <meta property="og:type" content="website">
+        <meta property="og:site_name" content="Limitless TCG">
+    
+            <meta name="twitter:card" content="summary">
+        <meta name="twitter:site" content="@LimitlessOPCG">
+        <meta name="twitter:title" content="Card Database – Limitless One Piece">
+        <meta name="twitter:description" content="A One Piece card database with advanced search features and up-to-date pricing data.">
+        <meta name="twitter:image" content="https://onepiece.limitlesstcg.com/images/limitlessopcg.png">
+    
+    <link rel="manifest" href="/app.webmanifest">
+
+            <!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-JEXRLS78TW"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-JEXRLS78TW');
+</script>    
+            <script data-cfasync="false">
+    window.ramp = window.ramp || {};
+    window.ramp.que = window.ramp.que || [];
+</script>
+
+<style>
+#pw-oop-bottom_rail, div[data-gg-moat] {
+    z-index: 10 !important;
+}
+
+.top_ad {
+    min-width: 320px;
+    min-height: 50px;
+    position: relative;
+}
+
+.bottom_ad {
+    min-height: 50px;
+}
+
+@media (min-width: 768px) {
+    .top_ad {
+        min-width: 728px;
+        min-height: 90px;
+    }
+}
+
+.top_ad .ads-notice {
+    width: 100%;
+    height: 100%;
+    background-color: var(--bg-color-two);
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: -1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+</style>    
+    <link rel="preload" as="style" href="https://onepiece.limitlesstcg.com/build/assets/main-e98f9745.css" /><link rel="modulepreload" href="https://onepiece.limitlesstcg.com/build/assets/main-0198dafa.js" /><link rel="modulepreload" href="https://onepiece.limitlesstcg.com/build/assets/dom-7f7df130.js" /><link rel="modulepreload" href="https://onepiece.limitlesstcg.com/build/assets/fetch-a833fccf.js" /><link rel="modulepreload" href="https://onepiece.limitlesstcg.com/build/assets/limitless-79f393e8.js" /><link rel="modulepreload" href="https://onepiece.limitlesstcg.com/build/assets/ws-search-21f06e8f.js" /><link rel="modulepreload" href="https://onepiece.limitlesstcg.com/build/assets/suggest-4ff36e79.js" /><link rel="stylesheet" href="https://onepiece.limitlesstcg.com/build/assets/main-e98f9745.css" /><script type="module" src="https://onepiece.limitlesstcg.com/build/assets/main-0198dafa.js"></script>
+            <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400..700&family=Open+Sans+Condensed:wght@700&display=swap">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400..700&family=Open+Sans+Condensed:wght@700&display=swap">
+        <link rel="stylesheet" href="/inc/fontawesome/css/all.min.css?v=5.11.2">
+    
+        
+    <script>var LS_SEARCH_RESULTS = '~ search results', LS_NO_SEARCH_RESULTS = 'no search results found';</script>
+    <script>var LMT_RNT = false;</script>
+</head>
+
+<body>
+    <header>
+    <div class="header-top" data-mini-bar>
+        <div class="container top">
+            <div class="flex gap-4 items-center">
+                
+                <div class="site-news"> Latest Updates:
+                                            <a href="/cards/op17-the-worlds-strongest-warriors">OP17</a>                                      </div>
+            </div>
+
+            <div class="site-settings">
+                <select class="language-switch" data-site-language>
+                    <option value="en_US"  selected >English</option>
+                    <option value="jp_JP" >日本語</option>
+                </select>
+                <button class="darkmode-toggle" aria-label="darkmode toggle" data-site-theme data-tooltip="Toggle Darkmode">
+                    <i class="fas fa-lg fa-moon" data-icon></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container header">
+        <a class="site-logo" href="/">
+            <img src="/images/limitless.png" alt="Limitless">
+        </a>
+
+                <form class="site-search" method="get" action="/" data-lang="en">
+            <div class="category-label">
+                <span class="selected-category">Cards</span>
+                <i class="fas fa-sm fa-caret-down"></i>
+            </div>
+
+            <select name="type" class="category-select">
+                <option value="cards"  selected >Cards</option>
+                <option value="tournaments" >Tournaments</option>
+                <option value="decks" >Decks</option>
+                <option value="players" >Players</option>
+            </select>
+
+            <input type="text" name="q" placeholder="Search database" autocomplete="off" autocapitalize="off"
+                autocorrect="off" >
+
+            <button type="submit" aria-label="submit search">
+                <i class="fas fa-lg fa-search"></i>
+            </button>
+
+            <div class="search-suggestions" data-suggestions>
+                <span class="suggestions-message" data-message></span>
+                <div class="suggestions-list" data-options>
+                </div>
+            </div>
+        </form>
+
+        <nav class="site-nav resp-nav" data-site-nav>
+            <button class="nav-toggle">
+                <i data-open class="fas fa-lg fa-bars"></i>
+                <i data-close class="fas fa-lg fa-times" style="display: none"></i>
+            </button>
+
+            <ul class="links">
+                
+                <li><a href="/tournaments">Tournaments</a></li>
+                <li><a href="/decks">Decks</a></li>
+                <li><a href="/cards">Cards</a></li>
+                <li class="sub-category">
+                    <a href="/tools">Tools</a>
+                    <ul class="sub-menu shift">
+                        <li><a href="/tools/imggen">Image Generator</a></li>
+                        <li><a href="/tools/proxies">Proxy Printer</a></li>
+                        <li><a href="/tools/swisscalc">Swiss Calculator</a></li>
+                        <li><a href="https://my.limitlesstcg.com/builder?game=OP">Deck Builder (Beta)</a></li>
+                        <li><a href="/tools/mfy">Metafy Hub</a></li>
+                    </ul>
+                </li>
+                <li class="sub-category more">
+                    <a class="expand">More</a>
+                    <ul class="sub-menu shift">
+                        <li><a href="/players">Rankings</a></li>
+                        <li><a href="https://play.limitlesstcg.com">Play</a></li>
+                    </ul>
+                </li>
+            </ul>
+        </nav>
+    </div>
+</header>
+    <div class="before-content">
+<div class="container secondary-menu">
+    <ul class="nav">
+        <li class="active"><a href="/cards">Products</a></li>
+        <li class=""><a href="/cards/promos">Promos</a></li>
+        <li class=""><a href="/cards/advanced">Advanced Search</a></li>
+    </ul>
+</div>
+
+</div>
+
+            <div id="top_lb_placeholder" class="container dont-print top_ad">
+            <div class="ads-notice">This website is supported by ads.</div>
+        </div>
+    
+    <main>
+        <div class="container content">
+<table class="data-table sets-table striped">
+    <tr>
+        <th>Code</th>
+        <th>Name</th>
+        <th>Release Date</th>
+        <th class="md-only">Cards</th>
+        <th class="lg-only">USD</th>
+        <th class="lg-only">EUR</th>
+    </tr>
+                    <tr>
+            <th class="sub-heading" colspan=6>Booster Packs</th>
+        </tr>
+                                            <tr>
+                    <td><a href="/cards/op17-the-worlds-strongest-warriors">OP17</a></td>
+                    <td><a href="/cards/op17-the-worlds-strongest-warriors">The World&#039;s Strongest Warriors</a></td>
+                    <td><a href="/cards/op17-the-worlds-strongest-warriors">28 Aug 26</a></td>
+                    <td class="md-only"><a href="/cards/op17-the-worlds-strongest-warriors">168 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">5.36%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$10,390.44</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">32,018.37€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/op16-the-time-of-battle">OP16</a></td>
+                    <td><a href="/cards/op16-the-time-of-battle">The Time of Battle</a></td>
+                    <td><a href="/cards/op16-the-time-of-battle">12 Jun 26</a></td>
+                    <td class="md-only"><a href="/cards/op16-the-time-of-battle">155 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">70.32%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$4,902.23</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">3,770.57€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/op15-adventure-on-kamis-island">OP15</a></td>
+                    <td><a href="/cards/op15-adventure-on-kamis-island">Adventure on Kami&#039;s Island</a></td>
+                    <td><a href="/cards/op15-adventure-on-kamis-island">03 Apr 26</a></td>
+                    <td class="md-only"><a href="/cards/op15-adventure-on-kamis-island">196 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">50.00%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$5,600.74</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">4,654.36€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/eb03-one-piece-heroines-edition">EB03</a></td>
+                    <td><a href="/cards/eb03-one-piece-heroines-edition">One Piece Heroines Edition</a></td>
+                    <td><a href="/cards/eb03-one-piece-heroines-edition">20 Feb 26</a></td>
+                    <td class="md-only"><a href="/cards/eb03-one-piece-heroines-edition">90 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">36.67%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$7,230.98</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">7,933.83€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/op14-the-azure-seas-seven">OP14</a></td>
+                    <td><a href="/cards/op14-the-azure-seas-seven">The Azure Sea&#039;s Seven</a></td>
+                    <td><a href="/cards/op14-the-azure-seas-seven">16 Jan 26</a></td>
+                    <td class="md-only"><a href="/cards/op14-the-azure-seas-seven">199 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">60.80%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$6,526.43</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">5,702.40€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/op13-carrying-on-his-will">OP13</a></td>
+                    <td><a href="/cards/op13-carrying-on-his-will">Carrying on His Will</a></td>
+                    <td><a href="/cards/op13-carrying-on-his-will">07 Nov 25</a></td>
+                    <td class="md-only"><a href="/cards/op13-carrying-on-his-will">175 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">60.57%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$40,149.12</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">50,616.53€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/prb02-one-piece-card-the-best-vol2">PRB02</a></td>
+                    <td><a href="/cards/prb02-one-piece-card-the-best-vol2">One Piece Card The Best Vol.2</a></td>
+                    <td><a href="/cards/prb02-one-piece-card-the-best-vol2">03 Oct 25</a></td>
+                    <td class="md-only"><a href="/cards/prb02-one-piece-card-the-best-vol2">316 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">91.14%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$6,421.71</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">4,926.20€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/op12-legacy-of-the-master">OP12</a></td>
+                    <td><a href="/cards/op12-legacy-of-the-master">Legacy of the Master</a></td>
+                    <td><a href="/cards/op12-legacy-of-the-master">22 Aug 25</a></td>
+                    <td class="md-only"><a href="/cards/op12-legacy-of-the-master">155 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">70.97%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$5,241.90</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">4,608.06€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/op11-a-fist-of-divine-speed">OP11</a></td>
+                    <td><a href="/cards/op11-a-fist-of-divine-speed">A Fist of Divine Speed</a></td>
+                    <td><a href="/cards/op11-a-fist-of-divine-speed">06 Jun 25</a></td>
+                    <td class="md-only"><a href="/cards/op11-a-fist-of-divine-speed">156 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">59.62%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$21,927.04</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">20,810.27€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/eb02-anime-25th-collection">EB02</a></td>
+                    <td><a href="/cards/eb02-anime-25th-collection">Anime 25th Collection</a></td>
+                    <td><a href="/cards/eb02-anime-25th-collection">09 May 25</a></td>
+                    <td class="md-only"><a href="/cards/eb02-anime-25th-collection">105 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">56.19%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$39,555.29</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">30,297.44€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/op10-royal-blood">OP10</a></td>
+                    <td><a href="/cards/op10-royal-blood">Royal Blood</a></td>
+                    <td><a href="/cards/op10-royal-blood">21 Mar 25</a></td>
+                    <td class="md-only"><a href="/cards/op10-royal-blood">151 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">68.21%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$1,947.11</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">1,549.77€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/op09-emperors-in-the-new-world">OP09</a></td>
+                    <td><a href="/cards/op09-emperors-in-the-new-world">Emperors in the New World</a></td>
+                    <td><a href="/cards/op09-emperors-in-the-new-world">13 Dec 24</a></td>
+                    <td class="md-only"><a href="/cards/op09-emperors-in-the-new-world">159 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">73.58%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$18,320.24</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">23,118.14€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/prb01-premium-booster-one-piece-the-best">PRB01</a></td>
+                    <td><a href="/cards/prb01-premium-booster-one-piece-the-best">One Piece The Best</a></td>
+                    <td><a href="/cards/prb01-premium-booster-one-piece-the-best">08 Nov 24</a></td>
+                    <td class="md-only"><a href="/cards/prb01-premium-booster-one-piece-the-best">319 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">98.12%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$4,627.06</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">4,509.73€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/op08-two-legends">OP08</a></td>
+                    <td><a href="/cards/op08-two-legends">Two Legends</a></td>
+                    <td><a href="/cards/op08-two-legends">13 Sep 24</a></td>
+                    <td class="md-only"><a href="/cards/op08-two-legends">151 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">49.01%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$1,991.93</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">1,579.34€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/op07-500-years-in-the-future">OP07</a></td>
+                    <td><a href="/cards/op07-500-years-in-the-future">500 Years in the Future</a></td>
+                    <td><a href="/cards/op07-500-years-in-the-future">28 Jun 24</a></td>
+                    <td class="md-only"><a href="/cards/op07-500-years-in-the-future">151 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">63.58%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$3,557.66</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">2,785.60€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/eb01-memorial-collection">EB01</a></td>
+                    <td><a href="/cards/eb01-memorial-collection">Memorial Collection</a></td>
+                    <td><a href="/cards/eb01-memorial-collection">03 May 24</a></td>
+                    <td class="md-only"><a href="/cards/eb01-memorial-collection">80 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">65.00%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$4,183.97</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">3,695.89€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/op06-wings-of-the-captain">OP06</a></td>
+                    <td><a href="/cards/op06-wings-of-the-captain">Wings of the Captain</a></td>
+                    <td><a href="/cards/op06-wings-of-the-captain">15 Mar 24</a></td>
+                    <td class="md-only"><a href="/cards/op06-wings-of-the-captain">151 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">63.58%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$4,188.09</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">4,632.00€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/op05-awakening-of-the-new-era">OP05</a></td>
+                    <td><a href="/cards/op05-awakening-of-the-new-era">Awakening of the New Era</a></td>
+                    <td><a href="/cards/op05-awakening-of-the-new-era">08 Dec 23</a></td>
+                    <td class="md-only"><a href="/cards/op05-awakening-of-the-new-era">154 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">65.58%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$15,250.97</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">23,707.02€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/op04-kingdoms-of-intrigue">OP04</a></td>
+                    <td><a href="/cards/op04-kingdoms-of-intrigue">Kingdoms of Intrigue</a></td>
+                    <td><a href="/cards/op04-kingdoms-of-intrigue">22 Sep 23</a></td>
+                    <td class="md-only"><a href="/cards/op04-kingdoms-of-intrigue">149 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">61.74%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$2,880.76</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">3,092.11€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/op03-pillars-of-strength">OP03</a></td>
+                    <td><a href="/cards/op03-pillars-of-strength">Pillars of Strength</a></td>
+                    <td><a href="/cards/op03-pillars-of-strength">30 Jun 23</a></td>
+                    <td class="md-only"><a href="/cards/op03-pillars-of-strength">154 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">74.68%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$2,309.44</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">2,207.70€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/op02-paramount-war">OP02</a></td>
+                    <td><a href="/cards/op02-paramount-war">Paramount War</a></td>
+                    <td><a href="/cards/op02-paramount-war">10 Mar 23</a></td>
+                    <td class="md-only"><a href="/cards/op02-paramount-war">154 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">79.22%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$3,151.96</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">2,780.13€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/op01-romance-dawn">OP01</a></td>
+                    <td><a href="/cards/op01-romance-dawn">Romance Dawn</a></td>
+                    <td><a href="/cards/op01-romance-dawn">02 Dec 22</a></td>
+                    <td class="md-only"><a href="/cards/op01-romance-dawn">154 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">72.08%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$8,512.78</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">8,696.18€</a></td>
+                </tr>
+                                        <tr>
+            <th class="sub-heading" colspan=6>Starter Decks</th>
+        </tr>
+                                            <tr>
+                    <td><a href="/cards/st36-yellow-eustass-captain-kid">ST36</a></td>
+                    <td><a href="/cards/st36-yellow-eustass-captain-kid">YELLOW Eustass&quot;Captain&quot;Kid</a></td>
+                    <td><a href="/cards/st36-yellow-eustass-captain-kid">31 Jul 26</a></td>
+                    <td class="md-only"><a href="/cards/st36-yellow-eustass-captain-kid">6 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">16.67%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$8.34</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">5.53€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st35-red-black-sabo">ST35</a></td>
+                    <td><a href="/cards/st35-red-black-sabo">RED/BLACK Sabo</a></td>
+                    <td><a href="/cards/st35-red-black-sabo">31 Jul 26</a></td>
+                    <td class="md-only"><a href="/cards/st35-red-black-sabo">6 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">16.67%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$5.52</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">4.45€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st34-purple-charlotte-katakuri">ST34</a></td>
+                    <td><a href="/cards/st34-purple-charlotte-katakuri">PURPLE Charlotte Katakuri</a></td>
+                    <td><a href="/cards/st34-purple-charlotte-katakuri">31 Jul 26</a></td>
+                    <td class="md-only"><a href="/cards/st34-purple-charlotte-katakuri">6 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">16.67%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$14.08</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">9.94€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st33-blue-kuzan">ST33</a></td>
+                    <td><a href="/cards/st33-blue-kuzan">BLUE Kuzan</a></td>
+                    <td><a href="/cards/st33-blue-kuzan">31 Jul 26</a></td>
+                    <td class="md-only"><a href="/cards/st33-blue-kuzan">6 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">16.67%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$7.42</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">6.34€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st32-green-roronoa-zoro">ST32</a></td>
+                    <td><a href="/cards/st32-green-roronoa-zoro">GREEN Roronoa Zoro</a></td>
+                    <td><a href="/cards/st32-green-roronoa-zoro">31 Jul 26</a></td>
+                    <td class="md-only"><a href="/cards/st32-green-roronoa-zoro">6 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">16.67%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$14.43</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">9.30€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st31-red-monkey-d-luffy">ST31</a></td>
+                    <td><a href="/cards/st31-red-monkey-d-luffy">RED Monkey.D.Luffy</a></td>
+                    <td><a href="/cards/st31-red-monkey-d-luffy">31 Jul 26</a></td>
+                    <td class="md-only"><a href="/cards/st31-red-monkey-d-luffy">6 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">16.67%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$17.02</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">8.73€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st30-ex-luffy-ace">ST30</a></td>
+                    <td><a href="/cards/st30-ex-luffy-ace">EX Luffy &amp; Ace</a></td>
+                    <td><a href="/cards/st30-ex-luffy-ace">12 Jun 26</a></td>
+                    <td class="md-only"><a href="/cards/st30-ex-luffy-ace">34 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">47.06%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$111.75</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">124.88€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st29-egghead">ST29</a></td>
+                    <td><a href="/cards/st29-egghead">Egghead</a></td>
+                    <td><a href="/cards/st29-egghead">16 Jan 26</a></td>
+                    <td class="md-only"><a href="/cards/st29-egghead">31 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">38.71%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$125.42</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">86.32€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st22-ace-newgate">ST22</a></td>
+                    <td><a href="/cards/st22-ace-newgate">Ace &amp; Newgate</a></td>
+                    <td><a href="/cards/st22-ace-newgate">05 Sep 25</a></td>
+                    <td class="md-only"><a href="/cards/st22-ace-newgate">31 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">64.52%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$49.59</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">53.53€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st28-green-yellow-yamato">ST28</a></td>
+                    <td><a href="/cards/st28-green-yellow-yamato">GREEN/YELLOW Yamato</a></td>
+                    <td><a href="/cards/st28-green-yellow-yamato">06 Jun 25</a></td>
+                    <td class="md-only"><a href="/cards/st28-green-yellow-yamato">15 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">86.67%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$5.02</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">3.97€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st27-black-marshall-d-teach">ST27</a></td>
+                    <td><a href="/cards/st27-black-marshall-d-teach">BLACK Marshall.D.Teach</a></td>
+                    <td><a href="/cards/st27-black-marshall-d-teach">06 Jun 25</a></td>
+                    <td class="md-only"><a href="/cards/st27-black-marshall-d-teach">15 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">86.67%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$2.62</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">3.73€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st26-purple-black-monkey-d-luffy">ST26</a></td>
+                    <td><a href="/cards/st26-purple-black-monkey-d-luffy">PURPLE/BLACK Monkey.D.Luffy</a></td>
+                    <td><a href="/cards/st26-purple-black-monkey-d-luffy">06 Jun 25</a></td>
+                    <td class="md-only"><a href="/cards/st26-purple-black-monkey-d-luffy">15 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">73.33%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$12.03</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">8.86€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st25-blue-buggy">ST25</a></td>
+                    <td><a href="/cards/st25-blue-buggy">BLUE Buggy</a></td>
+                    <td><a href="/cards/st25-blue-buggy">06 Jun 25</a></td>
+                    <td class="md-only"><a href="/cards/st25-blue-buggy">15 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">93.33%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$4.38</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">3.73€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st24-green-jewelry-bonney">ST24</a></td>
+                    <td><a href="/cards/st24-green-jewelry-bonney">GREEN Jewelry Bonney</a></td>
+                    <td><a href="/cards/st24-green-jewelry-bonney">06 Jun 25</a></td>
+                    <td class="md-only"><a href="/cards/st24-green-jewelry-bonney">15 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">86.67%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$6.70</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">5.77€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st23-red-shanks">ST23</a></td>
+                    <td><a href="/cards/st23-red-shanks">RED Shanks</a></td>
+                    <td><a href="/cards/st23-red-shanks">06 Jun 25</a></td>
+                    <td class="md-only"><a href="/cards/st23-red-shanks">15 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">53.33%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$16.90</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">13.01€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st21-ex-gear-5">ST21</a></td>
+                    <td><a href="/cards/st21-ex-gear-5">EX Gear 5</a></td>
+                    <td><a href="/cards/st21-ex-gear-5">14 Mar 25</a></td>
+                    <td class="md-only"><a href="/cards/st21-ex-gear-5">32 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">34.38%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$255.33</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">179.44€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st20-yellow-charlotte-katakuri">ST20</a></td>
+                    <td><a href="/cards/st20-yellow-charlotte-katakuri">YELLOW Charlotte Katakuri</a></td>
+                    <td><a href="/cards/st20-yellow-charlotte-katakuri">25 Oct 24</a></td>
+                    <td class="md-only"><a href="/cards/st20-yellow-charlotte-katakuri">15 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">80.00%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$5.96</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">3.52€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st19-black-smoker">ST19</a></td>
+                    <td><a href="/cards/st19-black-smoker">BLACK Smoker</a></td>
+                    <td><a href="/cards/st19-black-smoker">25 Oct 24</a></td>
+                    <td class="md-only"><a href="/cards/st19-black-smoker">15 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">80.00%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$4.41</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">2.20€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st18-purple-monkey-d-luffy">ST18</a></td>
+                    <td><a href="/cards/st18-purple-monkey-d-luffy">PURPLE Monkey.D.Luffy</a></td>
+                    <td><a href="/cards/st18-purple-monkey-d-luffy">25 Oct 24</a></td>
+                    <td class="md-only"><a href="/cards/st18-purple-monkey-d-luffy">15 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">86.67%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$13.59</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">8.81€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st17-blue-donquixote-doflamingo">ST17</a></td>
+                    <td><a href="/cards/st17-blue-donquixote-doflamingo">BLUE Donquixote Doflamingo</a></td>
+                    <td><a href="/cards/st17-blue-donquixote-doflamingo">25 Oct 24</a></td>
+                    <td class="md-only"><a href="/cards/st17-blue-donquixote-doflamingo">15 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">86.67%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$11.26</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">8.24€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st16-green-uta">ST16</a></td>
+                    <td><a href="/cards/st16-green-uta">GREEN Uta</a></td>
+                    <td><a href="/cards/st16-green-uta">25 Oct 24</a></td>
+                    <td class="md-only"><a href="/cards/st16-green-uta">15 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">66.67%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$8.73</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">4.91€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st15-red-edward-newgate">ST15</a></td>
+                    <td><a href="/cards/st15-red-edward-newgate">RED Edward.Newgate</a></td>
+                    <td><a href="/cards/st15-red-edward-newgate">25 Oct 24</a></td>
+                    <td class="md-only"><a href="/cards/st15-red-edward-newgate">15 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">86.67%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$5.70</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">4.85€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st14-3D2Y">ST14</a></td>
+                    <td><a href="/cards/st14-3D2Y">3D2Y</a></td>
+                    <td><a href="/cards/st14-3D2Y">16 Aug 24</a></td>
+                    <td class="md-only"><a href="/cards/st14-3D2Y">17 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">41.18%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$24.57</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">10.48€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st13-the-three-brothers">ST13</a></td>
+                    <td><a href="/cards/st13-the-three-brothers">Ultra Deck: The Three Brothers</a></td>
+                    <td><a href="/cards/st13-the-three-brothers">19 Apr 24</a></td>
+                    <td class="md-only"><a href="/cards/st13-the-three-brothers">35 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">82.86%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$208.63</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">231.59€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st12-zoro-sanji">ST12</a></td>
+                    <td><a href="/cards/st12-zoro-sanji">Zoro &amp; Sanji</a></td>
+                    <td><a href="/cards/st12-zoro-sanji">15 Mar 24</a></td>
+                    <td class="md-only"><a href="/cards/st12-zoro-sanji">17 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">35.29%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$26.20</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">20.34€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st11-uta">ST11</a></td>
+                    <td><a href="/cards/st11-uta">Uta</a></td>
+                    <td><a href="/cards/st11-uta">02 Feb 24</a></td>
+                    <td class="md-only"><a href="/cards/st11-uta">15 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">100.00%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$6.52</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">2.54€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st10-the-three-captains">ST10</a></td>
+                    <td><a href="/cards/st10-the-three-captains">Ultra Deck: The Three Captains</a></td>
+                    <td><a href="/cards/st10-the-three-captains">10 Nov 23</a></td>
+                    <td class="md-only"><a href="/cards/st10-the-three-captains">19 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">84.21%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$38.08</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">25.33€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st09-yamato">ST09</a></td>
+                    <td><a href="/cards/st09-yamato">Yamato</a></td>
+                    <td><a href="/cards/st09-yamato">11 Aug 23</a></td>
+                    <td class="md-only"><a href="/cards/st09-yamato">15 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">26.67%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$7.17</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">4.59€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st08-monkey-d-luffy">ST08</a></td>
+                    <td><a href="/cards/st08-monkey-d-luffy">Monkey D. Luffy</a></td>
+                    <td><a href="/cards/st08-monkey-d-luffy">11 Aug 23</a></td>
+                    <td class="md-only"><a href="/cards/st08-monkey-d-luffy">15 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">46.67%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$9.86</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">6.86€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st07-big-mom-pirates">ST07</a></td>
+                    <td><a href="/cards/st07-big-mom-pirates">Big Mom Pirates</a></td>
+                    <td><a href="/cards/st07-big-mom-pirates">30 Jun 23</a></td>
+                    <td class="md-only"><a href="/cards/st07-big-mom-pirates">17 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">58.82%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$7.45</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">4.35€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st06-absolute-justice">ST06</a></td>
+                    <td><a href="/cards/st06-absolute-justice">Absolute Justice</a></td>
+                    <td><a href="/cards/st06-absolute-justice">10 Mar 23</a></td>
+                    <td class="md-only"><a href="/cards/st06-absolute-justice">17 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">70.59%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$9.75</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">8.58€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st05-one-piece-film-edition">ST05</a></td>
+                    <td><a href="/cards/st05-one-piece-film-edition">ONE PIECE FILM edition</a></td>
+                    <td><a href="/cards/st05-one-piece-film-edition">03 Feb 23</a></td>
+                    <td class="md-only"><a href="/cards/st05-one-piece-film-edition">17 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">52.94%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$10.80</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">6.04€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st04-animal-kingdom-pirates">ST04</a></td>
+                    <td><a href="/cards/st04-animal-kingdom-pirates">Animal Kingdom Pirates</a></td>
+                    <td><a href="/cards/st04-animal-kingdom-pirates">02 Dec 22</a></td>
+                    <td class="md-only"><a href="/cards/st04-animal-kingdom-pirates">17 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">82.35%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$5.60</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">5.15€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st03-the-seven-warlords-of-the-sea">ST03</a></td>
+                    <td><a href="/cards/st03-the-seven-warlords-of-the-sea">The Seven Warlords of the Sea</a></td>
+                    <td><a href="/cards/st03-the-seven-warlords-of-the-sea">02 Dec 22</a></td>
+                    <td class="md-only"><a href="/cards/st03-the-seven-warlords-of-the-sea">17 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">64.71%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$6.97</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">5.37€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st02-worst-generation">ST02</a></td>
+                    <td><a href="/cards/st02-worst-generation">Worst Generation</a></td>
+                    <td><a href="/cards/st02-worst-generation">02 Dec 22</a></td>
+                    <td class="md-only"><a href="/cards/st02-worst-generation">17 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">70.59%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$9.93</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">6.64€</a></td>
+                </tr>
+                                            <tr>
+                    <td><a href="/cards/st01-straw-hat-crew">ST01</a></td>
+                    <td><a href="/cards/st01-straw-hat-crew">Straw Hat Crew</a></td>
+                    <td><a href="/cards/st01-straw-hat-crew">02 Dec 22</a></td>
+                    <td class="md-only"><a href="/cards/st01-straw-hat-crew">17 <span class="playability" data-tooltip="percentage of cards in this set that appear in our decklist database">82.35%</span></a></td>
+                    <td class="lg-only"><a class="card-price usd" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">$54.41</a></td>
+                    <td class="lg-only"><a class="card-price eur" href="https://www.cardmarket.com/en/OnePiece/Expansions/?utm_source=limitlesstcg&utm_medium=text&utm_campaign=card_prices" target="_blank">13.82€</a></td>
+                </tr>
+                        </table>
+
+<a href="/cards/promos" class="alert info" style="display: block; margin-bottom: 2rem;">
+    Promotional products are now listed on their own page linked in the navigation bar above.
+</a>
+
+</div>
+    </main>
+
+    
+            <div id="bottom_ad_placeholder" class="container dont-print bottom_ad"></div>
+    
+    <div class="after-content"></div>
+
+    <footer>
+    <div class="container footer">
+        <div class="menus">
+            <div class="column">
+                <h2><a href="https://limitlesstcg.com">Limitless TCG</a></h2>
+                <ul>
+                    <li><a href="https://limitlesstcg.com/about">About</a></li>
+                    <li><a href="https://limitlesstcg.com/contact">Contact</a></li>
+                    <li><a href="https://limitlesstcg.com/privacy">Privacy Policy</a></li>
+                    <li><a href="https://limitlesstcg.com/legal">Site Notice</a></li>
+                </ul>
+            </div>
+            <div class="column">
+                <h2>Our Other Sites</h2>
+                <ul>
+                    <li><a href="https://my.limitlesstcg.com/?game=OP">Deck Builder</a></li>
+                    <li><a href="https://play.limitlesstcg.com/">Tournament Platform</a></li>
+                    <li><a href="https://limitlesstcg.com/">Pokémon Database</a></li>
+                </ul>
+            </div>
+            <div class="column">
+                <h2>Follow</h2>
+                <ul>
+                    <li><a href="https://twitter.com/LimitlessOPCG"><i class="fab fa-twitter"></i> Twitter</a></li>
+                    <li><a href="https://www.patreon.com/limitlesstcg"><i class="fab fa-patreon"></i> Patreon</a></li>
+                </ul>
+            </div>
+            <div class="column full">
+                                                    <h2>TCGplayer</h2>
+                    <a class="promo" href="https://partner.tcgplayer.com/ONEPIECE?u=https%3A%2F%2Fwww.tcgplayer.com%2Fsearch%2Fone-piece-card-game%2Fproduct" target="_blank">
+                        <img src="/images/tcgplayer.png?1" alt="tcgplayer logo" />
+                        <p>You can support us by using our Affiliate Link when buying on TCGplayer!</p>
+                    </a>
+                            </div>
+
+                            <a class="cookie-link" onclick="window.ramp.showCmpModal();">Manage Cookies</a>
+                    </div>
+
+        <div class="disclaimer">The literal and graphical information presented on this website about the One Piece Card Game, including card images and text, is copyright Eiichiro Oda/Shueisha, Toei Animation and/or Bandai. This website is not produced by, endorsed by, supported by, or affiliated with any of those copyright holders.</div>
+
+                    <script data-cfasync="false" async src="//cdn.intergient.com/1025537/76057/ramp.js"></script>
+            </div>
+</footer>
+
+    <div id="jsg">
+        <div class="overlay"></div>
+    </div>
+</body>
+
+</html>
