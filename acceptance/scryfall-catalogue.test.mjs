@@ -266,7 +266,7 @@ test("retained Scryfall Cards publish with stable finish identities, private evi
   );
   for (const [id, history] of histories)
     assert.deepEqual((await cli(["entity-proposal", "inspect", "--proposal-id", id])).history, history);
-  const restoredSource = await cli(["source", "show", "--run-id", first.run.id]);
+  const restoredSource = await cli(["source", "show", "--full", "--run-id", first.run.id]);
   assert.equal(restoredSource.snapshots.length, 10);
   for (const snapshot of restoredSource.snapshots) {
     const response = await fetch(`${ingestion.url}/v1/source-snapshots/${snapshot.id}/content`, { headers });

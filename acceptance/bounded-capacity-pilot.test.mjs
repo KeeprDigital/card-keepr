@@ -204,7 +204,7 @@ test(
       }
       const unpublished = await cli(["status"]);
       assert.equal(unpublished.safe_state.current_revision_id, predecessor);
-      const evidence = await cli(["source", "show", "--run-id", run.id]);
+      const evidence = await cli(["source", "show", "--full", "--run-id", run.id]);
       assert.equal(evidence.source_coverage[0].coverage.subset, scope.subset);
       assert.equal(evidence.source_coverage[0].status, "complete");
       // Source Coverage counts structured requests; images have an independent tolerated-gap contract.

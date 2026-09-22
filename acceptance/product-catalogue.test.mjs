@@ -125,7 +125,10 @@ test("native publication: the CLI publishes separated Product catalogue data con
   );
   assert.equal(multiCollected.code, 0, `${multiCollected.stdout}\n${multiCollected.stderr}\n${ingestion.getOutput()}`);
   const multiRun = JSON.parse(multiCollected.stdout);
-  const multiShownResult = await runCli(["source", "show", "--run-id", multiRun.id, "--json"], cliEnvironment);
+  const multiShownResult = await runCli(
+    ["source", "show", "--full", "--run-id", multiRun.id, "--json"],
+    cliEnvironment,
+  );
   assert.equal(multiShownResult.code, 0, multiShownResult.stderr);
   const multiShown = JSON.parse(multiShownResult.stdout);
   assert.deepEqual(

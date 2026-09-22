@@ -190,7 +190,10 @@ test("compatibility publication: the CLI audits real retained evidence through a
   );
   assert.equal(replayed.code, 0, replayed.stderr);
   assert.deepEqual(JSON.parse(replayed.stdout), terminationDocument);
-  const shownTerminated = await runCli(["source", "show", "--run-id", abandoned.id, "--json"], cliEnvironment);
+  const shownTerminated = await runCli(
+    ["source", "show", "--full", "--run-id", abandoned.id, "--json"],
+    cliEnvironment,
+  );
   assert.equal(shownTerminated.code, 0, shownTerminated.stderr);
   const terminatedRun = JSON.parse(shownTerminated.stdout);
   assert.equal(terminatedRun.state, "failed");
@@ -300,7 +303,7 @@ test("compatibility publication: the CLI audits real retained evidence through a
   assert.equal(successful.diagnostics.length, successful.snapshots.length + 4);
   assert.match(successful.snapshots[0].content.digest, /^[a-f0-9]{64}$/);
 
-  const retained = await runCli(["source", "show", "--run-id", successful.id, "--json"], cliEnvironment);
+  const retained = await runCli(["source", "show", "--full", "--run-id", successful.id, "--json"], cliEnvironment);
   assert.equal(retained.code, 0, retained.stderr);
   assert.deepEqual(JSON.parse(retained.stdout), successful);
 });

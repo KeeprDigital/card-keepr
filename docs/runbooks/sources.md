@@ -45,6 +45,21 @@ Collection creation acknowledges the retained plan; resume dispatches its work.
 Inspect `source show` for current progress and completion. Exact creation retries
 return the original acceptance, even after the run advances.
 
+`source show` returns a compact summary (`card-keepr-evidence-summary@1`) whose
+size does not grow with the run: state, pause, request counts by lineage, role
+and state, acquisition budget, capacity, pacing limits, the newest 20 pacing
+receipts and failed images, and failure counts under `failures`. For
+per-request detail, add `--requests`; it lists 250 Source Requests per page in
+sequence order with their attempt count and latest attempt. Repeat with
+`--after NEXT_AFTER` until `next_after` is null. `--full` returns the complete
+status document with retained plans, snapshots, observation sets and
+diagnostics; on a large run it is slow and large, so use it only when those
+lists are needed.
+
+`source show` waits 60 seconds; other commands wait 10 seconds. Override with
+`--timeout-ms MS` on `source show` or `KEEPR_TIMEOUT_MS` for every command. A
+timeout exits 9 with `runtime_timeout`, naming the endpoint and elapsed time.
+
 To reinterpret a retained Source Snapshot, run `keepr snapshot reparse` with
 `--snapshot-id SNAPSHOT --adapter ADAPTER --idempotency-key PARSE_INTENT --json`.
 A large archive returns HTTP 202 with `kind: pending` and its decoding or

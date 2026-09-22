@@ -182,7 +182,7 @@ test("Piltover Archive links its Riot overlap with separate front evidence and r
     [...captures.keys()].sort(),
     "Exactly the gallery page and two pinned fronts",
   );
-  const retained = await cli(["source", "show", "--run-id", pilot.run.id]);
+  const retained = await cli(["source", "show", "--full", "--run-id", pilot.run.id]);
   assert.equal(retained.snapshots.length, 3);
   for (const snapshot of retained.snapshots)
     assert.equal(snapshot.content.digest, captures.get(snapshot.request.url).digest);

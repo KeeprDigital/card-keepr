@@ -175,7 +175,7 @@ test("retained Bandai Errata HTML publishes through CLI and authenticated HTTP/e
     runtime,
   );
   await resumeAndWait(run.id, cliEnvironment, runtime);
-  const evidence = await runCli(["source", "show", "--run-id", run.id, "--json"], cliEnvironment);
+  const evidence = await runCli(["source", "show", "--full", "--run-id", run.id, "--json"], cliEnvironment);
   assert.equal(evidence.code, 0, evidence.stderr);
   assert.equal(JSON.parse(evidence.stdout).observation_sets[0].observation_count, 3);
   const reconciled = await reconcileAndWait(
