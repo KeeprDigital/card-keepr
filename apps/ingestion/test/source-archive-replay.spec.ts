@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
-import reminder from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/manifest-reminder.json?raw";
+import gameplayPiece from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/token-layout-gameplay.json?raw";
 import control from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/etched.json?raw";
 import reversible from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/reversible-adventure.json?raw";
 import art from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/raw/art-chillerpillar.json?raw";
@@ -52,7 +52,7 @@ test("sealed archive replay retains semantic state while its guarded batch chang
   const { db, run, request, snapshot } = await seedArchive(
     "archive-sealed-replay-invariants",
     false,
-    archiveBytes([reminder, control]),
+    archiveBytes([gameplayPiece, control]),
   );
   const intent = { intent: "collection" as const, idempotencyKey: `${run.id}:${request.request_id}` };
   const sealed = await parseSnapshotBatch(db, env.EVIDENCE_OBJECTS, snapshot.id, version, intent);
@@ -125,7 +125,7 @@ test("sealed archive discovery preserves evidence when one extra image request e
   const { db, run, request, snapshot } = await seedArchive(
     "archive-discovery-capacity-boundary",
     false,
-    archiveBytes([reminder, control, reversible, art]),
+    archiveBytes([gameplayPiece, control, reversible, art]),
     cappedVersion,
   );
   const intent = { intent: "collection" as const, idempotencyKey: `${run.id}:${request.request_id}` };

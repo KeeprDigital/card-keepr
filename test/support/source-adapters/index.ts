@@ -4,6 +4,7 @@ import { tcgdexReviewRecordAdapter } from "./tcgdex-review-record";
 import { designIdentityAdapters } from "./design-identity";
 import { capacitySourceAdapter } from "./capacity";
 import { scryfallArchiveCappedAdapter } from "./scryfall-archive-capped";
+import { scryfallSourceRecordAdapter } from "./scryfall-source-record";
 import {
   registerSourceAdapters,
   type SourceAdapterRegistration,
@@ -230,6 +231,7 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
     })),
     capacitySourceAdapter,
     scryfallArchiveCappedAdapter,
+    scryfallSourceRecordAdapter,
     retainedParentContextAdapter,
     tcgdexRetainedGraphAdapter,
     tcgdexReviewRecordAdapter,

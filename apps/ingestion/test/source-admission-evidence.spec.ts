@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import bloomvine from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/reversible-adventure.json?raw";
-import reminder from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/manifest-reminder.json?raw";
+import gameplayPiece from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/token-layout-gameplay.json?raw";
 import control from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/etched.json?raw";
 import { catalogueStore, canonicalJson, sha256Text } from "../../../src/catalogue/shared";
 import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
@@ -25,9 +25,19 @@ import { seedArchive, version } from "./source-archive-fixture";
 
 installRuntimeSuite();
 
+// No retained record still falls outside the owner's token-layout ruling, so the
+// fallback is exercised by a test-owned variant: the real gameplay piece without
+// rules text leaves its category undecided; two finishes keep decisions separate.
+const unresolvedToken = `${JSON.stringify({
+  ...JSON.parse(gameplayPiece),
+  oracle_text: "",
+  finishes: ["nonfoil", "foil"],
+  foil: true,
+})}\n`;
+
 test.each([
   { reviewRaw: bloomvine, reason: "logical_parts_unresolved", imageCount: 2 },
-  { reviewRaw: reminder, reason: "category_unresolved", imageCount: 1 },
+  { reviewRaw: unresolvedToken, reason: "category_unresolved", imageCount: 1 },
 ])(
   "archive $reason intake preserves committed progress, evidence and independent finish decisions",
   async ({ reviewRaw, reason, imageCount }) => {

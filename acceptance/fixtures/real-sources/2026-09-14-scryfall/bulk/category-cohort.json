@@ -1,0 +1,1266 @@
+{
+  "source": "Exact lines of the pinned default_cards archive (SHA-256 ea81f17a3c15d64dff75f4b1d012657358c6505f254df8a0d032edb34cd27ca4); decompressed cohort SHA-256 8891c4c09fd1b32324cf13adc1aa4fed4a9ada7408b911f7f73eecd9cb5aeb5c.",
+  "ruling": "https://github.com/KeeprDigital/card-keepr/issues/327 owner ruling 2026-09-21",
+  "records": [
+    {
+      "line": 1,
+      "id": "006a2cce-dd8f-47d5-aedd-135e51ecfa23",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 2,
+      "id": "01104ab1-84e1-4c78-853d-637c6554bdf9",
+      "review_group": "face_down_reminder",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 3,
+      "id": "014627ea-1d70-4cd2-8c4e-103616e271f7",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 4,
+      "id": "06a5f33a-9357-46c5-bc3b-aba91581287e",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 5,
+      "id": "06e4ce71-a557-4a05-a163-9f28b8f6479b",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 6,
+      "id": "06e5f736-2696-4428-a611-2d93e0c4e1cf",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 7,
+      "id": "071cda12-a2d4-447f-8382-22870b6dc5cf",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 8,
+      "id": "07232e81-f67f-45f2-ab7e-3109e89cf039",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 9,
+      "id": "0760ec21-0efc-4585-8aca-778e3d9fae68",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 10,
+      "id": "076ad38c-30ec-41a4-be18-c287f65d1d86",
+      "review_group": "creature_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 11,
+      "id": "07e41000-f743-4928-bdc7-520b0824caec",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 12,
+      "id": "081f2de5-251a-41c9-a62f-11487f54d355",
+      "review_group": "reversible_adventure",
+      "ruling": "logical_parts_unresolved"
+    },
+    {
+      "line": 13,
+      "id": "0886657d-afb0-4f1f-9af7-960724793077",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 14,
+      "id": "09901fef-3daf-4890-9d8f-466881326cbd",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 15,
+      "id": "0af68815-ffe6-4640-9500-b98a6cb757c7",
+      "review_group": "blank",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 16,
+      "id": "0c85b8a5-cf76-4952-9fe0-cb7d2f86fead",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 17,
+      "id": "0cd9c491-6ba0-4484-822c-73bcbe9b0c49",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 18,
+      "id": "0d4b46a3-847a-44a7-9f68-2cb4657cad61",
+      "review_group": "same_oracle_comparator",
+      "ruling": "ordinary"
+    },
+    {
+      "line": 19,
+      "id": "0e4702c0-1999-4982-aef8-1af478f1d511",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 20,
+      "id": "0e590dad-570d-4784-9aae-d85d2980c22b",
+      "review_group": "blank",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 21,
+      "id": "0eb1e449-d7ce-4d87-a589-7ae5e3f0951d",
+      "review_group": "face_down_reminder",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 22,
+      "id": "0f6a6dc8-1c3c-45d2-be4f-bfab58a5a66f",
+      "review_group": "empty_text_marker",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 23,
+      "id": "0fe8112a-46f0-4114-a10b-ed63a3768a4b",
+      "review_group": "empty_text_marker",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 24,
+      "id": "10e0a9a3-f63a-4f92-a083-9d181580e498",
+      "review_group": "same_oracle_comparator",
+      "ruling": "ordinary"
+    },
+    {
+      "line": 25,
+      "id": "11decc7a-58e7-43f3-acc5-9ec94cce858d",
+      "review_group": "creature_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 26,
+      "id": "1582329f-75ab-41c5-ade1-223a6786bf33",
+      "review_group": "blank",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 27,
+      "id": "15ed7d07-aae1-4f21-9e99-adb708a5f7fa",
+      "review_group": "minigame_instructions",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 28,
+      "id": "170c4817-104c-4a10-a796-6e62c5104920",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 29,
+      "id": "17193bd0-63c0-49ce-9a85-12996fdcda00",
+      "review_group": "boss_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 30,
+      "id": "18eee350-4d70-4124-ae0d-a77f3bd7e948",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 31,
+      "id": "19f04282-ef44-4474-bb0f-bcc938bdba7a",
+      "review_group": "boss_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 32,
+      "id": "1b2a91d9-42ae-4f2b-ba95-46dc74e68fd6",
+      "review_group": "boss_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 33,
+      "id": "1c516212-ad39-4396-8e05-ae57f100309f",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 34,
+      "id": "1eda2434-523d-4e9c-a8f1-acbee5c87aac",
+      "review_group": "creature_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 35,
+      "id": "207b3d62-2541-4a51-8152-3c54218ab6f7",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 36,
+      "id": "213a979d-45bf-40dc-bbd1-42230373947d",
+      "review_group": "empty_text_marker",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 37,
+      "id": "22ab5069-672a-44c8-935e-f9c3a1f5e3c0",
+      "review_group": "blank",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 38,
+      "id": "22c51c78-a578-4a1a-87b0-430b32da7d78",
+      "review_group": "boss_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 39,
+      "id": "23239786-8ac6-460c-9c19-c439b8fa9734",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 40,
+      "id": "241b3b6d-a25f-4a43-b5d6-1d1079e7e498",
+      "review_group": "face_down_reminder",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 41,
+      "id": "24af7223-40ba-4bc3-93f7-12cafa8090b2",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 42,
+      "id": "25e228f1-8619-4a9a-a01f-727c50abf733",
+      "review_group": "advertisement",
+      "ruling": "advertising"
+    },
+    {
+      "line": 43,
+      "id": "260e570f-e86f-4c7f-ae69-c601de1405d8",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 44,
+      "id": "27d772a9-7542-4ffe-9cd4-e144d129f342",
+      "review_group": "creature_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 45,
+      "id": "2a794202-875f-4397-a8de-9722c8d78448",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 46,
+      "id": "2b490cfc-3a5a-4045-a53f-3395f61bb7a1",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 47,
+      "id": "2c8e22f9-6b70-425c-a0a8-09b6101a286e",
+      "review_group": "creature_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 48,
+      "id": "2cb77c74-f4cd-46e0-a2de-1fcdc1bdbd1d",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 49,
+      "id": "2e8d223d-ede3-477b-8dd7-e4c58798b3f3",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 50,
+      "id": "30758c2e-fc01-4037-838c-bdabe8a4e5a3",
+      "review_group": "empty_text_marker",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 51,
+      "id": "3119f359-ca5f-46f4-aa32-c03db9a4f397",
+      "review_group": "event_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 52,
+      "id": "321f758f-a738-4f9b-a1d8-8edeb4fd9aff",
+      "review_group": "event_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 53,
+      "id": "33dd64d2-8656-4ee8-93a8-fccbdc950899",
+      "review_group": "event_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 54,
+      "id": "3513d5d3-7e88-4f5d-927f-1e67eb18e58e",
+      "review_group": "advertisement",
+      "ruling": "advertising"
+    },
+    {
+      "line": 55,
+      "id": "35417b4b-db3d-425c-909e-6803d27307e5",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 56,
+      "id": "3746d381-9c73-4d74-aa7f-79426e163eb7",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 57,
+      "id": "392db1d2-9d75-4d19-88e0-9b0ffdc88541",
+      "review_group": "face_down_reminder",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 58,
+      "id": "3a959416-27be-4c92-ac4b-0404529ca978",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 59,
+      "id": "3d2f2bcc-0db9-4aa1-b63d-587c62468015",
+      "review_group": "creature_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 60,
+      "id": "3d6a17d7-53c3-43da-a274-34ba1ef9dcbb",
+      "review_group": "same_oracle_comparator",
+      "ruling": "ordinary"
+    },
+    {
+      "line": 61,
+      "id": "3e1fef54-5665-480d-ad3d-e5490a6853e4",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 62,
+      "id": "3ed7790c-72db-490d-a427-f3202d730aab",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 63,
+      "id": "40b79918-22a7-4fff-82a6-8ebfe6e87185",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 64,
+      "id": "40b9dcb9-05c1-4a2e-b0cb-6554483ca5c9",
+      "review_group": "advertisement",
+      "ruling": "advertising"
+    },
+    {
+      "line": 65,
+      "id": "4330efa7-a11b-4776-9fb0-1cae8aed67b1",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 66,
+      "id": "44ef6754-b611-4e52-a04b-dc2c794d2cb8",
+      "review_group": "creature_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 67,
+      "id": "4825c59d-9e27-4a12-ba84-642b8540e573",
+      "review_group": "checklist_substitute",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 68,
+      "id": "484b5580-b179-4dce-8bdf-d714eb4635e5",
+      "review_group": "reversible_adventure",
+      "ruling": "logical_parts_unresolved"
+    },
+    {
+      "line": 69,
+      "id": "486a8135-c367-49ee-8465-f8fc76906aed",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 70,
+      "id": "49de1576-1c82-4e8c-b492-5097ca7b8819",
+      "review_group": "empty_text_marker",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 71,
+      "id": "4a4158c7-5f24-4b56-bb9e-ddc3e459b555",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 72,
+      "id": "4a8b3030-5495-404b-938c-8c4a387a1341",
+      "review_group": "checklist_substitute",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 73,
+      "id": "4b90bd09-d6aa-4201-a7fe-78accbcfc4e8",
+      "review_group": "creature_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 74,
+      "id": "4d323ead-24f5-42e4-9e23-aa14eb66264d",
+      "review_group": "checklist_substitute",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 75,
+      "id": "4fbf25fc-1f5a-4b89-942c-4fff18d0140a",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 76,
+      "id": "52140a7d-853a-4a32-a0fb-18c4a6bf48a7",
+      "review_group": "minigame_instructions",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 77,
+      "id": "523cbb5c-4166-4cdb-845c-9213609c921d",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 78,
+      "id": "53b08fa1-f76a-407a-ba07-43cadc13453c",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 79,
+      "id": "53bfaac7-07cf-4637-8f64-aba93ec7fd1a",
+      "review_group": "empty_text_marker",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 80,
+      "id": "5430da88-b72e-4d64-bd3c-b21062cac1c2",
+      "review_group": "face_down_reminder",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 81,
+      "id": "553ae9d2-3807-4ca8-a575-7fa6667ee212",
+      "review_group": "creature_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 82,
+      "id": "56ae2eb8-5090-412a-ad72-46ec4861d599",
+      "review_group": "face_down_reminder",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 83,
+      "id": "5e289bb3-f6de-450d-9f7e-77e2e70cb7cc",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 84,
+      "id": "5ee6f44e-f788-46fd-a1d9-d3c7009a0ff2",
+      "review_group": "advertisement",
+      "ruling": "advertising"
+    },
+    {
+      "line": 85,
+      "id": "5f29231c-dd21-4a45-a1f0-464d338128ed",
+      "review_group": "face_down_reminder",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 86,
+      "id": "62a4afbd-6325-4451-9840-6d5fda836118",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 87,
+      "id": "63455c28-3e53-45b1-8d0b-a5045dab1fb9",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 88,
+      "id": "641b27a0-7fe5-4987-81bd-aa208b7463fd",
+      "review_group": "creature_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 89,
+      "id": "66acff08-ba29-4785-8d10-127d023a055e",
+      "review_group": "boss_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 90,
+      "id": "66f569e1-5a37-4801-be01-9c5d44a82427",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 91,
+      "id": "67f1746f-4f15-48da-9de7-3dd62811afdb",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 92,
+      "id": "685d2b12-d45a-400b-b582-8b184a6eee13",
+      "review_group": "same_oracle_comparator",
+      "ruling": "ordinary"
+    },
+    {
+      "line": 93,
+      "id": "68d08909-a214-433b-a3b7-4baf916cd458",
+      "review_group": "checklist_substitute",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 94,
+      "id": "6a2c1fa5-deed-48ba-afe4-6c8ea8d9135e",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 95,
+      "id": "6a45947b-7832-4a0b-836b-63693bf550f8",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 96,
+      "id": "6b95e8bd-2686-4790-afeb-9b17d482f156",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 97,
+      "id": "6c1bfbcb-3f33-4c5c-81f5-141664fd1da5",
+      "review_group": "same_oracle_comparator",
+      "ruling": "ordinary"
+    },
+    {
+      "line": 98,
+      "id": "6d84f8fc-0da6-4acc-9da2-9993daabd9f4",
+      "review_group": "boss_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 99,
+      "id": "72dd6b5f-f95b-48f8-a126-0ade77f0f638",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 100,
+      "id": "73bb5b31-d562-4c2f-af92-b995abb8d6eb",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 101,
+      "id": "771e021b-7ef8-46c3-9545-1f625d38d1e6",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 102,
+      "id": "7b010eeb-1304-4e0b-9eff-3e4561b67396",
+      "review_group": "face_down_reminder",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 103,
+      "id": "7b8ec95a-e728-446b-8c4a-a3571e6aa458",
+      "review_group": "creature_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 104,
+      "id": "7c25a10b-e2a7-4345-ae6f-021b607a3e59",
+      "review_group": "event_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 105,
+      "id": "7db7d019-aabb-4436-a570-e2280dc2d368",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 106,
+      "id": "7f183188-a0a2-474c-b741-63a70365fd8e",
+      "review_group": "event_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 107,
+      "id": "7fbf846e-9496-470d-b039-b4cd9e71f066",
+      "review_group": "event_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 108,
+      "id": "81efbdcf-10ca-45f8-a70b-7375def4cc3b",
+      "review_group": "minigame_instructions",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 109,
+      "id": "825c61e7-bf33-45ea-af78-97ab3bc96753",
+      "review_group": "checklist_substitute",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 110,
+      "id": "836c1c87-7542-45e5-9bdc-73b9c6df1c0f",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 111,
+      "id": "84c98b5c-4bec-4455-9681-045842a87721",
+      "review_group": "event_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 112,
+      "id": "84e93fcb-b8cb-4f31-9ff4-d0180c40845a",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 113,
+      "id": "85067e01-384c-434d-8cbf-e9dcba5e9ae8",
+      "review_group": "boss_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 114,
+      "id": "8625b50d-474d-46dd-af84-0b267ed5fab3",
+      "review_group": "blank",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 115,
+      "id": "8635dea0-985a-4c02-a02b-8b08d96fb2dd",
+      "review_group": "advertisement",
+      "ruling": "advertising"
+    },
+    {
+      "line": 116,
+      "id": "8742baf6-2bf9-48ac-af68-6427704b3593",
+      "review_group": "boss_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 117,
+      "id": "8a534b81-f4a1-4a57-85cc-be6801ebd5b0",
+      "review_group": "boss_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 118,
+      "id": "8b673d4b-0188-4225-9067-dc61386a18fd",
+      "review_group": "event_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 119,
+      "id": "8d7f421e-6947-4509-a179-8522fa4a29f8",
+      "review_group": "blank",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 120,
+      "id": "8da84d4f-5526-401f-9762-4fcfbc313c81",
+      "review_group": "creature_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 121,
+      "id": "8f960d71-b55d-4730-9b3f-49e9afd2809c",
+      "review_group": "creature_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 122,
+      "id": "9022a74a-f758-4475-88af-164d9e5ecf31",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 123,
+      "id": "9236ab9c-7730-46d9-a543-84ff7b245ece",
+      "review_group": "checklist_substitute",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 124,
+      "id": "93380a7d-8df1-4cce-bf88-67e3b73eb70c",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 125,
+      "id": "938272b2-8e1c-4196-8557-c597735dd96e",
+      "review_group": "creature_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 126,
+      "id": "942bf431-20dc-400c-9402-cf59be52f6bb",
+      "review_group": "face_down_reminder",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 127,
+      "id": "9464681a-9478-4f87-b22d-c32b9cbb0832",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 128,
+      "id": "9597cfb4-f1ed-44ce-bb9c-cf80368546be",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 129,
+      "id": "965970a4-50ca-4b8b-9589-b48713f27fc1",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 130,
+      "id": "966b93ba-f671-4244-b879-aa20b355775a",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 131,
+      "id": "97793b27-54d1-4870-9a86-680741ca8730",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 132,
+      "id": "9935aa4c-9aab-4298-bbcd-4df51a2e0428",
+      "review_group": "empty_text_marker",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 133,
+      "id": "99ce1bee-8f95-4284-8e06-9de9bfcb53b5",
+      "review_group": "checklist_substitute",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 134,
+      "id": "9a2d23c4-d381-4a92-b4b1-0cf71948f941",
+      "review_group": "boss_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 135,
+      "id": "9b4e9e76-677c-479a-949e-d7e47372bc58",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 136,
+      "id": "9b787cb5-4c62-4dc4-baf8-fe7a2c87e4b8",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 137,
+      "id": "9b896682-eb09-47cb-8135-e8546e9173e1",
+      "review_group": "advertisement",
+      "ruling": "advertising"
+    },
+    {
+      "line": 138,
+      "id": "9bc273b8-05bb-4c8f-92b1-c178d4bbadb0",
+      "review_group": "face_down_reminder",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 139,
+      "id": "9c3a8c98-e189-4cd2-b2fd-b5a591658eaa",
+      "review_group": "empty_text_marker",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 140,
+      "id": "9cf54062-7b5b-4e46-ae1e-fab7e419a9fa",
+      "review_group": "reversible_adventure",
+      "ruling": "logical_parts_unresolved"
+    },
+    {
+      "line": 141,
+      "id": "9ed2329f-d055-4a60-955b-384722504278",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 142,
+      "id": "a1352676-9a0e-44bc-972a-b2c26b99e529",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 143,
+      "id": "a3194e3a-b70c-4171-9e93-4d8cbb67bfe1",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 144,
+      "id": "a446b9f8-cb22-408a-93ff-bee44a0dccc0",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 145,
+      "id": "a7040e1c-cbea-4597-89f2-7830714cfcae",
+      "review_group": "advertisement",
+      "ruling": "advertising"
+    },
+    {
+      "line": 146,
+      "id": "a76d49f7-2860-4972-ab97-1e798ea017d1",
+      "review_group": "creature_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 147,
+      "id": "a7bd82d5-0f8a-4c14-8fc4-18645caaa613",
+      "review_group": "minigame_instructions",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 148,
+      "id": "a8d38af0-a960-4a49-9896-1e11f53eab5b",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 149,
+      "id": "a8d50cf9-03e6-467a-aadf-84a24106ffa9",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 150,
+      "id": "ae0182f2-31c0-4927-9ca5-0b3f4d342409",
+      "review_group": "creature_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 151,
+      "id": "ae3c3401-5dff-431a-8973-307da500c378",
+      "review_group": "minigame_instructions",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 152,
+      "id": "b05811b0-1856-4cf8-9910-44da1a994116",
+      "review_group": "event_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 153,
+      "id": "b172a9c5-802d-46af-a97b-86b0bce4596a",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 154,
+      "id": "b62b648e-f572-4b3b-8315-983d27704b8c",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 155,
+      "id": "b75073d6-bd99-4d70-b335-72df71636617",
+      "review_group": "sticker_sheet",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 156,
+      "id": "b905ddba-8808-45b3-81bf-406592e4c661",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 157,
+      "id": "ba64ed3e-93c5-406f-a38d-65cc68472122",
+      "review_group": "empty_text_marker",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 158,
+      "id": "baf955be-0742-483d-a7df-e58792f31817",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 159,
+      "id": "bb551ccb-e188-49af-9e82-0ec4f59fa77a",
+      "review_group": "minigame_instructions",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 160,
+      "id": "bb78e3ba-2095-490c-974f-b28696b45a59",
+      "review_group": "same_oracle_comparator",
+      "ruling": "ordinary"
+    },
+    {
+      "line": 161,
+      "id": "bbafc14d-099c-4bad-a90c-788d2b838186",
+      "review_group": "event_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 162,
+      "id": "bc513990-b4e8-498b-84d5-8317bc79a667",
+      "review_group": "face_down_reminder",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 163,
+      "id": "bd58ad15-8d15-46f6-b9b3-05ee8cbecadc",
+      "review_group": "creature_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 164,
+      "id": "bf7f3fc9-35f1-4b8c-b02b-494c71f31107",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 165,
+      "id": "c1ddb643-9158-4e7b-a70c-3266e91d1454",
+      "review_group": "empty_text_marker",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 166,
+      "id": "c2c46b99-4056-428a-ae35-8ba018bb034f",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 167,
+      "id": "c420f353-0d9f-44ad-a566-5ed0b58964c2",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 168,
+      "id": "c70302dc-63a7-4642-8f1b-e6cd31fa5bdc",
+      "review_group": "same_oracle_comparator",
+      "ruling": "ordinary"
+    },
+    {
+      "line": 169,
+      "id": "c76a6163-6fd9-4cdf-9b14-07f75c2f0fa1",
+      "review_group": "face_down_reminder",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 170,
+      "id": "cb231e4d-dbba-4475-a01b-212d83859722",
+      "review_group": "event_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 171,
+      "id": "cb778688-af4c-4140-a17f-4faae0db83e2",
+      "review_group": "minigame_instructions",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 172,
+      "id": "cbd6a762-f3c2-4b29-a07e-f0c9c81cf1ec",
+      "review_group": "advertisement",
+      "ruling": "advertising"
+    },
+    {
+      "line": 173,
+      "id": "cd0b42a0-5e08-406d-82b0-be5f72870c47",
+      "review_group": "face_down_reminder",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 174,
+      "id": "cd8586f9-97e2-438d-b74f-1e53c811f314",
+      "review_group": "checklist_substitute",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 175,
+      "id": "cdbe9dfc-3c91-40ac-9740-167e17746e94",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 176,
+      "id": "cfa11c2d-7525-415f-9cb2-251633e9ecd4",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 177,
+      "id": "d4c95eac-9f21-408a-8f60-f5cba79b6a8f",
+      "review_group": "face_down_reminder",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 178,
+      "id": "d6fb189b-20a3-4ba4-86ec-f84513e0281a",
+      "review_group": "face_down_reminder",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 179,
+      "id": "d77ca534-43c2-4624-9146-43be9f692c19",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 180,
+      "id": "d7e00b12-ffb5-458b-8f32-4a320e5fe888",
+      "review_group": "blank",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 181,
+      "id": "d938bdec-eb97-4b3e-abdc-6eddd7bcd44e",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 182,
+      "id": "dd43716d-06bb-4187-ab77-414cfc59d20f",
+      "review_group": "boss_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 183,
+      "id": "de9d6766-2b3c-4215-858b-5205702cbc8e",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 184,
+      "id": "e05ee2a3-4054-48a5-8646-6588d1b39fb8",
+      "review_group": "event_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 185,
+      "id": "e2ffc06e-fed9-4241-9fa5-0d11858765a6",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 186,
+      "id": "e3088dea-11fd-403b-aaf4-56852283ba3d",
+      "review_group": "face_down_reminder",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 187,
+      "id": "e869f999-0f28-4ad8-ac3d-1e2d5f410d18",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 188,
+      "id": "e9375cbe-93c0-41a5-a6e3-fb4416f54a69",
+      "review_group": "face_down_reminder",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 189,
+      "id": "e9f896d4-34b4-407d-be7e-bf7a69aaf811",
+      "review_group": "face_down_reminder",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 190,
+      "id": "ebe59e20-d72c-4aff-9106-26ed3f2a8a80",
+      "review_group": "same_oracle_comparator",
+      "ruling": "ordinary"
+    },
+    {
+      "line": 191,
+      "id": "effd421c-f791-41de-8272-955f7f963f9d",
+      "review_group": "blank",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 192,
+      "id": "f07677af-88a4-4ff5-b591-e1e3ac05235d",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 193,
+      "id": "f0e15aed-71c7-466a-a21d-7f10631a2f6e",
+      "review_group": "blank",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 194,
+      "id": "f127bd8b-64fd-4fde-b520-345ed27a8585",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 195,
+      "id": "f3dcc7b5-c911-44c9-be5a-087298ddb492",
+      "review_group": "checklist_substitute",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 196,
+      "id": "f4210dae-7248-4a7b-9646-99683c0dce17",
+      "review_group": "creature_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 197,
+      "id": "f4d03811-0a1e-40f1-9f0b-a5bced7cdceb",
+      "review_group": "blank",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 198,
+      "id": "f5287c97-72fa-47a0-9316-44719e447f99",
+      "review_group": "event_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 199,
+      "id": "f5dd41f4-3153-408a-a20c-09334cfd686c",
+      "review_group": "creature_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 200,
+      "id": "f629bba8-e2ef-4d1c-8f64-339879289a6d",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 201,
+      "id": "f890bdc7-32e6-4492-bac7-7cabf54a8bfd",
+      "review_group": "same_oracle_comparator",
+      "ruling": "ordinary"
+    },
+    {
+      "line": 202,
+      "id": "fac36345-b2fb-4a44-a499-f68bbe87e736",
+      "review_group": "event_game_piece",
+      "ruling": "gameplay"
+    },
+    {
+      "line": 203,
+      "id": "fb02637f-1385-4d3d-8dc0-de513db7633a",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 204,
+      "id": "fb38f4dd-b0ce-4613-a876-764897d29923",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 205,
+      "id": "fc79931b-36f7-4727-86d7-e92076c2fab9",
+      "review_group": "decklist",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 206,
+      "id": "fca6ceed-a7d3-47a2-bb0d-7582e596c1f6",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 207,
+      "id": "fcf4c7fb-7859-4c11-8552-6817f5119d2e",
+      "review_group": "game_aid",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 208,
+      "id": "fe1a99b3-5ff4-48d4-8603-7271f12269f4",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 209,
+      "id": "fe3fbedf-fe21-4b19-b383-20d986ea2117",
+      "review_group": "biography",
+      "ruling": "non_card_insert"
+    },
+    {
+      "line": 210,
+      "id": "fe9dd9f0-3071-4bbd-80d2-e35b153006d7",
+      "review_group": "creature_game_piece",
+      "ruling": "gameplay"
+    }
+  ]
+}

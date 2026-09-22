@@ -297,6 +297,14 @@
       "line": 502,
       "byte_length": 19276,
       "sha256": "54b64fd4f105475868e994a0e64114d94ec0d9c29e6db226eb50d9b12e0343a6"
+    },
+    {
+      "file": "token-layout-gameplay.json",
+      "id": "076ad38c-30ec-41a4-be18-c287f65d1d86",
+      "line": 3457,
+      "decompressed_offset": 18612367,
+      "byte_length": 4944,
+      "sha256": "e24fb487caed0940bee11b6b8dcced2e4cbc05b0e5acf46fba2b01ae2ec35526"
     }
   ]
 }

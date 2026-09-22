@@ -124,6 +124,23 @@ const coverage = {
   requiredSurfaces: selectedRecords,
   requestUrlForSurface: surfaceUrl,
 };
+const bulkSurfaceUrl = (surface: string) => {
+  if (surface !== "bulk-data")
+    throw new AdapterParseFailure("Invalid Scryfall bulk metadata surface.", { category: "configuration" });
+  return scryfallBulkMetadataUrl;
+};
+// Owner decision (#327, 2026-09-21): images arrive progressively. Tranche 0
+// reads the complete pinned inventory and acquires no image: its image URLs
+// remain appearance claims, so every Printing keeps an explicit image gap.
+// Later tranches are ordinary complete runs whose images the run's
+// Acquisition Budget meters. As a named scope it never infers disappearance.
+const factsOnly = {
+  description:
+    "Every declared English paper Printing fact from the pinned bulk inventory, acquiring no Printing Images (tranche 0).",
+  requiredSurfaces: ["bulk-data"],
+  requestUrlForSurface: bulkSurfaceUrl,
+  acquiredDiscoveryRoles: ["listing"],
+} as const;
 
 export const scryfallSourceAdapterRegistration: SourceAdapterRegistration = {
   adapterVersion: "scryfall-magic-en@1",
@@ -157,7 +174,7 @@ export const scryfallSourceAdapterRegistration: SourceAdapterRegistration = {
                 ? "preview"
                 : card.layout === "front_card"
                   ? "incidental_deck_indicator"
-                  : null;
+                  : tokenLayoutExclusion(card);
       if (exclusion !== null) return { sourceKey: id, exclusion, observations: [], requests: [] };
       const parsed = assembleScryfallRecord(bytes, surfaceUrl(id), cutoff);
       return {
@@ -205,6 +222,10 @@ export const scryfallSourceAdapterRegistration: SourceAdapterRegistration = {
   requestSurface: { kind: "credential-free-https" },
   reconciliationCapability: "catalogue",
   printingAdmission: "source_qualification",
+  // Owner decision (#327, 2026-09-21): tranche 0 publishes facts with zero
+  // images, so the exact record/finish/illustration qualification establishes
+  // a new Printing and its image stays an explicit gap.
+  printingNoveltyProof: "qualified_source_record",
   qualifiesCardDesignIdentity: qualifiesDesign,
   qualifiesPrintingIdentity(evidence) {
     const attributes = evidence.observedCardAndPrinting.printing?.game_data?.attributes;
@@ -220,12 +241,8 @@ export const scryfallSourceAdapterRegistration: SourceAdapterRegistration = {
   },
   reconciliationAreas: ["catalogue"],
   requiredSurfaces: ["bulk-data"],
-  requestUrlForSurface: (surface) => {
-    if (surface !== "bulk-data")
-      throw new AdapterParseFailure("Invalid Scryfall bulk metadata surface.", { category: "configuration" });
-    return scryfallBulkMetadataUrl;
-  },
-  coverageContracts: { "representative-english-paper": coverage },
+  requestUrlForSurface: bulkSurfaceUrl,
+  coverageContracts: { "representative-english-paper": coverage, "facts-only": factsOnly },
   parseBytes(bytes, context) {
     if (context.mediaType?.startsWith("image/")) return [];
     if (context.url === scryfallBulkMetadataUrl) {
@@ -259,6 +276,30 @@ export const scryfallSourceAdapterRegistration: SourceAdapterRegistration = {
   },
 };
 
+/**
+ * Owner ruling (#327, 2026-09-21) for `token`-layout records whose type line
+ * lacks the Token prefix. The layout alone never establishes a token: a real
+ * gameplay type with rules text is a gameplay Card; the explicitly named World
+ * Championships advertising inserts and the "Card"/"Stickers" or self-described
+ * reminder inserts are outside Card scope. Anything else stays unresolved.
+ * Returns null for records this ruling does not apply to.
+ */
+export function tokenLayoutRuling(
+  card: Record<string, unknown>,
+): "gameplay" | "advertising" | "non_card_insert" | "category_unresolved" | null {
+  const typeLine = typeof card.type_line === "string" ? card.type_line : "";
+  if (card.layout !== "token" || /^Token(?: |$)/u.test(typeLine)) return null;
+  const rules = typeof card.oracle_text === "string" ? card.oracle_text.trim() : "";
+  if (typeLine === "Card" && !rules && /^\d{4} World Championships Ad$/u.test(String(card.name))) return "advertising";
+  if (typeLine === "Card" || typeLine === "Stickers" || /\bthis reminder card\b/u.test(rules)) return "non_card_insert";
+  return typeLine.trim() && rules ? "gameplay" : "category_unresolved";
+}
+
+function tokenLayoutExclusion(card: Record<string, unknown>) {
+  const ruling = tokenLayoutRuling(card);
+  return ruling === "advertising" || ruling === "non_card_insert" ? ruling : null;
+}
+
 function qualifiesDesign(evidence: SourcePrintingIdentityEvidence) {
   return (
     evidence.observedCardAndPrinting.card?.game === "magic" &&
@@ -284,8 +325,10 @@ function assembleScryfallRecord(bytes: Uint8Array, sourceUrl: string, cutoff = "
     throw new AdapterParseFailure("Scryfall pilot requires retained issued-card release evidence.");
   const layout = text(card.layout);
   const art = layout === "art_series";
-  const token = layout === "token" || layout === "double_faced_token";
-  const categoryUnresolved = layout === "token" && !/^Token(?: |$)/u.test(text(card.type_line));
+  const tokenRuling = tokenLayoutRuling(card);
+  // The per-record pilot path has no exclusion outcome; an excluded kind stays reviewable there.
+  const categoryUnresolved = tokenRuling !== null && tokenRuling !== "gameplay";
+  const token = (layout === "token" && tokenRuling === null) || layout === "double_faced_token";
   if (art && (card.set_type !== "memorabilia" || card.type_line !== "Card // Card"))
     throw new AdapterParseFailure("Scryfall Card category evidence is contradictory.");
   const faces = card.card_faces === undefined ? [card] : list(card.card_faces).map(object);

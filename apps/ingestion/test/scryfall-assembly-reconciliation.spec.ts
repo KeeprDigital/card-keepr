@@ -3,6 +3,7 @@ import bloomvine from "../../../acceptance/fixtures/real-sources/2026-09-14-scry
 import reminder from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/manifest-reminder.json?raw";
 import control from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/etched.json?raw";
 import split from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/split-three.json?raw";
+import gameplayPiece from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/token-layout-gameplay.json?raw";
 import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
 import { get, installReconciliationSuite, postFixtureEvidence, testEnv } from "./reconciliation-helpers";
@@ -117,4 +118,66 @@ test("review-required source claims retain separate finish proposals while the r
       ).toBeLessThan(65536);
     }
   }
+});
+
+test("a facts-only run admits qualified Printings without image bytes and keeps each image gap explicit", async () => {
+  const adapter = requiredSourceAdapter("scryfall-magic-en@1");
+  const values: unknown[] = [];
+  for (const raw of [control, gameplayPiece, bloomvine])
+    values.push(
+      ...(await adapter.parseBytes!(new TextEncoder().encode(raw), {
+        url: JSON.parse(raw).uri,
+        mediaType: "application/json",
+      })),
+    );
+  const started = await postFixtureEvidence({
+    supported_game: "magic",
+    source_lineage: "scryfall-magic-en",
+    adapter_version: "fixture-scryfall-source-record@1",
+    idempotency_key: "facts-only-source-record",
+    requests: [{ id: "cards", url: "https://official-source.invalid/facts-only-source-record" }],
+  });
+  expect(started.response.status).toBe(201);
+  const requested: string[] = [];
+  const transport = {
+    async fetch(input: RequestInfo | URL) {
+      requested.push(new Request(input).url);
+      return Response.json({ cards: values });
+    },
+  } as Fetcher;
+  const runId = String(started.document.id);
+  await collectFixtureEvidence(testEnv.CATALOGUE_DB, testEnv.EVIDENCE_OBJECTS, transport, runId);
+  // No image request exists: every Printing below rests on its qualified source record.
+  expect(requested).toEqual(["https://official-source.invalid/facts-only-source-record"]);
+  const candidate = await prepareNativeEvidence({
+    runId,
+    game: "magic",
+    predecessor: "catrev_spine_000",
+    key: "facts-only-source-record-candidate",
+  });
+  const inspected = await get(`/v1/game-candidates/${candidate.id}/inspection?manifest=${candidate.manifest_digest}`);
+  expect(inspected.document).toMatchObject({ ready: true });
+  const records = await nativeCandidateRecords(String(candidate.id), ["cards", "printings", "printing_images"]);
+  expect(
+    records
+      .cards!.map(({ name, category }) => ({ name: String(name), category }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  ).toEqual([
+    { name: "Maddened Oread", category: "gameplay" },
+    { name: "Miara, Thorn of the Glade", category: "gameplay" },
+  ]);
+  const finishes = [control, gameplayPiece].flatMap((raw) => JSON.parse(raw).finishes as string[]);
+  expect(records.printings).toHaveLength(finishes.length);
+  expect(records.printing_images ?? []).toEqual([]);
+  const proposals = (await get("/v1/entity-proposals?game=magic")).document.proposals as {
+    id: string;
+    reference: string;
+    status: string;
+  }[];
+  // The incomplete reversible design stays an unresolved, non-blocking proposal per finish.
+  expect(
+    proposals
+      .filter((proposal) => JSON.parse(proposal.reference)[0] === JSON.parse(bloomvine).id)
+      .map(({ status }) => status),
+  ).toEqual(["unresolved", "unresolved"]);
 });

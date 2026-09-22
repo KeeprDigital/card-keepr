@@ -1,4 +1,4 @@
-import { sources, sourceLineages, type SourceAdapterRegistration } from "../adapters";
+import { sourceAdapterRegistrations, sources, sourceLineages, type SourceAdapterRegistration } from "../adapters";
 import type { sourceAuthorities } from "../source-evidence";
 import {
   canonicalJson,
@@ -65,10 +65,39 @@ export async function admissionPolicyDigest(sourceLineage: string, profile: stri
     source_lineage: sourceLineage,
     real_card: sourceLineage === "owner" ? "owner_retained_evidence" : "retained_structured_record",
     identity: "unambiguous",
-    printing: "explicit_novel_appearance",
+    printing: sourceRecordNoveltyLineage(sourceLineage) ? "qualified_source_record" : "explicit_novel_appearance",
     exceptions: ["source_evidence", "identity"],
   };
   return sha256Text(canonicalJson(requirements));
+}
+
+function sourceRecordNoveltyLineage(lineage: string) {
+  return sourceAdapterRegistrations.some(
+    (registration) =>
+      registration.sourceLineage === lineage && registration.printingNoveltyProof === "qualified_source_record",
+  );
+}
+
+/**
+ * Novelty of a new Printing: complete retained image proof or, for a lineage
+ * registered with `qualified_source_record`, its exact source qualification.
+ */
+export function printingNoveltyEstablished(
+  observation: Pick<
+    ParsedCardPrintingObservation,
+    | "demonstrablyNovel"
+    | "noveltyProofComplete"
+    | "cardDesignKey"
+    | "observedCardAndPrinting"
+    | "locator"
+    | "variantKey"
+    | "artworkFingerprint"
+  >,
+  proof: SourceAdapterRegistration["printingNoveltyProof"],
+  qualifiesPrintingIdentity: SourceAdapterRegistration["qualifiesPrintingIdentity"],
+) {
+  if (observation.demonstrablyNovel && observation.noveltyProofComplete) return true;
+  return proof === "qualified_source_record" && qualifiesPrintingIdentity?.(observation) === true;
 }
 
 export function supplementalLineage(lineage: string) {
@@ -86,6 +115,7 @@ export async function assessSourceAdmission(
     cardDesignKey?: string;
     printingAdmission: "owner_review" | "source_qualification" | "unqualified";
     qualifiesPrintingIdentity?: SourceAdapterRegistration["qualifiesPrintingIdentity"];
+    printingNoveltyProof?: SourceAdapterRegistration["printingNoveltyProof"];
   } = {
     printingAdmission: "unqualified",
   },
@@ -184,8 +214,11 @@ export async function assessSourceAdmission(
       !rejected &&
       policy.automatic &&
       (observation.observedCardAndPrinting.printing === null ||
-        (observation.demonstrablyNovel &&
-          observation.noveltyProofComplete &&
+        (printingNoveltyEstablished(
+          observation,
+          requirements.printingNoveltyProof,
+          requirements.qualifiesPrintingIdentity,
+        ) &&
           (requirements.qualifiesPrintingIdentity?.(observation) ?? observation.artworkIdentityExplicit))));
   return {
     proposal,
