@@ -101,10 +101,56 @@ export function terminalHttpFailureClass(
   return status !== 429 && status < 500 ? "rejected" : null;
 }
 
+// A page request answered by a same-site redirect keeps the redirect response
+// as its retained evidence under this terminal code, and its resolved Location
+// continues as one newly discovered Source Request (issue #334). The redirected
+// request is never treated as the original content.
+export const redirectDiscoveredFailureCode = "source_request_redirect_discovered";
+
+// Page roles that may discover their same-site redirect target. Root surfaces
+// keep their immutable planned URL; a Printing Image binds to the exact URL its
+// observation declared, so it keeps the tolerated image-gap path.
+export const redirectDiscoveryRoles: readonly SourceRequestRole[] = Object.freeze([
+  "listing",
+  "detail",
+  "product_detail",
+]);
+
+const multipartRegistrableSuffixLabels = new Set(["co", "com", "net", "org", "ne", "or", "ac", "go", "gov", "edu"]);
+
+/** The registrable domain of a host (eTLD+1), without a public suffix list. */
+export function registrableDomain(hostname: string): string {
+  const labels = hostname.toLowerCase().replace(/\.$/u, "").split(".");
+  if (labels.length <= 2 || /^\d+$/u.test(labels.at(-1)!) || hostname.startsWith("[")) return labels.join(".");
+  const tld = labels.at(-1)!;
+  const second = labels.at(-2)!;
+  const keep = tld.length === 2 && multipartRegistrableSuffixLabels.has(second) ? 3 : 2;
+  return labels.slice(-keep).join(".");
+}
+
+/** The resolved same-site HTTPS target of a redirect, or null when it may not be discovered. */
+export function sameSiteRedirectTarget(requestUrl: string, location: string | null): string | null {
+  if (location === null || location.trim() === "") return null;
+  let origin: URL;
+  let target: URL;
+  try {
+    origin = new URL(requestUrl);
+    target = new URL(location.trim(), origin);
+  } catch {
+    return null;
+  }
+  if (target.protocol !== "https:" || target.username || target.password) return null;
+  target.hash = "";
+  if (target.href === origin.href) return null;
+  return registrableDomain(target.hostname) === registrableDomain(origin.hostname) ? target.href : null;
+}
+
 // A failed Source Request that collection completion, reconciliation, and
 // publication tolerate: the run proceeds and the missing Printing Image is
-// recorded explicitly instead of failing the run.
+// recorded explicitly instead of failing the run, or the redirected page's
+// content continues in the Source Request its redirect discovered.
 export function toleratesRequestFailure(role: SourceRequestRole, failureCode: string | null): boolean {
+  if (failureCode === redirectDiscoveredFailureCode) return redirectDiscoveryRoles.includes(role);
   return role === "image" && failureCode !== null && toleratedPrintingImageFailureCodes.includes(failureCode);
 }
 

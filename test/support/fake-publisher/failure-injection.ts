@@ -89,6 +89,13 @@ export function transportOutcomeForPath(
       headers: { location: options.redirectLocation },
     });
   }
+  // Same-site redirect discovery (issue #334): a relative Location, a second
+  // hop, and a cross-site target.
+  if (pathname === "/moved.php") return new Response(null, { status: 301, headers: { location: "/moved/" } });
+  if (pathname === "/moved/") return new Response('{"cards":[{"card_number":"OP02-001"}]}');
+  if (pathname === "/redirect-twice") return new Response(null, { status: 302, headers: { location: "/redirect" } });
+  if (pathname === "/redirect-cross-site")
+    return new Response(null, { status: 302, headers: { location: "https://elsewhere.invalid/cards" } });
   if (pathname === "/unavailable") return unavailable("0");
   if (pathname === "/conditional") {
     if (request.headers.get("if-none-match") === '"conditional-v1"') {

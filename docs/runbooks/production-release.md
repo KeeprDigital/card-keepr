@@ -10,6 +10,36 @@ manual `production-release` workflow is serialized, uses the protected GitHub
 deployment credentials. Catalogue backup and recovery use the separate
 [backup/recovery procedure](backup-recovery.md).
 
+## Release process
+
+The accepted front door ([#238](https://github.com/KeeprDigital/card-keepr/issues/238))
+is a release pull request. Today it only versions, tags and publishes notes; it
+does not start staging or production. Use the guarded commands below to deploy.
+
+- **Titles:** every pull request title is a conventional commit,
+  `type(scope)?: summary` with type `feat`, `fix`, `perf`, `refactor`, `docs`,
+  `test`, `build`, `ci` or `chore`, and `!` before `:` for a breaking change.
+  The required `pr-title` check blocks other titles. PRs merge by squash, so the
+  title becomes the one-line main commit that release-please reads.
+- **Release PR:** on every push to `main`, `release-please.yml` keeps one open
+  `chore: release X.Y.Z` PR on a `release-please--*` branch. It updates
+  `CHANGELOG.md`, the `package.json` version and `.release-please-manifest.json`.
+  `feat`/`fix`/`perf`/`refactor`/`docs`/`build`/`ci` appear in the changelog;
+  `test`/`chore` do not. Before 1.0, `feat` and breaking changes bump the minor
+  version and fixes the patch version. The first release is `0.1.0` and collects
+  commits after `bootstrap-sha` in `release-please.json`.
+- **Initiation:** merging the release PR is the owner's release initiation.
+  release-please then creates the `vX.Y.Z` tag on that exact merge commit and a
+  GitHub Release whose notes are the changelog entry.
+- **Token limits:** release-please uses the workflow `GITHUB_TOKEN`. Its tag
+  pushes start no workflow, and its release PR's `pull_request` runs wait for
+  approval. Approve those runs (or close and reopen the PR) so the required checks
+  report before queueing. A later release workflow must chain from
+  `release-please.yml` or dispatch, not rely on a tag `push` trigger.
+
+`release-please.json` and `.release-please-manifest.json` own the exact policy.
+Edit the manifest by hand only to bootstrap or correct a version.
+
 ## First provisioning
 
 Provision the exact resources from both checked-in Wrangler configurations before

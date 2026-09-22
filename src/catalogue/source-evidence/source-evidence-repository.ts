@@ -78,6 +78,8 @@ import {
   parseStringRecord,
   type StartEvidenceRunRequest,
   toleratedPrintingImageFailureCodes,
+  redirectDiscoveredFailureCode,
+  redirectDiscoveryRoles,
   validateEvidencePlans,
 } from "./source-evidence-model";
 import type {
@@ -2362,10 +2364,18 @@ export async function finalizeEvidenceRun(database: CatalogueStore, runId: strin
                   AND request_id NOT IN (SELECT value FROM json_each(?3))
                   AND NOT (request_role = 'image'
                     AND failure_code IN (SELECT value FROM json_each(?2)))
+                  AND NOT (request_role IN (SELECT value FROM json_each(?5))
+                    AND failure_code = ?4)
                  THEN 1 ELSE 0 END) AS failed
        FROM source_requests WHERE ingestion_run_id = ?1`,
     )
-    .bind(runId, toleratedImageCodes, optionalOutageIds)
+    .bind(
+      runId,
+      toleratedImageCodes,
+      optionalOutageIds,
+      redirectDiscoveredFailureCode,
+      JSON.stringify(redirectDiscoveryRoles),
+    )
     .first<{ active: number | null; failed: number | null }>();
   if (counts === null || (counts.active ?? 0) > 0) return;
   const completedAt = new Date().toISOString();
@@ -2381,9 +2391,11 @@ export async function finalizeEvidenceRun(database: CatalogueStore, runId: strin
          WHERE ingestion_run_id = ?1 AND state = 'failed'
            AND NOT (request_role = 'image'
              AND failure_code IN (SELECT value FROM json_each(?2)))
+           AND NOT (request_role IN (SELECT value FROM json_each(?4))
+             AND failure_code = ?3)
          ORDER BY sequence_number LIMIT 1`,
       )
-      .bind(runId, toleratedImageCodes)
+      .bind(runId, toleratedImageCodes, redirectDiscoveredFailureCode, JSON.stringify(redirectDiscoveryRoles))
       .first<{ failure_code: string | null }>();
     const failureCode = failure?.failure_code ?? "source_evidence_failed";
     await database.batch([

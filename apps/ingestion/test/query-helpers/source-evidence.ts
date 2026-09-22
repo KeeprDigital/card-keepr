@@ -1463,6 +1463,11 @@ export function readSourceRequestSequencesForComposedCollectionPlanSequences(
        FROM source_requests WHERE ingestion_run_id = ? ORDER BY sequence_number`);
 }
 
+export function readSourceRequestsForRedirectDiscovery(database: D1Database): D1PreparedStatement {
+  return database.prepare(`SELECT request_id, request_role, url, state, failure_code, discovered_from_request_id
+       FROM source_requests WHERE ingestion_run_id = ? ORDER BY sequence_number`);
+}
+
 export function readParsedObservationSetForBandaiSurfaceDocumentParts(database: D1Database): D1PreparedStatement {
   return database.prepare(`SELECT operation.state, operation.observation_count,
          (SELECT COUNT(*) FROM source_record_auxiliary AS auxiliary
