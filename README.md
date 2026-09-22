@@ -50,6 +50,7 @@ its first approved publication.
 | Inventory, name, probe or rotate credentials                | [Credentials](docs/runbooks/credentials.md)                                                                                        |
 | Configure automatic dev deployment                          | [Isolated dev](docs/runbooks/isolated-dev.md)                                                                                      |
 | Select and validate an exact staging release                | [Manual staging](docs/runbooks/manual-staging.md)                                                                                  |
+| Merge, protect branches/tags or cut a release PR            | [Repository rules](docs/runbooks/repository-rules.md)                                                                              |
 | Diagnose failures, repair search or reclaim unused objects  | [Maintenance](docs/runbooks/maintenance.md)                                                                                        |
 | Check scheduled tests and source freshness                  | [Scheduled stress](docs/runbooks/scheduled-stress.md), [source monitoring](acceptance/fixtures/retained-official-source/README.md) |
 
