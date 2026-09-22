@@ -255,6 +255,13 @@ private retained fronts, cannot be linked, and change no accepted Catalogue Data
 The search query parameter is client-rendered and was not guessed; the ARC promo
 rows did not appear in the retained set order. Riot's authority is unchanged.
 [HexDeck pilot](https://github.com/KeeprDigital/card-keepr/issues/332).
+Its separate `search-census` scope walks the same search in the parameter order
+HexDeck's own navigation uses, so its request identities stay apart from the
+pilot's. Page 1's total and page size imply the page count; every page must echo
+the registered display and sort, carry its implied row count and match page 1,
+or the parse fails closed. Every listing is retained as a source-record Entity
+Proposal with the incomplete-facts issue and its page-referenced front; none can
+be linked from this surface.
 
 ## Runtime and storage boundaries
 

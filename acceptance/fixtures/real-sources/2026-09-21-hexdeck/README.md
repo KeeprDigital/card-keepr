@@ -89,6 +89,38 @@ unchanged: the consumer revision is preserved while the fresh evidence receives
 its own verified backup. Tests and source selection do not install production
 decisions.
 
+## Access evidence behind the pacing bounds
+
+The 14 September assessment retained `https://www.hexdeck.io/robots.txt` as an
+HTTP 404 Vercel HTML page (36,280 bytes, SHA-256
+`2a4a1781d62f2dda76b8c0a90e8d875539c13619352ab8cb42341018cb4a2d82`): there is no
+robots policy. The retained terms (updated 23 June 2026) require written
+permission for automated scripts; the owner cleared automated consumption on
+2026-09-21. The search pages are Next.js renders on Vercel; fronts are served by
+the shared Cloudflare Images host `imagedelivery.net`. The registration's #389
+bounds are therefore conservative: the page host is sequential with a 1 s floor
+and 8 s ceiling; the image host allows up to 4 in flight with a 100 ms floor and
+2 s ceiling.
+
+## Search census scope (offline-ready, not yet run live)
+
+The `search-census` coverage ([plan](../../../../docs/examples/hexdeck-census-plan.json))
+starts at `/cards?displayFormat=Images&page=1&sortField=Set&sortDirection=Ascending`,
+the parameter order of HexDeck's own navigation link, which keeps its request
+identities apart from the pilot pages. Page 1 discovers pages 2 to
+`ceil(totalCount / pageSize)`; each page discovers the `standard` front its own
+markup references for each listing. Every page must echo `Images`/`Set`/`Ascending`
+and carry `pageSize` rows (the remainder on the last page); pages 2 to N are
+parsed with the retained page 1 as parent context and must repeat its
+`totalCount` and `pageSize`. Otherwise the parse fails closed. Retained pages 1,
+7 and 8 parse unchanged as census pages. Every listing becomes a source-record
+Entity Proposal with the pilot's three issues; the two pinned listings keep their
+digest-pinned fronts while they fit, and a changed pin is retained with
+`pinned_qualification: "changed"`. Capacity is 1,100 requests. The offline
+rehearsal `pnpm run test:acceptance hexdeck-census` replays the shipped plan
+against a two-page synthetic envelope around the 100 unchanged listings of pages
+1 and 7.
+
 ## Intended full-import scope, not executed
 
 The Images-format search exposes 19 pages of 50 rows (940 listings) with

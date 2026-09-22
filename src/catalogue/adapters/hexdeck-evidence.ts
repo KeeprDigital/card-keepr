@@ -77,6 +77,34 @@ function pinnedFields(row: HexdeckListing): PinnedFields {
   return rest;
 }
 
+/** Whether a listing is pinned and, if so, still fits its retained qualification. */
+export function hexdeckPinnedStatus(row: HexdeckListing): "unpinned" | "fits" | "changed" {
+  const selected = pinned[row.source_key];
+  if (selected === undefined) return "unpinned";
+  return JSON.stringify(pinnedFields(row)) === JSON.stringify(selected.fields) ? "fits" : "changed";
+}
+
+/** The page context every HexDeck review record retains beside its source record. */
+export function hexdeckSearchPageSidecar(page: HexdeckSearchPage) {
+  return {
+    url: page.url,
+    display_format: page.display_format,
+    sort_field: page.sort_field,
+    sort_direction: page.sort_direction,
+    current_page: page.current_page,
+    page_size: page.page_size,
+    total_count: page.total_count,
+    rows: page.rows.length,
+  };
+}
+
+/** HexDeck's listing surface cannot form a Card, place a treatment or evidence issuance. */
+export const hexdeckListingIssues = [
+  { code: "card_facts_incomplete", source_paths: ["searchTags", "name"] },
+  { code: "printing_treatment_unresolved", source_paths: ["rarity", "imageUrl"] },
+  { code: "physical_issuance_unresolved", source_paths: ["setTag", "setNumber"] },
+] as const;
+
 /** The retained review record for a pinned listing, or null for an unselected row. */
 export function hexdeckPinnedObservation(
   row: HexdeckListing,
@@ -94,11 +122,7 @@ export function hexdeckPinnedObservation(
     locator: row.source_key,
     source_membership: { set_id: row.set_tag, local_id: row.set_number },
     target: { kind: "unresolved_record" },
-    issues: [
-      { code: "card_facts_incomplete", source_paths: ["searchTags", "name"] },
-      { code: "printing_treatment_unresolved", source_paths: ["rarity", "imageUrl"] },
-      { code: "physical_issuance_unresolved", source_paths: ["setTag", "setNumber"] },
-    ],
+    issues: hexdeckListingIssues.map((issue) => ({ ...issue, source_paths: [...issue.source_paths] })),
     appearance_evidence: {
       images: [
         {
@@ -113,16 +137,7 @@ export function hexdeckPinnedObservation(
     source_sidecar: {
       source_record_json: JSON.stringify({
         ...row.record,
-        search_page: {
-          url: page.url,
-          display_format: page.display_format,
-          sort_field: page.sort_field,
-          sort_direction: page.sort_direction,
-          current_page: page.current_page,
-          page_size: page.page_size,
-          total_count: page.total_count,
-          rows: page.rows.length,
-        },
+        search_page: hexdeckSearchPageSidecar(page),
       }),
     },
     completeness: {

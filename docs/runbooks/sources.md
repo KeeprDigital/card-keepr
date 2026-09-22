@@ -152,6 +152,13 @@ page-referenced fronts. [Evidence and scope](../../acceptance/fixtures/real-sour
 record the three budgeted runs, the rejected bare image locator, and why both
 records stay unresolved review records: the listing surface has no rules text,
 artist, finish or locale, and the search query parameter is not exposed.
+The [census plan](../examples/hexdeck-census-plan.json) selects the
+`search-census` scope: page 1 of the same search in HexDeck's own link order,
+every page its total implies and each listing's page-referenced front, under a
+1,100-request capacity (19 pages and 940 listings on 2026-09-21, plus headroom).
+A page that drifts from page 1 or lacks its implied row count fails the parse;
+retry rather than resume. Every listing becomes a source-record Entity Proposal
+that cannot be linked from this surface.
 
 Independently complete named scopes can be collected and published successively.
 Keep each scope's exact root contract and complete Card variant inventory; a
