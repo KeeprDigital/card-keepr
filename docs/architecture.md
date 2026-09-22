@@ -92,6 +92,14 @@ without the marker replaces it through reconciliation, and it never implies a
 scheduled update. Before Go-Live this edits the Release definition and export
 schema v5 in place.
 [Tentative release dates](https://github.com/KeeprDigital/card-keepr/issues/334#issuecomment-5769592182).
+A recognised day date followed by free Publisher text (for example an event
+pre-sale) keeps the leading date as the Release date; the text stays verbatim as
+unmapped evidence and raises `release_date_qualifier_retained` at inspection,
+without new vocabulary. A same-site redirect of a page request is retained as
+that request's evidence and its Location continues as one discovered Source
+Request (one hop, budget-counted); the redirect is never the original content
+and cross-site redirects still fail.
+[Qualifier and redirect decisions](https://github.com/KeeprDigital/card-keepr/issues/334#issuecomment-5770068497).
 
 ## Identity and owner decisions
 

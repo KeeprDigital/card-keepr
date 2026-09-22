@@ -39,10 +39,13 @@ test("a tentative marker keeps the stated date and flags it", () => {
   // The marker does not make an unrecognized or absent date acceptable.
   assert.throws(() => normalizedOfficialReleaseDate("(Subject to change)"), /Unrecognized official Release date/u);
   assert.throws(() => normalizedOfficialReleaseDate("Soon (Subject to change)"), /Unrecognized official Release date/u);
-  assert.throws(
-    () => normalizedOfficialReleaseDate("September 30, 2022 (Limited stores)"),
-    /Unrecognized official Release date/u,
-  );
+  // Any other trailing text is a free-text qualifier (issue #334), not a
+  // tentative marker: the leading date is kept and the text retained.
+  assert.deepEqual(normalizedOfficialReleaseDate("September 30, 2022 (Limited stores)"), {
+    precision: "day",
+    value: "2022-09-30",
+    qualifier: "(Limited stores)",
+  });
 });
 
 test("the retained live One Piece pre-release deck page records a tentative Release", () => {
