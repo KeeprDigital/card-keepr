@@ -118,7 +118,21 @@ export async function validateDispatchAndWriteSql(environment, directory) {
     plan.expected_migration_level < 12 && localMigrationLevel >= 12 ? "NOT EXISTS (SELECT 1 FROM ingestion_runs)" : "1";
   // The canonical lease exists before the run-event cutover and remains the
   // same reservation through migration; no synthetic Ingestion Run is needed.
-  const preparedWhere = `idempotency_key=${q(plan.idempotency_key)} AND operation='prepare_production_release' AND request_json=${q(environment.PREPARED_PLAN_JSON)} AND json_extract(response_json,'$.release_id')=${q(plan.release_id)} AND json_extract(response_json,'$.dispatch_digest')=${q(environment.DISPATCH_DIGEST)} AND json_extract(response_json,'$.prepared_plan_json')=${q(environment.PREPARED_PLAN_JSON)}`;
+  // An automatic promotion (#238) has no owner confirmation envelope: its plan is
+  // confirmed only by the immutable promotion record that names this exact dispatch.
+  const promotion = plan.idempotency_key.startsWith("promotion:");
+  if (
+    promotion &&
+    (!plan.release_id.startsWith("promotion-") ||
+      plan.expected_actor !== "github-actions[bot]" ||
+      preparedPlan.fresh_baseline_handoff !== undefined ||
+      replacement !== null)
+  )
+    throw new Error("invalid_promotion_dispatch");
+  const promotionConfirmed = promotion
+    ? ` AND EXISTS (SELECT 1 FROM administration_idempotency AS promotion WHERE promotion.operation='production_promotion' AND promotion.idempotency_key LIKE 'production-promotion:%' AND json_extract(promotion.response_json,'$.confirmed_by') LIKE 'promotion:%' AND json_extract(promotion.response_json,'$.production_release.release_id')=${q(plan.release_id)} AND json_extract(promotion.response_json,'$.production_release.dispatch_digest')=${q(environment.DISPATCH_DIGEST)} AND json_extract(promotion.response_json,'$.production_release.prepared_plan_json')=${q(environment.PREPARED_PLAN_JSON)})`
+    : "";
+  const preparedWhere = `idempotency_key=${q(plan.idempotency_key)} AND operation='prepare_production_release' AND request_json=${q(environment.PREPARED_PLAN_JSON)} AND json_extract(response_json,'$.release_id')=${q(plan.release_id)} AND json_extract(response_json,'$.dispatch_digest')=${q(environment.DISPATCH_DIGEST)} AND json_extract(response_json,'$.prepared_plan_json')=${q(environment.PREPARED_PLAN_JSON)}${promotionConfirmed}`;
   const recoveryGate =
     replacement === null
       ? `operation.recovery_health='healthy' AND operation.active_recovery_id IS NULL AND operation.recovery_restore_guard='clear'`

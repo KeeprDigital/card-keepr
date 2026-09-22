@@ -928,6 +928,22 @@
     "cli": null
   },
   {
+    "worker": "admin",
+    "family": "platform",
+    "method": "POST",
+    "path": "/v1/staging-deployments/:release/promotion-outcome",
+    "slice": "Signed Workflow deployment",
+    "cli": null
+  },
+  {
+    "worker": "admin",
+    "family": "platform",
+    "method": "POST",
+    "path": "/v1/production-promotions",
+    "slice": "Signed Workflow deployment",
+    "cli": null
+  },
+  {
     "worker": "read",
     "family": "preflight",
     "method": "OPTIONS",

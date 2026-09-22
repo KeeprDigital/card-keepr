@@ -2,13 +2,16 @@ import { streamingHttpRoute } from "../../http/openapi";
 import type { RouteContext } from "../../http/routes";
 import {
   devDeploymentRoute,
+  productionPromotionRoute,
   stagingAuthorizationRoute,
   signedStagingDeploymentRoute,
   stagingOutcomeRoute,
+  stagingPromotionOutcomeRoute,
 } from "./platform-http-contract";
 import { handleDevDeployment } from "./dev-deployment";
+import { handleProductionPromotion } from "./production-promotion";
 import { handleStagingAuthorization } from "./staging-authorization";
-import { handleStagingDeployment, handleStagingOutcome } from "./staging-deployment";
+import { handleStagingDeployment, handleStagingOutcome, handleStagingPromotionOutcome } from "./staging-deployment";
 
 type Context = RouteContext<Parameters<typeof handleDevDeployment>[1]>;
 // The signed handlers validate bounded JSON receipts before serialization;
@@ -19,4 +22,8 @@ export const platformRoutes = [
   route(stagingAuthorizationRoute, async (c) => handleStagingAuthorization(c.env.request, c.env.env)),
   route(signedStagingDeploymentRoute, async (c) => handleStagingDeployment(c.env.request, c.env.env)),
   route(stagingOutcomeRoute, async (c) => handleStagingOutcome(c.env.request, c.env.env, c.req.valid("param").release)),
+  route(stagingPromotionOutcomeRoute, async (c) =>
+    handleStagingPromotionOutcome(c.env.request, c.env.env, c.req.valid("param").release),
+  ),
+  route(productionPromotionRoute, async (c) => handleProductionPromotion(c.env.request, c.env.env)),
 ];
