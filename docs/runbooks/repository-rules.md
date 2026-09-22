@@ -15,6 +15,7 @@ these values as accepted direction, not applied state.
 | Squash commit title / body                   | PR title / PR body                                             |
 | PR title                                     | Conventional commit, enforced by the required `pr-title` check |
 | Delete head branch on merge                  | On                                                             |
+| Allow auto-merge                             | On; `gh pr merge --squash` joins the merge queue through it     |
 | Agent branches                               | `codex/<issue>-<slug>`                                         |
 | Release branch                               | `release-please--*`, reserved for release-please's release PR  |
 | Default `GITHUB_TOKEN` permission            | Read; every workflow declares its own permissions              |
