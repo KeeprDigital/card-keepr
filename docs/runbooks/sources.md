@@ -119,6 +119,20 @@ with the same complete Card and Product scopes required by the selected authorit
 explain the three available scans, four missing treatment scans, overlapping
 Product text and full-import gaps. These plans do not select the whole game.
 
+The [declared-catalogue plan](../examples/pokemon-declared-catalogue-plan.json)
+selects TCGdex's complete declared English coverage: the English Set inventory
+and Pocket roots, every non-Pocket Set, every enumerated Card record and each
+record image a Printing references. Qualified records admit automatically; each
+finish variant shares its record's image, which must be retained before that
+Printing can publish. Edition or stamp variants without a depicted group, records
+without an image, failed image fetches, foil-pattern claims and records the
+profile cannot map stay Entity Proposals with explicit gaps. The registration's
+finite capacity is the dated census envelope (45,000). Hosts are paced at one
+metadata request per second and two concurrent image requests at 500 ms. The
+selected official publications are a separate supplement; run their plans
+after the TCGdex Cards are published; how official Garchomp joins TCGdex `swsh9-109`
+remains an open owner decision in [#329](https://github.com/KeeprDigital/card-keepr/issues/329).
+
 The Riftbound DB [pilot plan](../examples/riftbound-db-pilot-plan.json) selects only
 the retained facet surface and first three results of each PR/Bird query, with four
 inspected original images. Its seven-request bound is not a full PR inventory.

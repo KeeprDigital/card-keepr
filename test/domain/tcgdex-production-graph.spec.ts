@@ -99,7 +99,10 @@ test("production qualifies an issued Trainer Kit Card into one Card and Printing
 test("a declared-catalogue record the Game Profile cannot map stays one unresolved source record", async () => {
   const adapter = sourceAdapterForCoverage(tcgdexPokemonSourceAdapterRegistration, "english-declared-catalogue");
   const bytes = readFileSync(
-    new URL("../../acceptance/fixtures/real-sources/2026-09-15-pokemon-optional-relations/raw/card-tk-ex-latia-2.body", import.meta.url),
+    new URL(
+      "../../acceptance/fixtures/real-sources/2026-09-15-pokemon-optional-relations/raw/card-tk-ex-latia-2.body",
+      import.meta.url,
+    ),
   );
   const context = {
     url: "https://api.tcgdex.net/v2/en/cards/tk-ex-latia-2",
@@ -120,7 +123,7 @@ test("a declared-catalogue record the Game Profile cannot map stays one unresolv
   expect(observations[0]).not.toHaveProperty("printing");
 });
 
-test("a multi-treatment record keeps every Printing distinct and associates its shared record image with none", async () => {
+test("edition variants keep every Printing distinct and none inherits the record image", async () => {
   const adapter = sourceAdapterForCoverage(tcgdexPokemonSourceAdapterRegistration, "english-declared-catalogue");
   const card = parent("card-base1-5", "detail");
   const context = {
@@ -139,6 +142,72 @@ test("a multi-treatment record keeps every Printing distinct and associates its 
   expect(adapter.discoverRequests!(card.bytes, context)).toEqual([]);
 });
 
+test("finish variants of one record share its single image as their novelty proof", async () => {
+  const adapter = sourceAdapterForCoverage(tcgdexPokemonSourceAdapterRegistration, "english-declared-catalogue");
+  const card = parent("card-swsh9-053", "detail");
+  const context = {
+    url: card.url,
+    mediaType: card.mediaType,
+    parents: [parent("set-swsh9", "listing"), parent("pocket-series", "listing"), parent("english-sets", "surface")],
+  };
+  const image = "https://assets.tcgdex.net/en/swsh/swsh9/053/high.png";
+  const observations = await adapter.parseBytes!(card.bytes, context);
+  expect(observations.length).toBeGreaterThan(1);
+  const finishes = new Set<string>();
+  for (const raw of observations) {
+    const parsed = parseReconciliationObservation("qualification", raw);
+    if (parsed.kind !== "card_printing") throw new Error("Expected a qualified Card and Printing");
+    const attributes = parsed.observedCardAndPrinting.printing!.game_data!.attributes;
+    finishes.add(String(attributes.finish));
+    expect(attributes).toMatchObject({ edition: null, stamps: [] });
+    expect(raw).toMatchObject({
+      identity_evidence: {
+        demonstrably_novel: true,
+        novelty_basis: {
+          kind: "source_printing_image",
+          source_url: image,
+          artwork_fingerprint: parsed.artworkFingerprint,
+        },
+      },
+      appearance_evidence: {
+        images: [{ role: "front", source_url: image, artwork_fingerprint: parsed.artworkFingerprint }],
+      },
+    });
+  }
+  expect(finishes.size).toBe(observations.length);
+  expect(adapter.discoverRequests!(card.bytes, context)).toEqual([
+    { role: "image", url: image, headers: { accept: "image/png" } },
+  ]);
+});
+
+test("an unmarked finish group shares the image while a stamped variant keeps a gap", async () => {
+  const adapter = sourceAdapterForCoverage(tcgdexPokemonSourceAdapterRegistration, "english-declared-catalogue");
+  const card = parent("card-swsh9-053", "detail");
+  const source = JSON.parse(card.bytes.toString()) as { variants_detailed: Record<string, unknown>[] };
+  source.variants_detailed.push({
+    type: "holo",
+    size: "standard",
+    stamp: ["pre-release"],
+    variantId: "synthetic-stamp",
+  });
+  const bytes = new TextEncoder().encode(JSON.stringify(source));
+  const context = {
+    url: card.url,
+    mediaType: card.mediaType,
+    parents: [parent("set-swsh9", "listing"), parent("pocket-series", "listing"), parent("english-sets", "surface")],
+  };
+  const observations = (await adapter.parseBytes!(bytes, context)) as {
+    printing: { game_data: { attributes: { stamps: string[] } } };
+    appearance_evidence: { images: unknown[] };
+  }[];
+  expect(
+    observations.map((value) => [
+      value.printing.game_data.attributes.stamps.length,
+      value.appearance_evidence.images.length,
+    ]),
+  ).toEqual([...observations.slice(0, -1).map(() => [0, 1]), [1, 0]]);
+});
+
 test("an unqualified foil-pattern claim keeps the whole record unresolved with its record image", async () => {
   const adapter = sourceAdapterForCoverage(tcgdexPokemonSourceAdapterRegistration, "english-declared-catalogue");
   const card = parent("card-base3-62", "detail");
@@ -153,14 +222,6 @@ test("an unqualified foil-pattern claim keeps the whole record unresolved with i
   expect(adapter.discoverRequests!(card.bytes, context)).toEqual([
     { role: "image", url: "https://assets.tcgdex.net/en/base/base3/62/high.png", headers: { accept: "image/png" } },
   ]);
-});
-
-test("the facts scope reads the same declared root and acquires no image role", () => {
-  const facts = sourceAdapterForCoverage(tcgdexPokemonSourceAdapterRegistration, "english-declared-catalogue-facts");
-  expect(facts.requiredSurfaces?.map((surface) => facts.requestUrlForSurface!(surface))).toEqual([
-    "https://api.tcgdex.net/v2/en/sets",
-  ]);
-  expect(facts.acquiredDiscoveryRoles).toEqual(["listing", "detail"]);
 });
 
 test("both pilot observations keep exact merged bytes and request capacity while graph replays require their retained membership", () => {
@@ -193,9 +254,8 @@ test("both pilot observations keep exact merged bytes and request capacity while
 });
 
 test("both Pokémon registrations pace publisher pages sequentially and cite retained access evidence", async () => {
-  const { pokemonOfficialSourceAdapterRegistration } = await import(
-    "../../src/catalogue/adapters/pokemon-official-source-adapter"
-  );
+  const { pokemonOfficialSourceAdapterRegistration } =
+    await import("../../src/catalogue/adapters/pokemon-official-source-adapter");
   const declared = [tcgdexPokemonSourceAdapterRegistration, pokemonOfficialSourceAdapterRegistration].flatMap(
     (adapter) => adapter.hostPacing.map((policy) => [policy.hostname, policy.kind, policy.maximumConcurrency]),
   );

@@ -1,0 +1,18 @@
+{
+  "plans": [
+    {
+      "supported_game": "pokemon",
+      "source_lineage": "tcgdex-pokemon-en",
+      "adapter_version": "tcgdex-pokemon-en@1",
+      "subset": "english-declared-catalogue",
+      "participation": "required",
+      "requests": [
+        {
+          "id": "tcgdex-pokemon-en:english-set-inventory",
+          "url": "https://api.tcgdex.net/v2/en/sets",
+          "headers": { "accept": "application/json" }
+        }
+      ]
+    }
+  ]
+}

@@ -86,11 +86,31 @@ function englishImage(imageBase: string) {
   return image;
 }
 
+/** Print-level attributes a finish does not change. */
+function printKey(treatment: Treatment) {
+  return JSON.stringify([treatment.edition, treatment.size, treatment.stamps]);
+}
+
 /**
- * One qualified Card and a Printing per detailed issued treatment. Only an
- * inspected pilot scan, or the record image of a record listing exactly one
- * treatment, is associated with a Printing; every other variant keeps an
- * explicit image gap because the shared record image does not depict it.
+ * The finish variants the record image depicts (owner decision 2026-09-22,
+ * #329). Finishes (normal, holo, reverse, ...) are surface treatments on the
+ * record's one illustration, so variants that differ only by finish share its
+ * image, as Scryfall finishes share one scan. An edition, stamp or size is a
+ * visible print difference: when a record lists several, only its unmarked
+ * group (no edition, no stamp) shares the image and the others keep a gap.
+ */
+function sharedImagePrint(treatments: readonly Treatment[]) {
+  const prints = new Set(treatments.map(printKey));
+  if (prints.size === 1) return printKey(treatments[0]!);
+  const unmarked = treatments.filter((treatment) => treatment.edition === null && treatment.stamps.length === 0);
+  return new Set(unmarked.map(printKey)).size === 1 ? printKey(unmarked[0]!) : null;
+}
+
+/**
+ * One qualified Card and a Printing per detailed issued treatment. An inspected
+ * pilot scan binds its exact treatment; otherwise the record image is shared by
+ * the finish variants it depicts. Every other variant, and every variant of a
+ * record without an image, keeps an explicit image gap.
  */
 function observations(card: Record<string, unknown>) {
   const id = text(card.id);
@@ -105,7 +125,7 @@ function observations(card: Record<string, unknown>) {
   const content = tcgdexCardContent(card);
   const attributes = content.attributes;
   const seen = new Set<string>();
-  return variants.map((entry) => {
+  const treatments = variants.map((entry) => {
     const variant = record(entry);
     // A detailed foil-pattern label (e.g. galaxy, cosmos) is an unqualified
     // source claim the Game Profile does not represent; the record stays
@@ -123,7 +143,11 @@ function observations(card: Record<string, unknown>) {
     const key = treatmentKey(treatment);
     if (seen.has(key)) throw new AdapterParseFailure("TCGdex repeats a detailed issued treatment.");
     seen.add(key);
-    const depicted = pilot !== undefined ? pilot.depicts(treatment) : variants.length === 1;
+    return { variant, treatment, key };
+  });
+  const shared = pilot === undefined ? sharedImagePrint(treatments.map(({ treatment }) => treatment)) : null;
+  return treatments.map(({ variant, treatment, key }) => {
+    const depicted = pilot !== undefined ? pilot.depicts(treatment) : printKey(treatment) === shared;
     const preciseImage = depicted ? image : null;
     const fingerprint = `${lineage}:${id}:${key}`;
     const printingAttributes = {
@@ -198,7 +222,7 @@ function observations(card: Record<string, unknown>) {
           preciseImage === null
             ? "No retained image is qualified for this exact treatment."
             : pilot === undefined
-              ? "The record lists only this treatment; its record image is associated with it and depicts no other variant."
+              ? "The record image depicts this record's illustration and is shared by its finish variants; it does not show the finish."
               : "The retained catalogue image depicts this treatment; it does not depict other variants.",
         unmapped_optional_fields: unknownFields(card),
       },
@@ -269,7 +293,7 @@ export const tcgdexPokemonSourceAdapterRegistration = {
       ceilingMs: 16_000,
       maximumConcurrency: 1,
       evidence:
-        "acceptance/fixtures/real-sources/2026-09-14-pokemon/README.md: the retained TCGdex FAQ (2026-09-14) publishes no hard rate limit and asks for considerate use with local caching; no robots.txt is retained. One sequential request per second at the floor keeps the ~21,273-request facts graph near six hours.",
+        "acceptance/fixtures/real-sources/2026-09-14-pokemon/README.md: the retained TCGdex FAQ (2026-09-14) publishes no hard rate limit and asks for considerate use with local caching; no robots.txt is retained. One sequential request per second at the floor keeps the ~21,273 metadata requests near six hours.",
     },
     {
       hostname: "assets.tcgdex.net",
@@ -311,13 +335,6 @@ export const tcgdexPokemonSourceAdapterRegistration = {
       requiredSurfaces: ["english-set-inventory"],
       requestUrlForSurface: declaredCatalogueSurface,
     },
-    "english-declared-catalogue-facts": {
-      description:
-        "The same English declared catalogue graph and Card facts without image requests: every Printing publishes with an explicit image gap until a later image acquisition.",
-      acquiredDiscoveryRoles: ["listing", "detail"],
-      requiredSurfaces: ["english-set-inventory"],
-      requestUrlForSurface: declaredCatalogueSurface,
-    },
     "snorlax-charizard-pilot": {
       description:
         "Exactly English physical svp-051 and base1-4 with their complete detailed treatment arrays. Excludes Pocket (tcgp), other Cards and full launch coverage.",
@@ -353,7 +370,8 @@ function qualifiesDesign(evidence: SourcePrintingIdentityEvidence) {
     evidence.observedCardAndPrinting.card?.game === "pokemon" &&
     evidence.observedCardAndPrinting.card.official_identity.kind === "unknown" &&
     typeof evidence.cardDesignKey === "string" &&
-    /^[A-Za-z0-9][A-Za-z0-9.-]*-[^\s:]+$/u.test(evidence.cardDesignKey) &&
+    /^[^\s:]+$/u.test(evidence.cardDesignKey) &&
+    evidence.cardDesignKey.includes("-") &&
     typeof evidence.variantKey === "string" &&
     evidence.locator === `${evidence.cardDesignKey}:${evidence.variantKey}`
   );
