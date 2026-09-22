@@ -565,13 +565,23 @@ live acceptance under [#237](https://github.com/KeeprDigital/card-keepr/issues/2
 that intent through fresh production guards; a short-lived staging plan cannot
 authorize a later production deployment.
 
-The owner's staging initiation is the single routine approval. A successful
-staging release promotes the same commit automatically, without a second owner
-confirmation ([lean scope](https://github.com/KeeprDigital/card-keepr/issues/238#issuecomment-5771506566)).
-The promotion credential is the production-environment OIDC identity of the
-staging workflow run that claimed the intent, so no new secret is needed.
+A routine release takes the owner's staging initiation plus exactly one human
+approval before production. After a successful staging release, the same
+`staging-deploy.yml` run waits for a required reviewer on the dedicated
+`production-promotion` GitHub environment, then promotes the same commit
+through fresh production guards
+([owner decision](https://github.com/KeeprDigital/card-keepr/issues/238#issuecomment-5772735751),
+superseding the "no second routine approval" of the
+[lean scope](https://github.com/KeeprDigital/card-keepr/issues/238#issuecomment-5771506566)).
+Each path has one human approval, never two: the promotion path's is the
+environment reviewer, and the manual `pnpm release:production` path's is its
+exact-envelope confirmation, so the `production` environment has no reviewer.
+The promotion credential is the gated job's OIDC identity, so no new secret is
+needed; the promote job also refuses to continue without a recorded approval.
 Production binds that run to its own claim, fetches the staging outcome itself,
 and verifies the commit's extended-scenarios run and CI. It rechecks the intent's
 target and schema level and resolves a fresh plan. The promotion record stands in
-for the owner's confirmation envelope, and the unchanged guarded executor deploys.
-Promotion is available code; workflow wiring and live evidence remain with #238.
+for the owner's confirmation envelope, and the unchanged guarded executor,
+called in the same run, deploys. Deployed endpoints accept both the
+`production-promotion` and the earlier `production` identity until both Workers
+run this code. Live evidence of the first promoted release remains with #238.

@@ -245,8 +245,13 @@ step that is running; wait for `keepr status` to show ingestion idle before rota
 
 ## GitHub environment secrets and variables
 
-Three environments, one per target; the names come from the workflows and nothing
-is defined at repository level.
+Three environments hold values, one per target; the names come from the workflows
+and nothing is defined at repository level. A fourth, `production-promotion`,
+holds nothing: it is only the required-reviewer gate on the promotion job of
+`staging-deploy.yml` ([repository rules](repository-rules.md#tags-and-environments)).
+That job's identity is its OIDC token and its `github.token` (contents, actions,
+checks and statuses read); the executor it feeds reads the `production` secrets
+below.
 
 | Environment  | Secret / variable                | Kind                                | Set by                           | Used at                                                                    |
 | ------------ | -------------------------------- | ----------------------------------- | -------------------------------- | -------------------------------------------------------------------------- |
@@ -305,14 +310,27 @@ serve only the local Wrangler runtime without `--target`, from the shell.
 `release run staging` needs `KEEPR_PRODUCTION_ADMINISTRATION_KEY`,
 `KEEPR_STAGING_ADMINISTRATION_KEY` and `KEEPR_GITHUB_RELEASE_TOKEN`; `release run
 production` needs `KEEPR_PRODUCTION_ADMINISTRATION_KEY`, `KEEPR_PRODUCTION_API_KEY`
-and `KEEPR_GITHUB_RELEASE_TOKEN`. Values pass only to the release checkout's
+and `KEEPR_GITHUB_RELEASE_TOKEN`; `release approve` (`pnpm release:approve`) needs
+`KEEPR_GITHUB_RELEASE_TOKEN` and `KEEPR_STAGING_ADMINISTRATION_KEY`. Values pass
+only to the release checkout's (for `release approve`, the current checkout's)
 `keepr` process and are never printed.
 
-`KEEPR_GITHUB_RELEASE_TOKEN` needs only **Actions: write** on `KeeprDigital/card-keepr`
-(workflow dispatch, `cli/provider-github-release.mjs:43`). `release run` also uses
-the read access that grant includes to list `ci.yml`, `dev-deploy.yml` and release
-workflow runs and a run's jobs, and reads `GET /user` for the staging actor; it
-reads no contents or checks. Issue it as a fine-grained personal access token
+`KEEPR_GITHUB_RELEASE_TOKEN` is the owner's fine-grained token on
+`KeeprDigital/card-keepr` with:
+
+- **Actions: write** for workflow dispatch (`cli/provider-github-release.mjs`).
+  `release run` also uses the read access it includes to list `ci.yml`,
+  `dev-deploy.yml` and release workflow runs and a run's jobs, and reads
+  `GET /user` for the staging actor.
+- **Deployments: write** for `release approve`, which approves the waiting
+  `production-promotion` deployment as the token's user
+  (`POST …/actions/runs/{id}/pending_deployments`); that user must be the
+  environment's required reviewer.
+- **Commit statuses: read** for `release approve` to show the
+  `extended-scenarios` status. Without it the command shows the status as
+  unavailable and still works.
+
+It reads no contents or checks. Issue it as a fine-grained personal access token
 scoped to this repository and rotate it in GitHub's token settings, then update
 `.env`. `KEEPR_GITHUB_RELEASE_ACTOR` (not secret, never stored) is
 `github-actions[bot]` for `release production` and the dispatching owner's login

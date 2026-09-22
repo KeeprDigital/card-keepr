@@ -3,18 +3,34 @@
 Release smoke covers Card, Printing, image, retained export and stale-cursor targets.
 Printed Rules Text and publisher Errata are in scope; tournament eligibility is excluded.
 
-`keepr release production` is the guarded Worker deployment path. Pull
+The `production-release` workflow is the guarded Worker deployment path. Pull
 request and `main` CI run validation and local Wrangler dry-runs only. The
-manual `production-release` workflow is serialized, uses the protected GitHub
-`production` environment, and is the only workflow that reads Cloudflare
-deployment credentials. Catalogue backup and recovery use the separate
-[backup/recovery procedure](backup-recovery.md).
+workflow is serialized, uses the GitHub `production` environment, and is the
+only workflow that reads production Cloudflare deployment credentials. It runs
+either when `keepr release production` dispatches it or when a staging run calls
+it after an approved [promotion](#automatic-promotion-from-staging). Catalogue
+backup and recovery use the separate [backup/recovery procedure](backup-recovery.md).
 
 ## Release process
 
-The accepted front door ([#238](https://github.com/KeeprDigital/card-keepr/issues/238))
-is a release pull request. Today it only versions, tags and publishes notes; it
-does not start staging or production. Use the guarded commands below to deploy.
+The routine release ([#238](https://github.com/KeeprDigital/card-keepr/issues/238))
+has one owner command and one approval:
+
+1. **Merge the release PR.** release-please tags the merge commit `vX.Y.Z`,
+   publishes the notes and runs the extended scenarios on that commit.
+2. **`pnpm release:staging`** (confirm the envelope `y`). The newest `main`
+   commit with green push CI and dev delivery is normally that tag commit;
+   `--tag vX.Y.Z` pins it. The command returns once staging succeeded.
+3. **`pnpm release:approve`** (answer `y`), or approve the waiting
+   `production-promotion` deployment on the run page. This is the one human
+   approval before production.
+4. The same run promotes the commit automatically through fresh production
+   guards and the guarded executor. Watch it on the run page.
+
+Every path takes exactly one human approval. The manual
+[`pnpm release:production`](#one-command-release) is the break-glass path; its
+`y/N` envelope confirmation is its one approval, so the `production` environment
+has no required reviewer.
 
 - **Titles:** every pull request title is a conventional commit,
   `type(scope)?: summary` with type `feat`, `fix`, `perf`, `refactor`, `docs`,
@@ -28,14 +44,16 @@ does not start staging or production. Use the guarded commands below to deploy.
   `test`/`chore` do not. Before 1.0, `feat` and breaking changes bump the minor
   version and fixes the patch version. The first release is `0.1.0` and collects
   commits after `bootstrap-sha` in `release-please.json`.
-- **Initiation:** merging the release PR is the owner's release initiation.
-  release-please then creates the `vX.Y.Z` tag on that exact merge commit and a
-  GitHub Release whose notes are the changelog entry.
+- **Versioning:** merging the release PR creates the `vX.Y.Z` tag on that exact
+  merge commit and a GitHub Release whose notes are the changelog entry. The
+  same `release-please.yml` run then calls `extended-scenarios.yml` for the tag
+  commit, so its `extended-scenarios` record exists before promotion. Merging
+  deploys nothing; `pnpm release:staging` starts the release.
 - **Token limits:** release-please uses the workflow `GITHUB_TOKEN`. Its tag
   pushes start no workflow, and its release PR's `pull_request` runs wait for
   approval. Approve those runs (or close and reopen the PR) so the required checks
-  report before queueing. A later release workflow must chain from
-  `release-please.yml` or dispatch, not rely on a tag `push` trigger.
+  report before queueing. That is why `release-please.yml` calls the extended
+  scenarios itself instead of relying on a tag `push` trigger.
 
 `release-please.json` and `.release-please-manifest.json` own the exact policy.
 Edit the manifest by hand only to bootstrap or correct a version.
@@ -60,7 +78,11 @@ command arguments or Git.
 
 ## One-command release
 
-After the one-time checks in steps 1–2 below, the routine path is:
+The routine path is [automatic promotion](#automatic-promotion-from-staging).
+This command is the manual and break-glass path, for example when staging is
+unavailable or a promotion keeps stopping. Its `Proceed? [y/N]` is its one
+approval; it never waits for an environment reviewer. After the one-time checks
+in steps 1–2 below:
 
 ```sh
 pnpm release:production                # or --sha <sha> / --tag vX.Y.Z, --release-id, --yes
@@ -97,8 +119,9 @@ The commands in the rest of this section are the underlying and break-glass path
    deployment token's least-privilege grants outside the repository
    ([credentials](credentials.md); `node scripts/credential-probe.mjs production`
    checks the read paths). The exact confirmation
-   envelope demanded by the CLI remains the owner gate; do not assume the
-   environment has required reviewers enabled.
+   envelope demanded by the CLI remains the owner gate; the `production`
+   environment deliberately has no required reviewer
+   ([repository rules](repository-rules.md#tags-and-environments)).
 2. Confirm the public mounts' prerequisites. Zone routes do not
    create DNS: a proxied placeholder record for `card.keepr.digital` must
    exist in the `keepr.digital` zone (an `AAAA` record to `100::`, proxied)
@@ -281,14 +304,48 @@ separately proven and recorded.
 
 ## Automatic promotion from staging
 
-`POST /v1/production-promotions` (production only) turns a successful staging
-release into a Production Release plan for the same commit without a second
-owner confirmation. The caller is the `production`-environment job of the
-`staging-deploy.yml` run that claimed the owner's staging intent, with its OIDC
-token (audience `…/v1/production-promotions`) and a GitHub token that can read
-actions, checks and statuses. It is available code; no workflow calls it yet.
+A `staging-deploy.yml` run has three jobs:
 
-Production then, in order:
+| Job          | Needs     | Environment            | Token grants                                         | Does                                                         |
+| ------------ | --------- | ---------------------- | ---------------------------------------------------- | ------------------------------------------------------------ |
+| `staging`    | —         | `staging`              | contents, checks, actions read; `id-token: write`    | The guarded staging release                                  |
+| `promote`    | `staging` | `production-promotion` | contents, actions, checks, statuses read; `id-token` | Waits for the required reviewer, then requests the promotion |
+| `production` | `promote` | `production` (callee)  | contents, actions, checks read                       | Calls `production-release.yml` with the promotion's plan     |
+
+The `promote` job starts only after the `production-promotion` reviewer
+approves it (`pnpm release:approve` or the run page), so it has no OIDC identity
+and production has no request before that approval. It checks out only trusted
+workflow code and runs `scripts/production-promotion.mjs`, which:
+
+- refuses unless the run's approvals include an approved `production-promotion`
+  review by a user (fails closed if the environment ever lost its reviewer);
+- calls `POST /v1/production-promotions` with a fresh OIDC token per attempt
+  (audience `…/v1/production-promotions`) and the job's GitHub token;
+- retries `extended_scenarios_pending` and `staging_outcome_unavailable` every
+  minute for up to an hour, and stops on anything else;
+- checks the receipt names this run, release and commit, and hands its exact
+  `production_release` dispatch inputs to the `production` job.
+
+The `production` job calls the unchanged `production-release.yml` through
+`workflow_call` in the same run. Its `guarded-release` job uses the `production`
+environment's secrets, the `production-release` concurrency group and
+`validate-dispatch`, which admits the `promotion:` plan only with its promotion
+record. No administration key is involved.
+
+**Approve.** `pnpm release:approve` (`keepr release approve`) takes the newest
+`staging-deploy.yml` run and refuses (exit `6`) unless it is waiting on
+`production-promotion`. It prints the staging release, commit, staging outcome
+(`staging-status --target staging`) and the latest `extended-scenarios` status,
+asks `Approve this production promotion? [y/N]` and approves the waiting
+deployment through GitHub's pending-deployments API. It has no `--yes` and needs
+a terminal; exit `0` means GitHub recorded the approval, not that the release
+succeeded. Approving on the run page is equivalent. It needs
+`KEEPR_GITHUB_RELEASE_TOKEN` (with the grants in
+[credentials](credentials.md#owner-env-file)) and `KEEPR_STAGING_ADMINISTRATION_KEY`.
+
+`POST /v1/production-promotions` (production only) accepts the OIDC identity of
+the `production-promotion` job, or of a `production`-environment job so that the
+endpoint deployed before this wiring keeps working. Production then, in order:
 
 1. Matches the retained intent, digest, commit, actor and the claiming run.
 2. Refuses an expired intent.
@@ -316,22 +373,34 @@ The response returns the ordinary dispatch inputs for `production-release.yml`.
 `validate-dispatch` claims a `promotion:` plan only when that promotion record
 names the exact dispatch digest.
 
-**Failure and retry.** Each stop is a typed 4xx/5xx problem and is recorded as
-`production-promotion-stop:<release>:<run>:<code>`. A stop never blocks a retry:
+**Failure and retry.** Each stop is a typed 4xx/5xx problem, recorded as
+`production-promotion-stop:<release>:<run>:<code>` and printed in the `promote`
+job's log. A stop never blocks a retry by the same run:
 
-- `extended_scenarios_pending` or `staging_outcome_unavailable`: the same run may
-  retry once the evidence completes.
+- `extended_scenarios_pending` or `staging_outcome_unavailable`: the job retries
+  for up to an hour. If it still fails, use **Re-run failed jobs** on the run once
+  the evidence exists; the re-run waits for approval again.
+- `promotion_release_competing` or `promotion_production_not_idle`: wait for the
+  other operation to finish, then **Re-run failed jobs**.
 - `promotion_target_changed`, `promotion_schema_changed`,
   `promotion_intent_expired`, `staging_outcome_failed` or `_mismatch`,
   `extended_scenarios_failed` or `_unverified`, and any substitution code need
-  a new staging intent. Fix the cause first.
-- `promotion_release_competing` or `promotion_production_not_idle`: wait for the
-  other operation to finish, then retry.
+  a new staging release. Fix the cause first, then `pnpm release:staging`.
+- `promotion_not_approved` (from the job, before any request): the environment
+  has no required reviewer. Apply the [environment settings](repository-rules.md#tags-and-environments),
+  then start a new staging release.
 
-Exact replay by the same run returns the original record, even if later evidence
-changed. Another run is refused with `promotion_run_mismatch`. If the executor
-refuses a recorded plan because production moved after promotion, start a new
-staging release. The CLI Production Release remains the manual path.
+To decline a promotion, **Reject** it on the run page; nothing reaches
+production, and a later staging release asks again. The intent's 24-hour
+deadline still applies to a waiting approval. Exact replay by the same run
+returns the original record, even if later evidence changed. Another run is
+refused with `promotion_run_mismatch`.
+
+A failure in the `production` job is an ordinary Production Release failure:
+follow [Production Release behavior](#production-release-behavior) (compatible
+roll-forward). If the executor refuses a recorded plan because production moved
+after promotion, start a new staging release. `pnpm release:production` remains
+the manual path.
 
 ## Replacement-D1 handoff
 

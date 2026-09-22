@@ -16,7 +16,8 @@ import {
   approveNativeCandidateThroughBinding as approveNativeCandidate,
   prepareNativeCandidateThroughBinding as prepareNativeCandidate,
 } from "./native-publication-helpers";
-import { collect } from "./reconciliation-helpers";
+import { promotionDispatchInputNames } from "../../../src/catalogue/shared/release-input-shapes.mjs";
+import { collect, requiredString } from "./reconciliation-helpers";
 import { installWorkflowIsolation } from "./workflow-isolation";
 import * as promotionQueries from "./query-helpers/production-promotion";
 
@@ -343,6 +344,77 @@ test("a revision published after the intent is re-resolved, not reused, and requ
   expect(await promotionQueries.promotionPlanCount(testEnv.CATALOGUE_DB).first("count")).toBe(0);
 });
 
+// The non-Bootstrap path end to end (#238): four real publications with verified
+// backups and exports leave current-plus-two recovery evidence and an archived
+// revision, so the promotion resolves an ordinary guarded plan from that evidence.
+test("a populated catalogue promotes through a fresh plan bound to its recovery evidence", async () => {
+  let head = "catrev_spine_000";
+  for (let sequence = 1; sequence <= 4; sequence += 1) {
+    const collection = await collect(
+      `/reconciliation/search-repair-retention-${sequence}`,
+      `promotion-retention-${sequence}`,
+    );
+    const candidate = await prepareNativeCandidate(
+      collection.id,
+      "one-piece",
+      head,
+      `promotion-retention-candidate-${sequence}`,
+    );
+    const published = await approveNativeCandidate(candidate, `promotion-retention-publish-${sequence}`);
+    expect(published.response.status).toBe(200);
+    head = requiredString(published.document, "resulting_revision_id");
+  }
+  const status = await worker.fetch(
+    new Request(`${base}/v1/status`, { headers: { authorization: "Bearer vitest-administration-key" } }),
+    testEnv,
+  );
+  const preflight = (await status.json<{ release_preflight: Record<string, unknown> }>()).release_preflight;
+  expect(preflight).toMatchObject({ bootstrap: false, retention_ready: true });
+
+  const response = await promote();
+  expect(response.status, await response.clone().text()).toBe(201);
+  await assertHttpResponse(document, "/v1/production-promotions", "post", response.clone());
+  const receipt = await response.json<{ production_release: { dispatch_inputs: Record<string, string> } }>();
+  const inputs = receipt.production_release.dispatch_inputs;
+  expect(Object.keys(inputs).sort()).toEqual([...promotionDispatchInputNames].sort());
+  expect(inputs).toMatchObject({
+    operation: "production_release",
+    release_id: `promotion-${releaseId}`,
+    idempotency_key: `promotion:${releaseId}:${run}`,
+    expected_head_sha: selected,
+    expected_actor: "github-actions[bot]",
+    expected_current_revision: head,
+    bootstrap: "false",
+    recovery_bookmark: preflight.recovery_bookmark,
+    recovery_backup_attempt_id: preflight.recovery_backup_attempt_id,
+    replacement_recovery_id: "none",
+  });
+  expect(JSON.parse(inputs.retained_revision_evidence_json!)).toEqual(preflight.retained_revision_evidence);
+  expect(JSON.parse(inputs.smoke_targets_json!)).toEqual(preflight.smoke_targets);
+  expect(JSON.parse(inputs.smoke_targets_json!).revisions[0].revision_id).toBe(head);
+}, 120_000);
+
+test("the gated production-promotion environment promotes, the legacy production environment stays accepted, and no other environment can", async () => {
+  const legacy = { sub: "repo:KeeprDigital/card-keepr:environment:production", environment: "production" };
+  for (const environment of ["staging", "dev", "production-promotion-copy"]) {
+    const refused = await promote({
+      token: await token({ sub: `repo:KeeprDigital/card-keepr:environment:${environment}`, environment }),
+    });
+    expect(refused.status, environment).toBe(403);
+  }
+  // A claim naming one environment in `sub` and another in `environment` is refused.
+  const mixed = await promote({ token: await token({ environment: "production" }) });
+  expect(mixed.status).toBe(403);
+  expect(await promotionQueries.promotionPlanCount(testEnv.CATALOGUE_DB).first("count")).toBe(0);
+
+  const gated = await promote();
+  expect(gated.status, await gated.clone().text()).toBe(201);
+  // Before both Workers run this code, the previous `production` identity keeps working.
+  const replay = await promote({ token: await token(legacy) });
+  expect(replay.status).toBe(200);
+  expect(await replay.json()).toEqual(await gated.json());
+});
+
 test("staging serves its recorded outcome only to the run and owner that recorded it", async () => {
   const stagingEnv = { ...testEnv, KEEPR_ENVIRONMENT: "staging" } as unknown as Env;
   const read = async (changes: Record<string, unknown> = {}, digest = intent.intent_digest) =>
@@ -373,6 +445,8 @@ test("staging serves its recorded outcome only to the run and owner that recorde
   expect(otherRun.status).toBe(409);
   const otherDigest = await read({}, "f".repeat(64));
   expect(otherDigest.status).toBe(409);
+  const legacy = await read({ sub: "repo:KeeprDigital/card-keepr:environment:production", environment: "production" });
+  expect(legacy.status).toBe(200);
   const unsigned = await read({ aud: stagingAudience });
   expect(unsigned.status).toBe(403);
   const onProduction = await worker.fetch(
@@ -499,11 +573,12 @@ async function workflowSigner() {
     const claims = {
       iss: "https://token.actions.githubusercontent.com",
       aud: promotionAudience,
-      sub: "repo:KeeprDigital/card-keepr:environment:production",
+      // The approval-gated promote job (#238); see the legacy `production` test.
+      sub: "repo:KeeprDigital/card-keepr:environment:production-promotion",
       repository: "KeeprDigital/card-keepr",
       repository_id: "1313489088",
       repository_owner_id: "114643329",
-      environment: "production",
+      environment: "production-promotion",
       ref: "refs/heads/main",
       event_name: "workflow_dispatch",
       workflow_ref: "KeeprDigital/card-keepr/.github/workflows/staging-deploy.yml@refs/heads/main",

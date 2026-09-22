@@ -1,6 +1,8 @@
 export const devAudience: string;
 export const stagingAudience: string;
 export const promotionAudience: string;
+export const promotionEnvironment: string;
+export const promotionEnvironments: string[];
 export const extendedScenarios: string[];
 export function verifyPromotionWorkflow(
   token: string,

@@ -60,8 +60,9 @@ async function dispatchWorkflow(credential, inputs, workflowId, apiUrl) {
 }
 
 /**
- * Read-only Actions calls for `release run`. The dispatch token's Actions: write
- * grant includes Actions: read; nothing here reads contents or checks.
+ * Read-only calls for `release run` and `release approve`. The dispatch token's
+ * Actions: write grant includes Actions: read; `release approve` also reads commit
+ * statuses. Nothing here reads contents or checks.
  * @returns {Promise<any>} the parsed JSON document; throws a message without the credential on failure
  */
 export async function readGithub({ credential, path, apiUrl = githubApi }) {
@@ -82,11 +83,49 @@ export async function readGithub({ credential, path, apiUrl = githubApi }) {
   return response.json();
 }
 
+/**
+ * Approve a run's waiting environment deployment as the token's user, who must be
+ * one of the environment's required reviewers (`release approve`, #238). Needs the
+ * fine-grained **Deployments: write** grant.
+ * @returns {Promise<boolean>} true when GitHub recorded the approval
+ */
+export async function approvePendingDeployment({ credential, runId, environmentId, comment, apiUrl = githubApi }) {
+  if (
+    typeof credential !== "string" ||
+    credential.length < 20 ||
+    !/^\d+$/u.test(String(runId)) ||
+    !Number.isSafeInteger(environmentId)
+  )
+    return false;
+  let response;
+  try {
+    response = await httpRequest(
+      `${apiUrl}/repos/${repository}/actions/runs/${encodeURIComponent(runId)}/pending_deployments`,
+      {
+        method: "POST",
+        headers: {
+          accept: "application/vnd.github+json",
+          authorization: `Bearer ${credential}`,
+          "content-type": "application/json",
+          "x-github-api-version": "2022-11-28",
+        },
+        body: JSON.stringify({ environment_ids: [environmentId], state: "approved", comment }),
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+  } catch {
+    return false;
+  }
+  return response.status === 200;
+}
+
 export const githubPaths = {
   workflowRuns: (workflow, query) =>
     `/repos/{repository}/actions/workflows/${encodeURIComponent(workflow)}/runs?${new URLSearchParams(query)}`,
   run: (id) => `/repos/{repository}/actions/runs/${encodeURIComponent(id)}`,
   jobs: (id) => `/repos/{repository}/actions/runs/${encodeURIComponent(id)}/jobs?per_page=100`,
+  pendingDeployments: (id) => `/repos/{repository}/actions/runs/${encodeURIComponent(id)}/pending_deployments`,
+  statuses: (sha) => `/repos/{repository}/commits/${encodeURIComponent(sha)}/statuses?per_page=100`,
   user: () => "/user",
 };
 

@@ -176,11 +176,23 @@ test("workflow hygiene: pinned actions, no secret written to GITHUB_ENV, no misl
     "stress",
     "official-source-recapture",
     "test-suite-diagnostics",
+    "staging-deploy",
+    "release-please",
+    "extended-scenarios",
   ].map((name) => [name, readFileSync(`.github/workflows/${name}.yml`, "utf8")]);
   const sources = [...workflows];
   const visited = new Set();
   for (const [name, text] of sources) {
     for (const uses of text.match(/^\s*(?:- )?uses: .+$/gmu) ?? []) {
+      // A reusable workflow of this repository is checked as its own entry above.
+      const reusable = uses.match(/uses: \.\/\.github\/workflows\/([\w-]+)\.yml$/u);
+      if (reusable) {
+        assert.ok(
+          workflows.some(([listed]) => listed === reusable[1]),
+          `${name}: ${reusable[1]} is checked`,
+        );
+        continue;
+      }
       const local = uses.match(/uses: (\.\/\.github\/actions\/[\w/-]+)$/u);
       if (local) {
         if (!visited.has(local[1])) {

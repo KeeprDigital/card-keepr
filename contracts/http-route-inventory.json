@@ -2416,6 +2416,7 @@
       "acceptance/release-run-cli.test.mjs",
       "apps/api/test/collection-contract.spec.ts",
       "apps/ingestion/test/lifecycle.spec.ts",
+      "apps/ingestion/test/production-promotion.spec.ts",
       "apps/ingestion/test/production-release-bootstrap.spec.ts",
       "apps/ingestion/test/production-release-preparation.spec.ts",
       "apps/ingestion/test/protected-failures.spec.ts",

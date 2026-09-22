@@ -114,6 +114,10 @@ test("staging release confirms the exact server envelope, watches its own run an
   assert.doesNotMatch(output, /actions\/runs\/502/u);
   assert.match(output, /migration succeeded: level 45 -> 46/u);
   assert.match(output, /check live-smoke: succeeded/u);
+  // The run keeps waiting for the promotion approval; staging is reported without it.
+  assert.match(output, /run waiting/u);
+  assert.doesNotMatch(output, /job promote/u);
+  assert.match(output, /waits for your approval: run `pnpm release:approve`/u);
   for (const value of Object.values(secrets)) assert.equal(output.includes(value), false);
 });
 
@@ -169,7 +173,7 @@ test("a failed workflow run and staging outcome exit non-zero with the failing s
   const world = await releaseWorld(t, "staging", { fail: true });
   assert.equal(await world.run(["staging", "--release-id", "staging-manual-01"], { answer: true }), 1);
   const output = world.output();
-  assert.match(output, /Run conclusion: failure/u);
+  assert.match(output, /Staging job conclusion: failure/u);
   assert.match(output, /FAILURE Prepare, rehearse and validate/u);
   assert.match(output, /Staging outcome: failed \(migration_rehearsal_failed\)/u);
   assert.match(output, /Staging release staging-manual-01 failed/u);
@@ -290,12 +294,18 @@ async function releaseWorld(t, kind, { bootstrap = false, fail = false, refusePr
         return new Response(null, { status: 204 });
       }
       const runMatch = /^\/actions\/runs\/(\d+)(\/jobs)?$/u.exec(path);
+      // A staging run keeps waiting for the promotion approval after its staging job.
+      const done = (runPolls.get("501") ?? 0) >= 3;
       if (runMatch?.[1] === "501" && runMatch[2])
         return json({
           jobs: [
+            ...(kind === "staging" && !fail
+              ? [{ name: "promote", status: done ? "waiting" : "pending", conclusion: null, steps: [] }]
+              : []),
             {
-              name: kind,
-              conclusion: fail ? "failure" : "success",
+              name: kind === "staging" ? "staging" : "guarded-release",
+              status: done ? "completed" : "in_progress",
+              conclusion: done ? (fail ? "failure" : "success") : null,
               steps: [
                 { name: "Check out", conclusion: "success" },
                 {
@@ -309,9 +319,10 @@ async function releaseWorld(t, kind, { bootstrap = false, fail = false, refusePr
       if (runMatch?.[1] === "501") {
         const count = (runPolls.get("501") ?? 0) + 1;
         runPolls.set("501", count);
+        if (count < 3) return json({ id: 501, status: count === 1 ? "queued" : "in_progress", conclusion: null });
         return json(
-          count < 3
-            ? { id: 501, status: count === 1 ? "queued" : "in_progress", conclusion: null }
+          kind === "staging" && !fail
+            ? { id: 501, status: "waiting", conclusion: null }
             : { id: 501, status: "completed", conclusion: fail ? "failure" : "success" },
         );
       }

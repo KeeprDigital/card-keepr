@@ -2,8 +2,13 @@ const repository = "KeeprDigital/card-keepr";
 const issuer = "https://token.actions.githubusercontent.com";
 export const devAudience = "https://card-dev.keepr.digital/ingest/v1/dev-deployments";
 export const stagingAudience = "https://card.keepr.digital/ingest/v1/staging-release-authorizations";
-// Automatic promotion (#238): the production-environment job of the staging-deploy run.
+// Automatic promotion (#238): the promotion job of the staging-deploy run.
 export const promotionAudience = "https://card.keepr.digital/ingest/v1/production-promotions";
+// The promotion job runs in `production-promotion`, whose required reviewer is the
+// owner's one approval (#238 owner decision). `production` stays accepted until both
+// Workers have been released with this list (deployed endpoints change only by release).
+export const promotionEnvironment = "production-promotion";
+export const promotionEnvironments = [promotionEnvironment, "production"];
 export const extendedScenarios = ["composed-recovery", "one-piece-two-source", "riftbound-catalogue"];
 export const requiredCiChecks = [
   "lint",
@@ -46,9 +51,10 @@ export async function verifyStagingWorkflow(token, githubToken, intent, now = Da
 }
 
 /**
- * The production-environment job of the manual staging-deploy run that executed a
- * staging release. This proves the run and its actor only; the caller binds both to
- * the retained staging claim. No selected commit or CI is implied.
+ * The promotion job (environment `production-promotion`, or the legacy `production`)
+ * of the manual staging-deploy run that executed a staging release. This proves the
+ * run and its actor only; the caller binds both to the retained staging claim. No
+ * selected commit or CI is implied.
  */
 export async function verifyPromotionWorkflow(token, githubToken, now = Date.now()) {
   return verifyWorkflow(token, githubToken, {}, "promotion", now, false);
@@ -57,7 +63,7 @@ export async function verifyPromotionWorkflow(token, githubToken, now = Date.now
 async function verifyWorkflow(token, githubToken, intent, kind, now, requireCi = true) {
   const promotion = kind === "promotion";
   const staging = kind === "staging" || promotion;
-  const environment = promotion ? "production" : kind;
+  const environments = promotion ? promotionEnvironments : [kind];
   const event = staging ? "workflow_dispatch" : "workflow_run";
   const workflow = staging ? "staging-deploy.yml" : "dev-deploy.yml";
   const audience = promotion ? promotionAudience : staging ? stagingAudience : devAudience;
@@ -86,6 +92,7 @@ async function verifyWorkflow(token, githubToken, intent, kind, now, requireCi =
   )
     denied();
   const claims = JSON.parse(new TextDecoder().decode(bytes(parts[1])));
+  const environment = environments.includes(claims.environment) ? claims.environment : environments[0];
   const seconds = Math.floor(now / 1000);
   if (
     claims.iss !== issuer ||

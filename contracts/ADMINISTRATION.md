@@ -124,6 +124,13 @@ is an owner-authenticated production route. The production authorization and
 staging preparation/outcome POST routes accept the exact signed workflow identity,
 never an administration key. Selecting a profile alone does not provision resources.
 
+`release approve` makes no administration request of its own beyond reading the
+staging outcome. It approves the newest staging run's waiting
+`production-promotion` deployment through GitHub after an interactive `y/N`
+(no `--yes`), exits `6` when nothing is waiting, `3` when declined and `0` once
+GitHub recorded the approval; production then decides the promotion. See the
+[release procedure](../docs/runbooks/production-release.md#automatic-promotion-from-staging).
+
 Exit codes are `0` success, `2` usage, `3` confirmation declined, `4`
 authentication, `5` authorization, `6` not found, `7` conflict or stale
 precondition, `8` contract validation or terminal publication failure, `9`

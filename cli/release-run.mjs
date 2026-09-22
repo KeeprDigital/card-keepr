@@ -24,7 +24,7 @@ import { isReleaseIdentity } from "../src/catalogue/shared/release-input-shapes.
 import { environmentNames } from "../src/http/environment-target.mjs";
 
 const run = promisify(execFile);
-const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
+export const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const productionActor = "github-actions[bot]";
 const requiredSecrets = {
   staging: ["KEEPR_PRODUCTION_ADMINISTRATION_KEY", "KEEPR_STAGING_ADMINISTRATION_KEY", "KEEPR_GITHUB_RELEASE_TOKEN"],
@@ -160,19 +160,25 @@ async function releaseRun(args, environment, deps) {
     );
   say(`Watching ${githubRunUrl(found.id)}`);
   let lastStatus = "";
+  // A staging run continues into production promotion, which waits for the
+  // owner's approval (#238), so staging is finished when its `staging` job is.
   const finished = await poll(deps, timing.watchMs[kind], async () => {
     const current = await github(githubPaths.run(found.id));
     if (current.status !== lastStatus) say(`  run ${current.status}`);
     lastStatus = current.status;
+    if (kind !== "staging") return current.status === "completed" ? current : null;
+    const job = ((await github(githubPaths.jobs(found.id))).jobs ?? []).find((item) => item.name === "staging");
+    if (job?.status === "completed") return { ...current, conclusion: job.conclusion };
     return current.status === "completed" ? current : null;
   });
   if (finished === null)
     stop("workflow_run_timeout", `Run ${githubRunUrl(found.id)} did not finish in time; it may still be running.`);
 
   say();
-  say(`Run conclusion: ${finished.conclusion}`);
+  say(`${kind === "staging" ? "Staging job" : "Run"} conclusion: ${finished.conclusion}`);
   const { jobs = [] } = await github(githubPaths.jobs(found.id));
-  for (const job of jobs) {
+  // A promotion job still waiting for approval has no conclusion yet.
+  for (const job of jobs.filter((item) => item.status === undefined || item.status === "completed")) {
     const failed = (job.steps ?? []).filter((step) => !["success", "skipped"].includes(step.conclusion));
     if (job.conclusion !== "success" || failed.length > 0) say(`  job ${job.name}: ${job.conclusion}`);
     for (const step of failed) say(`    ${String(step.conclusion).toUpperCase()} ${step.name}`);
@@ -182,6 +188,10 @@ async function releaseRun(args, environment, deps) {
   if (finished.conclusion !== "success" || !healthy)
     stop("release_failed", `${kind === "staging" ? "Staging release" : "Production Release"} ${releaseId} failed.`);
   say(`${kind === "staging" ? "Staging release" : "Production Release"} ${releaseId} succeeded.`);
+  if (kind === "staging")
+    say(
+      `Production promotion of ${commit.sha.slice(0, 12)} waits for your approval: run \`pnpm release:approve\` (or approve ${githubRunUrl(found.id)}).`,
+    );
   return 0;
 }
 
@@ -368,7 +378,7 @@ async function poll(deps, limitMs, attempt) {
   }
 }
 
-function defaultDeps() {
+export function defaultDeps() {
   const git = (...args) =>
     run("git", ["-C", repositoryRoot, ...args], { encoding: "utf8" }).then((out) => out.stdout.trim());
   const commit = (ref) => git("rev-parse", "--verify", "--quiet", `${ref}^{commit}`).catch(() => null);

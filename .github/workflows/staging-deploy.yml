@@ -14,13 +14,17 @@ on:
         type: string
 permissions:
   contents: read
-concurrency:
-  group: staging-deployment
-  cancel-in-progress: false
+# A successful staging release asks for the owner's one approval, then promotes the
+# same commit to production through fresh production guards (#238). Each job holds
+# its own serialization, so a run waiting for approval never blocks the next staging
+# release; production-release.yml serializes production itself.
 jobs:
   staging:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    concurrency:
+      group: staging-deployment
+      cancel-in-progress: false
     timeout-minutes: 30
     environment: staging
     permissions:
@@ -67,3 +71,69 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 90
+
+  # The owner's one approval: the `production-promotion` environment's required
+  # reviewer. Nothing below receives an OIDC identity or production credential
+  # before a person approves this job (`pnpm release:approve` or the run page).
+  promote:
+    needs: staging
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Waits up to an hour for this commit's extended-scenarios record.
+    timeout-minutes: 75
+    environment: production-promotion
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      statuses: read
+      id-token: write
+    outputs:
+      dispatch_inputs: ${{ steps.promotion.outputs.dispatch_inputs }}
+    env:
+      RELEASE_ID: ${{ inputs.release_id }}
+      INTENT_DIGEST: ${{ inputs.intent_digest }}
+      EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out trusted workflow code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-toolchain
+      - name: Request production promotion of the staged commit
+        id: promotion
+        run: node scripts/production-promotion.mjs
+
+  # The unchanged guarded executor, called in this run with production's fresh plan.
+  # validate-dispatch accepts it only with the immutable promotion record.
+  production:
+    needs: promote
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+    uses: ./.github/workflows/production-release.yml
+    with:
+      operation: ${{ fromJSON(needs.promote.outputs.dispatch_inputs).operation }}
+      release_id: ${{ fromJSON(needs.promote.outputs.dispatch_inputs).release_id }}
+      expected_account_id: ${{ fromJSON(needs.promote.outputs.dispatch_inputs).expected_account_id }}
+      expected_head_sha: ${{ fromJSON(needs.promote.outputs.dispatch_inputs).expected_head_sha }}
+      expected_actor: ${{ fromJSON(needs.promote.outputs.dispatch_inputs).expected_actor }}
+      idempotency_key: ${{ fromJSON(needs.promote.outputs.dispatch_inputs).idempotency_key }}
+      dispatch_digest: ${{ fromJSON(needs.promote.outputs.dispatch_inputs).dispatch_digest }}
+      prepared_plan_json: ${{ fromJSON(needs.promote.outputs.dispatch_inputs).prepared_plan_json }}
+      expected_current_revision: ${{ fromJSON(needs.promote.outputs.dispatch_inputs).expected_current_revision }}
+      expected_migration_level: ${{ fromJSON(needs.promote.outputs.dispatch_inputs).expected_migration_level }}
+      production_target_json: ${{ fromJSON(needs.promote.outputs.dispatch_inputs).production_target_json }}
+      production_target_digest: ${{ fromJSON(needs.promote.outputs.dispatch_inputs).production_target_digest }}
+      bootstrap: ${{ fromJSON(needs.promote.outputs.dispatch_inputs).bootstrap }}
+      recovery_bookmark: ${{ fromJSON(needs.promote.outputs.dispatch_inputs).recovery_bookmark }}
+      recovery_backup_attempt_id: ${{ fromJSON(needs.promote.outputs.dispatch_inputs).recovery_backup_attempt_id }}
+      smoke_targets_json: ${{ fromJSON(needs.promote.outputs.dispatch_inputs).smoke_targets_json }}
+      retained_revision_evidence_json: ${{ fromJSON(needs.promote.outputs.dispatch_inputs).retained_revision_evidence_json }}
+      replacement_recovery_id: ${{ fromJSON(needs.promote.outputs.dispatch_inputs).replacement_recovery_id }}
+      replacement_database_id: ${{ fromJSON(needs.promote.outputs.dispatch_inputs).replacement_database_id }}
+      retained_database_id: ${{ fromJSON(needs.promote.outputs.dispatch_inputs).retained_database_id }}
+      replacement_target_digest: ${{ fromJSON(needs.promote.outputs.dispatch_inputs).replacement_target_digest }}

@@ -51,11 +51,36 @@ admins are bound too. It replaces the classic branch protection rule.
 
 ## Tags and environments
 
-| Target                     | Rule                                                             |
-| -------------------------- | ---------------------------------------------------------------- |
-| `refs/tags/v*`             | No update, force-move or deletion, admins included               |
-| `dev` environment          | Deploys only from `main` (`dev-deploy.yml` runs after `main` CI) |
-| `staging` and `production` | Deploy only from `v*` tags, once the tag-driven workflows exist  |
+| Target                             | Rule                                                                                                     |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `refs/tags/v*`                     | No update, force-move or deletion, admins included                                                       |
+| `dev` environment                  | Deploys only from `main` (`dev-deploy.yml` runs after `main` CI)                                         |
+| `production-promotion` environment | Required reviewer `then3rdman`; self-review allowed; no wait timer; deploys only from `main`; no secrets |
+| `staging` and `production`         | Deploy only from `main`; **no** required reviewers                                                       |
+
+The owner decision on
+[#238](https://github.com/KeeprDigital/card-keepr/issues/238#issuecomment-5772735751)
+requires exactly one human approval per path to production:
+
+- **Automatic promotion:** the `production-promotion` reviewer approves the
+  `promote` job of `staging-deploy.yml` (`pnpm release:approve` or the run page).
+  The job's `production` executor then runs without another gate.
+- **Manual `pnpm release:production`:** the CLI's exact-envelope `y/N` is the
+  approval. A reviewer on `production` would add a second one, so `production`
+  has none.
+
+Self-review must stay allowed: the owner dispatches the staging run and is the
+only collaborator, so "prevent self-review" would leave no one able to approve.
+If a workflow names an environment that does not exist, GitHub creates it
+without protection. The `promote` job therefore fails closed unless the run
+records an approved `production-promotion` review, and the environment must be
+configured before the first staging release that uses the wiring.
+
+All three release workflows run on `main` (the staging and production workflows
+are dispatched on `main`, and the promotion calls the executor from that run),
+so `main` is the branch policy for `staging`, `production` and
+`production-promotion`. This replaces the earlier tag-only plan, which the lean
+scope dropped.
 
 GitHub refuses the built-in GitHub Actions app as a ruleset bypass actor. So a
 tag-creation rule would also block release-please, which tags with
@@ -64,10 +89,6 @@ GitHub App and its key as a new secret. That credential change is an owner
 decision. Until then, any writer can create a `v*` tag. Any workflow that acts on
 a tag must verify that release-please created it: a GitHub Release by
 `github-actions[bot]` on a `chore: release` squash commit contained in `main`.
-
-The tag-only policy for `staging` and `production` must wait for the workflows
-that dispatch with `--ref vX.Y.Z`. Applied earlier, it would refuse today's
-`main`-dispatched manual staging and production releases.
 
 ## Order of application
 
@@ -78,14 +99,19 @@ that dispatch with `--ref vX.Y.Z`. Applied earlier, it would refuse today's
    delete the classic protection rule, whose `strict: true` would otherwise keep
    requiring up-to-date branches.
 4. Create the tag ruleset and the `dev` environment policy.
-5. Add the `staging`/`production` tag policy only with tag-driven releases.
+5. Before the first staging release after the promotion wiring merges, create
+   `production-promotion` with its reviewer and `main` policy, and set the `main`
+   policy on `staging` and `production`.
 
-The owner script is kept in ignored `.artifacts/238/owner-repo-rules.sh`. It has
-one subcommand per step and a `verify` read-back for #238. Its endpoint and field
-names were checked against GitHub's REST OpenAPI description; it holds no secrets.
+The owner scripts are kept in ignored `.artifacts/238/`: `owner-repo-rules.sh`
+(steps 2–4) and `owner-promotion-env.sh` (step 5). Each has one subcommand per
+step and a `verify` read-back for #238. Their endpoint and field names were
+checked against GitHub's REST OpenAPI description; they hold no secrets.
 
 References: [rulesets API](https://docs.github.com/en/rest/repos/rules),
 [repository update API](https://docs.github.com/en/rest/repos/repos#update-a-repository),
 [deployment branch policies](https://docs.github.com/en/rest/deployments/branch-policies),
+[environments](https://docs.github.com/en/rest/deployments/environments),
+[reviewing deployments](https://docs.github.com/en/rest/actions/workflow-runs#review-pending-deployments-for-a-workflow-run),
 [merge queue](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue),
 [`GITHUB_TOKEN` triggering](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
