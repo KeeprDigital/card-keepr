@@ -4,6 +4,7 @@ import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import {
   appendDiscoveredEvidenceRequests,
+  pendingEvidenceHostShards,
   pendingEvidenceRequests,
   requiredEvidenceRun,
 } from "../../../src/catalogue/source-evidence";
@@ -20,6 +21,38 @@ import {
 } from "./runtime-helpers";
 
 installRuntimeSuite();
+
+// Collection dispatches only the next pending shard per hostname and records
+// Workflow identities for dispatched shards alone; a later shard starts after
+// its predecessor finishes (docs/architecture.md, collection scheduling).
+async function evidenceHostChildId(runId: string, hostname: string, minimumSequenceNumber: number) {
+  return `evidence-host-${await sha256(
+    utf8(
+      canonicalJson({
+        ingestion_run_id: runId,
+        hostname,
+        minimum_sequence_number: minimumSequenceNumber,
+        maximum_sequence_number: minimumSequenceNumber + 199,
+      }),
+    ),
+  )}`;
+}
+
+function settledRequestCount(current: CollectionDocument) {
+  const byState =
+    (current.collection as { requests?: { by_state?: Record<string, number> } } | undefined)?.requests?.by_state ?? {};
+  return Object.entries(byState).reduce((total, [state, count]) => (state === "pending" ? total : total + count), 0);
+}
+
+async function terminateCollectionWorkflows(runId: string) {
+  const current = await showCollection(runId);
+  if (current.workflow.parent_id !== null) {
+    await (await env.EVIDENCE_INGESTION_WORKFLOW.get(current.workflow.parent_id)).terminate().catch(() => undefined);
+  }
+  for (const childId of current.workflow.child_ids) {
+    await (await env.EVIDENCE_HOST_WORKFLOW.get(childId)).terminate().catch(() => undefined);
+  }
+}
 
 test("dynamic discovery durably plans and replays 2,500 requests within D1 limits", async () => {
   const run = await createCollection("source_dynamic_plan_d1_limit_001", "https://official-source.invalid/cards");
@@ -143,30 +176,38 @@ test("the authenticated Workflow shards a 5,000-request host plan into bounded c
     })),
   );
 
+  const db = catalogueStore(env.CATALOGUE_DB);
+  expect(await pendingEvidenceHostShards(db, run.id)).toEqual([
+    {
+      hostname: "official-source.invalid",
+      minimum_sequence_number: 0,
+      pending_request_count: 200,
+      pending_shard_count: 25,
+    },
+  ]);
+  const firstShardId = await evidenceHostChildId(run.id, "official-source.invalid", 0);
+
   const resumed = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(resumed.status).toBe(202);
   await resumed.body?.cancel();
-  let observed: CollectionDocument | undefined;
   try {
-    observed = await waitForEvidenceCondition(run.id, (current) => current.workflow.child_ids.length === 25, 8_000);
+    const observed = await waitForEvidenceCondition(
+      run.id,
+      (current) => current.workflow.child_ids.includes(firstShardId) && settledRequestCount(current) >= 5,
+      15_000,
+    );
+    // The first shard is mid-collection, so none of the other 24 may be dispatched yet.
+    expect(observed.workflow.child_ids).toEqual([firstShardId]);
+    expect(await pendingEvidenceHostShards(db, run.id)).toEqual([
+      expect.objectContaining({
+        hostname: "official-source.invalid",
+        minimum_sequence_number: 0,
+        pending_shard_count: 25,
+      }),
+    ]);
   } finally {
-    const current = await showCollection(run.id);
-    if (current.workflow.parent_id !== null) {
-      await (await env.EVIDENCE_INGESTION_WORKFLOW.get(current.workflow.parent_id)).terminate().catch(() => undefined);
-    }
-    const activeChildId = `evidence-host-${await sha256(
-      utf8(
-        canonicalJson({
-          ingestion_run_id: run.id,
-          hostname: "official-source.invalid",
-          minimum_sequence_number: 0,
-          maximum_sequence_number: 199,
-        }),
-      ),
-    )}`;
-    await (await env.EVIDENCE_HOST_WORKFLOW.get(activeChildId)).terminate().catch(() => undefined);
+    await terminateCollectionWorkflows(run.id);
   }
-  expect(observed?.workflow.child_ids).toHaveLength(25);
 }, 90_000);
 
 test("concurrent discovery batches cannot overrun the adapter capacity together", async () => {
@@ -231,30 +272,33 @@ test("a production-shaped Fusion World graph larger than 5,000 requests is admit
     6_001,
   );
 
+  // The discovery root owns the first shard; staged discovered requests are
+  // sequenced from 1,000,000 and form the remaining 30 shards on the same host.
+  const db = catalogueStore(env.CATALOGUE_DB);
+  expect(await pendingEvidenceHostShards(db, run.id)).toEqual([
+    { hostname: "www.dbs-cardgame.com", minimum_sequence_number: 0, pending_request_count: 1, pending_shard_count: 31 },
+  ]);
+  const rootShardId = await evidenceHostChildId(run.id, "www.dbs-cardgame.com", 0);
+  const firstDetailShardId = await evidenceHostChildId(run.id, "www.dbs-cardgame.com", 1_000_000);
+
   const resumed = await administrationRequest(`/v1/ingestion-runs/${run.id}/collection/resume`, "POST");
   expect(resumed.status).toBe(202);
   await resumed.body?.cancel();
-  let observed: CollectionDocument | undefined;
   try {
-    observed = await waitForEvidenceCondition(run.id, (current) => current.workflow.child_ids.length === 31, 8_000);
+    const observed = await waitForEvidenceCondition(
+      run.id,
+      (current) => current.workflow.child_ids.includes(firstDetailShardId) && settledRequestCount(current) >= 6,
+      15_000,
+    );
+    // The root shard finished before its successor started, and the first
+    // detail shard is mid-collection, so no later shard may be dispatched yet.
+    expect(observed.workflow.child_ids).toEqual([rootShardId, firstDetailShardId].sort());
+    expect(await pendingEvidenceHostShards(db, run.id)).toEqual([
+      expect.objectContaining({ hostname: "www.dbs-cardgame.com", minimum_sequence_number: 1_000_000 }),
+    ]);
   } finally {
-    const current = await showCollection(run.id);
-    if (current.workflow.parent_id !== null) {
-      await (await env.EVIDENCE_INGESTION_WORKFLOW.get(current.workflow.parent_id)).terminate().catch(() => undefined);
-    }
-    const activeChildId = `evidence-host-${await sha256(
-      utf8(
-        canonicalJson({
-          ingestion_run_id: run.id,
-          hostname: "www.dbs-cardgame.com",
-          minimum_sequence_number: 0,
-          maximum_sequence_number: 199,
-        }),
-      ),
-    )}`;
-    await (await env.EVIDENCE_HOST_WORKFLOW.get(activeChildId)).terminate().catch(() => undefined);
+    await terminateCollectionWorkflows(run.id);
   }
-  expect(observed?.workflow.child_ids).toHaveLength(31);
 }, 90_000);
 
 test("a Fusion World batch beyond the fusion-world-en@9 capacity is rejected deterministically", async () => {
