@@ -269,7 +269,7 @@ export const tcgdexPokemonSourceAdapterRegistration = {
       ceilingMs: 16_000,
       maximumConcurrency: 1,
       evidence:
-        "acceptance/fixtures/real-sources/2026-09-15-pokemon-scope/README.md: the retained TCGdex FAQ (2026-09-14) publishes no hard rate limit and asks for considerate use with local caching; no robots.txt is retained. One sequential request per second at the floor keeps the ~21,273-request facts graph near six hours.",
+        "acceptance/fixtures/real-sources/2026-09-14-pokemon/README.md: the retained TCGdex FAQ (2026-09-14) publishes no hard rate limit and asks for considerate use with local caching; no robots.txt is retained. One sequential request per second at the floor keeps the ~21,273-request facts graph near six hours.",
     },
     {
       hostname: "assets.tcgdex.net",
@@ -278,7 +278,7 @@ export const tcgdexPokemonSourceAdapterRegistration = {
       ceilingMs: 8_000,
       maximumConcurrency: 2,
       evidence:
-        "acceptance/fixtures/real-sources/2026-09-15-pokemon-scope/README.md: static asset host covered by the same retained FAQ (no hard limit, considerate use); no robots.txt is retained, so concurrency stays at 2.",
+        "acceptance/fixtures/real-sources/2026-09-14-pokemon/README.md: static asset host covered by the same retained FAQ (no hard limit, considerate use); no robots.txt is retained, so concurrency stays at 2.",
     },
   ],
   retainedParentContext: { maximumDepth: 3, maximumTotalBytes: 3 * 1024 * 1024 },

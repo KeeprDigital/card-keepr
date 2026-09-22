@@ -191,3 +191,20 @@ test("both pilot observations keep exact merged bytes and request capacity while
     expect(() => adapter.discoverRequests(bytes, wrongParents)).toThrow();
   }
 });
+
+test("both Pokémon registrations pace publisher pages sequentially and cite retained access evidence", async () => {
+  const { pokemonOfficialSourceAdapterRegistration } = await import(
+    "../../src/catalogue/adapters/pokemon-official-source-adapter"
+  );
+  const declared = [tcgdexPokemonSourceAdapterRegistration, pokemonOfficialSourceAdapterRegistration].flatMap(
+    (adapter) => adapter.hostPacing.map((policy) => [policy.hostname, policy.kind, policy.maximumConcurrency]),
+  );
+  expect(declared).toEqual([
+    ["api.tcgdex.net", "page", 1],
+    ["assets.tcgdex.net", "asset", 2],
+    ["www.pokemon.com", "page", 1],
+    ["assets.pokemon.com", "asset", 1],
+  ]);
+  for (const adapter of [tcgdexPokemonSourceAdapterRegistration, pokemonOfficialSourceAdapterRegistration])
+    for (const policy of adapter.hostPacing) expect(policy.evidence).toMatch(/^acceptance\/fixtures\/real-sources\//u);
+});
