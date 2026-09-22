@@ -58,6 +58,40 @@ GitHub `production` secrets and the rotation and probe procedures. Set the exact
 owner CORS origins. Use the existing secret stores; credentials never belong in
 command arguments or Git.
 
+## One-command release
+
+After the one-time checks in steps 1–2 below, the routine path is:
+
+```sh
+export KEEPR_OWNER_ENV_FILE=~/secrets/card-keepr.env   # absolute path, outside the repo
+pnpm release:production                # or --sha <sha> / --tag vX.Y.Z, --release-id, --yes
+```
+
+`keepr release run production` selects the commit and release checkout exactly
+like the [staging command](manual-staging.md#one-command-staging-release): the
+newest `main` commit with successful push CI and dev delivery, run from a clean
+detached worktree of that commit so its own tested CLI builds every request. It
+then:
+
+- reads `keepr status --target production` and passes
+  `safe_state.current_revision_id` as the expected revision,
+  `release_preflight.schema_migration_level` as the expected level and
+  `--bootstrap` exactly when `release_preflight.bootstrap` is `true`; it stops if
+  status lacks any of them;
+- generates `release-YYYY-MM-DD-NN` from the `production-release.yml` run names
+  (preparation is read-only, so an undispatched ID stays free); the idempotency
+  key equals it and the actor is `github-actions[bot]`;
+- prints the exact envelope (release, commit and subject, revision, level,
+  Bootstrap Mode or recovery evidence, account, Workers, D1) and asks
+  `Proceed? [y/N]`; without a terminal it refuses unless `--yes` is given, and
+  it confirms with the server's string unedited;
+- finds the run named `production-release-<release>-<sha>` created by this
+  dispatch, watches it, prints failed steps, the post-release status, both
+  Workers' active version IDs (`keepr health`) and both `/healthz` codes, and
+  exits non-zero unless all succeeded.
+
+The commands in the rest of this section are the underlying and break-glass path.
+
 ## Prepare
 
 1. Confirm GitHub's `production` environment branch policy and the Cloudflare

@@ -268,11 +268,25 @@ serve only the local Wrangler runtime without `--target`.
 | `KEEPR_GITHUB_API_URL`, `KEEPR_GITHUB_RELEASE_WORKFLOW_ID`               | not secret; test overrides only                | `cli/production-release.mjs:117-118`, `cli/staging-release.mjs:84`                                                                                 |
 
 `KEEPR_GITHUB_RELEASE_TOKEN` needs only **Actions: write** on `KeeprDigital/card-keepr`
-(workflow dispatch); it reads nothing. Issue it as a fine-grained personal access
-token scoped to this repository and rotate it in GitHub's token settings, then
-update the profile. `KEEPR_GITHUB_RELEASE_ACTOR` is `github-actions[bot]` for
-`release production` and the dispatching owner's login for `release staging`
-(recorded on #237).
+(workflow dispatch). `release run` also uses the read access that grant includes
+to list `ci.yml`, `dev-deploy.yml` and release workflow runs and a run's jobs, and
+reads `GET /user` for the staging actor; it reads no contents or checks. Issue it
+as a fine-grained personal access token scoped to this repository and rotate it
+in GitHub's token settings, then update the profile. `KEEPR_GITHUB_RELEASE_ACTOR`
+is `github-actions[bot]` for `release production` and the dispatching owner's
+login for `release staging` (recorded on #237); `release run` sets it itself.
+
+`pnpm release:staging` / `pnpm release:production` (`keepr release run`) take no
+secrets from the shell. They read the owner env file named by
+`KEEPR_OWNER_ENV_FILE`, which must be an absolute path outside the repository
+(for example `~/secrets/card-keepr.env`, `chmod 600`); there is no default and the
+command stops if it is unset. The file holds literal `export NAME=value` lines:
+staging needs `KEEPR_PRODUCTION_ADMINISTRATION_KEY`,
+`KEEPR_STAGING_ADMINISTRATION_KEY` and `KEEPR_GITHUB_RELEASE_TOKEN`; production
+needs `KEEPR_PRODUCTION_ADMINISTRATION_KEY`, `KEEPR_PRODUCTION_API_KEY` and
+`KEEPR_GITHUB_RELEASE_TOKEN`. Values are passed only to the release checkout's
+`keepr` process and never printed. `KEEPR_RELEASE_WORKTREE_ROOT` (not secret)
+overrides where release worktrees are created.
 
 First provisioning and first installation of dev/staging run in the owner's shell
 with `CLOUDFLARE_API_TOKEN` (the environment's deploy or provision token),
