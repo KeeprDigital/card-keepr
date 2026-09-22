@@ -417,7 +417,7 @@ const expectedRequestCapacities = {
   "hexdeck-en@1": 1_100,
   "riftbound-en@1": 5000,
   "scryfall-magic-en@1": 108_691,
-  "tcgdex-pokemon-en@1": 4,
+  "tcgdex-pokemon-en@1": 45_000,
   "pokemon-official-en@1": 4,
   "one-piece-en@6": 10_000,
   "fusion-world-en@9": 15_000,

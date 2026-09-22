@@ -253,6 +253,27 @@ export const pokemonOfficialSourceAdapterRegistration = {
   parserContract: "pokemon-selected-publications-html@1",
   maximumSnapshotBytes: 1024 * 1024,
   requestCapacity: 4,
+  // Four selected publications; sequential and slow, as in the 2026-09-14 capture.
+  hostPacing: [
+    {
+      hostname: "www.pokemon.com",
+      kind: "page",
+      floorMs: 2_000,
+      ceilingMs: 16_000,
+      maximumConcurrency: 1,
+      evidence:
+        "acceptance/fixtures/real-sources/2026-09-14-pokemon/README.md: publisher pages captured sequentially at two seconds with no rate limiting observed; no robots or terms are retained, so the floor keeps that interval.",
+    },
+    {
+      hostname: "assets.pokemon.com",
+      kind: "asset",
+      floorMs: 2_000,
+      ceilingMs: 16_000,
+      maximumConcurrency: 1,
+      evidence:
+        "acceptance/fixtures/real-sources/2026-09-14-pokemon/README.md: the one linked Garchomp PNG was captured at the same two-second pacing; no robots or terms are retained.",
+    },
+  ],
   origin: "production",
   requestSurface: { kind: "credential-free-https" },
   reconciliationCapability: "catalogue",

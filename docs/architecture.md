@@ -176,16 +176,28 @@ explicit unknown.
 [Magic source assembly](https://github.com/KeeprDigital/card-keepr/issues/327).
 
 TCGdex's declared English inventory graph retains exact Set/Card membership and
-excludes the separately declared Pocket membership. Outside the qualified pilot,
-a structurally valid record retains one source-scoped Entity Proposal covering
-unresolved category, Card identity and treatment claims. Its raw record and
-ancestor evidence remain inspectable; an attributed source image does not imply
-an issued Printing or a qualified treatment. Missing image URLs create no image
-request. A later capture appends evidence without rewriting the original proposal
-or transferring its decision to a separately qualified target. These records
-contribute no Card or Printing. Collection must close its actual discovered graph
+excludes the separately declared Pocket membership. Every English series in the
+retained 2026-09-15 inventory is issued physical product; a series first seen
+later stays unresolved. A record in an issued Set whose category and content map
+completely onto the Game Profile yields one Card, keyed by its TCGdex record ID
+(the source establishes no cross-reprint equivalence), and one Printing per
+detailed treatment. Under the owner's 2026-09-22 ruling, finishes (normal, holo,
+reverse and similar) are surface treatments on the record's one illustration:
+the variants that differ only by finish share the record image, which proves
+their appearance once its bytes are retained. One retained image object is then
+referenced by each of those Printings. An edition, stamp or size is a visible
+print difference, so when a record lists several, only its unmarked group (no
+edition, no stamp) shares the image; the other variants, every variant of a
+record without an image and every variant whose image fetch fails keep an
+explicit gap and remain Entity Proposals for owner admission. Foil-pattern
+claims (galaxy, cosmos) and records the profile cannot map retain one
+source-scoped Entity Proposal covering unresolved category, Card identity and
+treatment claims; their raw record, ancestors and attributed record image remain
+inspectable. Only associated images are requested. A later capture appends
+evidence without rewriting the original proposal or transferring its decision to
+a separately qualified target. Collection must close its actual discovered graph
 before native preparation; registered Request Capacity still applies. The named
-pilot's identities and qualified image associations remain unchanged.
+pilot's identities and inspected image associations remain unchanged.
 Card detail discovery rejects a competing Set parent for the same opaque full
 Card ID before deduplication; replay retains one request and shared images remain
 independently deduplicated.
