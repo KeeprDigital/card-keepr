@@ -213,6 +213,10 @@ _Avoid_: Marketplace listing, owned sealed product
 A region-scoped availability event for a Product, expressed with the precision its Publisher provides.
 _Avoid_: Product, Distribution Context
 
+**Tentative Release Date**:
+A Release date the Publisher states as subject to change. The stated date is kept with an explicit tentative marker; a later observation without the marker replaces it like any other Release fact.
+_Avoid_: Unknown date, estimated date, dropped date
+
 **Production Release**:
 One serialized deployment of compatible Card Keepr schema and Worker versions
 promoted from an owner-initiated staging release attempt after validation and

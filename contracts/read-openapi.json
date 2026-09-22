@@ -5762,6 +5762,12 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "tentative": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
                     }
                   },
                   "required": [

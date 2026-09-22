@@ -84,6 +84,15 @@ separate facts; none silently reallocates identity or makes publication time a
 new source observation.
 [Coverage decision](https://github.com/KeeprDigital/card-keepr/issues/212#issuecomment-5557581630).
 
+A Release date the Publisher marks as subject to change is a Tentative Release
+Date: the stated date is kept with `date.tentative: true` rather than rejected
+or reduced to an unknown date. The marker is present only when stated, so other
+Releases keep their shape. It is an ordinary Release fact; a later observation
+without the marker replaces it through reconciliation, and it never implies a
+scheduled update. Before Go-Live this edits the Release definition and export
+schema v5 in place.
+[Tentative release dates](https://github.com/KeeprDigital/card-keepr/issues/334#issuecomment-5769592182).
+
 ## Identity and owner decisions
 
 Canonical IDs are persistent allocations with retained evidence mappings, not
