@@ -71,6 +71,30 @@ export function advanceArchiveParse(db: CatalogueStore, prior: ArchiveParseProgr
     );
 }
 
+/** Aborts a normalization transaction unless both cursors are exactly where it began. */
+export function archiveParseCursorGuard(
+  db: CatalogueStore,
+  prior: ArchiveParseProgress,
+  records: { next_ordinal: number; digest: string },
+) {
+  return repositoryStatements(db)
+    .prepare(
+      `SELECT CASE WHEN EXISTS(SELECT 1 FROM source_archive_parse_progress
+      WHERE observation_set_id=?1 AND next_record=?2 AND next_variant=?3 AND observation_count=?4 AND state='normalizing')
+    AND EXISTS(SELECT 1 FROM source_record_progress
+      WHERE observation_set_id=?1 AND next_ordinal=?5 AND digest=?6 AND sealed=0)
+    THEN 1 ELSE json_extract('{}','archive_parse_cursor_changed') END`,
+    )
+    .bind(
+      prior.observation_set_id,
+      prior.next_record,
+      prior.next_variant,
+      prior.observation_count,
+      records.next_ordinal,
+      records.digest,
+    );
+}
+
 export type ArchiveRecordReceipt = {
   ordinal: number;
   source_key: string;
@@ -127,14 +151,17 @@ export function advanceArchiveDiscovery(
 
 export function archiveDecode(db: CatalogueStore, snapshot: string) {
   return repositoryStatements(db)
-    .prepare("SELECT * FROM source_archive_decodes WHERE source_snapshot_id=?")
+    .prepare(
+      "SELECT source_snapshot_id,pin_json,next_block,next_record,decoded_bytes,digest,decoded_digest,state FROM source_archive_decodes WHERE source_snapshot_id=?",
+    )
     .bind(snapshot);
 }
 
 export function adoptedArchiveDecode(db: CatalogueStore, set: string) {
   return repositoryStatements(db)
     .prepare(
-      `SELECT d.* FROM source_archive_decodes d
+      `SELECT d.source_snapshot_id,d.pin_json,d.next_block,d.next_record,d.decoded_bytes,d.digest,d.decoded_digest,d.state
+    FROM source_archive_decodes d
     JOIN source_observation_sets s ON s.source_snapshot_id=d.source_snapshot_id
     WHERE s.id=? AND d.state='decoded'`,
     )
@@ -212,10 +239,44 @@ export function advanceArchiveDecode(
     );
 }
 
+export type ArchiveDecodeCheckpoint = {
+  checkpoint_block: number;
+  checkpoint_json: string;
+  /** D1 returns a BLOB as an ArrayBuffer or, in some runtimes, a byte array. */
+  checkpoint_bytes: ArrayBuffer | number[];
+};
+
+export function archiveDecodeCheckpoint(db: CatalogueStore, snapshot: string) {
+  return repositoryStatements(db)
+    .prepare(
+      `SELECT checkpoint_block,checkpoint_json,checkpoint_bytes FROM source_archive_decodes
+    WHERE source_snapshot_id=? AND checkpoint_block IS NOT NULL`,
+    )
+    .bind(snapshot);
+}
+
+/** A continuation only moves forward and never ahead of committed blocks. */
+export function retainArchiveDecodeCheckpoint(
+  db: CatalogueStore,
+  snapshot: string,
+  block: number,
+  json: string,
+  bytes: Uint8Array,
+) {
+  return repositoryStatements(db)
+    .prepare(
+      `UPDATE source_archive_decodes SET checkpoint_block=?,checkpoint_json=?,checkpoint_bytes=?
+    WHERE source_snapshot_id=? AND state='decoding' AND next_block>=?
+      AND (checkpoint_block IS NULL OR checkpoint_block<=?)`,
+    )
+    .bind(block, json, bytes, snapshot, block, block);
+}
+
 export function sealArchiveDecode(db: CatalogueStore, snapshot: string, receipt: ArchiveDecode, decodedDigest: string) {
   return repositoryStatements(db)
     .prepare(
-      `UPDATE source_archive_decodes SET state='decoded',decoded_digest=?
+      `UPDATE source_archive_decodes SET state='decoded',decoded_digest=?,
+    checkpoint_block=NULL,checkpoint_json=NULL,checkpoint_bytes=NULL
     WHERE source_snapshot_id=? AND state='decoding' AND next_block=? AND next_record=? AND decoded_bytes=? AND digest=?`,
     )
     .bind(decodedDigest, snapshot, receipt.next_block, receipt.next_record, receipt.decoded_bytes, receipt.digest);

@@ -87,6 +87,9 @@ export default defineConfig({
                     // by the public-mount spec, which overrides the base per request.
                     PUBLIC_BASE_URL: "http://127.0.0.1:8788",
                     SOURCE_HOST_PACING_MODE: stressSuite ? "production" : "immediate",
+                    // Local runtimes enforce no subrequest/CPU limits: keep barrier
+                    // polls and invocation yields at one second in every suite.
+                    WORKFLOW_WAIT_MODE: "immediate",
                     CLOUDFLARE_ACCOUNT_ID: cloudflareAccountId,
                     CATALOGUE_D1_DATABASE_ID: catalogueD1DatabaseId,
                     DISPOSABLE_D1_DATABASE_ID: disposableD1DatabaseId,

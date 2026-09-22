@@ -145,6 +145,8 @@ export async function startInprocessWorker({
       ...prepared.workerOptions.bindings,
       ...secrets,
       SOURCE_HOST_PACING_MODE: pacingMode,
+      // Local runtimes enforce no Worker limits; keep Workflow waits short.
+      WORKFLOW_WAIT_MODE: "immediate",
       PUBLIC_BASE_URL: `http://127.0.0.1:${port}`,
       ...vars,
     },

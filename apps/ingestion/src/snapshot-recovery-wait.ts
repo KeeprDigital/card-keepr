@@ -1,9 +1,11 @@
 import type { WorkflowStep } from "cloudflare:workers";
 import { catalogueMutationFenced } from "../../../src/catalogue/backup-recovery";
 import { catalogueStore } from "../../../src/catalogue/shared";
+import { workflowWaitMode } from "./workflow-invocation-budget";
 
 /** A database fence is an external wait, not a failed collection or a new approval. */
 export function snapshotRecoveryWait(env: Env, step: WorkflowStep): WorkflowStep {
+  const immediate = workflowWaitMode(env.WORKFLOW_WAIT_MODE) === "immediate";
   return new Proxy(step, {
     get(target, property) {
       if (property !== "do") {
@@ -27,7 +29,13 @@ export function snapshotRecoveryWait(env: Env, step: WorkflowStep): WorkflowStep
             );
             if (!blocked && !/catalogue_recovery_writer_fenced|recovery_not_verified/.test(detail)) throw error;
             for (let wait = 0; ; wait++) {
-              await target.sleep(`${name} recovery wait ${generation}:${wait}`, "5 seconds");
+              // A recovery fence can hold for hours until owner acceptance:
+              // back off to five minutes so waiting costs a bounded number of
+              // durable steps and subrequests instead of one poll every 5 s.
+              await target.sleep(
+                `${name} recovery wait ${generation}:${wait}`,
+                `${immediate ? 5 : Math.min(300, 5 * 2 ** Math.min(wait, 6))} seconds`,
+              );
               const fenced = await target.do(
                 `${name} recovery check ${generation}:${wait}`,
                 { retries: { limit: 3, delay: 500 }, timeout: "1 minute" },

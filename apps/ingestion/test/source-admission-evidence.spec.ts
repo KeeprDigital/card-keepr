@@ -54,7 +54,8 @@ test.each([
           if (property === "batch")
             return async (statements: D1PreparedStatement[]) => {
               const result = await target.batch(statements);
-              if (!parseLoss && (await archiveQueries.archiveRecordCount(db).first("count")) === 1) {
+              // Normalization commits whole records with their cursors; lose that response.
+              if (!parseLoss && ((await archiveQueries.archiveRecordCount(db).first<number>("count")) ?? 0) >= 1) {
                 parseLoss = true;
                 throw new Error("lost review archive record response");
               }

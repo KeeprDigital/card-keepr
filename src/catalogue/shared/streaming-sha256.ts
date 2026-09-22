@@ -52,12 +52,18 @@ export class StreamingSha256 {
     this.#bytes += BigInt(bytes.byteLength);
     let offset = 0;
     while (offset < bytes.byteLength) {
+      // Whole aligned blocks compress in place; only a partial block is copied.
+      if (this.#buffered === 0 && bytes.byteLength - offset >= 64) {
+        this.#compress(bytes, offset);
+        offset += 64;
+        continue;
+      }
       const length = Math.min(64 - this.#buffered, bytes.byteLength - offset);
       this.#buffer.set(bytes.subarray(offset, offset + length), this.#buffered);
       this.#buffered += length;
       offset += length;
       if (this.#buffered === 64) {
-        this.#compress(this.#buffer);
+        this.#compress(this.#buffer, 0);
         this.#buffered = 0;
       }
     }
@@ -69,23 +75,23 @@ export class StreamingSha256 {
       this.#buffer[this.#buffered++] = 0x80;
       if (this.#buffered > 56) {
         this.#buffer.fill(0, this.#buffered);
-        this.#compress(this.#buffer);
+        this.#compress(this.#buffer, 0);
         this.#buffered = 0;
       }
       this.#buffer.fill(0, this.#buffered, 56);
       const view = new DataView(this.#buffer.buffer);
       view.setUint32(56, Number((bitLength >> 32n) & 0xffff_ffffn));
       view.setUint32(60, Number(bitLength & 0xffff_ffffn));
-      this.#compress(this.#buffer);
+      this.#compress(this.#buffer, 0);
       this.#finished = true;
     }
     return Array.from(this.#state, (word) => word.toString(16).padStart(8, "0")).join("");
   }
 
-  #compress(block: Uint8Array): void {
-    const view = new DataView(block.buffer, block.byteOffset, block.byteLength);
+  #compress(block: Uint8Array, offset: number): void {
     for (let index = 0; index < 16; index += 1) {
-      this.#words[index] = view.getUint32(index * 4);
+      const at = offset + index * 4;
+      this.#words[index] = ((block[at]! << 24) | (block[at + 1]! << 16) | (block[at + 2]! << 8) | block[at + 3]!) >>> 0;
     }
     for (let index = 16; index < 64; index += 1) {
       const first = this.#words[index - 15]!;

@@ -182,11 +182,22 @@ export function workflowAttemptRecord(runId: string, instanceId: string): Workfl
       };
 }
 
-// Deep multi-shard collections poll the completion barrier once a minute;
-// shallow or small collections poll immediately.
-export function collectionBarrierSleepDuration(
-  maximumShardDepth: number,
-  maximumActiveRequestCount: number,
-): "1 minute" | "1 second" {
-  return maximumShardDepth > 1 && maximumActiveRequestCount > 10 ? "1 minute" : "1 second";
+/**
+ * The parent's completion-barrier poll interval. Deep multi-shard collections
+ * poll once a minute. Otherwise the interval starts at one second and doubles
+ * for every consecutive poll that finds the same pending shard set, up to a
+ * minute, so a single long shard (an archive parse) costs a bounded number of
+ * polls, steps and subrequests instead of one per second (#327). A changed
+ * shard set resets it. Inputs are durable step results, so replay derives the
+ * same durations. "immediate" is the test harness wait mode.
+ */
+export function collectionBarrierWaitMilliseconds(input: {
+  maximumShardDepth: number;
+  maximumActiveRequestCount: number;
+  unchangedPolls: number;
+  mode: "production" | "immediate";
+}): number {
+  if (input.mode === "immediate") return 1000;
+  if (input.maximumShardDepth > 1 && input.maximumActiveRequestCount > 10) return 60_000;
+  return Math.min(60_000, 1000 * 2 ** Math.min(input.unchangedPolls, 6));
 }

@@ -19,19 +19,24 @@ export type SourceRecordProgress = {
 };
 export function sourceRecordProgress(db: CatalogueStore, id: string) {
   return repositoryStatements(db)
-    .prepare(`SELECT next_ordinal,digest,header_json,sealed,requests_next_ordinal,requests_digest,requests_complete,manifest_digest,
+    .prepare(
+      `SELECT next_ordinal,digest,header_json,sealed,requests_next_ordinal,requests_digest,requests_complete,manifest_digest,
       EXISTS(SELECT 1 FROM source_observation_sets s WHERE s.id=p.observation_set_id
         AND NOT EXISTS(SELECT 1 FROM evidence_cleanup_objects d WHERE d.object_key=s.content_object_key)) AS authoritative
-      FROM source_record_progress p WHERE observation_set_id=?`)
+      FROM source_record_progress p WHERE observation_set_id=?`,
+    )
     .bind(id);
 }
+/** At most 64 rows (default 8) and 512,000 content bytes per page. */
 export function sourceRecordPage(db: CatalogueStore, id: string, after: number, limit = 8) {
   return repositoryStatements(db)
-    .prepare(`SELECT ordinal,source_key,content,sha256,request_json FROM (
+    .prepare(
+      `SELECT ordinal,source_key,content,sha256,request_json FROM (
 SELECT *,SUM(length(CAST(content AS BLOB))) OVER (ORDER BY ordinal) AS page_bytes FROM (
 SELECT ordinal,source_key,content,sha256,request_json FROM source_record_pages WHERE observation_set_id=? AND ordinal>? ORDER BY ordinal LIMIT ?
-)) WHERE page_bytes<=512000 ORDER BY ordinal`)
-    .bind(id, after, Math.min(8, limit));
+)) WHERE page_bytes<=512000 ORDER BY ordinal`,
+    )
+    .bind(id, after, Math.min(64, limit));
 }
 export function sourceRecordAt(db: CatalogueStore, id: string, ordinal: number) {
   return repositoryStatements(db)
@@ -70,9 +75,11 @@ export function sealSourceRecords(db: CatalogueStore, id: string) {
 /** Delete at most eight retained record payloads after the existing evidence closure authorizes removal. */
 export function deleteSourceRecordsForObject(db: CatalogueStore, key: string) {
   return repositoryStatements(db)
-    .prepare(`DELETE FROM source_record_pages WHERE rowid IN (
+    .prepare(
+      `DELETE FROM source_record_pages WHERE rowid IN (
     SELECT records.rowid FROM source_record_pages records JOIN source_parse_operations parse
     ON parse.observation_set_id=records.observation_set_id WHERE parse.content_object_key=? LIMIT 8
-  ) AND EXISTS(SELECT 1 FROM evidence_cleanup_objects WHERE object_key=? AND state='deleting')`)
+  ) AND EXISTS(SELECT 1 FROM evidence_cleanup_objects WHERE object_key=? AND state='deleting')`,
+    )
     .bind(key, key);
 }

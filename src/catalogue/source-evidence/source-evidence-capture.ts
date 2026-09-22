@@ -714,6 +714,9 @@ export async function parseCapturedRequest(
   sourceRequest: EvidenceRequestRow,
   snapshotId: string,
   workflowAttempt?: SourceParseAuthority["workflowAttempt"],
+  // Told when a bounded archive step retained progress and the request needs
+  // another call; the request stays captured either way.
+  continuation?: () => void,
 ): Promise<CaptureTransportResult> {
   if (!admitsCollectionWork(run)) {
     return { kind: "done", failure_code: null, request_made: false };
@@ -731,7 +734,10 @@ export async function parseCapturedRequest(
         workflowAttempt,
       },
     );
-    if ("kind" in observationSet) return { kind: "done", failure_code: null, request_made: false };
+    if ("kind" in observationSet) {
+      continuation?.();
+      return { kind: "done", failure_code: null, request_made: false };
+    }
     const adapter = sourceAdapterForCoverage(
       requiredSourceAdapter(evidencePlan.adapter_version),
       evidencePlan.coverage?.subset,
@@ -743,7 +749,10 @@ export async function parseCapturedRequest(
       const complete = await discoverArchiveRequestsBatch(database, run, sourceRequest, observationSet.id, () =>
         sourceParseAuthorityGuard(database, run.id, { intent: "collection", workflowAttempt }),
       );
-      if (!complete) return { kind: "done", failure_code: null, request_made: false };
+      if (!complete) {
+        continuation?.();
+        return { kind: "done", failure_code: null, request_made: false };
+      }
     } else {
       for await (const requests of discoveredSourceRecordRequests(database, observationSet.id)) {
         await appendDiscoveredEvidenceRequests(database, run, sourceRequest, requests);

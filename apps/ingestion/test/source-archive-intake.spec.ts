@@ -2,8 +2,11 @@ import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import etched from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/etched.json?raw";
 import { parseCapturedRequest } from "../../../src/catalogue/source-evidence";
-import { catalogueStore, sha256 } from "../../../src/catalogue/shared";
-import { decodeArchiveBatch } from "../../../src/catalogue/source-evidence/source-archive-decode";
+import { catalogueStore, gunzipRangeBytes, sha256 } from "../../../src/catalogue/shared";
+import {
+  archiveDecodeStepBudget,
+  decodeArchiveBatch,
+} from "../../../src/catalogue/source-evidence/source-archive-decode";
 import { sourceParseAuthorityGuard } from "../../../src/catalogue/source-evidence/source-parse-authority-repository";
 import { parseSnapshotBatch } from "../../../src/catalogue/source-evidence/source-evidence-parsing";
 import { discoveredSourceRecordRequests } from "../../../src/catalogue/source-evidence/source-record-intake";
@@ -17,21 +20,26 @@ function failingArchiveRead(key: string, failure: TypeError, location: "get" | "
   return new Proxy(env.EVIDENCE_OBJECTS, {
     get(target, property) {
       if (property === "get")
-        return async (requested: string) => {
+        return async (...args: Parameters<R2Bucket["get"]>) => {
+          const [requested] = args;
           if (requested === key && location === "get") throw failure;
-          const object = await target.get(requested);
-          if (!object || requested !== key) return object;
+          const object = await target.get(...args);
+          if (!object || requested !== key || !("body" in object)) return object;
           // Cancel the real returned stream before substituting the failed read;
           // the retained R2 object and its bytes remain unchanged.
           await object.body.cancel();
-          const body = new ReadableStream<Uint8Array>({
-            pull() {
-              throw failure;
-            },
-          });
           return new Proxy(object, {
             get(value, field) {
-              if (field === "body") return body;
+              if (field === "body" || field === "arrayBuffer" || field === "bytes")
+                return field === "body"
+                  ? new ReadableStream<Uint8Array>({
+                      pull() {
+                        throw failure;
+                      },
+                    })
+                  : async () => {
+                      throw failure;
+                    };
               const result = Reflect.get(value, field, value);
               return typeof result === "function" ? result.bind(value) : result;
             },
@@ -152,7 +160,7 @@ test("derived archive blocks replay a committed prefix without sealing partial e
   expect((await queries.archiveBlockReceipts(db).bind(snapshot.id).all()).results).toEqual(after.results);
 });
 
-test("archive normalization resumes an exact finish cursor and finalizes one bounded observation manifest", async () => {
+test("a lost normalization response replays from its committed cursors without duplicate records", async () => {
   const { db, snapshot } = await seedArchive("archive-finish-replay");
   let injected = false;
   const failing = catalogueStore(
@@ -161,7 +169,7 @@ test("archive normalization resumes an exact finish cursor and finalizes one bou
         if (property === "batch")
           return async (statements: D1PreparedStatement[]) => {
             const result = await target.batch(statements);
-            if (!injected && (await queries.archiveRecordCount(db).first("count")) === 9) {
+            if (!injected && ((await queries.archiveRecordCount(db).first<number>("count")) ?? 0) > 0) {
               injected = true;
               throw new Error("lost normalized record response");
             }
@@ -178,17 +186,16 @@ test("archive normalization resumes an exact finish cursor and finalizes one bou
   );
   expect(injected).toBe(true);
   expect(await queries.archiveObservationCount(db).bind(snapshot.id).first("count")).toBe(0);
-  // Forest has two retained finishes: the acknowledged nonfoil observation
-  // must survive a lost response before its foil observation is committed.
-  expect(await queries.archiveParseCursor(db).bind(snapshot.id).first()).toEqual({
-    next_record: 5,
-    next_variant: 1,
-    observation_count: 9,
-  });
+  // One atomic transaction admitted every record with both cursors; forest's
+  // two finishes were committed together with its receipt.
+  const committed = await queries.archiveParseCursor(db).bind(snapshot.id).first();
+  expect(committed).toEqual({ next_record: 7, next_variant: 0, observation_count: 11 });
+  expect(await queries.archiveRecordCount(db).first("count")).toBe(11);
   const completed = await parseSnapshotBatch(db, env.EVIDENCE_OBJECTS, snapshot.id, version, intent);
   if ("kind" in completed) throw new Error("Small archive should be complete after replay");
   expect(completed.observation_count).toBe(11);
   expect(completed.content_byte_length).toBeLessThan(32768);
+  expect(await queries.archiveRecordCount(db).first("count")).toBe(11);
   expect(await parseSnapshotBatch(db, env.EVIDENCE_OBJECTS, snapshot.id, version, intent)).toEqual(completed);
   expect(await queries.archiveObservationCount(db).bind(snapshot.id).first("count")).toBe(1);
   const requests = [];
@@ -208,84 +215,45 @@ test("a corrupt gzip trailer never seals an archive or exposes observations", as
   expect(await queries.archiveDecodeReceipt(db).bind(snapshot.id).first("state")).toBe("decoding");
 });
 
-test.each(["native", "coalesced"] as const)(
-  "synthetic repeated archive bytes keep %s reads below their buffer bound",
-  async (delivery) => {
-    // Fourteen repetitions make the gzip just larger than 64 KiB. This tests the
-    // read boundary only; repeated UUIDs are not a valid normalized source scope.
-    const repeated = new Uint8Array(raw.byteLength * 14);
-    for (let i = 0; i < 14; i++) repeated.set(raw, i * raw.byteLength);
-    const { db, run, snapshot, pin } = await seedArchive("archive-native-read-bound", false, repeated);
-    expect(snapshot.content_byte_length).toBeGreaterThan(65536);
-    let maximumRead = 0,
-      reads = 0;
-    const bucket = new Proxy(env.EVIDENCE_OBJECTS, {
-      get(target, property) {
-        if (property === "get")
-          return async (...args: Parameters<R2Bucket["get"]>) => {
-            const object = await target.get(...args);
-            if (!object || !("body" in object)) return object;
-            // Preserve the actual retained bytes while controlling their delivery
-            // as one legal large byte-stream chunk at the storage-read boundary.
-            const bytes = delivery === "coalesced" ? new Uint8Array(await object.arrayBuffer()) : null;
-            const source =
-              bytes === null
-                ? object.body
-                : new ReadableStream({
-                    type: "bytes",
-                    start(controller) {
-                      controller.enqueue(bytes);
-                      controller.close();
-                    },
-                  });
-            return new Proxy(object, {
-              get(value, field) {
-                if (field === "body")
-                  return new Proxy(source, {
-                    get(stream, member) {
-                      if (member === "getReader")
-                        return (options?: ReadableStreamGetReaderOptions) => {
-                          const reader = options === undefined ? stream.getReader() : stream.getReader(options);
-                          return new Proxy(reader, {
-                            get(native, method) {
-                              if (method === "read")
-                                return async (...inputs: unknown[]) => {
-                                  const next = (await Reflect.apply(
-                                    native.read,
-                                    native,
-                                    inputs,
-                                  )) as ReadableStreamReadResult<Uint8Array>;
-                                  if (!next.done) {
-                                    reads++;
-                                    maximumRead = Math.max(maximumRead, next.value.byteLength);
-                                  }
-                                  return next;
-                                };
-                              const result = Reflect.get(native, method, native);
-                              return typeof result === "function" ? result.bind(native) : result;
-                            },
-                          });
-                        };
-                      const result = Reflect.get(stream, member, stream);
-                      return typeof result === "function" ? result.bind(stream) : result;
-                    },
-                  });
-                const result = Reflect.get(value, field, value);
-                return typeof result === "function" ? result.bind(value) : result;
-              },
-            });
-          };
-        const value = Reflect.get(target, property, target);
-        return typeof value === "function" ? value.bind(target) : value;
-      },
-    });
-    expect(
-      await decodeArchiveBatch(db, bucket, snapshot, pin, () =>
-        sourceParseAuthorityGuard(db, run.id, { intent: "collection" }),
-      ),
-    ).toMatchObject({ state: "decoded", next_record: 98, decoded_digest: await sha256(repeated) });
-    expect(maximumRead).toBeLessThanOrEqual(65536);
-    expect(reads).toBeGreaterThanOrEqual(2);
-    expect(await queries.archiveObservationCount(db).bind(snapshot.id).first("count")).toBe(0);
-  },
-);
+test("retained archive decoding reads bounded ranges from its cursor and never re-reads the prefix", async () => {
+  // Fourteen repetitions exceed one 64 KiB decoded chunk. This tests the read
+  // boundary only; repeated UUIDs are not a valid normalized source scope.
+  const repeated = new Uint8Array(raw.byteLength * 14);
+  for (let i = 0; i < 14; i++) repeated.set(raw, i * raw.byteLength);
+  const { db, run, snapshot, pin } = await seedArchive("archive-native-read-bound", false, repeated);
+  const reads: { offset: number; length: number }[] = [];
+  const bucket = new Proxy(env.EVIDENCE_OBJECTS, {
+    get(target, property) {
+      if (property === "get")
+        return async (...args: Parameters<R2Bucket["get"]>) => {
+          const [key, options] = args;
+          if (key === snapshot.content_object_key) {
+            const range = options?.range as { offset: number; length: number } | undefined;
+            if (!range) throw new Error("The retained archive must be read by bounded range.");
+            reads.push(range);
+          }
+          return target.get(...args);
+        };
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const guard = () => sourceParseAuthorityGuard(db, run.id, { intent: "collection" });
+  // Four-record blocks make this archive take several bounded calls.
+  let calls = 0,
+    receipt;
+  do {
+    receipt = await decodeArchiveBatch(db, bucket, snapshot, pin, guard, 4);
+    calls++;
+    expect(receipt.next_block).toBeLessThanOrEqual(calls * archiveDecodeStepBudget.blocks + 1);
+  } while (receipt.state !== "decoded");
+  expect(calls).toBeGreaterThan(2);
+  expect(receipt).toMatchObject({ state: "decoded", next_record: 98, decoded_digest: await sha256(repeated) });
+  expect(reads.every(({ length }) => length <= gunzipRangeBytes)).toBe(true);
+  // Each call resumes at its persisted compressed cursor: reads only move
+  // forward, so no call re-inflates the retained prefix.
+  expect(reads.map(({ offset }) => offset)).toEqual(reads.map(({ offset }) => offset).sort((a, b) => a - b));
+  expect(reads.at(-1)!.offset).toBeGreaterThan(0);
+  expect(reads.at(-1)!.offset + reads.at(-1)!.length).toBe(snapshot.content_byte_length);
+  expect(await queries.archiveObservationCount(db).bind(snapshot.id).first("count")).toBe(0);
+});

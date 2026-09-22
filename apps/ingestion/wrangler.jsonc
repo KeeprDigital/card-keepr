@@ -4,7 +4,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-07-29",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
-  "limits": { "cpu_ms": 10000, "subrequests": 5000 },
+  "limits": { "cpu_ms": 30000, "subrequests": 20000 },
   "routes": [
     { "pattern": "card.keepr.digital/ingest", "zone_name": "keepr.digital" },
     { "pattern": "card.keepr.digital/ingest/*", "zone_name": "keepr.digital" },
@@ -14,6 +14,7 @@
     "ADMINISTRATION_CLOCK_MODE": "system",
     "SOURCE_HOST_PACING_MODE": "production",
     "SOURCE_HOST_PACING_INTERVAL_MS": "500",
+    "WORKFLOW_WAIT_MODE": "production",
     "CLOUDFLARE_ACCOUNT_ID": "3ec389380c7b82e6a172e6f351d4aad9",
     "CATALOGUE_D1_DATABASE_ID": "2469f888-1530-4bef-bc58-17dc298bb598",
     "DISPOSABLE_D1_DATABASE_ID": "cd5807b4-cde9-44ea-8a37-e650d1182ee8",

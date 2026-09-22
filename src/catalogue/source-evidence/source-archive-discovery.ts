@@ -11,7 +11,14 @@ import {
   type IngestionEvidenceRow,
 } from "./source-evidence-repository";
 
-/** Discover at most 512 sealed observations, retaining the verified ordinal/digest cursor. */
+/**
+ * Declared per-call (one Workflow step) discovery budget: at most `records`
+ * sealed observations, admitted in pages of `page` rows, each page one
+ * discovery append plus one cursor transaction.
+ */
+export const archiveDiscoveryStepBudget = Object.freeze({ records: 1024, page: 64 });
+
+/** Discover a bounded window of sealed observations, retaining the verified ordinal/digest cursor. */
 export async function discoverArchiveRequestsBatch(
   db: CatalogueStore,
   run: IngestionEvidenceRow,
@@ -33,13 +40,13 @@ export async function discoverArchiveRequestsBatch(
   const adapter = requiredSourceAdapter(plan.adapter_version);
   const selectsByGroup = plan.discovery_selection !== undefined;
   let processed = 0;
-  while (progress.discovery_ordinal < records.next_ordinal && processed < 512) {
+  while (progress.discovery_ordinal < records.next_ordinal && processed < archiveDiscoveryStepBudget.records) {
     const rows = (
       await sourceRecordPage(
         db,
         set,
         progress.discovery_ordinal - 1,
-        Math.min(8, 512 - processed),
+        Math.min(archiveDiscoveryStepBudget.page, archiveDiscoveryStepBudget.records - processed),
       ).all<SourceRecordRow>()
     ).results;
     if (!rows.length) throw new Error("Archive discovery source records are incomplete.");

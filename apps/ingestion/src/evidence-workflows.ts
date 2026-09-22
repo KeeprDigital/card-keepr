@@ -1,4 +1,5 @@
 import { snapshotRecoveryWait } from "./snapshot-recovery-wait";
+import { boundedWorkflowInvocation, workflowWaitMode } from "./workflow-invocation-budget";
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import { installedSourceAdapterRegistrations, requiredSourceAdapter } from "../../../src/catalogue/adapters";
 import {
@@ -17,7 +18,7 @@ import {
   workflowSteps,
 } from "../../../src/catalogue/shared";
 import {
-  collectionBarrierSleepDuration,
+  collectionBarrierWaitMilliseconds,
   collectionBatchSize,
   collectSourceRequestBatch,
   type EvidenceHostWorkflowParams,
@@ -80,6 +81,10 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
     step: WorkflowStep,
   ): Promise<unknown> {
     try {
+      const waitMode = workflowWaitMode(this.env.WORKFLOW_WAIT_MODE);
+      const invocation = boundedWorkflowInvocation(this.env, step, { mode: waitMode });
+      this.env = invocation.env;
+      step = invocation.step;
       const operational = observeOperationalWorkflow(snapshotRecoveryWait(this.env, step), event, this.env);
       this.env = operational.env;
       step = observeWorkflowProgress(operational.step, (progress) =>
@@ -106,6 +111,10 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
       });
       const allChildIds = new Set<string>(retainedChildIds);
       let barrierStage = 0;
+      // Derived only from durable step results, so replay reproduces them.
+      let previousShardSet: string | null = null,
+        unchangedPolls = 0,
+        previouslyRecorded: string | null = null;
       for (;;) {
         const pendingShards = await loadPendingHostShards(
           step,
@@ -119,6 +128,11 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
             id: await evidenceHostWorkflowId(runId, shard),
           })),
         );
+        const shardSet = JSON.stringify(
+          activeChildren.map((child) => [child.hostname, child.minimumSequenceNumber, child.maximumSequenceNumber]),
+        );
+        unchangedPolls = shardSet === previousShardSet ? unchangedPolls + 1 : 0;
+        previousShardSet = shardSet;
         const maximumShardDepth = Math.max(0, ...activeChildren.map((child) => child.pendingShardCount ?? 0));
         const maximumActiveRequestCount = Math.max(0, ...activeChildren.map((child) => child.pendingRequestCount ?? 0));
         let selectedChildIds: string[] = [];
@@ -247,14 +261,20 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
         }
         for (const id of selectedChildIds) allChildIds.add(id);
         const recordedChildIds = [...allChildIds].sort();
-        await step.do(
-          workflowStepName(workflowSteps.parent.recordSummary, { stage: barrierStage }),
-          deterministicDatabaseStep,
-          async () => {
-            await recordWorkflowIds(catalogueStore(this.env.CATALOGUE_DB), runId, event.instanceId, recordedChildIds);
-            return { child_workflow_count: recordedChildIds.length };
-          },
-        );
+        // An unchanged identity set is already recorded; re-recording it on
+        // every poll only spent a step and its subrequests.
+        const recordedKey = JSON.stringify(recordedChildIds);
+        if (recordedKey !== previouslyRecorded) {
+          await step.do(
+            workflowStepName(workflowSteps.parent.recordSummary, { stage: barrierStage }),
+            deterministicDatabaseStep,
+            async () => {
+              await recordWorkflowIds(catalogueStore(this.env.CATALOGUE_DB), runId, event.instanceId, recordedChildIds);
+              return { child_workflow_count: recordedChildIds.length };
+            },
+          );
+          previouslyRecorded = recordedKey;
+        }
         const run = await step.do(
           workflowStepName(workflowSteps.parent.finalize, { stage: barrierStage }),
           deterministicDatabaseStep,
@@ -266,7 +286,12 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
         if (run.state === "collecting") {
           await step.sleep(
             workflowStepName(workflowSteps.parent.wait, { stage: barrierStage }),
-            collectionBarrierSleepDuration(maximumShardDepth, maximumActiveRequestCount),
+            collectionBarrierWaitMilliseconds({
+              maximumShardDepth,
+              maximumActiveRequestCount,
+              unchangedPolls,
+              mode: waitMode,
+            }),
           );
           barrierStage += 1;
           continue;
@@ -446,6 +471,10 @@ async function evidenceHostWorkflowId(runId: string, shard: HostShard): Promise<
 export class EvidenceHostWorkflow extends WorkflowEntrypoint<Env, EvidenceHostWorkflowParams> {
   override async run(event: Readonly<WorkflowEvent<EvidenceHostWorkflowParams>>, step: WorkflowStep): Promise<unknown> {
     try {
+      const waitMode = workflowWaitMode(this.env.WORKFLOW_WAIT_MODE);
+      const invocation = boundedWorkflowInvocation(this.env, step, { mode: waitMode });
+      this.env = invocation.env;
+      step = invocation.step;
       const operational = observeOperationalWorkflow(snapshotRecoveryWait(this.env, step), event, this.env);
       this.env = operational.env;
       step = observeWorkflowProgress(operational.step, (progress) =>

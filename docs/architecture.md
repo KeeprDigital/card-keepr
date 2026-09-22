@@ -296,7 +296,17 @@ verified reference closure must agree with its bytes. Reconciliation uses
 retained evidence rather than silently fetching a changed source.
 
 Archive intake retains the original compressed Source Snapshot and verified
-decoded blocks, with resumable record and finish progress. Only a sealed Source
+decoded blocks, with resumable record and finish progress. Each Workflow step
+advances one bounded window: decoding reads the retained archive in byte ranges
+from a persisted gzip/JSONL continuation (compressed bit cursor, 32 KiB history,
+open record bytes and running digests) and retains at most four derived blocks;
+normalization admits at most 1,024 records in atomic transactions that carry
+both cursors as a precondition; discovery admits at most 1,024 observations.
+A stale or lost continuation only re-derives and verifies committed blocks, so
+retries and replays neither skip nor duplicate a record. Only verified EOF (gzip
+trailer and the exact retained length and digest) seals the decode. The
+mechanism is game-neutral; any adapter declaring an archive extraction uses it
+([archive steps](https://github.com/KeeprDigital/card-keepr/issues/327)). Only a sealed Source
 Observation Set adopts those blocks as retained interpretation evidence. Permanent
 proposal decisions pin their source and image dependencies atomically. Backup
 verification follows retained archive and image identities independently of a
@@ -402,6 +412,23 @@ while each full request URL keeps its own identity. The global emergency request
 ceiling is a finite admission limit, not a measured throughput or arbitrary-host
 capacity guarantee. Each Source Adapter Version keeps its separately declared
 capacity. [Source intake foundation](https://github.com/KeeprDigital/card-keepr/issues/327).
+
+Workers count subrequests per invocation, and one Workflow engine lifetime runs
+successive steps inside one invocation until the engine idles. Collection
+Workflows therefore bound both levels: each step does a bounded amount of work,
+and each Workflow counts the binding calls of its current invocation and, at
+5,000, issues a durable sleep longer than the engine's idle grace period so the
+next step starts a fresh invocation. Replayed step results make no calls and
+yield nothing, and the collection fence checks once per replay rather than per
+replayed step. The completion barrier backs off from one second to one minute
+while its pending shard set is unchanged, and skips re-recording an unchanged
+child identity set, so a long shard costs a bounded number of polls, steps and
+subrequests. Waiting on a recovery fence backs off to five minutes. Test
+runtimes set `WORKFLOW_WAIT_MODE=immediate` to keep these waits at one second.
+The ingestion Worker's configured limits (30 s CPU, 20,000 subrequests) are
+headroom above these budgets, not the bound: a step is designed for well under
+a second of CPU, and the 5,000-call yield leaves room for the step in flight,
+replay and one missed hibernation.
 
 Host pacing is adaptive and recorded per hostname with the Source Adapter
 registration: a page or asset kind, a floor (most aggressive interval), a
