@@ -17,6 +17,8 @@ import {
   startEvidenceRoute,
   retryEvidenceRoute,
   evidenceStatusRoute,
+  evidenceSummaryRoute,
+  evidenceRequestsRoute,
   pauseEvidenceRoute,
   terminateEvidenceRoute,
   extendCapacityRoute,
@@ -37,6 +39,8 @@ import {
   observationSetSchema,
   evidenceAcceptanceSchema,
   evidenceStatusSchema,
+  evidenceSummarySchema,
+  evidenceRequestsSchema,
   collectionPauseSchema,
   collectionTerminationSchema,
   collectionResumeSchema,
@@ -58,7 +62,9 @@ import {
   extendRunRequestCapacity,
   reparseSourceSnapshot,
   retryEvidenceRun,
+  showEvidenceRequests,
   showEvidenceRun,
+  showEvidenceSummary,
   sourceObservationSetContent,
   sourceSnapshotContent,
   startEvidenceRun,
@@ -323,6 +329,26 @@ export const sourceEvidenceRoutes: HttpRoute<Context>[] = [
     c.json(
       evidenceStatusSchema.parse(
         await showEvidenceRun(c.env.env.CATALOGUE_DB, c.req.valid("param").run, evidenceInspectionOptions(c.env.env)),
+      ),
+      200,
+    ),
+  ),
+  httpRoute<Context>()(evidenceSummaryRoute, async (c) =>
+    c.json(
+      evidenceSummarySchema.parse(
+        await showEvidenceSummary(
+          c.env.env.CATALOGUE_DB,
+          c.req.valid("param").run,
+          evidenceInspectionOptions(c.env.env),
+        ),
+      ),
+      200,
+    ),
+  ),
+  httpRoute<Context>()(evidenceRequestsRoute, async (c) =>
+    c.json(
+      evidenceRequestsSchema.parse(
+        await showEvidenceRequests(c.env.env.CATALOGUE_DB, c.req.valid("param").run, c.req.valid("query").after),
       ),
       200,
     ),

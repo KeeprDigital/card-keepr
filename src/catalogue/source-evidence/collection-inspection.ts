@@ -1,9 +1,11 @@
 import type { CatalogueStore } from "../shared";
 import {
   collectionEvidenceCountsStatement,
+  collectionFailureGroupsStatement,
   collectionHostProgressStatement,
   collectionPacingLimitsStatement,
   collectionRequestGroupsStatement,
+  collectionRequestPageStatement,
   failedPrintingImagesStatement,
   latestCollectionFailureStatement,
   latestCollectionRequestStatement,
@@ -35,6 +37,10 @@ import type {
 } from "./source-evidence-repository-types";
 
 export const inspectionDetailLimit = 200;
+// Listed detail in the compact status summary (#397): its size stays
+// independent of run size; per-request detail pages separately.
+export const summaryDetailLimit = 20;
+export const requestPageSize = 250;
 // Hostnames and backoff/recovery receipts listed per run; counts stay exact.
 export const pacingDetailLimit = 50;
 
@@ -75,6 +81,9 @@ export type CollectionInspectionInput = Readonly<{
   lastProgressAt: string | null;
   pacing: PacingConfiguration;
   nowMs: number;
+  // Listed failed images and pacing receipts; the compact summary (#397)
+  // lists fewer than the full status document. Counts stay exact.
+  detailLimit?: number;
 }>;
 
 export type EvidenceCounts = Readonly<{
@@ -115,6 +124,8 @@ export async function collectionInspection(
   input: CollectionInspectionInput,
 ): Promise<{ collection: Record<string, unknown>; counts: EvidenceCounts }> {
   const runId = input.run.id;
+  const detailLimit = input.detailLimit ?? inspectionDetailLimit;
+  const pacingEventLimit = Math.min(detailLimit, pacingDetailLimit);
   const [groups, counts, latestFailure, currentRequest, hosts, failedImages, limits, events] = await Promise.all([
     // Dynamically discovered and collection-plan identities carry their
     // Source Lineage as a prefix and group by it; every other identity is
@@ -159,7 +170,7 @@ export async function collectionInspection(
     failedPrintingImagesStatement(database, {
       runId: runId,
       toleratedCodesJson: JSON.stringify(toleratedPrintingImageFailureCodes),
-      limit: inspectionDetailLimit,
+      limit: detailLimit,
     }).all<{
       request_id: string;
       hostname: string;
@@ -175,7 +186,7 @@ export async function collectionInspection(
       backoff_count: number;
       recovery_count: number;
     }>(),
-    recentPacingEventsStatement(database, { runId, limit: pacingDetailLimit }).all<PacingEventRow>(),
+    recentPacingEventsStatement(database, { runId, limit: pacingEventLimit }).all<PacingEventRow>(),
   ]);
   if (counts === null) throw new Error("Evidence counts are unavailable.");
   const failedImageCount = failedImages.results[0]?.total ?? 0;
@@ -285,8 +296,8 @@ export async function collectionInspection(
     },
     failed_images: {
       count: failedImageCount,
-      detail_limit: inspectionDetailLimit,
-      truncated: failedImageCount > inspectionDetailLimit,
+      detail_limit: detailLimit,
+      truncated: failedImageCount > detailLimit,
       requests: failedImages.results.map((image) => ({
         request_id: image.request_id,
         hostname: image.hostname,
@@ -314,8 +325,8 @@ export async function collectionInspection(
       limits: pacingLimits,
       events: {
         count: pacingEventCount,
-        detail_limit: pacingDetailLimit,
-        truncated: pacingEventCount > pacingDetailLimit,
+        detail_limit: pacingEventLimit,
+        truncated: pacingEventCount > pacingEventLimit,
         recent: events.results.map(({ total: _total, ...event }) => event),
       },
     },
@@ -411,5 +422,82 @@ export async function boundedEvidenceDetail(
     attempts: attempts.results.sort(
       (left, right) => left.request_id.localeCompare(right.request_id) || left.attempt_number - right.attempt_number,
     ),
+  };
+}
+
+// Failure summary: unsuccessful fetch attempts by outcome and failed Source
+// Requests by failure code. Closed machine codes and exact counts only.
+export async function collectionFailureSummary(
+  database: CatalogueStore,
+  runId: string,
+): Promise<{ attempts_by_outcome: Record<string, number>; requests_by_failure_code: Record<string, number> }> {
+  const rows = await collectionFailureGroupsStatement(database, runId).all<{
+    kind: "attempt" | "request";
+    code: string;
+    count: number;
+  }>();
+  const attempts: Record<string, number> = {};
+  const requests: Record<string, number> = {};
+  for (const row of rows.results) (row.kind === "attempt" ? attempts : requests)[row.code] = row.count;
+  return { attempts_by_outcome: attempts, requests_by_failure_code: requests };
+}
+
+type RequestPageRow = {
+  sequence_number: number;
+  request_id: string;
+  request_role: string;
+  state: string;
+  hostname: string;
+  url: string;
+  discovered_from_request_id: string | null;
+  retry_generation: number;
+  failure_code: string | null;
+  source_snapshot_id: string | null;
+  attempt_count: number;
+  latest_attempt_number: number | null;
+  latest_outcome: string | null;
+  latest_http_status: number | null;
+  latest_completed_at: string | null;
+};
+
+// One page of per-request detail after an exclusive sequence cursor. The
+// cursor is the last listed sequence number; null means the listing is complete.
+export async function collectionRequestPage(
+  database: CatalogueStore,
+  runId: string,
+  afterSequence: number,
+): Promise<{ requests: Record<string, unknown>[]; next_after: string | null }> {
+  const rows = (
+    await collectionRequestPageStatement(database, {
+      runId,
+      afterSequence,
+      limit: requestPageSize + 1,
+    }).all<RequestPageRow>()
+  ).results;
+  const page = rows.slice(0, requestPageSize);
+  return {
+    requests: page.map((row) => ({
+      sequence_number: row.sequence_number,
+      request_id: row.request_id,
+      role: row.request_role,
+      state: row.state,
+      hostname: row.hostname,
+      url: row.url,
+      discovered_from_request_id: row.discovered_from_request_id,
+      retry_generation: row.retry_generation,
+      failure_code: row.failure_code,
+      source_snapshot_id: row.source_snapshot_id,
+      attempt_count: row.attempt_count,
+      latest_attempt:
+        row.latest_attempt_number === null
+          ? null
+          : {
+              attempt_number: row.latest_attempt_number,
+              outcome: row.latest_outcome,
+              http_status: row.latest_http_status,
+              completed_at: row.latest_completed_at,
+            },
+    })),
+    next_after: rows.length > requestPageSize ? String(page.at(-1)!.sequence_number) : null,
   };
 }

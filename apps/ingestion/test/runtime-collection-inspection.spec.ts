@@ -15,6 +15,8 @@ import {
   waitForEvidenceCondition,
 } from "./runtime-helpers";
 import { fusionWorldRequestCapacity, pauseRunAtCapacity } from "./capacity-pause-helpers";
+import { assertHttpResponse } from "../../../test/support/http-contract";
+import contract from "../../../contracts/admin-openapi.json";
 
 installRuntimeSuite();
 
@@ -414,3 +416,62 @@ test("collection inspection succeeds for a 64-character Official Source hostname
     },
   ]);
 });
+
+test("a 15,000-request run has a compact status summary and pages every request", async () => {
+  const { runId, root } = await pauseRunAtCapacity("collection_inspection_summary_001");
+  const summaryResponse = await administrationRequest(`/v1/ingestion-runs/${runId}/evidence/summary`, "GET");
+  expect(summaryResponse.status).toBe(200);
+  await assertHttpResponse(contract, "/v1/ingestion-runs/{run}/evidence/summary", "get", summaryResponse);
+  const text = await summaryResponse.text();
+  // Bounded by plans, hosts and fixed detail limits, never by request count.
+  expect(text.length).toBeLessThan(16 * 1024);
+  const summary = JSON.parse(text) as Record<string, unknown> & { collection: CollectionInspection };
+  expect(summary).toMatchObject({
+    contract: "card-keepr-evidence-summary@1",
+    id: runId,
+    state: "paused",
+    pause: { reason: "source_request_capacity_exhausted" },
+    failures: { attempts_by_outcome: {}, requests_by_failure_code: {} },
+    workflow: { attempt_count: expect.any(Number), attempts_truncated: false },
+  });
+  expect(summary.collection.requests.total).toBe(fusionWorldRequestCapacity);
+  expect(summary.collection.pacing.events).toMatchObject({ detail_limit: 20 });
+  for (const key of ["evidence_plans", "official_source_collection_plans", "snapshots", "diagnostics"])
+    expect(summary).not.toHaveProperty(key);
+
+  const listed: string[] = [];
+  let after: string | null = null;
+  let pages = 0;
+  do {
+    const response = await administrationRequest(
+      `/v1/ingestion-runs/${runId}/evidence/requests${after === null ? "" : `?after=${after}`}`,
+      "GET",
+    );
+    expect(response.status).toBe(200);
+    if (pages === 0) await assertHttpResponse(contract, "/v1/ingestion-runs/{run}/evidence/requests", "get", response);
+    const page = await response.json<{
+      page_size: number;
+      requests: Array<{ request_id: string; attempt_count: number; latest_attempt: unknown }>;
+      next_after: string | null;
+    }>();
+    expect(page.requests.length).toBeLessThanOrEqual(page.page_size);
+    if (pages === 0)
+      expect(page.requests.find((request) => request.request_id === root.request_id)).toMatchObject({
+        attempt_count: 1,
+        latest_attempt: { attempt_number: 1, outcome: "success" },
+      });
+    listed.push(...page.requests.map((request) => request.request_id));
+    after = page.next_after;
+    pages += 1;
+  } while (after !== null);
+  expect(listed).toHaveLength(fusionWorldRequestCapacity);
+  expect(new Set(listed).size).toBe(fusionWorldRequestCapacity);
+  expect(pages).toBe(fusionWorldRequestCapacity / 250);
+
+  const malformed = await administrationRequest(`/v1/ingestion-runs/${runId}/evidence/requests?after=next`, "GET");
+  expect(malformed.status).toBe(400);
+  await malformed.body?.cancel();
+  const missing = await administrationRequest("/v1/ingestion-runs/run_absent_summary/evidence/summary", "GET");
+  expect(missing.status).toBe(404);
+  await missing.body?.cancel();
+}, 60_000);

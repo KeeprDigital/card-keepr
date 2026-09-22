@@ -52,7 +52,16 @@ export type { IngestionEvidenceRow } from "./ingestion-run-repository";
 
 import { globalEmergencySourceRequestCeiling, requiredSourceAdapter, sourceAdapterForCoverage } from "../adapters";
 import { curatedRevisionPinStatementsForNewRun, curatedRevisionSetForRun } from "../curated";
-import { boundedEvidenceDetail, collectionInspection, type PacingConfiguration } from "./collection-inspection";
+import {
+  boundedEvidenceDetail,
+  collectionFailureSummary,
+  collectionInspection,
+  collectionRequestPage,
+  inspectionDetailLimit,
+  requestPageSize,
+  summaryDetailLimit,
+  type PacingConfiguration,
+} from "./collection-inspection";
 import {
   type CollectionProgressFacts,
   classifyCollectionProgress,
@@ -2481,7 +2490,7 @@ export async function showEvidenceRun(
 ): Promise<Record<string, unknown>> {
   const run = await requiredEvidenceRun(database, runId);
   const evidencePlans = parseEvidencePlans(run.request_plan_json);
-  const [detail, collectionPlans, curatedSet, pause, termination, workflowAttempts, progress] = await Promise.all([
+  const [detail, collectionPlans, curatedSet, facts] = await Promise.all([
     boundedEvidenceDetail(database, runId),
     repositoryStatements(database)
       .prepare(
@@ -2500,34 +2509,9 @@ export async function showEvidenceRun(
         created_at: string;
       }>(),
     curatedRevisionSetForRun(database, runId),
-    currentPause(database, runId),
-    terminationDocument(database, runId),
-    workflowAttemptRows(database, runId),
-    collectionProgressFacts(database, runId),
+    collectionFacts(database, run, evidencePlans, options, inspectionDetailLimit),
   ]);
-  // A paused run reports exactly one pause, its current one; a terminated
-  // run reports the owner decision instead. Both carry the exact owner
-  // actions the lifecycle admits for the run's state and pause reason.
-  const actions = collectionActions(run.state, run.state === "paused" ? (pause?.reason ?? null) : null);
-  const lifecycleBlocks: Record<string, unknown> = {
-    ...(run.state === "paused" && pause !== null ? { pause: { ...pause.document, actions } } : {}),
-    ...(termination === null ? {} : { termination }),
-    actions,
-  };
-  const capacityPolicies = new Map<string, RunCapacityPolicy>();
-  for (const plan of evidencePlans) {
-    if (capacityPolicies.has(plan.source_lineage)) continue;
-    capacityPolicies.set(plan.source_lineage, await runRequestCapacityPolicy(database, runId, plan.adapter_version));
-  }
-  const inspection = await collectionInspection(database, {
-    run,
-    plans: evidencePlans,
-    capacityPolicies,
-    pause,
-    lastProgressAt: progress.last_progress_at,
-    pacing: options.pacing ?? defaultPacingConfiguration,
-    nowMs: Date.now(),
-  });
+  const { lifecycleBlocks, inspection, workflowAttempts, progress } = facts;
   const document: Record<string, unknown> = {
     id: run.id,
     state: run.state,
@@ -2603,6 +2587,137 @@ export async function showEvidenceRun(
       resulting_revision_id: run.resulting_revision_id,
       publication_outcome: run.publication_outcome,
     }),
+  };
+}
+
+// Facts shared by the full status document and the compact summary: the
+// lifecycle blocks, the aggregated collection inspection (listing at most
+// detailLimit failed images and pacing receipts), and Workflow facts.
+async function collectionFacts(
+  database: CatalogueStore,
+  run: IngestionEvidenceRow,
+  evidencePlans: readonly EvidencePlan[],
+  options: EvidenceInspectionOptions,
+  detailLimit: number,
+) {
+  const [pause, termination, workflowAttempts, progress] = await Promise.all([
+    currentPause(database, run.id),
+    terminationDocument(database, run.id),
+    workflowAttemptRows(database, run.id),
+    collectionProgressFacts(database, run.id),
+  ]);
+  // A paused run reports exactly one pause, its current one; a terminated
+  // run reports the owner decision instead. Both carry the exact owner
+  // actions the lifecycle admits for the run's state and pause reason.
+  const actions = collectionActions(run.state, run.state === "paused" ? (pause?.reason ?? null) : null);
+  const lifecycleBlocks: Record<string, unknown> = {
+    ...(run.state === "paused" && pause !== null ? { pause: { ...pause.document, actions } } : {}),
+    ...(termination === null ? {} : { termination }),
+    actions,
+  };
+  const capacityPolicies = new Map<string, RunCapacityPolicy>();
+  for (const plan of evidencePlans) {
+    if (capacityPolicies.has(plan.source_lineage)) continue;
+    capacityPolicies.set(plan.source_lineage, await runRequestCapacityPolicy(database, run.id, plan.adapter_version));
+  }
+  const inspection = await collectionInspection(database, {
+    run,
+    plans: evidencePlans,
+    capacityPolicies,
+    pause,
+    lastProgressAt: progress.last_progress_at,
+    pacing: options.pacing ?? defaultPacingConfiguration,
+    nowMs: Date.now(),
+    detailLimit,
+  });
+  return { lifecycleBlocks, inspection, workflowAttempts, progress };
+}
+
+// The compact status summary (#397): state, pause, request counts, budget,
+// pacing, bounded recent receipts and failure summaries. Nothing here scales
+// with the run's request count; the retained plans, snapshots and attempts
+// stay in the full document and the paged per-request listing.
+export async function showEvidenceSummary(
+  database: CatalogueStore,
+  runId: string,
+  options: EvidenceInspectionOptions = {},
+): Promise<Record<string, unknown>> {
+  const run = await requiredEvidenceRun(database, runId);
+  const evidencePlans = parseEvidencePlans(run.request_plan_json);
+  const [facts, failures, acquisition, sourceCoverage] = await Promise.all([
+    collectionFacts(database, run, evidencePlans, options, summaryDetailLimit),
+    collectionFailureSummary(database, runId),
+    inspectAcquisitionBudget(database, runId),
+    inspectSourceCoverage(database, run, evidencePlans),
+  ]);
+  const workflow = await collectionWorkflowDocument(
+    run,
+    facts.workflowAttempts,
+    facts.progress,
+    options.parentWorkflow,
+    options.hostWorkflow,
+    summaryDetailLimit,
+  );
+  const document: Record<string, unknown> = {
+    contract: "card-keepr-evidence-summary@1",
+    id: run.id,
+    state: run.state,
+    selected_games: JSON.parse(run.selected_games_json),
+    plan_origin: run.plan_origin,
+    ...(evidencePlans.length === 1
+      ? {
+          supported_game: run.supported_game,
+          game_profile_version: run.game_profile_version,
+          source_lineage: run.source_lineage,
+          adapter_version: run.adapter_version,
+        }
+      : {}),
+    source_coverage: sourceCoverage,
+    idempotency_key: run.idempotency_key,
+    linked_run_id: run.linked_run_id,
+    expected_current_revision_id: run.expected_current_revision_id,
+    started_at: run.started_at,
+    collection_completed_at: run.collection_completed_at,
+    failure_code: run.failure_code,
+    ...facts.lifecycleBlocks,
+    acquisition,
+    collection: facts.inspection.collection,
+    failures,
+    workflow,
+  };
+  return {
+    ...document,
+    operational_diagnostics: operationalDiagnostics({
+      ...document,
+      evidence_plans: evidencePlans,
+      evidence_counts: facts.inspection.counts,
+      operational_request_id: run.operational_request_id,
+      candidate_digest: run.candidate_digest,
+      progress: JSON.parse(run.progress_json),
+      warnings: JSON.parse(run.warnings_json),
+      approval_history: JSON.parse(run.approval_history_json),
+      terminal_at: run.terminal_at,
+      published_revision_id: run.published_revision_id,
+      resulting_revision_id: run.resulting_revision_id,
+      publication_outcome: run.publication_outcome,
+    }),
+  };
+}
+
+// Every Source Request of a run, paged in sequence order after an exclusive
+// cursor (#397). Pages have a fixed bound; following next_after lists all.
+export async function showEvidenceRequests(
+  database: CatalogueStore,
+  runId: string,
+  after: string | undefined,
+): Promise<Record<string, unknown>> {
+  await requiredEvidenceRun(database, runId);
+  const page = await collectionRequestPage(database, runId, after === undefined ? -1 : Number(after));
+  return {
+    contract: "card-keepr-evidence-requests@1",
+    ingestion_run_id: runId,
+    page_size: requestPageSize,
+    ...page,
   };
 }
 
@@ -2723,6 +2838,9 @@ async function collectionWorkflowDocument(
   progress: CollectionProgressFacts,
   parentWorkflow?: Workflow<EvidenceParentWorkflowParams>,
   hostWorkflow?: Workflow<EvidenceHostWorkflowParams>,
+  // The summary lists and inspects at most this many current attempts,
+  // current parent first, and counts the rest (#397).
+  currentAttemptLimit?: number,
 ): Promise<Record<string, unknown>> {
   const childIds: string[] = run.child_workflow_ids_json === null ? [] : JSON.parse(run.child_workflow_ids_json);
   const { attempts, isCurrent } = resolvedWorkflowAttempts(run, attemptRows);
@@ -2731,12 +2849,20 @@ async function collectionWorkflowDocument(
       .filter((attempt) => attempt.workflow_kind === "parent")
       .filter(isCurrent)
       .at(-1) ?? null;
-  // Every recorded attempt, active or historical, reports its platform
+  const current = attempts.filter(isCurrent);
+  const listed =
+    currentAttemptLimit === undefined
+      ? attempts
+      : [
+          ...(currentParent === null ? [] : [currentParent]),
+          ...current.filter((attempt) => attempt !== currentParent),
+        ].slice(0, currentAttemptLimit);
+  // Every listed attempt, active or historical, reports its platform
   // status mapped onto the closed safe vocabulary; a binding that is not
   // supplied leaves the status unknown (null) rather than guessing.
   const statuses = new Map<string, SafeWorkflowStatus | null>(
     await Promise.all(
-      attempts.map(async (attempt) => {
+      listed.map(async (attempt) => {
         const binding = attempt.workflow_kind === "parent" ? parentWorkflow : hostWorkflow;
         if (binding === undefined) {
           return [attempt.workflow_instance_id, null] as const;
@@ -2769,7 +2895,7 @@ async function collectionWorkflowDocument(
             created_at: currentParent.created_at === "" ? null : currentParent.created_at,
             status,
           },
-    attempts: attempts.map((attempt) => ({
+    attempts: listed.map((attempt) => ({
       id: attempt.workflow_instance_id,
       kind: attempt.workflow_kind,
       attempt_number: attempt.attempt_number,
@@ -2780,6 +2906,13 @@ async function collectionWorkflowDocument(
       last_phase: attempt.last_phase ?? null,
       status: statuses.get(attempt.workflow_instance_id) ?? null,
     })),
+    ...(currentAttemptLimit === undefined
+      ? {}
+      : {
+          attempt_count: attempts.length,
+          current_attempt_count: current.length,
+          attempts_truncated: listed.length < current.length,
+        }),
     ...(status === null ? {} : { status }),
     ...(classification === null
       ? {}

@@ -83,6 +83,8 @@ function formatAdministrationResult(document) {
   if (document.contract === "card-keepr-collection-termination@1") {
     return formatCollectionTermination(document);
   }
+  if (document.contract === "card-keepr-evidence-summary@1") return formatEvidenceStatus(document, true);
+  if (document.contract === "card-keepr-evidence-requests@1") return formatEvidenceRequests(document);
   if (
     Array.isArray(document.snapshots) &&
     Array.isArray(document.observation_sets) &&
@@ -90,16 +92,7 @@ function formatAdministrationResult(document) {
     document.state &&
     document.id
   ) {
-    const lines = [`Ingestion Run ${document.id} evidence: ${document.state}`, ...formatEvidenceVolume(document)];
-    lines.push(...formatEvidencePause(document.pause));
-    lines.push(...formatEvidenceTermination(document.termination));
-    lines.push(...formatAcquisition(document.acquisition));
-    lines.push(...formatCollectionProgress(document.collection));
-    lines.push(...formatEvidenceWorkflow(document.workflow));
-    lines.push(...formatEvidenceActions(document.actions ?? document.pause?.actions));
-    const requestId = safeDiagnosticReference(document.operational_diagnostics?.references?.request_id);
-    if (requestId !== null) lines.push(`Request reference: ${requestId}`);
-    return lines.join("; ");
+    return formatEvidenceStatus(document, false);
   }
   if (document.source_snapshot_id && document.adapter_version && document.id) {
     return `Source Observation set ${document.id} for Source Snapshot ${document.source_snapshot_id} (${document.adapter_version})`;
@@ -111,6 +104,66 @@ function formatAdministrationResult(document) {
     return `Candidate ${document.candidate_digest} for Ingestion Run ${document.run_id}`;
   }
   return JSON.stringify(document);
+}
+
+// The full status document and the compact summary (#397) share one
+// rendering; the summary adds failure counts and points at the detail views.
+function formatEvidenceStatus(document, summary) {
+  const lines = [`Ingestion Run ${document.id} evidence: ${document.state}`, ...formatEvidenceVolume(document)];
+  lines.push(...formatEvidencePause(document.pause));
+  lines.push(...formatEvidenceTermination(document.termination));
+  lines.push(...formatAcquisition(document.acquisition));
+  lines.push(...formatCollectionProgress(document.collection, summary));
+  if (summary) lines.push(...formatEvidenceFailures(document.failures));
+  lines.push(...formatEvidenceWorkflow(document.workflow));
+  lines.push(...formatEvidenceActions(document.actions ?? document.pause?.actions));
+  const requestId = safeDiagnosticReference(document.operational_diagnostics?.references?.request_id);
+  if (requestId !== null) lines.push(`Request reference: ${requestId}`);
+  if (summary) lines.push("Per-request detail: source show --requests; complete document: source show --full");
+  return lines.join("; ");
+}
+
+function formatEvidenceFailures(failures) {
+  if (typeof failures !== "object" || failures === null) return [];
+  return [
+    ["Failed attempts", failures.attempts_by_outcome],
+    ["Failed requests", failures.requests_by_failure_code],
+  ]
+    .map(([label, counts]) => [label, formatCountMap(counts)])
+    .filter(([, text]) => text !== "")
+    .map(([label, text]) => `${label}: ${text}`);
+}
+
+// One page of per-request detail, one line per Source Request, with the
+// cursor for the next page. Identifiers, counts and machine codes only.
+function formatEvidenceRequests(document) {
+  const requests = Array.isArray(document.requests) ? document.requests : [];
+  const lines = [
+    `Ingestion Run ${safeDiagnosticReference(document.ingestion_run_id) ?? "unknown"} requests: ${formatCount(
+      requests.length,
+      "request",
+    )} listed`,
+  ];
+  for (const request of requests) {
+    const requestId = safeDiagnosticReference(request?.request_id);
+    if (requestId === null || !Number.isSafeInteger(request.sequence_number)) continue;
+    const latest = request.latest_attempt;
+    const facts = [
+      safeDiagnosticReference(request.hostname),
+      safeMachineCode(request.role),
+      safeMachineCode(request.state),
+      Number.isSafeInteger(request.attempt_count) ? formatCount(request.attempt_count, "attempt") : null,
+      typeof latest === "object" && latest !== null && safeMachineCode(latest.outcome) !== null
+        ? `latest ${latest.outcome}${Number.isSafeInteger(latest.http_status) ? ` (HTTP ${latest.http_status})` : ""}`
+        : null,
+      safeMachineCode(request.failure_code) === null ? null : `failure ${request.failure_code}`,
+    ].filter((fact) => fact !== null);
+    lines.push(`${request.sequence_number} ${requestId}${facts.length === 0 ? "" : ` (${facts.join(", ")})`}`);
+  }
+  const next =
+    typeof document.next_after === "string" && /^\d+$/u.test(document.next_after) ? document.next_after : null;
+  lines.push(next === null ? "End of requests" : `Next page: --after ${next}`);
+  return lines.join("\n");
 }
 
 function formatCount(count, noun) {
@@ -182,7 +235,7 @@ function formatDuration(milliseconds) {
 // reference, host pacing, the advisory remaining-time floor, and the
 // lifecycle timestamps. Human output carries the same material facts as the
 // JSON document, in the same closed vocabulary.
-function formatCollectionProgress(collection) {
+function formatCollectionProgress(collection, summary = false) {
   if (typeof collection !== "object" || collection === null) return [];
   const lines = [];
   const requests = collection.requests;
@@ -231,7 +284,8 @@ function formatCollectionProgress(collection) {
     );
   }
   const evidence = collection.evidence;
-  if (typeof evidence === "object" && evidence !== null && Number.isSafeInteger(evidence.detail_limit)) {
+  // The truncation flags describe the full document's lists, not the summary.
+  if (!summary && typeof evidence === "object" && evidence !== null && Number.isSafeInteger(evidence.detail_limit)) {
     const truncated = [
       ["snapshots", evidence.snapshots_truncated],
       ["observation sets", evidence.observation_sets_truncated],
@@ -596,8 +650,13 @@ function formatEvidenceWorkflow(workflow) {
       .filter((attempt) => attempt !== null);
     // The current parent attempt already has its own line above.
     const listed = attempts.filter((attempt) => attempt.kind !== "parent" || !attempt.current);
+    // The summary lists current attempts only and counts every attempt.
+    const recorded = Number.isSafeInteger(workflow.attempt_count) ? workflow.attempt_count : attempts.length;
+    const current = Number.isSafeInteger(workflow.current_attempt_count)
+      ? workflow.current_attempt_count
+      : attempts.filter((attempt) => attempt.current).length;
     lines.push(
-      `Workflow attempts: ${attempts.length} recorded, ${attempts.filter((attempt) => attempt.current).length} current${
+      `Workflow attempts: ${recorded} recorded, ${current} current${
         listed.length === 0 ? "" : `; ${listed.map((attempt) => attempt.text).join("; ")}`
       }`,
     );

@@ -119,5 +119,7 @@ export function response117(value: unknown): boolean;
 export function response118(value: unknown): boolean;
 export function response119(value: unknown): boolean;
 export function response120(value: unknown): boolean;
+export function response121(value: unknown): boolean;
+export function response122(value: unknown): boolean;
 export const responseValidators: Record<string, string>;
 export const headerValidators: Record<string, string>;

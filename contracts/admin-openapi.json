@@ -8066,6 +8066,2126 @@
         ],
         "additionalProperties": false
       },
+      "EvidenceSummary": {
+        "type": "object",
+        "properties": {
+          "contract": {
+            "type": "string",
+            "enum": [
+              "card-keepr-evidence-summary@1"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "collecting",
+              "paused",
+              "parsing",
+              "reconciling",
+              "awaiting_approval",
+              "publishing",
+              "published",
+              "failed",
+              "rejected",
+              "expired"
+            ]
+          },
+          "selected_games": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "plan_origin": {
+            "type": "string",
+            "enum": [
+              "production",
+              "fixture"
+            ]
+          },
+          "supported_game": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source_lineage": {
+            "type": "string",
+            "minLength": 1
+          },
+          "adapter_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "game_profile_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source_coverage": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "supported_game": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "source_lineage": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "adapter_version": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "participation": {
+                  "type": "string",
+                  "enum": [
+                    "required",
+                    "optional"
+                  ]
+                },
+                "coverage": {
+                  "type": "object",
+                  "properties": {
+                    "locale": {
+                      "type": "string",
+                      "enum": [
+                        "en"
+                      ]
+                    },
+                    "area": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "subset": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "locale",
+                    "area",
+                    "subset"
+                  ],
+                  "additionalProperties": false
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "complete",
+                    "incomplete"
+                  ]
+                },
+                "attempted_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "successful_checked_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "content_captured_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "last_capture_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "planned_requests": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "observed_requests": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "revalidated_requests": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "supported_game",
+                "source_lineage",
+                "adapter_version",
+                "status",
+                "attempted_at",
+                "successful_checked_at",
+                "content_captured_at",
+                "last_capture_at",
+                "planned_requests",
+                "observed_requests",
+                "revalidated_requests"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "idempotency_key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "linked_run_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "expected_current_revision_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "collection_completed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "failure_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "pause": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "source_acquisition_budget_exhausted"
+                    ]
+                  },
+                  "paused_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "generation": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0
+                  },
+                  "request_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "maximum_source_bytes": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "dimension": {
+                    "type": "string",
+                    "enum": [
+                      "dispatches",
+                      "source_bytes",
+                      "deadline",
+                      "policy_missing",
+                      "ownership"
+                    ]
+                  },
+                  "actions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "resume",
+                        "pause",
+                        "terminate",
+                        "retry",
+                        "extend_capacity",
+                        "extend_acquisition_budget"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "reason",
+                  "paused_at",
+                  "generation",
+                  "request_id",
+                  "maximum_source_bytes",
+                  "dimension",
+                  "actions"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "source_request_capacity_exhausted"
+                    ]
+                  },
+                  "paused_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "source_lineage": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "parent_request_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "request_capacity": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "capacity_generation": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "used_capacity": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "overflow_request_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "required_capacity": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "actions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "resume",
+                        "pause",
+                        "terminate",
+                        "retry",
+                        "extend_capacity",
+                        "extend_acquisition_budget"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "reason",
+                  "paused_at",
+                  "source_lineage",
+                  "parent_request_id",
+                  "request_capacity",
+                  "capacity_generation",
+                  "used_capacity",
+                  "overflow_request_count",
+                  "required_capacity",
+                  "actions"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "source_transport_retries_exhausted",
+                      "source_storage_retries_exhausted"
+                    ]
+                  },
+                  "paused_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "source_lineage": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "request_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "hostname": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "retry_generation": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "attempt_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "failure_classification": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "http_status": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "actions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "resume",
+                        "pause",
+                        "terminate",
+                        "retry",
+                        "extend_capacity",
+                        "extend_acquisition_budget"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "reason",
+                  "paused_at",
+                  "source_lineage",
+                  "request_id",
+                  "hostname",
+                  "retry_generation",
+                  "attempt_count",
+                  "failure_classification",
+                  "http_status",
+                  "actions"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "owner_requested",
+                      "source_workflow_stalled",
+                      "source_workflow_errored",
+                      "source_workflow_terminated",
+                      "source_workflow_unavailable"
+                    ]
+                  },
+                  "paused_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "workflow_instance_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "workflow_status": {
+                    "type": "string",
+                    "enum": [
+                      "queued",
+                      "running",
+                      "paused",
+                      "errored",
+                      "terminated",
+                      "complete",
+                      "waiting",
+                      "waiting_for_pause",
+                      "unknown",
+                      "unavailable"
+                    ]
+                  },
+                  "last_progress_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  },
+                  "actions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "resume",
+                        "pause",
+                        "terminate",
+                        "retry",
+                        "extend_capacity",
+                        "extend_acquisition_budget"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "reason",
+                  "paused_at",
+                  "workflow_instance_id",
+                  "workflow_status",
+                  "last_progress_at",
+                  "actions"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "termination": {
+            "type": "object",
+            "properties": {
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "ingestion_run_terminated"
+                ]
+              },
+              "pause_reason": {
+                "type": "string",
+                "minLength": 1
+              },
+              "paused_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "terminated_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "reason",
+              "pause_reason",
+              "paused_at",
+              "terminated_at"
+            ],
+            "additionalProperties": false
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "resume",
+                "pause",
+                "terminate",
+                "retry",
+                "extend_capacity",
+                "extend_acquisition_budget"
+              ]
+            }
+          },
+          "acquisition": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "generation": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "coverage_started_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "historical_dispatches_unknown": {
+                "type": "boolean"
+              },
+              "baseline_source_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "budget": {
+                "type": "object",
+                "properties": {
+                  "max_dispatches": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "max_source_bytes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "dispatch_deadline": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "max_dispatches",
+                  "max_source_bytes",
+                  "dispatch_deadline"
+                ],
+                "additionalProperties": false
+              },
+              "charged_dispatches": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "charged_source_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "reserved_source_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "remaining_dispatches": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "remaining_source_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "limiting_dimension": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "dispatches",
+                  "source_bytes",
+                  "deadline",
+                  "policy_missing",
+                  "ownership",
+                  null
+                ]
+              },
+              "unsettled": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "capture_operation_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "parent_workflow_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1
+                    },
+                    "workflow_instance_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1
+                    },
+                    "budget_generation": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "maximum_source_bytes": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "reserved_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "request_id",
+                    "capture_operation_id",
+                    "parent_workflow_id",
+                    "workflow_instance_id",
+                    "budget_generation",
+                    "maximum_source_bytes",
+                    "reserved_at"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "unsettled_truncated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "generation",
+              "coverage_started_at",
+              "historical_dispatches_unknown",
+              "baseline_source_bytes",
+              "budget",
+              "charged_dispatches",
+              "charged_source_bytes",
+              "reserved_source_bytes",
+              "remaining_dispatches",
+              "remaining_source_bytes",
+              "limiting_dimension",
+              "unsettled",
+              "unsettled_truncated"
+            ],
+            "additionalProperties": false
+          },
+          "collection": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "collecting",
+                  "paused",
+                  "parsing",
+                  "reconciling",
+                  "awaiting_approval",
+                  "publishing",
+                  "published",
+                  "failed",
+                  "rejected",
+                  "expired"
+                ]
+              },
+              "pause_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1
+              },
+              "paused_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "started_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "last_progress_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "collection_completed_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "terminal_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "expected_catalogue_revision_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "capacity": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "source_lineage": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "adapter_version": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "capacity_generation": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "request_capacity": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "used_capacity": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "remaining_capacity": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "required_capacity": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "overflow_request_count": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "source_lineage",
+                    "adapter_version",
+                    "capacity_generation",
+                    "request_capacity",
+                    "used_capacity",
+                    "remaining_capacity",
+                    "required_capacity",
+                    "overflow_request_count"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "requests": {
+                "type": "object",
+                "properties": {
+                  "total": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "by_state": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "by_role": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "by_lineage": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "source_lineage": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "by_state": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "by_role": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        }
+                      },
+                      "required": [
+                        "source_lineage",
+                        "total",
+                        "by_state",
+                        "by_role"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "total",
+                  "by_state",
+                  "by_role",
+                  "by_lineage"
+                ],
+                "additionalProperties": false
+              },
+              "evidence": {
+                "type": "object",
+                "properties": {
+                  "snapshot_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "retained_byte_total": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "observation_set_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "fetch_attempt_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "retry_attempt_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "failed_attempt_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "revalidated_attempt_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "skipped_request_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "latest_failure": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "request_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "hostname": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "classification": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "http_status": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "attempt_number": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "at": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    },
+                    "required": [
+                      "request_id",
+                      "hostname",
+                      "classification",
+                      "http_status",
+                      "attempt_number",
+                      "at"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "detail_limit": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "snapshots_truncated": {
+                    "type": "boolean"
+                  },
+                  "observation_sets_truncated": {
+                    "type": "boolean"
+                  },
+                  "diagnostics_truncated": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "snapshot_count",
+                  "retained_byte_total",
+                  "observation_set_count",
+                  "fetch_attempt_count",
+                  "retry_attempt_count",
+                  "failed_attempt_count",
+                  "revalidated_attempt_count",
+                  "skipped_request_count",
+                  "latest_failure",
+                  "detail_limit",
+                  "snapshots_truncated",
+                  "observation_sets_truncated",
+                  "diagnostics_truncated"
+                ],
+                "additionalProperties": false
+              },
+              "failed_images": {
+                "type": "object",
+                "properties": {
+                  "count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "detail_limit": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  },
+                  "requests": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "request_id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "hostname": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "failure_code": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "attempt_count": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "request_id",
+                        "hostname",
+                        "failure_code",
+                        "attempt_count"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "count",
+                  "detail_limit",
+                  "truncated",
+                  "requests"
+                ],
+                "additionalProperties": false
+              },
+              "progress": {
+                "type": "object",
+                "properties": {
+                  "current_request": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "request_id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "hostname": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "role": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "state": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "attempt_count": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "last_attempt_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    },
+                    "required": [
+                      "request_id",
+                      "hostname",
+                      "role",
+                      "state",
+                      "attempt_count",
+                      "last_attempt_at"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "current_request"
+                ],
+                "additionalProperties": false
+              },
+              "pacing": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "production",
+                      "immediate"
+                    ]
+                  },
+                  "interval_ms": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "hosts": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "hostname": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "pending_request_count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "captured_request_count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "next_request_not_before": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "waiting_ms": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "interval_ms": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "concurrency": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "hostname",
+                        "pending_request_count",
+                        "captured_request_count",
+                        "next_request_not_before",
+                        "waiting_ms",
+                        "interval_ms",
+                        "concurrency"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "limits": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "hostname": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "page",
+                            "asset"
+                          ]
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "registration",
+                            "default"
+                          ]
+                        },
+                        "floor_ms": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "ceiling_ms": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "maximum_concurrency": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "interval_ms": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "concurrency": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "clean_streak": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "backoff_count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "recovery_count": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "hostname",
+                        "kind",
+                        "source",
+                        "floor_ms",
+                        "ceiling_ms",
+                        "maximum_concurrency",
+                        "interval_ms",
+                        "concurrency",
+                        "clean_streak",
+                        "backoff_count",
+                        "recovery_count"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "events": {
+                    "type": "object",
+                    "properties": {
+                      "count": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "detail_limit": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "truncated": {
+                        "type": "boolean"
+                      },
+                      "recent": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "hostname": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "request_id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "occurred_at": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "backoff",
+                                "recovery"
+                              ]
+                            },
+                            "reason": {
+                              "type": "string",
+                              "enum": [
+                                "rate_limited",
+                                "unavailable",
+                                "gateway",
+                                "retry_after",
+                                "timeout",
+                                "connection",
+                                "latency",
+                                "clean_streak"
+                              ]
+                            },
+                            "interval_before_ms": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "interval_after_ms": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "concurrency_before": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "concurrency_after": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "http_status": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ]
+                            },
+                            "retry_after_ms": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "latency_ms": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "hostname",
+                            "request_id",
+                            "occurred_at",
+                            "kind",
+                            "reason",
+                            "interval_before_ms",
+                            "interval_after_ms",
+                            "concurrency_before",
+                            "concurrency_after",
+                            "http_status",
+                            "retry_after_ms",
+                            "latency_ms"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "count",
+                      "detail_limit",
+                      "truncated",
+                      "recent"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "mode",
+                  "interval_ms",
+                  "hosts",
+                  "limits",
+                  "events"
+                ],
+                "additionalProperties": false
+              },
+              "estimate": {
+                "type": "object",
+                "properties": {
+                  "advisory": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "pending_request_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "captured_request_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "active_host_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "minimum_remaining_ms": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "advisory",
+                  "pending_request_count",
+                  "captured_request_count",
+                  "active_host_count",
+                  "minimum_remaining_ms"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "state",
+              "pause_reason",
+              "paused_at",
+              "started_at",
+              "last_progress_at",
+              "collection_completed_at",
+              "terminal_at",
+              "expected_catalogue_revision_id",
+              "capacity",
+              "requests",
+              "evidence",
+              "failed_images",
+              "progress",
+              "pacing",
+              "estimate"
+            ],
+            "additionalProperties": false
+          },
+          "failures": {
+            "type": "object",
+            "properties": {
+              "attempts_by_outcome": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "requests_by_failure_code": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            },
+            "required": [
+              "attempts_by_outcome",
+              "requests_by_failure_code"
+            ],
+            "additionalProperties": false
+          },
+          "workflow": {
+            "type": "object",
+            "properties": {
+              "parent_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1
+              },
+              "child_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "last_progress_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "current_attempt": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "attempt_number": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "created_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  },
+                  "status": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "queued",
+                      "running",
+                      "paused",
+                      "errored",
+                      "terminated",
+                      "complete",
+                      "waiting",
+                      "waiting_for_pause",
+                      "unknown",
+                      "unavailable",
+                      null
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "attempt_number",
+                  "created_at",
+                  "status"
+                ],
+                "additionalProperties": false
+              },
+              "attempts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "parent",
+                        "child"
+                      ]
+                    },
+                    "attempt_number": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "created_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "current": {
+                      "type": "boolean"
+                    },
+                    "last_progress_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "last_step_name": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1
+                    },
+                    "last_phase": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1
+                    },
+                    "status": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "queued",
+                        "running",
+                        "paused",
+                        "errored",
+                        "terminated",
+                        "complete",
+                        "waiting",
+                        "waiting_for_pause",
+                        "unknown",
+                        "unavailable",
+                        null
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "attempt_number",
+                    "created_at",
+                    "current",
+                    "last_progress_at",
+                    "last_step_name",
+                    "last_phase",
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "queued",
+                  "running",
+                  "paused",
+                  "errored",
+                  "terminated",
+                  "complete",
+                  "waiting",
+                  "waiting_for_pause",
+                  "unknown",
+                  "unavailable"
+                ]
+              },
+              "classification": {
+                "type": "string",
+                "minLength": 1
+              },
+              "attempt_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "current_attempt_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "attempts_truncated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "parent_id",
+              "child_ids",
+              "last_progress_at",
+              "current_attempt",
+              "attempts",
+              "attempt_count",
+              "current_attempt_count",
+              "attempts_truncated"
+            ],
+            "additionalProperties": false
+          },
+          "operational_diagnostics": {
+            "type": "object",
+            "properties": {
+              "contract": {
+                "type": "string",
+                "enum": [
+                  "card-keepr-operational-diagnostics@1"
+                ]
+              },
+              "references": {
+                "type": "object",
+                "properties": {
+                  "run_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "request_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "expected_catalogue_revision_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "resulting_catalogue_revision_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "candidate_digest": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "adapter_versions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "workflow": {
+                    "type": "object",
+                    "properties": {
+                      "status_path": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1
+                      },
+                      "parent_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1
+                      },
+                      "child_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "current_attempt_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1
+                      },
+                      "status": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1
+                      },
+                      "classification": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1
+                      },
+                      "last_progress_at": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1
+                      },
+                      "attempt_count": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "required": [
+                      "status_path",
+                      "parent_id",
+                      "child_ids",
+                      "current_attempt_id",
+                      "status",
+                      "classification",
+                      "last_progress_at",
+                      "attempt_count"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "backup": {
+                    "type": "object",
+                    "properties": {
+                      "status_path": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "status_path"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "recovery": {
+                    "type": "object",
+                    "properties": {
+                      "status_path": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "status_path"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "run_id",
+                  "request_id",
+                  "expected_catalogue_revision_id",
+                  "resulting_catalogue_revision_id",
+                  "candidate_digest",
+                  "adapter_versions",
+                  "workflow",
+                  "backup",
+                  "recovery"
+                ],
+                "additionalProperties": false
+              },
+              "terminal_evidence": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "terminal_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1
+                  },
+                  "failure": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "code": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "retryability_code": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "retryable": {
+                        "type": "boolean",
+                        "enum": [
+                          true
+                        ]
+                      }
+                    },
+                    "required": [
+                      "code",
+                      "retryability_code",
+                      "retryable"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "warning_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "approval_decision_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "coverage": {
+                    "type": "object",
+                    "properties": {
+                      "evidence_plan_count": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "source_snapshot_count": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "source_observation_set_count": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "fetch_attempt_count": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "required": [
+                      "evidence_plan_count",
+                      "source_snapshot_count",
+                      "source_observation_set_count",
+                      "fetch_attempt_count"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "state",
+                  "terminal_at",
+                  "failure",
+                  "warning_count",
+                  "approval_decision_count",
+                  "coverage"
+                ],
+                "additionalProperties": false
+              },
+              "retry": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "GET",
+                      "POST"
+                    ]
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "source_run_id": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "code",
+                  "method",
+                  "path",
+                  "source_run_id"
+                ],
+                "additionalProperties": false
+              },
+              "retry_available": {
+                "type": "boolean"
+              },
+              "diagnosis_sequence": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "method": {
+                      "type": "string",
+                      "enum": [
+                        "GET",
+                        "POST"
+                      ]
+                    },
+                    "path": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "method",
+                    "path"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "contract",
+              "references",
+              "terminal_evidence",
+              "retry",
+              "retry_available",
+              "diagnosis_sequence"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "contract",
+          "id",
+          "state",
+          "selected_games",
+          "plan_origin",
+          "source_coverage",
+          "idempotency_key",
+          "linked_run_id",
+          "expected_current_revision_id",
+          "started_at",
+          "collection_completed_at",
+          "failure_code",
+          "actions",
+          "acquisition",
+          "collection",
+          "failures",
+          "workflow",
+          "operational_diagnostics"
+        ],
+        "additionalProperties": false
+      },
+      "EvidenceRequests": {
+        "type": "object",
+        "properties": {
+          "contract": {
+            "type": "string",
+            "enum": [
+              "card-keepr-evidence-requests@1"
+            ]
+          },
+          "ingestion_run_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "requests": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sequence_number": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "request_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "role": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "state": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "hostname": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "discovered_from_request_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1
+                },
+                "retry_generation": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "failure_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1
+                },
+                "source_snapshot_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1
+                },
+                "attempt_count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "latest_attempt": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "attempt_number": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "outcome": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "http_status": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "completed_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "attempt_number",
+                    "outcome",
+                    "http_status",
+                    "completed_at"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "sequence_number",
+                "request_id",
+                "role",
+                "state",
+                "hostname",
+                "url",
+                "discovered_from_request_id",
+                "retry_generation",
+                "failure_code",
+                "source_snapshot_id",
+                "attempt_count",
+                "latest_attempt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "next_after": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^(0|[1-9]\\d*)$"
+          }
+        },
+        "required": [
+          "contract",
+          "ingestion_run_id",
+          "page_size",
+          "requests",
+          "next_after"
+        ],
+        "additionalProperties": false
+      },
       "PublicationAcceptance": {
         "type": "object",
         "properties": {
@@ -61689,6 +63809,691 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/EvidenceStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ingestion-runs/{run}/evidence/summary": {
+      "get": {
+        "operationId": "showSourceEvidenceSummary",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "run",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Compact collection status whose size is independent of the run's request count: state, pause, request counts, acquisition budget, pacing, bounded recent receipts and failure summaries.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceSummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Request, authorization, domain conflict or service failure. See code and detail.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ingestion-runs/{run}/evidence/requests": {
+      "get": {
+        "operationId": "listSourceEvidenceRequests",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "run",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(0|[1-9]\\d{0,14})$"
+            },
+            "required": false,
+            "name": "after",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One fixed-size page of Source Requests in sequence order after the exclusive `after` cursor, each with its attempt count and latest fetch attempt. Follow `next_after` until null to list every request.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceRequests"
                 }
               }
             }
