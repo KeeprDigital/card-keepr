@@ -621,6 +621,9 @@
             },
             "value": {
               "$ref": "#/$defs/NullableText"
+            },
+            "tentative": {
+              "const": true
             }
           }
         },

@@ -125,6 +125,7 @@ export {
   rawSourceValue,
   requiredProfileContract,
   sourceFieldWarning,
+  releaseDateQualifierWarning,
   sourceVocabularyWarning,
 } from "./reconciliation-profile";
 export { isReleaseActor, isReleaseDigest, isReleaseHead, isReleaseIdentity } from "./release-input-shapes.mjs";

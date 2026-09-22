@@ -263,6 +263,10 @@
     "bytes_sha256": "b2e1c643c4e9b3ec519b370107d53f40bf653c900e70dd1dab4ee01d8e3f7f4c",
     "observations_sha256": "2fb017401c2a1ef72c6768ce149ddf43fba38549ece3f7b15162e7e089e6461a"
   },
+  "one-piece-en-product-event-qualified-release.json": {
+    "bytes_sha256": "8c5da9950aab16ada79bbd22ea3b152f704af9c1d6c5b636294bc75a60cac71e",
+    "observations_sha256": "682101bbe6553dae9b56341286d60d484ef56371b4a251a84727f6e72c4a322e"
+  },
   "one-piece-en-product-card-collection.json": {
     "bytes_sha256": "38683e6759993bdc6617e7622209325f0bd53b5e6518c6e6ad98694153b559a0",
     "observations_sha256": "f1273822ce9679c18b66c614aaf36c56501a1c5c8a9b91332cbe8134494db2c9"
@@ -270,6 +274,10 @@
   "one-piece-en-product-sleeve.json": {
     "bytes_sha256": "225c3f1014548ea14a3d34fd2aa2ee68b368c36e104a0a65e7415e380b263d7a",
     "observations_sha256": "4e279e67aa81a037cb56ac1458805da0e8d2f69661370a4238d1dc77e95e603e"
+  },
+  "one-piece-en-product-starter-deck-tentative.json": {
+    "bytes_sha256": "0049b488eabaac76e97d40be2a6a30ac4cfb8ee8436cde9c2dd3775fc42d64aa",
+    "observations_sha256": "437dcf17f81f927266a3483d8e59df90b6a436551192c6a4e9156ceb4dc63452"
   },
   "one-piece-en-restructured-discovery.json": {
     "bytes_sha256": "27e169e3345d29cbe60c8e4db87647a16b3adf37de299c5ca64dc3b185a09fe6",

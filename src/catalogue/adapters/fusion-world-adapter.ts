@@ -795,7 +795,7 @@ function parseFusionWorldLiveProductIndex(
     | {
         product: { code: string | null; title: string };
         status: "released" | "announced";
-        date: { precision: string; value: string | null };
+        date: { precision: string; value: string | null; tentative?: true };
       }
     | {
         non_card_context: {
@@ -893,6 +893,7 @@ function parseFusionWorldLiveProductIndex(
         region: "unknown",
         precision: entry.date.precision,
         date: entry.date.value,
+        ...(entry.date.tentative === true ? { tentative: true } : {}),
         status: entry.status,
       },
     ]);

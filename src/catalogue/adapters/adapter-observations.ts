@@ -33,7 +33,7 @@ export type ProductReleaseCatalogue = {
     releases: readonly {
       event_key: unknown;
       region: unknown;
-      date: { precision: unknown; value: unknown };
+      date: { precision: unknown; value: unknown; tentative?: unknown };
       status: unknown;
     }[];
   }[];

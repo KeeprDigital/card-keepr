@@ -70,6 +70,10 @@ export {
   terminalHttpFailureClass,
   toleratedPrintingImageFailureCodes,
   toleratesRequestFailure,
+  redirectDiscoveredFailureCode,
+  redirectDiscoveryRoles,
+  registrableDomain,
+  sameSiteRedirectTarget,
   transportPolicyForRole,
 } from "./source-evidence-model";
 // `startEvidenceRun` is the repository's function, re-exported above

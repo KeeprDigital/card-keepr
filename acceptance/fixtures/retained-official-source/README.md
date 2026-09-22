@@ -12,6 +12,19 @@ Piece Ingestion Run for [#334](https://github.com/KeeprDigital/card-keepr/issues
 it shares the discovery fixture's URL and proves that a full series page parses
 within the bounded source intake. It is one dated page, not series coverage.
 
+`one-piece-en-product-starter-deck-tentative.json` is the live One Piece
+`products/decks/st01-04_pre.php` page (45,117 bytes) captured on 2026-09-21 by the
+composed One Piece run for [#334](https://github.com/KeeprDigital/card-keepr/issues/334).
+Its Release Date reads "September 30, 2022 (Subject to change)"; the run failed
+it as `source_parse_failed` before tentative dates were recorded. It is one dated
+page proving the tentative-date path, not Product coverage.
+
+`one-piece-en-product-event-qualified-release.json` is the live One Piece
+`products/other/ib-ex01.php` page (43,789 bytes) captured on 2026-09-22 by the
+#334 targeted shakedown. Its Release Date reads "March 8, 2025 Pre-Sale at ONE
+PIECE DAY Dallas -Card Game Celebration-"; it proves that a leading day date is
+kept and the event qualifier retained verbatim for review. One dated page only.
+
 Standalone HTML fragments are focused parser examples, sometimes with normalized
 line endings; they are not recapturable HTTP goldens. A retained range cannot
 establish whole-response equivalence unless a complete golden of the exact same

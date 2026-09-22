@@ -201,6 +201,8 @@ export type CatalogueRelease = CuratedProvenanceBearing & {
   date: {
     precision: ReleasePrecision | null;
     value: string | null;
+    /** Present only when the Publisher states the date as subject to change. */
+    tentative?: true;
   };
   status: ReleaseStatus | null;
 };
@@ -246,6 +248,7 @@ export type ProductSourceObservation = {
     region: CatalogueRelease["region"];
     precision: ReleasePrecision;
     value: string | null;
+    tentative?: true;
     status: ReleaseStatus | null;
   }[];
   withdrawal: ProductWithdrawal | null;

@@ -14539,6 +14539,12 @@
                         "string",
                         "null"
                       ]
+                    },
+                    "tentative": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
                     }
                   },
                   "required": [
@@ -14845,6 +14851,12 @@
                         "type": [
                           "string",
                           "null"
+                        ]
+                      },
+                      "tentative": {
+                        "type": "boolean",
+                        "enum": [
+                          true
                         ]
                       },
                       "status": {

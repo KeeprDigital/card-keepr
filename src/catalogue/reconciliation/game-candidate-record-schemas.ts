@@ -224,7 +224,7 @@ const release = z.strictObject({
   event_key: text,
   product_id: identifier,
   region,
-  date: z.strictObject({ precision: precision.nullable(), value: text }),
+  date: z.strictObject({ precision: precision.nullable(), value: text, tentative: z.literal(true).optional() }),
   status: releaseStatus.nullable(),
 });
 export const productRecord = z
@@ -255,7 +255,14 @@ export const productRecord = z
           officialCode: text,
           name: text,
           releases: z.array(
-            z.strictObject({ eventKey: text, region, precision, value: text, status: releaseStatus.nullable() }),
+            z.strictObject({
+              eventKey: text,
+              region,
+              precision,
+              value: text,
+              tentative: z.literal(true).optional(),
+              status: releaseStatus.nullable(),
+            }),
           ),
           withdrawal: withdrawal.nullable(),
           evidence: productEvidence,

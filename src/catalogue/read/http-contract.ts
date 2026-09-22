@@ -486,6 +486,7 @@ export const productSchema = z
         date: z.strictObject({
           precision: z.enum(["day", "month", "quarter", "season", "year", "unknown"]).nullable(),
           value: z.string().nullable(),
+          tentative: z.literal(true).optional(),
         }),
         status: z.enum(["announced", "released"]).nullable(),
       }),

@@ -3,6 +3,7 @@ import { nullableText, requiredArray, requiredRecord, requiredText } from "./ada
 import type { CardObservation, CatalogueObservation, OfficialSourceObservation } from "./adapter-observations";
 import { AdapterParseFailure, adapterUrl } from "./adapter-parse-failure";
 import { partitionMappedOfficialLeaves } from "./official-source-field-coverage";
+import { tentativeOfficialReleaseDateText } from "./official-source-release-normalization";
 import { createHash } from "node:crypto";
 import { canonicalJson, utf8 } from "../shared";
 
@@ -565,7 +566,11 @@ export function catalogue(products: Record<string, unknown>[], releasesByCode: M
         releases: (releasesByCode.get(productMapKey(product)) ?? []).map((release) => ({
           event_key: release.event_key,
           region: release.region,
-          date: { precision: release.precision, value: release.date },
+          date: {
+            precision: release.precision,
+            value: release.date,
+            ...(release.tentative === true ? { tentative: true } : {}),
+          },
           status: release.status,
         })),
       };
@@ -739,16 +744,19 @@ export function liveOfficialProductCode(title: string): string | null {
 }
 
 export function liveOfficialReleaseDateText(value: string): string {
-  const normalized = value.normalize("NFC").trim();
+  // A trailing "(Subject to change)" marker is preserved for the date
+  // normalizer, which records it as a tentative Release date.
+  const { text: normalized, tentative } = tentativeOfficialReleaseDateText(value);
   // Live publisher shorthand: "2027.1.30", "September 25,2026", and
   // "December, 10 2021".
   const dotted = normalized.match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})$/u);
-  if (dotted !== null) {
-    return `${dotted[1]}-${dotted[2]!.padStart(2, "0")}-${dotted[3]!.padStart(2, "0")}`;
-  }
-  return normalized
-    .replace(/^([A-Za-z]+ \d{1,2}),(\d{4})$/u, "$1, $2")
-    .replace(/^([A-Za-z]+),\s*(\d{1,2})\s+(\d{4})$/u, "$1 $2, $3");
+  const stated =
+    dotted !== null
+      ? `${dotted[1]}-${dotted[2]!.padStart(2, "0")}-${dotted[3]!.padStart(2, "0")}`
+      : normalized
+          .replace(/^([A-Za-z]+ \d{1,2}),(\d{4})$/u, "$1, $2")
+          .replace(/^([A-Za-z]+),\s*(\d{1,2})\s+(\d{4})$/u, "$1 $2, $3");
+  return tentative ? `${stated} (Subject to change)` : stated;
 }
 
 export function nonCardProductClassificationV2(value: string): "accessory" | null {
