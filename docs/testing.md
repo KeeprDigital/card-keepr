@@ -197,11 +197,22 @@ Use the [scheduled stress procedure](runbooks/scheduled-stress.md) for hosted ru
 | -------------------------------------------- | ----------------------------------------------------------------- |
 | Draft PR                                     | Static checks, build dry runs, domain, API and smoke              |
 | Ready PR, including ready-without-new-commit | Full checks and routine suites                                    |
-| Push to `main` or manual CI                  | Full checks on that exact commit                                  |
+| PR or merge-queue run, allow-listed paths    | `lint` and `checks`; domain, ingestion and acceptance skip        |
+| Push to `main` or manual CI                  | Full checks on that exact commit, whatever changed                |
 | Weekly/default stress                        | Two bounded tests; five-minute job cap                            |
 | Manual full stress                           | Full stress selection; 45-minute cap; separate from merge/release |
 | Release candidate (`v*` tag) or manual SHA   | Three extended journeys once per SHA; `extended-scenarios` status |
 | Focused diagnostics                          | Selected files, one or three independent runs; any failure fails  |
+
+The `changes` job classifies pull request and merge-queue diffs (#401). Heavy
+jobs skip only when every changed path is on the allow-list in
+`scripts/ci-change-scope.mjs`: Markdown outside test trees, issue templates,
+`.artifacts/` and license/ownership files. Workflows, actions, manifests, the
+lockfile, `docs/examples/` and documents that tests read run everything; a failed
+classification also runs everything. Skipped ingestion and acceptance shards
+run a no-op step so each required `name (N)` check still reports. When a test
+starts reading a document, add it to the classifier's consumed documents;
+`acceptance/ci-change-scope.test.mjs` fails until then.
 
 Production Release requires the complete successful CI check set on its selected
 commit contained in `main`. Local tests, a green PR head or a newer commit cannot

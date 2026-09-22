@@ -145,6 +145,9 @@ test("the release SHA is resolved through the GitHub API before checkout and ci 
   const ciChecks = [];
   for (const match of jobs.matchAll(/^ {2}([\w-]+):\n([\s\S]*?)(?=^ {2}[\w-]+:|(?![\s\S]))/gmu)) {
     const [, name, body] = match;
+    // The change classifier (#401) only gates PR and merge-queue runs; a push
+    // run always executes every required job, so it is not release evidence.
+    if (name === "changes") continue;
     if (body.includes("matrix:")) {
       const matrix = body.split("      matrix:\n")[1].split(/\n {4}\S/u)[0];
       const shard = matrix.match(/^ {8}shard: \[([0-9, ]+)\]$/mu);

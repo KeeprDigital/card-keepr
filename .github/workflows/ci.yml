@@ -25,10 +25,36 @@ concurrency:
   group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-# Every job id here is a required check of the guarded production release
-# (production-release.yml resolves the dispatched SHA's ci check runs), and
-# acceptance/production-release-contract.test.mjs keeps the two lists equal.
+# Every job id here except changes is a required check of the guarded
+# production release (production-release.yml resolves the dispatched SHA's ci
+# check runs), and acceptance/production-release-contract.test.mjs keeps the
+# two lists equal.
 jobs:
+  # Pull requests and merge-queue candidates whose every changed path is on
+  # the allow-list in scripts/ci-change-scope.mjs (Markdown, issue templates,
+  # license metadata) skip the heavy suites (#401). Every other event, push to
+  # main included, always runs everything: the exact-commit release gates need
+  # successful, not skipped, checks from the push run. Heavy jobs compare the
+  # output with != 'false', so a failed classification runs the full suite.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      full: ${{ steps.classify.outputs.full }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Fetch the diff base
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        env:
+          BASE_SHA: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
+        run: git fetch --no-tags --depth=1 origin "${BASE_SHA}"
+      - name: Classify changed paths
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
+        run: node scripts/ci-change-scope.mjs
+
   # ESLint checks the whole tree; Prettier formats only changed files.
   # fetch-depth 0 makes the base branch reachable for the changed-file diff.
   lint:
@@ -61,6 +87,8 @@ jobs:
   # The local quick check is split across checks (API) and this job (domain
   # plus bounded publication/restore and external CLI smoke). Both run on drafts.
   domain-tests:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.full != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -74,9 +102,16 @@ jobs:
 
   # Full integration runs when a PR is ready, on main, and on manual dispatch.
   # The ready_for_review event above also runs it without requiring a new push.
+  # An allow-listed change skips the steps, not the job: a matrix job skipped
+  # by a job-level if reports one unsuffixed check (`ingestion-tests`), never
+  # the required `ingestion-tests (1)`..`(4)`. Drafts cannot merge, so their
+  # job-level skip is harmless.
   ingestion-tests:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ubuntu-latest
+    env:
+      FULL_SUITE: ${{ needs.changes.outputs.full != 'false' }}
     # Outer backstop only. Three shards measured 7-12 minutes on standard
     # runners (#374); four shards leave a slow runner headroom. Real hangs
     # fail earlier through the per-test, per-hook and per-file runtime bounds
@@ -87,13 +122,18 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4]
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Set up repository tooling
+      - if: env.FULL_SUITE != 'true'
+        run: echo "Every changed path is allow-listed; ingestion shard ${{ matrix.shard }} is not needed."
+      - if: env.FULL_SUITE == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: env.FULL_SUITE == 'true'
+        name: Set up repository tooling
         uses: ./.github/actions/setup-toolchain
-      - run: bash scripts/ci-test.sh pnpm run test:ingestion --shard=${{ matrix.shard }}/4 --silent=passed-only --reporter=default --reporter=json --outputFile.json=test-results/ingestion.json
+      - if: env.FULL_SUITE == 'true'
+        run: bash scripts/ci-test.sh pnpm run test:ingestion --shard=${{ matrix.shard }}/4 --silent=passed-only --reporter=default --reporter=json --outputFile.json=test-results/ingestion.json
       # Preserve per-test timings and failure details from this exact shard. A
       # failed run should be diagnosable without creating a diagnostic workflow.
-      - if: always()
+      - if: always() && env.FULL_SUITE == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ingestion-results-${{ matrix.shard }}
@@ -103,15 +143,23 @@ jobs:
   # Routine acceptance only; full publisher/recovery journeys are explicit opt-in.
   # The shared runner caps each shard at two concurrent test files.
   acceptance:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ubuntu-latest
+    env:
+      FULL_SUITE: ${{ needs.changes.outputs.full != 'false' }}
     timeout-minutes: 12
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2, 3]
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Set up repository tooling
+      - if: env.FULL_SUITE != 'true'
+        run: echo "Every changed path is allow-listed; acceptance shard ${{ matrix.shard }} is not needed."
+      - if: env.FULL_SUITE == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: env.FULL_SUITE == 'true'
+        name: Set up repository tooling
         uses: ./.github/actions/setup-toolchain
-      - run: bash scripts/ci-test.sh pnpm run test:acceptance --shard=${{ matrix.shard }}/3
+      - if: env.FULL_SUITE == 'true'
+        run: bash scripts/ci-test.sh pnpm run test:acceptance --shard=${{ matrix.shard }}/3
