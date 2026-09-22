@@ -33,6 +33,17 @@ storage guarantee. Inspect account storage and runtime suitability before apply.
 The owner confirmed Workers Paid in #236; refresh evidence before provisioning.
 Neither that observation nor plan output reserves provider resources.
 
+Recorded staging provisioning (2026-09-21, `provision-dev.mjs apply` at
+`350a1f6c`, details on #237): plan evidence "Workers Paid subscription observed
+in dashboard Billing on 2026-09-21", assessed limits `paid`, 11 D1 databases after
+provisioning with 3 replacement slots reserved. Apply created D1
+`card-keepr-catalogue-staging` `b2b1e6c7-0e58-493c-a18e-2821c20695d3` and
+`card-keepr-disposable-verification-staging` `c5b471f5-5fb9-4c23-8eb8-e6e1b03b8c04`
+(initial UUID; the live one is re-resolved), the four `-staging` R2 buckets and
+the two Worker shells on account `3ec389380c7b82e6a172e6f351d4aad9`. These are the
+`STAGING_*_DATABASE_ID` values in `.env` and the GitHub `staging` variables; the
+local receipt file is retired.
+
 Apply creates only new staging D1/R2 and private deny-only Worker shells with
 independently issued secrets. It refuses existing names and retains a receipt
 through partial failure. First installation checks exact database identities,
@@ -59,10 +70,11 @@ staging runtime and configure its GitHub environment before dispatching the
 first real manual release. Initial installation is not evidence of that release.
 
 The [credentials inventory](credentials.md) lists every staging value: the
-GitHub `staging` variables and secrets, the owner-held API and ingestion secret
-files, and the owner CLI profile (`KEEPR_STAGING_*`, `KEEPR_GITHUB_RELEASE_TOKEN`,
-`KEEPR_GITHUB_RELEASE_ACTOR`), with each token's minimum grant and the read-only
-probe to run after issuing or rotating one.
+GitHub `staging` variables and secrets, the Worker secret JSON generated from
+`.env` at install time, and the owner's `.env` names (`KEEPR_STAGING_*`,
+`STAGING_*`, `KEEPR_GITHUB_RELEASE_TOKEN`; see [`.env.example`](../../.env.example)),
+with each token's minimum grant and the read-only probe to run after issuing or
+rotating one.
 
 Issue credentials independently; no administration key belongs in Actions.
 Staging needs no production Workers read: production records the intent from its
@@ -84,7 +96,6 @@ configuration declares that flag; without it staging reports
 The routine path is one command from any checkout of this repository:
 
 ```sh
-export KEEPR_OWNER_ENV_FILE=~/secrets/card-keepr.env   # absolute path, outside the repo
 pnpm release:staging                   # newest main commit with green push CI and dev
 pnpm release:staging --tag v0.1.0      # or --sha <sha>; must be in main with green push CI
 ```
@@ -119,8 +130,9 @@ under `.artifacts/237` did by hand:
    migration levels and each check. It exits non-zero unless both the run and
    the outcome succeeded.
 
-The env file holds `export NAME=value` lines read literally (no shell
-expansion); see [credentials](credentials.md#owner-shell-profile) for the
+Credentials come from the main checkout's git-ignored `.env`, read literally
+(no shell expansion); explicit variables win. See
+[credentials](credentials.md#owner-env-file) for the resolution rules and the
 required names. Values are never printed.
 
 ## One owner intent (underlying and break-glass commands)

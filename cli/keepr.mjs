@@ -14,6 +14,7 @@ import {
 import { runCuratedRevisionCommand } from "./curated-revisions.mjs";
 import { runEntityProposalCommand } from "./entity-proposals.mjs";
 import { selectEnvironment } from "./environment.mjs";
+import { OwnerEnvError, withOwnerEnvironment } from "./owner-env.mjs";
 import { runDocumentationCommand } from "./documentation.mjs";
 import { runIdentityCorrectionCommand } from "./identity-corrections.mjs";
 import { request as httpRequest } from "./lib/http-client.mjs";
@@ -609,7 +610,19 @@ export async function main(arguments_, environment) {
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  process.exitCode = await main(process.argv.slice(2), process.env);
+  const arguments_ = process.argv.slice(2);
+  let environment;
+  try {
+    environment = await withOwnerEnvironment(process.env);
+  } catch (error) {
+    if (!(error instanceof OwnerEnvError)) throw error;
+    process.exitCode = writeFailure(
+      arguments_.includes("--json"),
+      { code: "configuration_error", detail: error.message },
+      2,
+    );
+  }
+  if (environment !== undefined) process.exitCode = await main(arguments_, environment);
 }
 
 async function health(environment, json) {

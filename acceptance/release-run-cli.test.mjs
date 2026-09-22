@@ -1,16 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { main } from "../cli/keepr.mjs";
 import { runReleaseRunCommand } from "../cli/release-run.mjs";
+import { parseOwnerEnv } from "../cli/owner-env.mjs";
 import {
   confirmationFromProblem,
   matchDispatchedRun,
   nextReleaseId,
-  parseOwnerEnv,
   selectReleaseCommit,
 } from "../cli/release-run-support.mjs";
 import { apiCapabilities, ingestionCapabilities } from "../src/runtime-capabilities.mjs";
@@ -196,32 +193,23 @@ test("tag overrides must resolve to a main commit with green push CI", async (t)
   assert.deepEqual([...outside.dispatches, ...red.dispatches], []);
 });
 
-test("the owner env file path is required and must be outside the repository", async (t) => {
+test("missing owner secrets are named and stop before any request", async (t) => {
   const world = await releaseWorld(t, "staging");
-  assert.equal(await world.run(["staging", "--yes"], { interactive: false, envFile: null }), 2);
-  assert.match(world.output(), /Set KEEPR_OWNER_ENV_FILE/u);
-  assert.equal(
-    await world.run(["staging", "--yes"], { interactive: false, envFile: join(repositoryRoot, "package.json") }),
-    2,
+  const environment = { KEEPR_GITHUB_RELEASE_TOKEN: secrets.KEEPR_GITHUB_RELEASE_TOKEN };
+  assert.equal(await world.run(["staging", "--yes"], { interactive: false, environment }), 2);
+  assert.match(
+    world.output(),
+    /KEEPR_PRODUCTION_ADMINISTRATION_KEY, KEEPR_STAGING_ADMINISTRATION_KEY in the repository's \.env/u,
   );
-  assert.match(world.output(), /outside the repository/u);
+  assert.doesNotMatch(world.output(), /synthetic-github-release-secret/u);
   assert.equal(world.requests.length, 0);
 });
 
 /** GitHub, production and staging fakes behind one fetch; the real low-level CLI runs in-process. */
 async function releaseWorld(t, kind, { bootstrap = false, fail = false, refusePrepare = false, tags = {} } = {}) {
-  const directory = await mkdtemp(join(tmpdir(), "keepr-release-run-"));
-  const envFile = join(directory, "owner.env");
-  await writeFile(
-    envFile,
-    `# owner\n${Object.entries(secrets)
-      .map(([name, value]) => `export ${name}=${value}`)
-      .join("\n")}\n`,
-  );
   const originalFetch = globalThis.fetch;
-  t.after(async () => {
+  t.after(() => {
     globalThis.fetch = originalFetch;
-    await rm(directory, { recursive: true, force: true });
   });
   let text = "";
   let clock = Date.parse("2026-09-22T10:00:00Z");
@@ -409,19 +397,18 @@ async function releaseWorld(t, kind, { bootstrap = false, fail = false, refusePr
     text += chunk;
     return true;
   };
-  world.run = async (args, { interactive = true, answer = false, envFile: file = envFile } = {}) => {
+  world.run = async (args, { interactive = true, answer = false, environment = secrets } = {}) => {
     const outer = [process.stdout.write, process.stderr.write];
     process.stdout.write = capture;
     process.stderr.write = capture;
     try {
-      return await runCommand(args, interactive, answer, file);
+      return await runCommand(args, interactive, answer, environment);
     } finally {
       [process.stdout.write, process.stderr.write] = outer;
     }
   };
-  const runCommand = (args, interactive, answer, file) =>
-    runReleaseRunCommand(args, file === null ? {} : { KEEPR_OWNER_ENV_FILE: file }, false, {
-      repositoryRoot,
+  const runCommand = (args, interactive, answer, environment) =>
+    runReleaseRunCommand(args, environment, false, {
       interactive,
       write: capture,
       now: () => new Date(clock),
@@ -429,7 +416,6 @@ async function releaseWorld(t, kind, { bootstrap = false, fail = false, refusePr
         clock += ms;
       },
       timing: { pollMs: 15_000, findRunMs: 60_000, watchMs: { staging: 600_000, production: 600_000 } },
-      readEnvFile: async (path) => (await import("node:fs/promises")).readFile(path, "utf8"),
       confirm: async (question) => {
         world.prompts.push(question);
         return answer;

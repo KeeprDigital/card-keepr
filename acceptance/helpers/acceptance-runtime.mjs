@@ -361,7 +361,7 @@ export function runCli(arguments_, environment, { secrets, stdin, timeoutMs } = 
     runProcess(
       process.execPath,
       [...preload, resolve(root, "cli/keepr.mjs"), ...arguments_],
-      { ...processEnvironment("/tmp"), ...environment },
+      { ...processEnvironment("/tmp"), KEEPR_OWNER_ENV_FILE: "/dev/null", ...environment },
       { secrets, stdin, timeoutMs },
     ),
   );

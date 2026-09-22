@@ -1,7 +1,7 @@
 import { execFile, spawn } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
-import { dirname, join, relative, resolve, isAbsolute } from "node:path";
+import { existsSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -16,7 +16,6 @@ import {
   incrementReleaseId,
   matchDispatchedRun,
   nextReleaseId,
-  parseOwnerEnv,
   releaseIdsFromRuns,
   releaseKinds,
   selectReleaseCommit,
@@ -80,9 +79,15 @@ async function releaseRun(args, environment, deps) {
     stop("invalid_arguments", "--release-id is not a valid release identity.", 2);
   const say = (line = "") => deps.write(`${line}\n`);
 
-  const env = { ...environment, ...(await loadOwnerEnv(environment, deps)) };
+  // The keepr entrypoint has already added the owner env file (cli/owner-env.mjs).
+  const env = environment;
   const missing = requiredSecrets[kind].filter((name) => !env[name]);
-  if (missing.length > 0) stop("configuration_error", `The owner env file does not set ${missing.join(", ")}.`, 2);
+  if (missing.length > 0)
+    stop(
+      "configuration_error",
+      `Set ${missing.join(", ")} in the repository's .env (names: .env.example) or the environment.`,
+      2,
+    );
   const github = (path) =>
     readGithub({ credential: env.KEEPR_GITHUB_RELEASE_TOKEN, path, apiUrl: env.KEEPR_GITHUB_API_URL });
 
@@ -90,7 +95,7 @@ async function releaseRun(args, environment, deps) {
   say(`Commit ${commit.sha} ${commit.subject}`);
   say(`  push CI run ${commit.ciRunId}; dev delivery ${commit.devDelivered ? "succeeded" : "not observed"}`);
 
-  const checkout = await deps.prepareCheckout(commit.sha, say);
+  const checkout = await deps.prepareCheckout(commit.sha, say, env.KEEPR_RELEASE_WORKTREE_ROOT);
   const actor = kind === "staging" ? await stagingActor(env, github) : productionActor;
   const childEnv = { ...env, KEEPR_GITHUB_RELEASE_ACTOR: actor };
   const keepr = async (keeprArgs) => {
@@ -187,27 +192,6 @@ function lastJsonLine(stdout) {
   } catch {
     return null;
   }
-}
-
-async function loadOwnerEnv(environment, deps) {
-  const path = environment.KEEPR_OWNER_ENV_FILE;
-  if (!path)
-    stop(
-      "configuration_error",
-      "Set KEEPR_OWNER_ENV_FILE to the absolute path of the owner env file (outside the repository).",
-      2,
-    );
-  const absolute = resolve(path);
-  const inside = relative(deps.repositoryRoot, absolute);
-  if (!isAbsolute(path) || inside === "" || (!inside.startsWith("..") && !isAbsolute(inside)))
-    stop("configuration_error", "KEEPR_OWNER_ENV_FILE must be an absolute path outside the repository.", 2);
-  let text;
-  try {
-    text = await deps.readEnvFile(absolute);
-  } catch {
-    stop("configuration_error", `The owner env file ${absolute} is not readable.`, 2);
-  }
-  return parseOwnerEnv(text);
 }
 
 async function selectCommit(values, git, github, say) {
@@ -389,17 +373,11 @@ function defaultDeps() {
     run("git", ["-C", repositoryRoot, ...args], { encoding: "utf8" }).then((out) => out.stdout.trim());
   const commit = (ref) => git("rev-parse", "--verify", "--quiet", `${ref}^{commit}`).catch(() => null);
   return {
-    repositoryRoot,
     interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
     write: (text) => process.stdout.write(text),
     now: () => new Date(),
     sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
     timing: defaultTiming,
-    readEnvFile: async (path) => {
-      if ((statSync(path).mode & 0o077) !== 0)
-        process.stderr.write(`Warning: ${path} is readable by other users; chmod 600 it.\n`);
-      return readFile(path, "utf8");
-    },
     confirm: async (question) => {
       const prompt = createInterface({ input: process.stdin, output: process.stdout });
       try {
@@ -427,7 +405,7 @@ function defaultDeps() {
         ),
       subject: (sha) => git("log", "-1", "--format=%s", sha),
     },
-    prepareCheckout: (sha, say) => prepareReleaseCheckout(sha, say),
+    prepareCheckout: (sha, say, worktreeRoot) => prepareReleaseCheckout(sha, say, worktreeRoot),
     runKeepr: (checkout, args, env) =>
       new Promise((done, failed) => {
         const child = spawn(process.execPath, [join(checkout, "cli", "keepr.mjs"), ...args], {
@@ -450,11 +428,11 @@ function defaultDeps() {
  * request is built by the CLI that commit's green CI tested, never by the
  * owner's current (possibly dirty, older or unmerged) checkout.
  */
-async function prepareReleaseCheckout(sha, say) {
+async function prepareReleaseCheckout(sha, say, worktreeRoot) {
   const inRepo = (args, cwd = repositoryRoot) =>
     run("git", ["-C", cwd, ...args], { encoding: "utf8" }).then((out) => out.stdout.trim());
   const common = await inRepo(["rev-parse", "--path-format=absolute", "--git-common-dir"]);
-  const root = process.env.KEEPR_RELEASE_WORKTREE_ROOT || join(dirname(dirname(common)), "card-keepr-worktrees");
+  const root = worktreeRoot || join(dirname(dirname(common)), "card-keepr-worktrees");
   const path = join(root, `release-${sha.slice(0, 12)}`);
   if (existsSync(path)) {
     const head = await inRepo(["rev-parse", "HEAD"], path).catch(() => "");

@@ -3,6 +3,8 @@
 One inventory of every credential the system uses, per environment and per
 consumer, derived from the code that uses it. It records names, permission
 sets, scope, where each value lives, and how to rotate; it never records a value.
+The owner-held names themselves are listed in [`.env.example`](../../.env.example)
+([owner env file](#owner-env-file)).
 [Issue #387](https://github.com/KeeprDigital/card-keepr/issues/387) owns the
 dashboard reconciliation; [issue #236](https://github.com/KeeprDigital/card-keepr/issues/236)
 records the shared-account decision that bounds every Cloudflare token below.
@@ -201,15 +203,33 @@ from its Wrangler configuration; those are identities, not credentials.
 Values live only in the Worker's secret store. For production they are installed
 with `wrangler secret put <NAME> --config apps/<app>/wrangler.jsonc` (value on
 stdin); for dev and staging the provisioning step installs them from the
-owner-held JSON files `<ENV>_API_SECRETS_FILE` / `<ENV>_INGESTION_SECRETS_FILE`
+JSON files named by `<ENV>_API_SECRETS_FILE` / `<ENV>_INGESTION_SECRETS_FILE`
 (`dev-worker-shell.mjs:26-40` validates the exact inventory, ≥ 16 characters,
 six distinct values) and later rotation uses `wrangler secret put` against the
 generated `wrangler.<env>.json`. Never `wrangler secret delete` an expected slot.
 
+Those JSON files are generated from `.env` at use time and deleted afterwards;
+they are never kept. The bearer slots come from `KEEPR_<ENV>_API_KEY[_REPLACEMENT]`
+and `KEEPR_<ENV>_ADMINISTRATION_KEY[_REPLACEMENT]`; the two D1 tokens are freshly
+issued for the (re)installation and passed only on the command line. For staging,
+from the main checkout:
+
+```sh
+umask 077; dir=$(mktemp -d)
+node --env-file=.env -e 'const e = process.env; console.log(JSON.stringify({
+  API_BEARER_KEY: e.KEEPR_STAGING_API_KEY, API_BEARER_KEY_REPLACEMENT: e.KEEPR_STAGING_API_KEY_REPLACEMENT }))' > "$dir/api.json"
+D1_EXPORT_TOKEN=… D1_VERIFICATION_TOKEN=… node --env-file=.env -e 'const e = process.env; console.log(JSON.stringify({
+  ADMINISTRATION_KEY: e.KEEPR_STAGING_ADMINISTRATION_KEY, ADMINISTRATION_KEY_REPLACEMENT: e.KEEPR_STAGING_ADMINISTRATION_KEY_REPLACEMENT,
+  D1_EXPORT_TOKEN: e.D1_EXPORT_TOKEN, D1_VERIFICATION_TOKEN: e.D1_VERIFICATION_TOKEN }))' > "$dir/ingestion.json"
+export STAGING_API_SECRETS_FILE="$dir/api.json" STAGING_INGESTION_SECRETS_FILE="$dir/ingestion.json"
+# … run the provisioning or first-install step, then:
+rm -r "$dir"
+```
+
 ### Rotating a bearer key
 
 1. `wrangler secret put <NAME>_REPLACEMENT` with the new value; both slots are live.
-2. Move every consumer to the new value: the owner profile variable, external
+2. Move every consumer to the new value: the owner `.env` value, external
    readers, and for the API key the GitHub `API_TRAFFIC_TOKEN` / `<ENV>_API_TRAFFIC_TOKEN`.
 3. `wrangler secret put <NAME>` with the new value, then `wrangler secret put
 <NAME>_REPLACEMENT` with a fresh, unused value so the replacement slot never
@@ -252,49 +272,63 @@ CI checks and OIDC attestation; it needs no configuration. `API_TRAFFIC_TOKEN`
 is a copy of a bearer slot, so it is rotated in step 2 of the bearer procedure
 with `gh secret set <NAME> --env <env>` (value on stdin).
 
-## Owner shell profile
+## Owner env file
+
+[`.env.example`](../../.env.example) is the inventory of every owner-held name,
+grouped by environment, with each value's purpose, consumer and grant; it never
+holds a value. The owner keeps the values in the git-ignored `.env` at the root
+of the main checkout (`chmod 600`); nothing else under `~/secrets` or elsewhere is
+a second source.
+
+`cli/owner-env.mjs` loads that file for every `keepr` command, including
+`pnpm release:staging` / `pnpm release:production` (`keepr release run`):
+
+- It resolves the main checkout through `git rev-parse --git-common-dir`, so a
+  command run from a worktree, and the release checkout's own `keepr`, read the
+  main checkout's `.env`; worktrees never hold one.
+- Values fill only names the environment does not set: an explicit variable
+  always wins. `KEEPR_OWNER_ENV_FILE=<absolute path>` names another file instead
+  (`/dev/null` disables it; acceptance tests do this).
+- A file inside the repository is used only when `git check-ignore` confirms it
+  is ignored; otherwise the command stops. Lines are `NAME=value` or
+  `export NAME=value`, read literally: no expansion or command substitution, and
+  matching outer quotes are removed.
+- The file must not set the un-targeted local-runtime profile
+  (`KEEPR_API_URL`, `KEEPR_INGESTION_URL`, `KEEPR_API_KEY`,
+  `KEEPR_ADMINISTRATION_KEY`, `KEEPR_TARGET`, `KEEPR_TEST_NOW`); the CLI refuses
+  it, so a plain `keepr` command can never silently reach a remote environment.
 
 `cli/environment.mjs:12-13` maps `--target <env>` to `KEEPR_<ENV>_API_KEY` and
 `KEEPR_<ENV>_ADMINISTRATION_KEY` and `cli/lib/json-client.mjs:19-20` names the
 missing one in its error. The unprefixed `KEEPR_API_KEY` / `KEEPR_ADMINISTRATION_KEY`
-serve only the local Wrangler runtime without `--target`.
-
-| Variable                                                                 | Kind                                           | Used at                                                                                                                                            |
-| ------------------------------------------------------------------------ | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `KEEPR_PRODUCTION_API_KEY`, `KEEPR_STAGING_API_KEY`, `KEEPR_DEV_API_KEY` | copy of that environment's API bearer slot     | `cli/lib/json-client.mjs:20` for `runtime: "api"`                                                                                                  |
-| `KEEPR_PRODUCTION_ADMINISTRATION_KEY`, `KEEPR_STAGING_…`, `KEEPR_DEV_…`  | copy of that environment's administration slot | `cli/lib/json-client.mjs:20`; `cli/documentation.mjs:19`                                                                                           |
-| `KEEPR_GITHUB_RELEASE_TOKEN`                                             | GitHub fine-grained token, ≥ 20 characters     | `cli/production-release.mjs:112`, `cli/staging-release.mjs:77` → `cli/provider-github-release.mjs:43` (`POST …/actions/workflows/{id}/dispatches`) |
-| `KEEPR_GITHUB_RELEASE_ACTOR`                                             | not secret; the `expected_actor` recorded      | `cli/production-release.mjs:61`, `cli/staging-release.mjs:56`                                                                                      |
-| `KEEPR_GITHUB_API_URL`, `KEEPR_GITHUB_RELEASE_WORKFLOW_ID`               | not secret; test overrides only                | `cli/production-release.mjs:117-118`, `cli/staging-release.mjs:84`                                                                                 |
+serve only the local Wrangler runtime without `--target`, from the shell.
+`release run staging` needs `KEEPR_PRODUCTION_ADMINISTRATION_KEY`,
+`KEEPR_STAGING_ADMINISTRATION_KEY` and `KEEPR_GITHUB_RELEASE_TOKEN`; `release run
+production` needs `KEEPR_PRODUCTION_ADMINISTRATION_KEY`, `KEEPR_PRODUCTION_API_KEY`
+and `KEEPR_GITHUB_RELEASE_TOKEN`. Values pass only to the release checkout's
+`keepr` process and are never printed.
 
 `KEEPR_GITHUB_RELEASE_TOKEN` needs only **Actions: write** on `KeeprDigital/card-keepr`
-(workflow dispatch). `release run` also uses the read access that grant includes
-to list `ci.yml`, `dev-deploy.yml` and release workflow runs and a run's jobs, and
-reads `GET /user` for the staging actor; it reads no contents or checks. Issue it
-as a fine-grained personal access token scoped to this repository and rotate it
-in GitHub's token settings, then update the profile. `KEEPR_GITHUB_RELEASE_ACTOR`
-is `github-actions[bot]` for `release production` and the dispatching owner's
-login for `release staging` (recorded on #237); `release run` sets it itself.
+(workflow dispatch, `cli/provider-github-release.mjs:43`). `release run` also uses
+the read access that grant includes to list `ci.yml`, `dev-deploy.yml` and release
+workflow runs and a run's jobs, and reads `GET /user` for the staging actor; it
+reads no contents or checks. Issue it as a fine-grained personal access token
+scoped to this repository and rotate it in GitHub's token settings, then update
+`.env`. `KEEPR_GITHUB_RELEASE_ACTOR` (not secret, never stored) is
+`github-actions[bot]` for `release production` and the dispatching owner's login
+for `release staging` (recorded on #237); `release run` sets it itself.
+`KEEPR_GITHUB_API_URL` and `KEEPR_GITHUB_RELEASE_WORKFLOW_ID` are test overrides.
 
-`pnpm release:staging` / `pnpm release:production` (`keepr release run`) take no
-secrets from the shell. They read the owner env file named by
-`KEEPR_OWNER_ENV_FILE`, which must be an absolute path outside the repository
-(for example `~/secrets/card-keepr.env`, `chmod 600`); there is no default and the
-command stops if it is unset. The file holds literal `export NAME=value` lines:
-staging needs `KEEPR_PRODUCTION_ADMINISTRATION_KEY`,
-`KEEPR_STAGING_ADMINISTRATION_KEY` and `KEEPR_GITHUB_RELEASE_TOKEN`; production
-needs `KEEPR_PRODUCTION_ADMINISTRATION_KEY`, `KEEPR_PRODUCTION_API_KEY` and
-`KEEPR_GITHUB_RELEASE_TOKEN`. Values are passed only to the release checkout's
-`keepr` process and never printed. `KEEPR_RELEASE_WORKTREE_ROOT` (not secret)
-overrides where release worktrees are created.
-
-First provisioning and first installation of dev/staging run in the owner's shell
-with `CLOUDFLARE_API_TOKEN` (the environment's deploy or provision token),
-`GH_TOKEN` (a GitHub token with **Actions: read** and **Checks: read**, used only for
-`GET …/actions/runs/{id}` and `GET …/commits/{sha}/check-runs` at
+Scripts do not load `.env` themselves; pass it with Node's literal loader, which
+also lets explicit variables win: `node --env-file=.env scripts/<script>.mjs`.
+First provisioning and first installation of dev/staging additionally take, per
+invocation and never stored, `CLOUDFLARE_API_TOKEN` (the environment's deploy or
+provision token, for staging `STAGING_DEPLOYMENT_TOKEN`), `GH_TOKEN`
+(`"$(gh auth token)"` or a token with **Actions: read** and **Checks: read**, used
+only for `GET …/actions/runs/{id}` and `GET …/commits/{sha}/check-runs` at
 `src/http/dev-workflow-identity.mjs:112,151,169` via `scripts/provision-dev.mjs:74`),
 `API_TRAFFIC_TOKEN` (= the environment's API bearer for smoke) and the two
-secret-file paths. Unset them when the installation is recorded.
+secret-file paths generated as described under [Worker secrets](#worker-secrets).
 
 ## Probe
 
@@ -309,11 +343,14 @@ KEEPR_PROBE_DEPLOYMENT_TOKEN=… \
 KEEPR_PROBE_D1_EXPORT_TOKEN=… \
 KEEPR_PROBE_D1_VERIFICATION_TOKEN=… \
 node scripts/credential-probe.mjs production
+node --env-file=.env scripts/credential-probe.mjs staging
 ```
 
-For `staging` and `dev` also set `<ENV>_CLOUDFLARE_ACCOUNT_ID`,
-`<ENV>_CATALOGUE_DATABASE_ID` and `<ENV>_DISPOSABLE_DATABASE_ID` (the GitHub
-variable values). Omit a token variable to skip that token's rows. The probe
+For `staging` and `dev` the probe also reads `<ENV>_CLOUDFLARE_ACCOUNT_ID`,
+`<ENV>_CATALOGUE_DATABASE_ID` and `<ENV>_DISPOSABLE_DATABASE_ID`, and without
+`KEEPR_PROBE_DEPLOYMENT_TOKEN` it probes `<ENV>_DEPLOYMENT_TOKEN`, all from `.env`.
+The D1 tokens live only as Worker secrets, so probe them with a freshly issued
+value through `KEEPR_PROBE_D1_*`. Omit a token variable to skip that token's rows. The probe
 sends GET requests only; `--exercise-export` additionally starts one SQL export of
 the live Disposable Restore database with each D1 token, which is the only
 read-only way to tell D1 Edit from D1 Read. Write capabilities (version upload,

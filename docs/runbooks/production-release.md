@@ -63,7 +63,6 @@ command arguments or Git.
 After the one-time checks in steps 1–2 below, the routine path is:
 
 ```sh
-export KEEPR_OWNER_ENV_FILE=~/secrets/card-keepr.env   # absolute path, outside the repo
 pnpm release:production                # or --sha <sha> / --tag vX.Y.Z, --release-id, --yes
 ```
 
