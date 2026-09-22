@@ -7,6 +7,9 @@ import { parseReconciliationObservation } from "../../src/catalogue/reconciliati
 import type { SourceAdapterRegistration } from "../../src/catalogue/adapters";
 import { riftboundSourceAdapterRegistration } from "../../src/catalogue/adapters/riftbound-source-adapter";
 import { AdapterParseFailure } from "../../src/catalogue/adapters/adapter-parse-failure";
+import { resolveHostPacingPolicy } from "../../src/catalogue/source-evidence";
+import { validateEvidencePlan } from "../../src/catalogue/source-evidence/source-evidence-model";
+import refreshPlan from "../../docs/examples/riftbound-riot-refresh-plan.json";
 
 const fixture = new URL("../../acceptance/fixtures/real-sources/2026-09-08-riftbound/raw/", import.meta.url);
 
@@ -140,4 +143,53 @@ test("Riot scopes permit qualification while bounded One Piece scopes retain own
   expect(sourceAdapterForCoverage(requiredSourceAdapter("one-piece-en@6"), "p-001-catalogue").printingAdmission).toBe(
     "owner_review",
   );
+});
+
+test("the Riot refresh plan discovers one paced publisher front per returned record within its bounds", async () => {
+  const { plan, adapter } = await validateEvidencePlan({ ...refreshPlan.plans[0]!, idempotency_key: "riot-refresh" });
+  expect(plan.coverage).toEqual({ locale: "en", area: "catalogue", subset: "complete" });
+  expect(plan.requests.map((request) => request.id)).toEqual([
+    "riftbound-en:catalogue",
+    "riftbound-en:errata",
+    "riftbound-en:products",
+  ]);
+  const listings: string[] = [];
+  const images: string[] = [];
+  for (let offset = 0; offset < 1200; offset += 200) {
+    const url = `https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards?locale=en_US&from=${offset}&limit=200`;
+    for (const request of adapter.discoverRequests!(readFileSync(new URL(`cards-${offset}.json`, fixture)), {
+      url,
+      mediaType: "application/json",
+    }))
+      (request.role === "listing" ? listings : images).push(request.url);
+  }
+  expect(listings).toHaveLength(5);
+  expect(new Set(images).size).toBe(1189);
+  expect(images.every((url) => new URL(url).hostname === "cmsassets.rgpub.io")).toBe(true);
+  expect(plan.requests.length + listings.length + images.length).toBeLessThanOrEqual(adapter.requestCapacity);
+  // 26 fronts declare 1488x2078, four times the pixels of the retained
+  // 744x1039 fronts (largest 1,419,738 bytes); the body bound must admit them.
+  expect(images.filter((url) => url.includes("-1488x2078."))).toHaveLength(26);
+  expect(adapter.maximumSnapshotBytes).toBeGreaterThanOrEqual(4 * 1_419_738);
+  const pacing = (hostname: string) => {
+    const { kind, floor_ms, maximum_concurrency, source } = resolveHostPacingPolicy(
+      hostname,
+      ["riftbound-en@1"],
+      2_000,
+    );
+    return { kind, floor_ms, maximum_concurrency, source };
+  };
+  expect(pacing("content.publishing.riotgames.com")).toEqual({
+    kind: "page",
+    floor_ms: 1_000,
+    maximum_concurrency: 1,
+    source: "registration",
+  });
+  expect(pacing("playriftbound.com")).toMatchObject({ kind: "page", maximum_concurrency: 1, source: "registration" });
+  expect(pacing("cmsassets.rgpub.io")).toEqual({
+    kind: "asset",
+    floor_ms: 100,
+    maximum_concurrency: 4,
+    source: "registration",
+  });
 });

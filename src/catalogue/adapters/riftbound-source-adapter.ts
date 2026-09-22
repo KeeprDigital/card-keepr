@@ -16,8 +16,46 @@ export const riftboundSourceAdapterRegistration = {
   supportedGame: "riftbound",
   gameProfileVersion: "riftbound@1",
   parserContract: "riot-riftbound-gallery@1",
-  maximumSnapshotBytes: 2 * 1024 * 1024,
+  // One bound covers pages and publisher PNG fronts. The retained 744x1039
+  // fronts are 0.73-1.42 MB, and 26 records of the retained inventory (OGN
+  // overnumbered and signature Printings) declare 1488x2078 fronts, four times
+  // the pixels. A 2 MiB bound would record those real fronts as body-contract
+  // image gaps (#333); 8 MiB leaves headroom without admitting unbounded bodies.
+  maximumSnapshotBytes: 8 * 1024 * 1024,
+  // 6 gallery pages, one front per returned record (1,189 retained) and the
+  // errata and products articles fit the historical bound with headroom.
   requestCapacity: 5000,
+  // #389 adaptive pacing bounds. No robots or terms are retained for these
+  // hosts; the bounds are conservative and back off on any refusal.
+  hostPacing: [
+    {
+      hostname: "content.publishing.riotgames.com",
+      kind: "page",
+      floorMs: 1_000,
+      ceilingMs: 8_000,
+      maximumConcurrency: 1,
+      evidence:
+        "Riot publishing API behind Cloudflare bot management (retained 2026-09-08 page headers: __cf_bm cookie, CF-Cache-Status BYPASS, no-cache). No robots or terms retained. The six gallery pages were captured sequentially with HTTP 200 (2026-09-08-riftbound manifest). Sequential at 1 s or slower.",
+    },
+    {
+      hostname: "playriftbound.com",
+      kind: "page",
+      floorMs: 1_000,
+      ceilingMs: 8_000,
+      maximumConcurrency: 1,
+      evidence:
+        "Riot's Next.js site on Netlify serving the errata and products articles (retained 2026-09-06 headers). No robots or terms retained. Two article requests per run; sequential at 1 s or slower.",
+    },
+    {
+      hostname: "cmsassets.rgpub.io",
+      kind: "asset",
+      floorMs: 100,
+      ceilingMs: 2_000,
+      maximumConcurrency: 4,
+      evidence:
+        "Riot's Sanity image CDN behind Akamai: retained 2026-09-06 and 2026-09-14 front responses carry Cache-Control public/s-maxage=2592000 and sanity-inflight-limit 200. No robots or terms retained; seven retained fronts returned HTTP 200. Conservative bounds: at most 4 in flight, 100 ms start spacing, backing off on any refusal.",
+    },
+  ],
   origin: "production",
   requestSurface: { kind: "credential-free-https" },
   reconciliationCapability: "catalogue",

@@ -1,0 +1,25 @@
+{
+  "plans": [
+    {
+      "supported_game": "riftbound",
+      "source_lineage": "riftbound-en",
+      "adapter_version": "riftbound-en@1",
+      "subset": "complete",
+      "participation": "required",
+      "requests": [
+        {
+          "id": "riftbound-en:catalogue",
+          "url": "https://content.publishing.riotgames.com/publishing-content/v2.0/public/channel/riftbound_website/list/riftbound_gallery_cards?locale=en_US&from=0&limit=200"
+        },
+        {
+          "id": "riftbound-en:errata",
+          "url": "https://playriftbound.com/en-us/news/rules-and-releases/riftbound-origins-card-errata/"
+        },
+        {
+          "id": "riftbound-en:products",
+          "url": "https://playriftbound.com/en-us/news/announcements/products-and-sets-into-2027/"
+        }
+      ]
+    }
+  ]
+}
