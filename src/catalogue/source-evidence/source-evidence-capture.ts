@@ -85,6 +85,7 @@ import type { HostPacingSignal } from "./host-pacing";
 
 const multipartPartBytes = 5 * 1024 * 1024;
 const representedRequestHeaders = new Set(["accept", "accept-language", "user-agent"]);
+const implicitRequestHeaders = new Set(["accept-encoding"]);
 
 type CaptureOperationRow = {
   attempt_id: string;
@@ -1419,7 +1420,7 @@ async function findReusableSnapshot(
     adapterVersion: evidencePlan.adapter_version,
     representationFingerprint: request.representation_fingerprint,
   }).all<SnapshotRow>();
-  return priorSnapshots.results.find(representedVary) ?? null;
+  return priorSnapshots.results.find((snapshot) => varySatisfied(snapshot, request)) ?? null;
 }
 
 /** Incremental refresh (#389): a Printing Image request whose exact URL,
@@ -1446,7 +1447,7 @@ export async function skipUnchangedImageCapture(
     adapterVersion: evidencePlan.adapter_version,
     representationFingerprint: sourceRequest.representation_fingerprint,
   }).all<SnapshotRow>();
-  const prior = candidates.results.find(representedVary);
+  const prior = candidates.results.find((snapshot) => varySatisfied(snapshot, sourceRequest));
   if (prior === undefined) return null;
   const updated = await skippedCaptureStatement(database, {
     completedAt: new Date().toISOString(),
@@ -1458,13 +1459,27 @@ export async function skipUnchangedImageCapture(
   return { kind: "uploaded", attempt_id: operation.attempt_id, request_made: false };
 }
 
-function representedVary(snapshot: SnapshotRow): boolean {
+// Retained bytes may stand for this request only when every header the
+// response varied on selects the same representation: a represented header is
+// bound by the fingerprint, and any other header must be absent from both the
+// retained and the current request (for example a CDN's CORS `Vary: Origin`
+// for requests that never send Origin). Accept-Encoding is added implicitly by
+// the runtime and is never treated as absent.
+function varySatisfied(snapshot: SnapshotRow, request: EvidenceRequestRow): boolean {
   const vary: unknown = JSON.parse(snapshot.response_vary_json);
-  return (
-    Array.isArray(vary) &&
-    !vary.includes("*") &&
-    vary.every((name) => typeof name === "string" && representedRequestHeaders.has(name))
+  if (!Array.isArray(vary) || vary.includes("*")) return false;
+  const retained = lowerCaseKeys(parseStringRecord(snapshot.request_headers_json));
+  const current = lowerCaseKeys(parseStringRecord(request.request_headers_json));
+  return vary.every(
+    (name) =>
+      typeof name === "string" &&
+      (representedRequestHeaders.has(name) ||
+        (!implicitRequestHeaders.has(name) && retained[name] === undefined && current[name] === undefined)),
   );
+}
+
+function lowerCaseKeys(headers: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(headers).map(([name, value]) => [name.toLowerCase(), value]));
 }
 
 function revalidationHeaders(snapshot: SnapshotRow): Record<string, string> {

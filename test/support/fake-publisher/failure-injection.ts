@@ -210,9 +210,13 @@ export function transportOutcomeForPath(
     });
   }
   if (pathname.startsWith("/png/")) {
-    // Distinct non-empty image bytes per path for Printing Image requests.
+    // Distinct non-empty image bytes per path for Printing Image requests,
+    // with the CORS Vary a retained CDN front carries (2026-09-15-limitless).
     return new Response(new TextEncoder().encode(`\u0089PNG\r\n\u001a\n${url.hostname}${pathname}`), {
-      headers: { "content-type": "image/png" },
+      headers: {
+        "content-type": "image/png",
+        vary: "Origin, Access-Control-Request-Headers, Access-Control-Request-Method",
+      },
     });
   }
   if (pathname === "/invalid-json") {
