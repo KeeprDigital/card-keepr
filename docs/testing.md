@@ -260,3 +260,5 @@ gh workflow run test-suite-diagnostics.yml --ref <branch> \
 Keep Vitest within the installed Cloudflare plugin's peer range. Validate an
 affected Worker after upgrades before broader suites; the separate acceptance
 and plugin runtimes must both remain compatible.
+
+<!-- probe -->
