@@ -31,10 +31,11 @@ does not start staging or production. Use the guarded commands below to deploy.
 - **Initiation:** merging the release PR is the owner's release initiation.
   release-please then creates the `vX.Y.Z` tag on that exact merge commit and a
   GitHub Release whose notes are the changelog entry.
-- **Token limits:** release-please uses the workflow `GITHUB_TOKEN`. GitHub does
-  not start `pull_request` or tag `push` workflows for events made with that token.
-  Close and reopen the release PR to run its required checks. A later release
-  workflow must chain from `release-please.yml`, not from a tag `push` trigger.
+- **Token limits:** release-please uses the workflow `GITHUB_TOKEN`. Its tag
+  pushes start no workflow, and its release PR's `pull_request` runs wait for
+  approval. Approve those runs (or close and reopen the PR) so the required checks
+  report before queueing. A later release workflow must chain from
+  `release-please.yml` or dispatch, not rely on a tag `push` trigger.
 
 `release-please.json` and `.release-please-manifest.json` own the exact policy.
 Edit the manifest by hand only to bootstrap or correct a version.
