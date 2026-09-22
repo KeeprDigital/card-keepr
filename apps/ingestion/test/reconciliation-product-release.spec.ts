@@ -5,12 +5,14 @@ import { officialSourceDiscoveryRequests } from "../../../src/catalogue/adapters
 import { compositionEntityResponse } from "../../../src/catalogue/read";
 import { catalogueStore } from "../../../src/catalogue/shared";
 import { nativeCandidateRecords, waitForNativeCandidate } from "./native-candidate-helpers";
+import { nativeReleaseDocument, nativeReleaseDocumentSql } from "./query-helpers/native-product-history";
 import { approveNativeCandidate, prepareNativeCandidate } from "./native-publication-helpers";
 import {
   collect,
   collectRequests,
   exportComponentRecords,
   exportManifest,
+  get,
   installReconciliationSuite,
   post,
   requiredFirst,
@@ -207,6 +209,53 @@ test("distinct official Release events in one region retain stable public identi
     }),
   ]);
   expect(new Set(releases.map(({ id }) => id)).size).toBe(2);
+});
+
+test("a season-precision Release survives publication, read, export and SQL restore", async () => {
+  const run = await collect("/reconciliation/product-release-season", "product-release-season");
+  const candidate = await prepareNativeCandidate(run.id, "one-piece", "catrev_spine_000", "release-season-prepare");
+  const published = await approveNativeCandidate(candidate, "release-season-publish");
+  const revisionId = requiredString(published.document, "resulting_revision_id");
+  const season = { precision: "season", value: "2027-spring" };
+  const release = (await exportComponentRecords(revisionId, "releases")).find(
+    ({ event_key }) => event_key === "oceania-season-release",
+  );
+  expect(release).toMatchObject({ region: "EN-OCEANIA", date: season, status: "announced" });
+  const releaseId = requiredString(release!, "id");
+  const productId = requiredString(release!, "product_id");
+
+  const base = { origin: "https://card-keepr.invalid", basePath: "" };
+  const read = await compositionEntityResponse(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    new Request(`${base.origin}/v1/products/${productId}`),
+    base,
+    "products",
+    productId,
+  );
+  expect(read!.status).toBe(200);
+  const product = await read!.json<{ data: { releases: Record<string, unknown>[] } }>();
+  expect(product.data.releases).toContainEqual(expect.objectContaining({ id: releaseId, date: season }));
+
+  // approveNativeCandidate waited for the verified SQL backup; its disposable
+  // restore is an independent database populated only by the exported SQL.
+  const backup = (await get(`/v1/backups/${requiredString(published.document, "backup_attempt_id")}`)).document;
+  expect(backup).toMatchObject({ state: "verified", catalogue_revision_id: revisionId });
+  const params = [requiredString(published.document, "candidate_id"), releaseId];
+  const live = await nativeReleaseDocument(testEnv.CATALOGUE_DB)
+    .bind(...params)
+    .first<{ content: string }>();
+  expect(JSON.parse(live!.content).records[0].value).toMatchObject({ id: releaseId, date: season });
+  const restored = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${testEnv.CLOUDFLARE_ACCOUNT_ID}/d1/database/${requiredString(backup, "disposable_database_id")}/query`,
+    {
+      method: "POST",
+      headers: { authorization: `Bearer ${testEnv.D1_VERIFICATION_TOKEN}`, "content-type": "application/json" },
+      body: JSON.stringify({ sql: nativeReleaseDocumentSql, params }),
+    },
+  );
+  expect(restored.status).toBe(200);
+  const imported = await restored.json<{ result: { results: { content: string }[] }[] }>();
+  expect(imported.result[0]!.results).toEqual([live]);
 });
 
 test("a disappeared Distribution Context with no remaining lineage is not current", async () => {

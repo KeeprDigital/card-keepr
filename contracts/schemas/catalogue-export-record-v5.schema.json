@@ -617,7 +617,7 @@
           "required": ["precision", "value"],
           "properties": {
             "precision": {
-              "enum": ["day", "month", "quarter", "year", "unknown"]
+              "enum": ["day", "month", "quarter", "season", "year", "unknown"]
             },
             "value": {
               "$ref": "#/$defs/NullableText"
