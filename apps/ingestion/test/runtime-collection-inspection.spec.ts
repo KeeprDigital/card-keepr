@@ -43,6 +43,8 @@ type CollectionInspection = {
     mode: string;
     interval_ms: number;
     hosts: Array<Record<string, unknown>>;
+    limits: Array<Record<string, unknown>>;
+    events: Record<string, unknown>;
   };
   estimate: Record<string, unknown>;
 };
@@ -115,6 +117,8 @@ test("a capacity-paused production-shaped run reports aggregated capacity, reque
     fetch_attempt_count: 1,
     retry_attempt_count: 0,
     failed_attempt_count: 0,
+    revalidated_attempt_count: 0,
+    skipped_request_count: 0,
     latest_failure: null,
     detail_limit: 200,
     snapshots_truncated: false,
@@ -236,8 +240,15 @@ test("a transport-paused run reports retry counts, the latest safe failure, and 
       captured_request_count: 0,
       next_request_not_before: expect.any(String),
       waiting_ms: expect.any(Number),
+      // Four consecutive 503s back the default page policy off to its ceiling.
+      interval_ms: 4_000,
+      concurrency: 1,
     },
   ]);
+  expect(collection.pacing.limits).toMatchObject([
+    { hostname: "inspection-official-source.invalid", source: "default", backoff_count: 4, recovery_count: 0 },
+  ]);
+  expect(collection.pacing.events).toMatchObject({ count: 4, truncated: false });
   expect(collection.estimate).toMatchObject({
     advisory: true,
     pending_request_count: 1,
@@ -398,6 +409,8 @@ test("collection inspection succeeds for a 64-character Official Source hostname
       captured_request_count: 0,
       next_request_not_before: expect.any(String),
       waiting_ms: expect.any(Number),
+      interval_ms: 4_000,
+      concurrency: 1,
     },
   ]);
 });

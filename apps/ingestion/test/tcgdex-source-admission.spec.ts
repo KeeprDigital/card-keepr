@@ -40,7 +40,7 @@ import {
 
 installReconciliationSuite({ directPreparation: true });
 
-async function collectedRecord(key: string) {
+async function collectedRecord(key: string, { refresh = false } = {}) {
   const db = catalogueStore(testEnv.CATALOGUE_DB);
   const bodies = new Map([
     ["https://api.tcgdex.net/v2/en/sets", englishBody],
@@ -83,7 +83,8 @@ async function collectedRecord(key: string) {
   await collectFixtureEvidence(testEnv.CATALOGUE_DB, testEnv.EVIDENCE_OBJECTS, transport, runId);
   expect((await requiredEvidenceRun(db, runId)).state).toBe("parsing");
   expect(await pendingEvidenceRequests(db, runId)).toEqual([]);
-  expect(fetched).toEqual([...bodies.keys(), imageUrl]);
+  // A refresh reuses the retained front for the unchanged image URL (#389).
+  expect(fetched).toEqual(refresh ? [...bodies.keys()] : [...bodies.keys(), imageUrl]);
   const contexts = (
     await retainedTcgdexContexts(testEnv.CATALOGUE_DB)
       .bind(runId)
@@ -361,7 +362,7 @@ test("a completed single-record fixture retains its source image through proposa
   expect((await reviewAllocations(db).all()).results).toEqual([]);
   // A later complete retained capture appends evidence without rewriting the
   // proposal's original content/evidence/request JSON or owner decision.
-  const refreshed = await collectedRecord("pokemon-record-refresh-fixture");
+  const refreshed = await collectedRecord("pokemon-record-refresh-fixture", { refresh: true });
   const candidate = await prepareNativeEvidence({
     runId: refreshed.runId,
     game: "pokemon",
@@ -375,7 +376,8 @@ test("a completed single-record fixture retains its source image through proposa
   expect((await reviewProposals(db).bind("tcgdex-pokemon-en").all()).results).toEqual(committed);
   expect(await inspectEntityProposal(db, proposal.id)).toMatchObject({ status: "rejected", generation: 1 });
   expect((await reviewQueries.reviewEvidencePins(db).bind(refreshed.runId).all()).results).toHaveLength(1);
-  expect((await reviewPrivateReferences(db).bind("entity_proposal", proposal.id).all()).results).toHaveLength(2);
+  // The refresh reuses the retained front (#389), so the pinned image key is shared.
+  expect((await reviewPrivateReferences(db).bind("entity_proposal", proposal.id).all()).results).toHaveLength(1);
   const abandoned = await post(`/v1/game-candidates/${candidate.id}/abandon`, {
     generation: candidate.generation,
     idempotency_key: "pokemon-refreshed-record-abandon",
@@ -402,8 +404,9 @@ test("a completed single-record fixture retains its source image through proposa
   });
   expect(snapshot.proposal_evidence).toMatchObject({
     contract: "card-keepr-composition-proposal-evidence@1",
-    // Each capture owns Card raw/observations and image raw/empty observations.
-    objects: 8,
+    // Each capture owns Card raw/observations and image empty observations; the
+    // refresh reuses the first capture's image raw object (#389).
+    objects: 7,
     sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
   });
   expect(snapshot.source_evidence).toEqual({
