@@ -6,6 +6,8 @@ import {
   evidenceInputSchema,
   evidenceAcceptanceSchema,
   evidenceStatusSchema,
+  evidenceSummarySchema,
+  evidenceRequestsSchema,
   collectionPauseSchema,
   collectionTerminationSchema,
   collectionResumeSchema,
@@ -259,6 +261,48 @@ export const evidenceStatusRoute = createRoute({
         "Current collection, bounded retained evidence, pause/termination, retry and Workflow status. Completion of collection is distinct from publication.",
       headers: jsonHeaders,
       content: { "application/json": { schema: evidenceStatusSchema } },
+    },
+    ...problemResponses,
+  },
+});
+export const evidenceSummaryRoute = createRoute({
+  method: "get",
+  path: "/v1/ingestion-runs/{run}/evidence/summary",
+  operationId: "showSourceEvidenceSummary",
+  security: secured,
+  middleware: [privateResponse],
+  request: { params: runParams },
+  responses: {
+    200: {
+      description:
+        "Compact collection status whose size is independent of the run's request count: state, pause, request counts, acquisition budget, pacing, bounded recent receipts and failure summaries.",
+      headers: jsonHeaders,
+      content: { "application/json": { schema: evidenceSummarySchema } },
+    },
+    ...problemResponses,
+  },
+});
+export const evidenceRequestsRoute = createRoute({
+  method: "get",
+  path: "/v1/ingestion-runs/{run}/evidence/requests",
+  operationId: "listSourceEvidenceRequests",
+  security: secured,
+  middleware: [privateResponse],
+  request: {
+    params: runParams,
+    query: z.strictObject({
+      after: z
+        .string()
+        .regex(/^(0|[1-9]\d{0,14})$/)
+        .optional(),
+    }),
+  },
+  responses: {
+    200: {
+      description:
+        "One fixed-size page of Source Requests in sequence order after the exclusive `after` cursor, each with its attempt count and latest fetch attempt. Follow `next_after` until null to list every request.",
+      headers: jsonHeaders,
+      content: { "application/json": { schema: evidenceRequestsSchema } },
     },
     ...problemResponses,
   },

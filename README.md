@@ -68,5 +68,5 @@ For machine-readable CLI output, use `pnpm --silent run keepr … --json`.
 
 Set `KEEPR_API_KEY` and `KEEPR_ADMINISTRATION_KEY` in the environment for the CLI.
 Use `KEEPR_API_URL` and `KEEPR_INGESTION_URL` to select bases including their mount
-paths. `pnpm run keepr health --json` checks authenticated readiness on both
+paths. `KEEPR_TIMEOUT_MS` overrides each command's request deadline. `pnpm run keepr health --json` checks authenticated readiness on both
 Workers. External liveness monitors use unauthenticated `/healthz` on each mount.

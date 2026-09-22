@@ -160,7 +160,12 @@ function safeWorkflowReferences(value: unknown): Record<string, unknown> {
     status: safeMachineCode(workflow.status),
     classification: safeMachineCode(workflow.classification),
     last_progress_at: safeReference(workflow.last_progress_at),
-    attempt_count: Array.isArray(workflow.attempts) ? workflow.attempts.length : 0,
+    // The summary lists only current attempts and counts every attempt.
+    attempt_count: Number.isSafeInteger(workflow.attempt_count)
+      ? (workflow.attempt_count as number)
+      : Array.isArray(workflow.attempts)
+        ? workflow.attempts.length
+        : 0,
   };
 }
 

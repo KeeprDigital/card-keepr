@@ -7,13 +7,22 @@ import {
   extendRunRequestCapacity,
   pendingEvidenceHostShardsStatement,
   retryEvidenceRun,
+  showEvidenceRequests,
   showEvidenceRun,
+  showEvidenceSummary,
   startEvidenceRun,
 } from "./source-evidence-repository";
 import type { ObservationSetRow, SnapshotRow } from "./source-evidence-repository-types";
 
 export type { StartEvidenceRunRequest };
-export { extendRunRequestCapacity, retryEvidenceRun, showEvidenceRun, startEvidenceRun };
+export {
+  extendRunRequestCapacity,
+  retryEvidenceRun,
+  showEvidenceRequests,
+  showEvidenceRun,
+  showEvidenceSummary,
+  startEvidenceRun,
+};
 
 /** One next shard per host, with bounded results independent of request count. */
 export async function pendingEvidenceHostShards(database: CatalogueStore, runId: string) {

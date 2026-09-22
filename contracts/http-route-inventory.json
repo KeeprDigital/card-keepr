@@ -1436,6 +1436,32 @@
   },
   {
     "worker": "admin",
+    "family": "source-evidence",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/{run}/evidence/requests",
+    "contract": "generated",
+    "slice": "Sources and collection",
+    "named_cli": "listSourceEvidenceRequests",
+    "callers": [
+      "apps/ingestion/test/runtime-collection-inspection.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/{run}/evidence/summary",
+    "contract": "generated",
+    "slice": "Sources and collection",
+    "named_cli": "showSourceEvidenceSummary",
+    "callers": [
+      "apps/ingestion/test/runtime-collection-inspection.spec.ts",
+      "cli/keepr.mjs"
+    ]
+  },
+  {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "GET",
     "path": "/v1/ingestion-runs/{run}/game-candidates",

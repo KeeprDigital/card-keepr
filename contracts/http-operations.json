@@ -265,6 +265,22 @@
   },
   {
     "worker": "admin",
+    "family": "source-evidence",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/:run/evidence/summary",
+    "slice": "Sources and collection",
+    "cli": "showSourceEvidenceSummary"
+  },
+  {
+    "worker": "admin",
+    "family": "source-evidence",
+    "method": "GET",
+    "path": "/v1/ingestion-runs/:run/evidence/requests",
+    "slice": "Sources and collection",
+    "cli": "listSourceEvidenceRequests"
+  },
+  {
+    "worker": "admin",
     "family": "reconciliation",
     "method": "POST",
     "path": "/v1/reconciliation-operations/:preparation/evidence-cleanup",

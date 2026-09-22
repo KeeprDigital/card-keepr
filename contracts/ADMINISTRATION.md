@@ -777,6 +777,18 @@ observed Workflow status and the same status link. A repeated resume reacquires
 the current attempt; it cannot resume a terminal run. Inspect status to distinguish
 capacity, retry and Workflow pauses, collection completion and later publication.
 
+Status has three views ([#397](https://github.com/KeeprDigital/card-keepr/issues/397)).
+GET `/v1/ingestion-runs/:run/evidence/summary` (`keepr source show`) returns
+`card-keepr-evidence-summary@1`. Its lists are bounded by plans, hosts, closed
+failure vocabularies and fixed detail limits, never by request count. GET
+`/v1/ingestion-runs/:run/evidence/requests` (`--requests`, optional `--after`)
+returns `card-keepr-evidence-requests@1`: one fixed-size page of Source Requests
+in sequence order after an exclusive `after` cursor, until `next_after` is null.
+GET `/v1/ingestion-runs/:run/evidence` (`--full`) keeps the complete status
+document. `source show` defaults to a 60-second deadline; `--timeout-ms` or
+`KEEPR_TIMEOUT_MS` overrides it, and expiry reports `runtime_timeout` with the
+endpoint and elapsed time.
+
 Pause, capacity extension, authority and lifecycle decisions replay their retained
 results. Termination retains its immutable decision and reports current reservation
 release separately in `active_run_released`. Extension leaves the run paused.

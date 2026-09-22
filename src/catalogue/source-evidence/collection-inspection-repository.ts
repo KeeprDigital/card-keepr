@@ -240,6 +240,59 @@ export function recentCollectionAttemptsStatement(
     .bind(input.runId, input.limit);
 }
 
+// Unsuccessful fetch attempts by outcome and failed Source Requests by failure
+// code: bounded by the closed vocabularies, never by the run's size (#397).
+export function collectionFailureGroupsStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare(
+      `SELECT 'attempt' AS kind, outcome AS code, COUNT(*) AS count
+       FROM source_fetch_attempts
+       WHERE ingestion_run_id = ?1 AND outcome NOT IN ${successfulOutcomes}
+       GROUP BY outcome
+       UNION ALL
+       SELECT 'request' AS kind, COALESCE(failure_code, 'unclassified') AS code, COUNT(*) AS count
+       FROM source_requests
+       WHERE ingestion_run_id = ?1 AND state = 'failed'
+       GROUP BY COALESCE(failure_code, 'unclassified')
+       ORDER BY kind, code`,
+    )
+    .bind(runId);
+}
+
+// One keyset page of Source Requests in sequence order, each with its attempt
+// count and latest fetch attempt. Headers and bodies are never selected.
+export function collectionRequestPageStatement(
+  database: CatalogueStore,
+  input: Readonly<{ runId: string; afterSequence: number; limit: number }>,
+): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare(
+      `SELECT requests.sequence_number, requests.request_id, requests.request_role,
+              requests.state, ${hostnameSql} AS hostname, requests.url,
+              requests.discovered_from_request_id, requests.retry_generation,
+              requests.failure_code, requests.source_snapshot_id,
+              (SELECT COUNT(*) FROM source_fetch_attempts AS attempts
+               WHERE attempts.ingestion_run_id = requests.ingestion_run_id
+                 AND attempts.request_id = requests.request_id) AS attempt_count,
+              latest.attempt_number AS latest_attempt_number,
+              latest.outcome AS latest_outcome,
+              latest.http_status AS latest_http_status,
+              latest.completed_at AS latest_completed_at
+       FROM source_requests AS requests
+       LEFT JOIN source_fetch_attempts AS latest
+         ON latest.ingestion_run_id = requests.ingestion_run_id
+        AND latest.request_id = requests.request_id
+        AND latest.attempt_number = (
+          SELECT MAX(newest.attempt_number) FROM source_fetch_attempts AS newest
+          WHERE newest.ingestion_run_id = requests.ingestion_run_id
+            AND newest.request_id = requests.request_id)
+       WHERE requests.ingestion_run_id = ?1 AND requests.sequence_number > ?2
+       ORDER BY requests.sequence_number
+       LIMIT ?3`,
+    )
+    .bind(input.runId, input.afterSequence, input.limit);
+}
+
 const successfulOutcomes = "('success', 'cache_revalidated')";
 
 // Match URL.hostname for normalized, credential-free HTTPS evidence URLs:

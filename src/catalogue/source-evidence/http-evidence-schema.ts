@@ -461,6 +461,96 @@ export const operationalDiagnosticsSchema = z.strictObject({
   retry_available: z.boolean(),
   diagnosis_sequence: z.array(operationLink),
 });
+const sourceCoverageSchema = z.strictObject({
+  ...sourceFields,
+  participation: z.enum(["required", "optional"]).optional(),
+  coverage: coverageSchema.optional(),
+  status: z.enum(["complete", "incomplete"]),
+  attempted_at: timestamp,
+  successful_checked_at: nullableTime,
+  content_captured_at: nullableTime,
+  last_capture_at: nullableTime,
+  planned_requests: count,
+  observed_requests: count,
+  revalidated_requests: count,
+});
+const terminationSchema = z.strictObject({
+  reason: z.literal("ingestion_run_terminated"),
+  pause_reason: identifier,
+  paused_at: timestamp,
+  terminated_at: timestamp,
+});
+// The compact status summary (#397): every list is bounded by plan, host,
+// closed-vocabulary or fixed detail limits, never by the run's request count.
+export const evidenceSummarySchema = z
+  .strictObject({
+    contract: z.literal("card-keepr-evidence-summary@1"),
+    id: identifier,
+    state,
+    selected_games: z.array(identifier),
+    plan_origin: z.enum(["production", "fixture"]),
+    supported_game: identifier.optional(),
+    source_lineage: identifier.optional(),
+    adapter_version: identifier.optional(),
+    game_profile_version: identifier.optional(),
+    source_coverage: z.array(sourceCoverageSchema),
+    idempotency_key: identifier,
+    linked_run_id: nullableReference,
+    expected_current_revision_id: identifier,
+    started_at: timestamp,
+    collection_completed_at: nullableTime,
+    failure_code: nullableReference,
+    pause: pauseSchema.optional(),
+    termination: terminationSchema.optional(),
+    actions,
+    acquisition: acquisitionInspectionSchema.nullable(),
+    collection: collectionSchema,
+    failures: z.strictObject({
+      attempts_by_outcome: z.record(z.string(), count),
+      requests_by_failure_code: z.record(z.string(), count),
+    }),
+    workflow: workflowSchema.extend({
+      attempt_count: count,
+      current_attempt_count: count,
+      attempts_truncated: z.boolean(),
+    }),
+    operational_diagnostics: operationalDiagnosticsSchema,
+  })
+  .openapi("EvidenceSummary");
+export const evidenceRequestsSchema = z
+  .strictObject({
+    contract: z.literal("card-keepr-evidence-requests@1"),
+    ingestion_run_id: identifier,
+    page_size: count,
+    requests: z.array(
+      z.strictObject({
+        sequence_number: count,
+        request_id: identifier,
+        role: identifier,
+        state: identifier,
+        hostname: identifier,
+        url: z.url(),
+        discovered_from_request_id: nullableReference,
+        retry_generation: count,
+        failure_code: nullableReference,
+        source_snapshot_id: nullableReference,
+        attempt_count: count,
+        latest_attempt: z
+          .strictObject({
+            attempt_number: count,
+            outcome: identifier,
+            http_status: z.number().int().nullable(),
+            completed_at: timestamp,
+          })
+          .nullable(),
+      }),
+    ),
+    next_after: z
+      .string()
+      .regex(/^(0|[1-9]\d*)$/)
+      .nullable(),
+  })
+  .openapi("EvidenceRequests");
 export const evidenceStatusSchema = z
   .strictObject({
     acquisition: acquisitionInspectionSchema.nullable(),
@@ -468,21 +558,7 @@ export const evidenceStatusSchema = z
     state,
     selected_games: z.array(identifier),
     evidence_plans: z.array(evidencePlanSchema),
-    source_coverage: z.array(
-      z.strictObject({
-        ...sourceFields,
-        participation: z.enum(["required", "optional"]).optional(),
-        coverage: coverageSchema.optional(),
-        status: z.enum(["complete", "incomplete"]),
-        attempted_at: timestamp,
-        successful_checked_at: nullableTime,
-        content_captured_at: nullableTime,
-        last_capture_at: nullableTime,
-        planned_requests: count,
-        observed_requests: count,
-        revalidated_requests: count,
-      }),
-    ),
+    source_coverage: z.array(sourceCoverageSchema),
     supported_game: identifier.optional(),
     source_lineage: identifier.optional(),
     adapter_version: identifier.optional(),
@@ -511,14 +587,7 @@ export const evidenceStatusSchema = z
     collection_completed_at: nullableTime,
     failure_code: nullableReference,
     pause: pauseSchema.optional(),
-    termination: z
-      .strictObject({
-        reason: z.literal("ingestion_run_terminated"),
-        pause_reason: identifier,
-        paused_at: timestamp,
-        terminated_at: timestamp,
-      })
-      .optional(),
+    termination: terminationSchema.optional(),
     actions,
     curated_revision_ids: z.array(identifier).optional(),
     curated_revision_set_digest: digest.optional(),

@@ -182,7 +182,7 @@ test("retained One Piece: expand the P-001 publication through complete five-Car
     environment,
     worker,
   );
-  const shown = await pacedCli(["source", "show", "--run-id", run.id, "--json"]);
+  const shown = await pacedCli(["source", "show", "--full", "--run-id", run.id, "--json"]);
   assert.equal(shown.code, 0, shown.stdout);
   const evidence = JSON.parse(shown.stdout);
   const proposed = await pacedCli(["entity-proposal", "list", "--game", "one-piece", "--json"]);
@@ -369,7 +369,7 @@ test("retained One Piece: expand the P-001 publication through complete five-Car
     (p) => p.source_lineage === "limitless-one-piece-en" && JSON.parse(p.reference)[1] === "v4",
   );
   assert.ok(winner);
-  const publishedEvidence = await cli(["source", "show", "--run-id", firstRun.id]);
+  const publishedEvidence = await cli(["source", "show", "--full", "--run-id", firstRun.id]);
   const event = publishedEvidence.snapshots.find((s) => s.request.url.includes("store_championship_wave1.php"));
   const trophy = publishedEvidence.snapshots.find((s) => s.request.url.includes("/championship/prize/P-001.png"));
   assert.ok(event && trophy);
@@ -502,7 +502,7 @@ test("retained One Piece: expand the P-001 publication through complete five-Car
     [...printingIds.values(), winnerPrintingId].sort(),
     "new evidence cannot publish unadmitted entities or replace existing P-001 identities",
   );
-  const pilotEvidence = await cli(["source", "show", "--run-id", pilotIntake.run_id]);
+  const pilotEvidence = await cli(["source", "show", "--full", "--run-id", pilotIntake.run_id]);
   assert.equal(pilotEvidence.snapshots.length, 47);
   for (const snapshot of pilotEvidence.snapshots)
     assert.equal(snapshot.content.digest, captures.get(snapshot.request.url).sha256);

@@ -178,7 +178,7 @@ test("Riftbound DB retains unresolved real promos and links the Riot overlap thr
     [...captures.keys()].sort(),
     "One request per distinct image, including the identical Bird duplicate",
   );
-  const retained = await cli(["source", "show", "--run-id", pilot.run.id]);
+  const retained = await cli(["source", "show", "--full", "--run-id", pilot.run.id]);
   assert.equal(retained.snapshots.length, 7);
   for (const snapshot of retained.snapshots)
     assert.equal(snapshot.content.digest, captures.get(snapshot.request.url).digest);

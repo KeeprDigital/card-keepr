@@ -184,7 +184,7 @@ test("retained Riot catalogue: qualified intake, owner corrections, publication 
       { deadlineMs: 600_000 },
     );
   }
-  const shown = await runCli(["source", "show", "--run-id", run.id, "--json"], environment);
+  const shown = await runCli(["source", "show", "--full", "--run-id", run.id, "--json"], environment);
   assert.equal(shown.code, 0, shown.stdout);
   const evidence = JSON.parse(shown.stdout);
   assert.deepEqual(evidence.evidence_plans[0].coverage, {
@@ -868,7 +868,7 @@ test("retained Riot catalogue: qualified intake, owner corrections, publication 
   assert.equal(monkCard.id, admittedCards.get("Kinkou Monk"));
   assert.match(monkCard.effective_rules_text, /buff up to two/);
   assert.ok(monkCard.printing_ids.includes(admittedPrintings.get("ogn-141-298")));
-  const freshEvidence = await cli(["source", "show", "--run-id", fresh.id]);
+  const freshEvidence = await cli(["source", "show", "--full", "--run-id", fresh.id]);
   assert.deepEqual(freshEvidence.evidence_plans[0].coverage, {
     locale: "en",
     area: "errata",
@@ -877,7 +877,7 @@ test("retained Riot catalogue: qualified intake, owner corrections, publication 
   assert.equal(freshEvidence.snapshots.length, 1);
   assert.equal(freshEvidence.snapshots[0].content.digest, errataCapture.sha256);
   assert.ok(!evidence.snapshots.some((s) => s.id === freshEvidence.snapshots[0].id));
-  const restoredEvidence = await cli(["source", "show", "--run-id", run.id]);
+  const restoredEvidence = await cli(["source", "show", "--full", "--run-id", run.id]);
   const measuredEvidence = process.env.KEEPR_RIFTBOUND_METRICS_PATH
     ? await onePieceEvidenceMetrics(
         await persistedDatabaseDirectory(statePath),
@@ -990,7 +990,7 @@ test("retained Riot catalogue: qualified intake, owner corrections, publication 
     assert.equal(validation.code, 0, validation.stdout + validation.stderr);
     assert.equal(JSON.parse(validation.stdout).valid, true);
   }
-  const shownAfterRestore = await runCli(["source", "show", "--run-id", run.id, "--json"], {
+  const shownAfterRestore = await runCli(["source", "show", "--full", "--run-id", run.id, "--json"], {
     ...environment,
     KEEPR_INGESTION_URL: restoredAdmin.url,
   });
@@ -998,7 +998,7 @@ test("retained Riot catalogue: qualified intake, owner corrections, publication 
   const evidenceAfterRestore = JSON.parse(shownAfterRestore.stdout);
   assert.deepEqual(evidenceAfterRestore.snapshots, restoredEvidence.snapshots);
   assert.deepEqual(evidenceAfterRestore.observation_sets, restoredEvidence.observation_sets);
-  const freshAfterRestore = await runCli(["source", "show", "--run-id", fresh.id, "--json"], {
+  const freshAfterRestore = await runCli(["source", "show", "--full", "--run-id", fresh.id, "--json"], {
     ...environment,
     KEEPR_INGESTION_URL: restoredAdmin.url,
   });

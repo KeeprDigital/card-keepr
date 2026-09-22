@@ -17,7 +17,7 @@ import { selectEnvironment } from "./environment.mjs";
 import { runDocumentationCommand } from "./documentation.mjs";
 import { runIdentityCorrectionCommand } from "./identity-corrections.mjs";
 import { request as httpRequest } from "./lib/http-client.mjs";
-import { requestDocument } from "./lib/json-client.mjs";
+import { requestDocument, requestTimeout } from "./lib/json-client.mjs";
 import { runProductionReleaseCommand } from "./production-release.mjs";
 import { runReleaseRunCommand } from "./release-run.mjs";
 import { runStagingReleaseCommand, runStagingReleaseStatusCommand } from "./staging-release.mjs";
@@ -294,6 +294,13 @@ const commandRoutes = {
   showSourceEvidence: {
     path: "/v1/ingestion-runs/{run-id}/evidence",
   },
+  showSourceEvidenceSummary: {
+    path: "/v1/ingestion-runs/{run-id}/evidence/summary",
+  },
+  listSourceEvidenceRequests: {
+    path: "/v1/ingestion-runs/{run-id}/evidence/requests?after={after}",
+    optional: ["after"],
+  },
   resumeEvidenceCollection: {
     path: "/v1/ingestion-runs/{run-id}/collection/resume",
     fields: {},
@@ -334,7 +341,36 @@ const commandRoutes = {
     },
   },
 };
-async function routeCommand(name, arguments_, environment, json) {
+
+// Status reads of a production-sized run can exceed the ordinary deadline.
+const sourceShowTimeoutMilliseconds = 60_000;
+
+// `source show` reads the compact summary by default (#397); `--requests`
+// pages per-request detail with `--after`, and `--full` keeps the complete
+// status document for callers that need retained plans and evidence lists.
+async function showSource(arguments_, environment, json) {
+  const mode = { "--requests": "listSourceEvidenceRequests", "--full": "showSourceEvidence" };
+  const selected = arguments_.filter((option) => option in mode);
+  const timeoutIndex = arguments_.indexOf("--timeout-ms");
+  if (selected.length > 1 || (timeoutIndex !== -1 && arguments_.lastIndexOf("--timeout-ms") !== timeoutIndex))
+    return usageFailure(json);
+  const timeoutMs = requestTimeout(
+    environment,
+    timeoutIndex === -1 ? undefined : (arguments_[timeoutIndex + 1] ?? ""),
+    sourceShowTimeoutMilliseconds,
+  );
+  if (timeoutMs === null)
+    return writeFailure(
+      json,
+      { code: "invalid_parameter", detail: "--timeout-ms and KEEPR_TIMEOUT_MS must be positive integer milliseconds." },
+      2,
+    );
+  const timeoutPositions = timeoutIndex === -1 ? [] : [timeoutIndex, timeoutIndex + 1];
+  const rest = arguments_.filter((option, index) => !(option in mode) && !timeoutPositions.includes(index));
+  return routeCommand(mode[selected[0]] ?? "showSourceEvidenceSummary", rest, environment, json, { timeoutMs });
+}
+
+async function routeCommand(name, arguments_, environment, json, { timeoutMs } = {}) {
   const definition = commandRoutes[name];
   const routeFields = [...definition.path.matchAll(/\{([^}]+)\}/g)].map((match) => match[1]);
   const fields = [
@@ -424,6 +460,7 @@ async function routeCommand(name, arguments_, environment, json) {
     pathname,
     definition.fields === undefined ? "GET" : "POST",
     Object.keys(body ?? {}).length === 0 ? undefined : body,
+    timeoutMs,
   );
 }
 
@@ -500,7 +537,7 @@ const commands = {
   "source set-lifecycle": (args, env, json) => routeCommand("decideSourceLifecycle", args, env, json),
   "source authorities": (args, env, json) => routeCommand("sourceAuthorities", args, env, json),
   "source designate": (args, env, json) => routeCommand("selectSourceAuthority", args, env, json),
-  "source show": (args, env, json) => routeCommand("showSourceEvidence", args, env, json),
+  "source show": showSource,
   "source pause": (args, env, json) => routeCommand("pauseEvidenceCollection", args, env, json),
   "source resume": (args, env, json) => routeCommand("resumeEvidenceCollection", args, env, json),
   "source terminate": (args, env, json) => routeCommand("terminateEvidenceCollection", args, env, json),
@@ -1038,8 +1075,8 @@ async function extendSourceCapacity(arguments_, environment, json) {
 // Ingestion Run: it is idempotent under its key and releases the single
 // active-run reservation while retaining every evidence object.
 
-async function administrationRequest(environment, json, pathname, method, body) {
-  const observed = await fetchAdministrationDocument(environment, pathname, method, body, true);
+async function administrationRequest(environment, json, pathname, method, body, timeoutMs) {
+  const observed = await fetchAdministrationDocument(environment, pathname, method, body, true, timeoutMs);
   if (observed.error !== null) {
     return writeFailure(json, observed.error, observed.exitCode);
   }
@@ -1052,8 +1089,13 @@ async function administrationRequest(environment, json, pathname, method, body) 
   return observed.presentation?.exit_code ?? (observed.responseStatus === 202 ? 10 : 0);
 }
 
-function fetchAdministrationDocument(environment, pathname, method = "GET", body, present = false) {
-  return requestDocument(environment, pathname, { method, body, present });
+function fetchAdministrationDocument(environment, pathname, method = "GET", body, present = false, timeoutMs) {
+  return requestDocument(environment, pathname, {
+    method,
+    body,
+    present,
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+  });
 }
 
 function resolveProductionStatus(environment, json, expectedCurrentRevision) {

@@ -1596,11 +1596,11 @@ test("a capacity-paused Ingestion Run reports its pause facts through source sho
     KEEPR_ADMINISTRATION_KEY: "cli-test-key",
   };
 
-  const shownJson = await runCli(["source", "show", "--run-id", "run_paused_cli", "--json"], environment);
+  const shownJson = await runCli(["source", "show", "--full", "--run-id", "run_paused_cli", "--json"], environment);
   assert.equal(shownJson.code, 0, shownJson.stderr);
   assert.deepEqual(JSON.parse(shownJson.stdout), pausedEvidence);
 
-  const shown = await runCli(["source", "show", "--run-id", "run_paused_cli"], environment);
+  const shown = await runCli(["source", "show", "--full", "--run-id", "run_paused_cli"], environment);
   assert.equal(shown.code, 0, shown.stderr);
   assert.match(shown.stdout, /Ingestion Run run_paused_cli evidence: paused/);
   assert.match(shown.stdout, /Paused: source_request_capacity_exhausted at 2026-08-30T00:00:00.000Z/);
@@ -1662,11 +1662,14 @@ test("a retry-paused Ingestion Run reports its pause facts through source show",
     KEEPR_ADMINISTRATION_KEY: "cli-test-key",
   };
 
-  const shownJson = await runCli(["source", "show", "--run-id", "run_retry_paused_cli", "--json"], environment);
+  const shownJson = await runCli(
+    ["source", "show", "--full", "--run-id", "run_retry_paused_cli", "--json"],
+    environment,
+  );
   assert.equal(shownJson.code, 0, shownJson.stderr);
   assert.deepEqual(JSON.parse(shownJson.stdout), pausedEvidence);
 
-  const shown = await runCli(["source", "show", "--run-id", "run_retry_paused_cli"], environment);
+  const shown = await runCli(["source", "show", "--full", "--run-id", "run_retry_paused_cli"], environment);
   assert.equal(shown.code, 0, shown.stderr);
   assert.match(shown.stdout, /Ingestion Run run_retry_paused_cli evidence: paused/);
   assert.match(shown.stdout, /Paused: source_transport_retries_exhausted at 2026-08-31T00:00:00.000Z/);
@@ -1745,11 +1748,14 @@ test("a workflow-paused Ingestion Run reports its recovery facts through source 
     KEEPR_ADMINISTRATION_KEY: "cli-test-key",
   };
 
-  const shownJson = await runCli(["source", "show", "--run-id", "run_workflow_paused_cli", "--json"], environment);
+  const shownJson = await runCli(
+    ["source", "show", "--full", "--run-id", "run_workflow_paused_cli", "--json"],
+    environment,
+  );
   assert.equal(shownJson.code, 0, shownJson.stderr);
   assert.deepEqual(JSON.parse(shownJson.stdout), pausedEvidence);
 
-  const shown = await runCli(["source", "show", "--run-id", "run_workflow_paused_cli"], environment);
+  const shown = await runCli(["source", "show", "--full", "--run-id", "run_workflow_paused_cli"], environment);
   assert.equal(shown.code, 0, shown.stderr);
   assert.match(shown.stdout, /Ingestion Run run_workflow_paused_cli evidence: paused/);
   assert.match(shown.stdout, /Paused: source_workflow_stalled at 2026-09-01T00:00:00.000Z/);
@@ -2017,10 +2023,10 @@ test("source terminate performs the idempotent termination mutation", async (t) 
 
   // Inspection of the terminated run reports the owner decision and no
   // longer advertises resume or capacity extension.
-  const shownJson = await runCli(["source", "show", "--run-id", "run_paused_cli", "--json"], environment);
+  const shownJson = await runCli(["source", "show", "--full", "--run-id", "run_paused_cli", "--json"], environment);
   assert.equal(shownJson.code, 0, shownJson.stderr);
   assert.deepEqual(JSON.parse(shownJson.stdout), terminatedEvidence);
-  const shown = await runCli(["source", "show", "--run-id", "run_paused_cli"], environment);
+  const shown = await runCli(["source", "show", "--full", "--run-id", "run_paused_cli"], environment);
   assert.equal(shown.code, 0, shown.stderr);
   assert.match(shown.stdout, /Ingestion Run run_paused_cli evidence: failed/);
   assert.match(
@@ -2362,11 +2368,11 @@ test("source show renders aggregated collection progress in human-readable form"
     KEEPR_ADMINISTRATION_KEY: "cli-test-key",
   };
 
-  const shownJson = await runCli(["source", "show", "--run-id", "run_progress_cli", "--json"], environment);
+  const shownJson = await runCli(["source", "show", "--full", "--run-id", "run_progress_cli", "--json"], environment);
   assert.equal(shownJson.code, 0, shownJson.stderr);
   assert.deepEqual(JSON.parse(shownJson.stdout), evidence);
 
-  const shown = await runCli(["source", "show", "--run-id", "run_progress_cli"], environment);
+  const shown = await runCli(["source", "show", "--full", "--run-id", "run_progress_cli"], environment);
   assert.equal(shown.code, 0, shown.stderr);
   const out = shown.stdout;
   assert.match(out, /Ingestion Run run_progress_cli evidence: collecting/);
