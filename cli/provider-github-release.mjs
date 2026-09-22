@@ -58,3 +58,36 @@ async function dispatchWorkflow(credential, inputs, workflowId, apiUrl) {
   }
   return response.status === 204;
 }
+
+/**
+ * Read-only Actions calls for `release run`. The dispatch token's Actions: write
+ * grant includes Actions: read; nothing here reads contents or checks.
+ * @returns {Promise<any>} the parsed JSON document; throws a message without the credential on failure
+ */
+export async function readGithub({ credential, path, apiUrl = githubApi }) {
+  let response;
+  try {
+    response = await httpRequest(`${apiUrl}${path.replace("{repository}", repository)}`, {
+      headers: {
+        accept: "application/vnd.github+json",
+        authorization: `Bearer ${credential}`,
+        "x-github-api-version": "2022-11-28",
+      },
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    throw new Error(`GitHub is unavailable for ${path.split("?")[0]}`);
+  }
+  if (!response.ok) throw new Error(`GitHub returned HTTP ${response.status} for ${path.split("?")[0]}`);
+  return response.json();
+}
+
+export const githubPaths = {
+  workflowRuns: (workflow, query) =>
+    `/repos/{repository}/actions/workflows/${encodeURIComponent(workflow)}/runs?${new URLSearchParams(query)}`,
+  run: (id) => `/repos/{repository}/actions/runs/${encodeURIComponent(id)}`,
+  jobs: (id) => `/repos/{repository}/actions/runs/${encodeURIComponent(id)}/jobs?per_page=100`,
+  user: () => "/user",
+};
+
+export const githubRunUrl = (id) => `https://github.com/${repository}/actions/runs/${id}`;
