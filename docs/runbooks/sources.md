@@ -24,6 +24,23 @@ verified retained body bytes and unresolved maximum-body reservations; it is
 not wire traffic, all account storage or a financial limit. The deadline stops
 new admission and does not cancel a call whose authority already escaped.
 
+A refresh is incremental. Pages and roots with a retained ETag/Last-Modified
+send a conditional request; a `304` is a counted dispatch charging zero bytes and
+reuses the retained bytes. A Printing Image whose exact URL already has retained
+bytes from an earlier run is skipped with no dispatch and no bytes; its attempt
+records `source_image_unchanged_skipped`. `source show` counts both
+(`revalidated_attempt_count`, `skipped_request_count`). A replaced image at an
+unchanged URL is not detected until its URL changes.
+
+Pacing adapts per host within the bounds each Source Adapter registration
+records (`hostPacing`). `source show` lists every host the run touched under
+`collection.pacing.limits` (kind, floor/ceiling, maximum and current
+interval/concurrency, backoff and recovery counts) and the newest receipts
+under `collection.pacing.events`. Repeated `rate_limited`, `unavailable` or
+`latency` backoffs mean the source is struggling: let the run continue at the
+slower pace or pause it; do not lower registration bounds to push through.
+`SOURCE_HOST_PACING_INTERVAL_MS` only sets the floor for undeclared hosts.
+
 Collection creation acknowledges the retained plan; resume dispatches its work.
 Inspect `source show` for current progress and completion. Exact creation retries
 return the original acceptance, even after the run advances.

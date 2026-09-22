@@ -1,15 +1,16 @@
 import type { CatalogueStore } from "../shared";
+import { HostPacer } from "./host-pacer";
+import { type HostPacingSignal, resolveHostPacingPolicy } from "./host-pacing";
 import {
-  advanceHostPacing,
   type CaptureTransportResult,
   capturePreparedAttempt,
   completeUploadedCapture,
-  hostPacingDelay,
   parseCapturedRequest,
   prepareCaptureAttempt,
+  skipUnchangedImageCapture,
   type SourceHostPacingMode,
 } from "./source-evidence-capture";
-import type { CollectionWorkflowAttempt } from "./source-evidence-model";
+import { type CollectionWorkflowAttempt, parseEvidencePlans } from "./source-evidence-model";
 import {
   type EvidenceRequestRow,
   isCurrentCollectionWorkflowAttempt,
@@ -44,9 +45,12 @@ import {
 // under the same attempt number. The fetch is the one non-idempotent action
 // and it is fenced by the operation row exactly as when it had its own step.
 //
-// Pacing: the next request's deadline is persisted the moment the previous
-// fetch completes (`advanceHostPacing`) and the wait runs in-process against
-// that persisted deadline, so a replay honours the same politeness floor.
+// Pacing (#389): the host's adaptive state (interval, concurrency, streak,
+// next-request deadline) is persisted the moment each fetch completes
+// (`HostPacer.completed`) and the wait runs in-process against that persisted
+// deadline, so a replay or replacement shard honours the same politeness
+// floor. A page host settles each request before the next; an asset host
+// keeps up to its current concurrency in flight within the batch.
 // The previous request's commit and parse run meanwhile in a serial
 // persistence chain that overlaps the wait; the batch step settles only
 // after the chain does, and a chain failure fails the step for replay.
@@ -112,24 +116,44 @@ export async function collectSourceRequestBatch(input: SourceRequestBatchInput):
       persistenceFailure ??= { error };
     });
   };
-  let processed = 0;
-  let halt: SourceRequestBatchHalt | null = null;
+  // Requests settle out of order when an asset host keeps several in flight;
+  // `processed` is the settled prefix, and a halt records the earliest index
+  // it affects. Every later request that already settled replays cheaply.
+  const settled = input.requests.map(() => false);
+  let halt: { index: number; value: SourceRequestBatchHalt } | null = null;
+  const haltAt = (index: number, value: SourceRequestBatchHalt): void => {
+    if (halt === null || index < halt.index) halt = { index, value };
+  };
+  const inFlight = new Set<Promise<void>>();
+  let taskFailure: { error: unknown } | null = null;
   let loopFailure: { error: unknown } | null = null;
   try {
-    for (const request of input.requests) {
-      if (persistenceFailure !== null) break;
-      if (processed > 0 && Date.now() - startedAt > timeBudget) {
-        halt = { kind: "time_budget" };
+    const pacer = await HostPacer.load(
+      input.database,
+      input.runId,
+      resolveHostPacingPolicy(
+        input.hostname,
+        parseEvidencePlans((await requiredEvidenceRun(input.database, input.runId)).request_plan_json).map(
+          (plan) => plan.adapter_version,
+        ),
+        input.pacingIntervalMilliseconds,
+      ),
+      input.pacingMode,
+    );
+    for (const [index, request] of input.requests.entries()) {
+      if (persistenceFailure !== null || taskFailure !== null || halt !== null) break;
+      if (index > 0 && Date.now() - startedAt > timeBudget) {
+        haltAt(index, { kind: "time_budget" });
         break;
       }
       const run = await requiredEvidenceRun(input.database, input.runId);
       if (run.state !== "collecting" || !(await ownsCollectionAttempt(input))) {
-        halt = { kind: "run_not_collecting" };
+        haltAt(index, { kind: "run_not_collecting" });
         break;
       }
       const prepared = await prepareCaptureAttempt(input.database, run, request);
       if (prepared.kind === "done") {
-        processed += 1;
+        settled[index] = true;
         continue;
       }
       if (prepared.kind === "captured") {
@@ -141,10 +165,23 @@ export async function collectSourceRequestBatch(input: SourceRequestBatchInput):
             request_made: false,
           }),
         );
-        processed += 1;
+        settled[index] = true;
         continue;
       }
-      const pacingDelay = await hostPacingDelay(input.database, input.hostname, input.pacingMode);
+      // An unchanged Printing Image reuses its retained bytes without a
+      // dispatch, so it neither waits for nor advances host pacing.
+      const skipped = await skipUnchangedImageCapture(input.database, run, request, prepared);
+      if (skipped !== null) {
+        const attemptId = prepared.attempt_id;
+        enqueuePersistence(() =>
+          persistCapturedRequest(input, request, { kind: "uploaded", attempt_id: attemptId, request_made: false }),
+        );
+        settled[index] = true;
+        continue;
+      }
+      while (inFlight.size >= pacer.concurrency) await Promise.race(inFlight);
+      if (taskFailure !== null || halt !== null) break;
+      const pacingDelay = pacer.startDelay();
       if (pacingDelay > 0) await wait(pacingDelay);
       // A pacing wait can span pause and resume; never reuse its earlier
       // state/identity observation to admit the next Official Source fetch.
@@ -152,48 +189,60 @@ export async function collectSourceRequestBatch(input: SourceRequestBatchInput):
         !(await ownsCollectionAttempt(input)) ||
         (await requiredEvidenceRun(input.database, input.runId)).state !== "collecting"
       ) {
-        halt = { kind: "run_not_collecting" };
+        haltAt(index, { kind: "run_not_collecting" });
         break;
       }
-      const result = await capturePreparedAttempt(
-        input.database,
-        input.evidenceObjects,
-        input.officialSourceTransport,
-        run,
-        request,
-        prepared,
-        input.workflowAttempt,
-      );
-      if (result.request_made) {
-        // Persisted before anything else so a replay after a crash here
-        // still waits the full interval from this fetch.
-        await advanceHostPacing(input.database, input.hostname, input.pacingMode, input.pacingIntervalMilliseconds);
-      }
-      if (result.kind === "wait") {
-        halt = {
-          kind: "retry_wait",
-          request_id: request.request_id,
-          wait_ms: result.wait_ms,
-        };
-        break;
-      }
-      if (result.kind === "done") {
-        processed += 1;
-        continue;
-      }
-      enqueuePersistence(() => persistCapturedRequest(input, request, result));
-      processed += 1;
+      pacer.started();
+      const task = (async () => {
+        let signal: HostPacingSignal | null = null;
+        const result = await capturePreparedAttempt(
+          input.database,
+          input.evidenceObjects,
+          input.officialSourceTransport,
+          run,
+          request,
+          prepared,
+          input.workflowAttempt,
+          (observed) => {
+            signal = observed;
+          },
+        );
+        if (result.request_made) {
+          // Persisted before anything else so a replay after a crash here
+          // still honours the adapted interval and deadline.
+          await pacer.completed(signal, { requestId: request.request_id, attemptId: prepared.attempt_id });
+        }
+        if (result.kind === "wait") {
+          haltAt(index, { kind: "retry_wait", request_id: request.request_id, wait_ms: result.wait_ms });
+          return;
+        }
+        if (result.kind !== "done") enqueuePersistence(() => persistCapturedRequest(input, request, result));
+        settled[index] = true;
+      })();
+      const tracked: Promise<void> = task
+        .catch((error: unknown) => {
+          taskFailure ??= { error };
+        })
+        .finally(() => inFlight.delete(tracked));
+      inFlight.add(tracked);
+      // A sequential host settles each request before admitting the next.
+      if (pacer.concurrency === 1) await tracked;
     }
   } catch (error) {
     loopFailure = { error };
   }
+  await Promise.all(inFlight);
   try {
     await persistence;
   } catch (error) {
-    if (loopFailure === null) throw error;
+    if (loopFailure === null && taskFailure === null) throw error;
   }
   if (loopFailure !== null) throw loopFailure.error;
-  return { processed, halt };
+  if (taskFailure !== null) throw (taskFailure as { error: unknown }).error;
+  const unsettled = settled.indexOf(false);
+  const processed = unsettled === -1 ? settled.length : unsettled;
+  const finalHalt = halt as { index: number; value: SourceRequestBatchHalt } | null;
+  return { processed, halt: finalHalt !== null && finalHalt.index <= processed ? finalHalt.value : null };
 }
 
 // Commit an uploaded capture and parse the captured Source Snapshot. Each

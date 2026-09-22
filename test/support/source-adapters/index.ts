@@ -134,6 +134,17 @@ export const syntheticAdapterRegistrations: readonly SourceAdapterRegistration[]
         supportedGame: "one-piece",
         gameProfileVersion: "one-piece@1",
         parserContract: "synthetic-fixture-card-document@2",
+        // One synthetic static asset host exercises bounded concurrency (#389).
+        hostPacing: [
+          {
+            hostname: "asset-pacing-official-source.invalid",
+            kind: "asset" as const,
+            floorMs: 0,
+            ceilingMs: 1_000,
+            maximumConcurrency: 4,
+            evidence: "Synthetic test asset host.",
+          },
+        ],
       },
       {
         adapterVersion: "fixture-one-piece-json-capped@1",

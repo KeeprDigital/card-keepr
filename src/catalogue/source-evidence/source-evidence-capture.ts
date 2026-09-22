@@ -23,7 +23,6 @@ import { requiredSourceAdapter, sourceAdapterForCoverage } from "../adapters";
 import { AdministrationProblem, type CatalogueStore, canonicalJson, sha256, utf8 } from "../shared";
 import { type AttemptOutcome, attemptStatement, sourceSnapshotStatement } from "./evidence-repository";
 import {
-  advanceHostPacingStatement,
   capturedSnapshotStatement,
   capturedSourceRequestStatement,
   captureOperationStatement,
@@ -31,7 +30,6 @@ import {
   failedCaptureTransportStatement,
   failedSourceRequestStatement,
   finalizeCaptureStatement,
-  hostPacingStatement,
   latestAttemptNumberStatement,
   latestCaptureOperationStatement,
   latestTransportAttemptStatement,
@@ -42,7 +40,9 @@ import {
   remainingLineageRequestsStatement,
   reusableSnapshotsStatement,
   revalidatedCaptureStatement,
+  skippedCaptureStatement,
   sourceRequestStatement,
+  unchangedImageSnapshotsStatement,
   uploadedCaptureContentStatement,
   unsettledAcquisitionUploads,
 } from "./source-capture-repository";
@@ -59,6 +59,7 @@ import {
   type SourceRequestFailureClass,
   terminalHttpFailureClass,
   transportPolicyForRole,
+  unchangedImageSkipDiagnostic,
 } from "./source-evidence-model";
 import { parseSnapshotBatch } from "./source-evidence-parsing";
 import { sourceParseAuthorityGuard, type SourceParseAuthority } from "./source-parse-authority-repository";
@@ -79,9 +80,12 @@ import {
   retryExhaustionPauseStatements,
 } from "./source-evidence-repository";
 import type { SnapshotRow } from "./source-evidence-repository-types";
+import type { SourceHostPacingMode } from "./host-pacer";
+import type { HostPacingSignal } from "./host-pacing";
 
 const multipartPartBytes = 5 * 1024 * 1024;
 const representedRequestHeaders = new Set(["accept", "accept-language", "user-agent"]);
+const implicitRequestHeaders = new Set(["accept-encoding"]);
 
 type CaptureOperationRow = {
   attempt_id: string;
@@ -158,7 +162,7 @@ export async function captureOperationIdentity(
   };
 }
 
-export type SourceHostPacingMode = "production" | "immediate";
+export type { SourceHostPacingMode };
 
 // Test-only pacing override. Production deployments pin the variable to
 // "production" (also the default when unset); test harnesses may opt in to
@@ -172,8 +176,9 @@ export function sourceHostPacingMode(value: string | undefined): SourceHostPacin
 
 export { defaultSourceHostPacingIntervalMilliseconds };
 
-// Transport-layer Retry-After and 429/5xx backoff remain the safety net if a
-// host rejects this cadence; the interval only sets the polite steady state.
+// The deployment interval is the floor of the default sequential page policy
+// for hosts no Source Adapter Version declares (#389); declared hosts use their
+// registration bounds. Retry-After and 429/5xx retries remain per request.
 export function sourceHostPacingIntervalMilliseconds(value: string | undefined): number {
   if (value === undefined) return defaultSourceHostPacingIntervalMilliseconds;
   if (/^(?:0|[1-9]\d*)$/u.test(value)) {
@@ -183,29 +188,6 @@ export function sourceHostPacingIntervalMilliseconds(value: string | undefined):
   throw new Error(
     `SOURCE_HOST_PACING_INTERVAL_MS must be an integer between 0 and 60000, got ${JSON.stringify(value)}.`,
   );
-}
-
-export async function hostPacingDelay(
-  database: CatalogueStore,
-  hostname: string,
-  mode: SourceHostPacingMode = "production",
-): Promise<number> {
-  if (mode === "immediate") return 0;
-  const row = await hostPacingStatement(database, hostname).first<{ next_request_not_before: string }>();
-  if (row === null) return 0;
-  return Math.max(0, Date.parse(row.next_request_not_before) - Date.now());
-}
-
-export async function advanceHostPacing(
-  database: CatalogueStore,
-  hostname: string,
-  mode: SourceHostPacingMode = "production",
-  intervalMilliseconds: number = defaultSourceHostPacingIntervalMilliseconds,
-): Promise<void> {
-  const next = new Date(
-    Date.now() + (mode === "immediate" ? 0 : intervalMilliseconds + jitter(Math.floor(intervalMilliseconds / 4))),
-  ).toISOString();
-  await advanceHostPacingStatement(database, { hostname: hostname, nextRequestAt: next }).run();
 }
 
 // Only a collecting run admits capture or parse work. A paused run keeps its
@@ -308,6 +290,9 @@ export async function capturePreparedAttempt(
   sourceRequest: EvidenceRequestRow,
   prepared: Extract<PreparedCaptureAttempt, { kind: "attempt" }>,
   workflowAttempt?: CollectionWorkflowAttempt,
+  // Receives the physical request's transport signal (status, time to
+  // headers, Retry-After, or transport failure) for adaptive host pacing.
+  observe?: (signal: HostPacingSignal) => void,
 ): Promise<CaptureTransportResult> {
   if (!admitsCollectionWork(run)) {
     return { kind: "done", failure_code: null, request_made: false };
@@ -408,6 +393,7 @@ export async function capturePreparedAttempt(
   if (dispatchId === null) return { kind: "done", failure_code: null, request_made: false };
   let networkError: string | null = null;
   let fetchFailureOutcome: "network_failure" | "body_failure" = "network_failure";
+  const dispatchedAt = Date.now();
   try {
     response = await officialSourceTransport.fetch(request.url, {
       method: "GET",
@@ -420,6 +406,21 @@ export async function capturePreparedAttempt(
     if (/content-length|body|stream/i.test(networkError)) {
       fetchFailureOutcome = "body_failure";
     }
+    if (fetchFailureOutcome === "network_failure") {
+      observe?.({
+        kind: "transport_failure",
+        reason: isTimeout(error) ? "timeout" : "connection",
+        latency_ms: Date.now() - dispatchedAt,
+      });
+    }
+  }
+  if (response !== null) {
+    observe?.({
+      kind: "response",
+      status: response.status,
+      latency_ms: Date.now() - dispatchedAt,
+      retry_after_ms: response.ok ? null : parseRetryAfter(response.headers.get("retry-after"), Date.now()),
+    });
   }
   const completedAt = new Date().toISOString();
   if (response === null) {
@@ -653,6 +654,9 @@ export async function completeUploadedCapture(
     throw new Error("Revalidated Source Snapshot bytes are unavailable");
   }
   const contentObjectKey = reusedSnapshot?.content_object_key ?? operation.content_object_key;
+  // A skipped unchanged image made no request: its attempt carries no HTTP
+  // status or headers, and its snapshot keeps the reused observation's time.
+  const skipped = reusedSnapshot !== null && operation.diagnostic === unchangedImageSkipDiagnostic;
   await database.batch([
     attemptStatement(database, {
       id: operation.attempt_id,
@@ -662,10 +666,10 @@ export async function completeUploadedCapture(
       requestedAt: operation.requested_at,
       completedAt: operation.completed_at,
       outcome,
-      status: operation.http_status,
-      headers: parseStringRecord(operation.response_headers_json),
+      status: skipped ? null : operation.http_status,
+      headers: skipped ? {} : parseStringRecord(operation.response_headers_json),
       retryAfterMs: null,
-      diagnostic: null,
+      diagnostic: skipped ? unchangedImageSkipDiagnostic : null,
     }),
     capturedSnapshotStatement(database, {
       snapshotId: operation.source_snapshot_id,
@@ -676,7 +680,7 @@ export async function completeUploadedCapture(
       requestHeadersJson: operation.request_headers_json,
       representationFingerprint: sourceRequest.representation_fingerprint,
       responseVaryJson: operation.response_vary_json,
-      retrievedAt: operation.completed_at,
+      retrievedAt: skipped ? reusedSnapshot.retrieved_at : operation.completed_at,
       status: operation.http_status,
       responseHeadersJson: operation.response_headers_json,
       mediaType: operation.media_type,
@@ -1416,16 +1420,66 @@ async function findReusableSnapshot(
     adapterVersion: evidencePlan.adapter_version,
     representationFingerprint: request.representation_fingerprint,
   }).all<SnapshotRow>();
-  return (
-    priorSnapshots.results.find((snapshot) => {
-      const vary: unknown = JSON.parse(snapshot.response_vary_json);
-      return (
-        Array.isArray(vary) &&
-        !vary.includes("*") &&
-        vary.every((name) => typeof name === "string" && representedRequestHeaders.has(name))
-      );
-    }) ?? null
+  return priorSnapshots.results.find((snapshot) => varySatisfied(snapshot, request)) ?? null;
+}
+
+/** Incremental refresh (#389): a Printing Image request whose exact URL,
+ * adapter version and represented headers already have retained bytes from an
+ * earlier run reuses them as a no-change observation. No dispatch is reserved
+ * and no Official Source request is made, so it charges neither a dispatch nor
+ * bytes; the finalized attempt carries `unchangedImageSkipDiagnostic` so the
+ * skip is explicit in the run's receipts. Returns null when the request must
+ * be fetched. */
+export async function skipUnchangedImageCapture(
+  database: CatalogueStore,
+  run: IngestionEvidenceRow,
+  sourceRequest: EvidenceRequestRow,
+  prepared: Extract<PreparedCaptureAttempt, { kind: "attempt" }>,
+): Promise<CaptureTransportResult | null> {
+  if (sourceRequest.request_role !== "image" || !admitsCollectionWork(run)) return null;
+  const operation = await requiredCaptureOperation(database, prepared.attempt_id);
+  if (operation.state !== "planned" || operation.attempt_number !== 1) return null;
+  const evidencePlan = evidencePlanForRequest(run, sourceRequest.request_id);
+  const candidates = await unchangedImageSnapshotsStatement(database, {
+    runId: run.id,
+    sourceLineage: evidencePlan.source_lineage,
+    requestUrl: sourceRequest.url,
+    adapterVersion: evidencePlan.adapter_version,
+    representationFingerprint: sourceRequest.representation_fingerprint,
+  }).all<SnapshotRow>();
+  const prior = candidates.results.find((snapshot) => varySatisfied(snapshot, sourceRequest));
+  if (prior === undefined) return null;
+  const updated = await skippedCaptureStatement(database, {
+    completedAt: new Date().toISOString(),
+    diagnostic: unchangedImageSkipDiagnostic,
+    reusedSnapshotId: prior.id,
+    attemptId: operation.attempt_id,
+  }).run();
+  if (updated.meta.changes !== 1) return null;
+  return { kind: "uploaded", attempt_id: operation.attempt_id, request_made: false };
+}
+
+// Retained bytes may stand for this request only when every header the
+// response varied on selects the same representation: a represented header is
+// bound by the fingerprint, and any other header must be absent from both the
+// retained and the current request (for example a CDN's CORS `Vary: Origin`
+// for requests that never send Origin). Accept-Encoding is added implicitly by
+// the runtime and is never treated as absent.
+function varySatisfied(snapshot: SnapshotRow, request: EvidenceRequestRow): boolean {
+  const vary: unknown = JSON.parse(snapshot.response_vary_json);
+  if (!Array.isArray(vary) || vary.includes("*")) return false;
+  const retained = lowerCaseKeys(parseStringRecord(snapshot.request_headers_json));
+  const current = lowerCaseKeys(parseStringRecord(request.request_headers_json));
+  return vary.every(
+    (name) =>
+      typeof name === "string" &&
+      (representedRequestHeaders.has(name) ||
+        (!implicitRequestHeaders.has(name) && retained[name] === undefined && current[name] === undefined)),
   );
+}
+
+function lowerCaseKeys(headers: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(headers).map(([name, value]) => [name.toLowerCase(), value]));
 }
 
 function revalidationHeaders(snapshot: SnapshotRow): Record<string, string> {
@@ -1471,6 +1525,10 @@ function jitter(maximumInclusive: number): number {
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
+}
+
+function isTimeout(error: unknown): boolean {
+  return error instanceof Error && (error.name === "TimeoutError" || /timed? ?out/iu.test(error.message));
 }
 
 class CaptureOwnershipError extends Error {}

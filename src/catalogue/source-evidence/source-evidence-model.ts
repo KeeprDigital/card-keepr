@@ -16,6 +16,11 @@ export const defaultSourceHostPacingIntervalMilliseconds = 500;
 
 export type SourceRequestRole = "surface" | "listing" | "detail" | "product_detail" | "image";
 
+// The closed diagnostic an unchanged Printing Image skip records on its
+// capture operation and finalized fetch attempt (#389): the exact URL already
+// has retained bytes from an earlier run, so no dispatch was made.
+export const unchangedImageSkipDiagnostic = "source_image_unchanged_skipped";
+
 // Per-role transport policy. A missing listing, detail, product, or surface
 // response means missing catalogue facts, so exhausting those bounded
 // transport retries pauses the run (Retry Pause) until the Official Source

@@ -22,7 +22,11 @@ export function collectionRequestGroupsStatement(
     .bind(input.runId, input.lineagesJson);
 }
 
-export function collectionEvidenceCountsStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
+export function collectionEvidenceCountsStatement(
+  database: CatalogueStore,
+  runId: string,
+  skipDiagnostic: string,
+): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(
       `SELECT
@@ -44,9 +48,18 @@ export function collectionEvidenceCountsStatement(database: CatalogueStore, runI
              (SELECT COUNT(*) FROM source_fetch_attempts
               WHERE ingestion_run_id = ?1
                 AND outcome NOT IN ${successfulOutcomes}
-             ) AS failed_attempt_count`,
+             ) AS failed_attempt_count,
+             (SELECT COUNT(*) FROM source_fetch_attempts
+              WHERE ingestion_run_id = ?1
+                AND outcome = 'cache_revalidated' AND http_status = 304
+             ) AS revalidated_attempt_count,
+             (SELECT COUNT(*) FROM source_fetch_attempts
+              WHERE ingestion_run_id = ?1
+                AND outcome = 'cache_revalidated' AND http_status IS NULL
+                AND diagnostic = ?2
+             ) AS skipped_request_count`,
     )
-    .bind(runId);
+    .bind(runId, skipDiagnostic);
 }
 
 export function latestCollectionFailureStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
@@ -103,7 +116,9 @@ export function collectionHostProgressStatement(database: CatalogueStore, runId:
                     AS pending_request_count,
                   SUM(CASE WHEN open.state = 'captured' THEN 1 ELSE 0 END)
                     AS captured_request_count,
-                  pacing.next_request_not_before
+                  pacing.next_request_not_before,
+                  pacing.interval_ms,
+                  pacing.concurrency
            FROM (
              SELECT ${hostnameSql} AS hostname, state
              FROM source_requests
@@ -116,6 +131,47 @@ export function collectionHostProgressStatement(database: CatalogueStore, runId:
            ORDER BY open.hostname`,
     )
     .bind(runId);
+}
+
+// Every hostname the run has requested with its current adaptive pacing state
+// and this run's backoff/recovery receipt counts (#389).
+export function collectionPacingLimitsStatement(
+  database: CatalogueStore,
+  input: Readonly<{ runId: string; limit: number }>,
+): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare(
+      `SELECT hosts.hostname, pacing.interval_ms, pacing.concurrency, pacing.clean_streak,
+              (SELECT COUNT(*) FROM source_host_pacing_events AS events
+               WHERE events.ingestion_run_id = ?1 AND events.hostname = hosts.hostname
+                 AND events.kind = 'backoff') AS backoff_count,
+              (SELECT COUNT(*) FROM source_host_pacing_events AS events
+               WHERE events.ingestion_run_id = ?1 AND events.hostname = hosts.hostname
+                 AND events.kind = 'recovery') AS recovery_count
+       FROM (SELECT DISTINCT ${hostnameSql} AS hostname FROM source_requests WHERE ingestion_run_id = ?1) AS hosts
+       LEFT JOIN source_host_pacing AS pacing ON pacing.hostname = hosts.hostname
+       ORDER BY hosts.hostname
+       LIMIT ?2`,
+    )
+    .bind(input.runId, input.limit);
+}
+
+// The newest backoff/recovery receipts of one run, with the exact total.
+export function recentPacingEventsStatement(
+  database: CatalogueStore,
+  input: Readonly<{ runId: string; limit: number }>,
+): D1PreparedStatement {
+  return repositoryStatements(database)
+    .prepare(
+      `SELECT hostname, request_id, occurred_at, kind, reason, interval_before_ms, interval_after_ms,
+              concurrency_before, concurrency_after, http_status, retry_after_ms, latency_ms,
+              COUNT(*) OVER () AS total
+       FROM source_host_pacing_events
+       WHERE ingestion_run_id = ?
+       ORDER BY occurred_at DESC, id DESC
+       LIMIT ?`,
+    )
+    .bind(input.runId, input.limit);
 }
 
 export function failedPrintingImagesStatement(

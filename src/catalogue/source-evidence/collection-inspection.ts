@@ -2,6 +2,7 @@ import type { CatalogueStore } from "../shared";
 import {
   collectionEvidenceCountsStatement,
   collectionHostProgressStatement,
+  collectionPacingLimitsStatement,
   collectionRequestGroupsStatement,
   failedPrintingImagesStatement,
   latestCollectionFailureStatement,
@@ -9,7 +10,9 @@ import {
   recentCollectionAttemptsStatement,
   recentCollectionObservationsStatement,
   recentCollectionSnapshotsStatement,
+  recentPacingEventsStatement,
 } from "./collection-inspection-repository";
+import { currentHostPacingState, resolveHostPacingPolicy } from "./host-pacing";
 // The owner's aggregated view of one Ingestion Run's collection: capacity
 // per Source Lineage, request counts by lineage, role, and state, evidence
 // volume, retry facts, the current safe request reference, host pacing, and
@@ -19,7 +22,11 @@ import {
 // status document. Nothing here carries request headers, credentials,
 // response bodies, or unvetted provider text: identifiers, hostnames,
 // bounded counters, timestamps, and closed machine codes only.
-import { type EvidencePlan, toleratedPrintingImageFailureCodes } from "./source-evidence-model";
+import {
+  type EvidencePlan,
+  toleratedPrintingImageFailureCodes,
+  unchangedImageSkipDiagnostic,
+} from "./source-evidence-model";
 import type {
   CurrentPause,
   ObservationSetRow,
@@ -28,6 +35,24 @@ import type {
 } from "./source-evidence-repository-types";
 
 export const inspectionDetailLimit = 200;
+// Hostnames and backoff/recovery receipts listed per run; counts stay exact.
+export const pacingDetailLimit = 50;
+
+type PacingEventRow = {
+  hostname: string;
+  request_id: string;
+  occurred_at: string;
+  kind: string;
+  reason: string;
+  interval_before_ms: number;
+  interval_after_ms: number;
+  concurrency_before: number;
+  concurrency_after: number;
+  http_status: number | null;
+  retry_after_ms: number | null;
+  latency_ms: number | null;
+  total: number;
+};
 
 export type PacingConfiguration = Readonly<{
   mode: "production" | "immediate";
@@ -59,6 +84,10 @@ export type EvidenceCounts = Readonly<{
   fetch_attempt_count: number;
   retry_attempt_count: number;
   failed_attempt_count: number;
+  // 304 revalidations: counted dispatches that charged zero bytes.
+  revalidated_attempt_count: number;
+  // Unchanged Printing Images reused without any dispatch (#389).
+  skipped_request_count: number;
 }>;
 
 type RequestGroupRow = {
@@ -86,7 +115,7 @@ export async function collectionInspection(
   input: CollectionInspectionInput,
 ): Promise<{ collection: Record<string, unknown>; counts: EvidenceCounts }> {
   const runId = input.run.id;
-  const [groups, counts, latestFailure, currentRequest, hosts, failedImages] = await Promise.all([
+  const [groups, counts, latestFailure, currentRequest, hosts, failedImages, limits, events] = await Promise.all([
     // Dynamically discovered and collection-plan identities carry their
     // Source Lineage as a prefix and group by it; every other identity is
     // an initial Evidence Plan request that resolves through its plan, so
@@ -95,7 +124,7 @@ export async function collectionInspection(
       runId: runId,
       lineagesJson: JSON.stringify(input.plans.map((plan) => plan.source_lineage)),
     }).all<RequestGroupRow>(),
-    collectionEvidenceCountsStatement(database, runId).first<EvidenceCounts>(),
+    collectionEvidenceCountsStatement(database, runId, unchangedImageSkipDiagnostic).first<EvidenceCounts>(),
     latestCollectionFailureStatement(database, runId).first<{
       request_id: string;
       outcome: string;
@@ -119,6 +148,8 @@ export async function collectionInspection(
       pending_request_count: number;
       captured_request_count: number;
       next_request_not_before: string | null;
+      interval_ms: number | null;
+      concurrency: number | null;
     }>(),
     // Printing Images that failed under a tolerated code (exhausted
     // transport retries, a missing or redirected file, a rejected
@@ -136,6 +167,15 @@ export async function collectionInspection(
       attempt_count: number;
       total: number;
     }>(),
+    collectionPacingLimitsStatement(database, { runId, limit: pacingDetailLimit }).all<{
+      hostname: string;
+      interval_ms: number | null;
+      concurrency: number | null;
+      clean_streak: number | null;
+      backoff_count: number;
+      recovery_count: number;
+    }>(),
+    recentPacingEventsStatement(database, { runId, limit: pacingDetailLimit }).all<PacingEventRow>(),
   ]);
   if (counts === null) throw new Error("Evidence counts are unavailable.");
   const failedImageCount = failedImages.results[0]?.total ?? 0;
@@ -165,27 +205,54 @@ export async function collectionInspection(
         overflow_request_count: paused ? numberOrNull(capacityPause.overflow_request_count) : null,
       };
     });
+  const adapterVersions = input.plans.map((plan) => plan.adapter_version);
+  const policyFor = (hostname: string) => resolveHostPacingPolicy(hostname, adapterVersions, input.pacing.interval_ms);
   const pacingHosts = hosts.results.map((host) => {
     const deadline = host.next_request_not_before === null ? null : Date.parse(host.next_request_not_before);
+    const state = currentHostPacingState(policyFor(host.hostname), host);
     return {
       hostname: host.hostname,
       pending_request_count: host.pending_request_count,
       captured_request_count: host.captured_request_count,
       next_request_not_before: host.next_request_not_before,
       waiting_ms: deadline === null || Number.isNaN(deadline) ? 0 : Math.max(0, deadline - input.nowMs),
+      interval_ms: state.interval_ms,
+      concurrency: state.concurrency,
     };
   });
-  // Hosts collect in parallel and each host's requests are paced
-  // sequentially, so the floor on remaining time is the slowest host's
-  // pending fetches at the configured interval, plus whatever pacing wait it
-  // is already serving. Advisory only: it ignores transport time, retries,
+  // Per-host limits recorded with the Source Adapter registrations (#389),
+  // each host's current adaptive state, and this run's backoff/recovery
+  // receipts: visible whether or not the host still has pending work.
+  const pacingLimits = limits.results.map((host) => {
+    const policy = policyFor(host.hostname);
+    const state = currentHostPacingState(policy, host);
+    return {
+      hostname: host.hostname,
+      kind: policy.kind,
+      source: policy.source,
+      floor_ms: policy.floor_ms,
+      ceiling_ms: policy.ceiling_ms,
+      maximum_concurrency: policy.maximum_concurrency,
+      interval_ms: state.interval_ms,
+      concurrency: state.concurrency,
+      clean_streak: state.clean_streak,
+      backoff_count: host.backoff_count,
+      recovery_count: host.recovery_count,
+    };
+  });
+  const pacingEventCount = events.results[0]?.total ?? 0;
+  // Hosts collect in parallel, each at its current adaptive interval and
+  // concurrency, so the floor on remaining time is the slowest host's pending
+  // fetches at that pace, plus whatever pacing wait it is already serving. Advisory only: it ignores transport time, retries,
   // parse work, and dynamic discovery that has not happened yet.
   const minimumRemainingMs =
     input.pacing.mode === "immediate"
       ? 0
       : Math.max(
           0,
-          ...pacingHosts.map((host) => host.waiting_ms + host.pending_request_count * input.pacing.interval_ms),
+          ...pacingHosts.map(
+            (host) => host.waiting_ms + Math.ceil((host.pending_request_count * host.interval_ms) / host.concurrency),
+          ),
         );
   const collection: Record<string, unknown> = {
     state: input.run.state,
@@ -244,6 +311,13 @@ export async function collectionInspection(
       mode: input.pacing.mode,
       interval_ms: input.pacing.interval_ms,
       hosts: pacingHosts,
+      limits: pacingLimits,
+      events: {
+        count: pacingEventCount,
+        detail_limit: pacingDetailLimit,
+        truncated: pacingEventCount > pacingDetailLimit,
+        recent: events.results.map(({ total: _total, ...event }) => event),
+      },
     },
     estimate: {
       advisory: true,

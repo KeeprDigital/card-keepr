@@ -324,6 +324,19 @@ and a verified, deduplicated retained-body baseline; unresolved ownership blocks
 it. Budget and reservation evidence belongs to backup/restore verification.
 [Acquisition guard](https://github.com/KeeprDigital/card-keepr/issues/367).
 
+Refresh is incremental. A request whose earlier retained snapshot carries an
+ETag or Last-Modified is sent conditionally; a `304` is retained as a no-change
+Source Snapshot reusing those bytes, with the same evidence semantics as an
+identical-digest `200`, and its dispatch is charged at zero bytes. A Printing
+Image whose exact URL, adapter version and represented headers already have
+retained bytes from an earlier run is skipped without a Dispatch Reservation:
+the run records a finalized attempt carrying `source_image_unchanged_skipped`
+and a snapshot reusing the earlier bytes and capture time, so no skip is silently
+absent and nothing new is retained. Skips charge neither dispatches nor bytes;
+`source show` counts them beside 304 revalidations. The accepted trade-off is
+that a replaced image at an unchanged URL is only observed once its URL changes.
+[Faster collection](https://github.com/KeeprDigital/card-keepr/issues/389).
+
 Collection scheduling reads a bounded page containing the next pending shard
 for each hostname. It retains Workflow identities only for dispatched shards;
 later shards are selected after their predecessors finish. Hostname grouping
@@ -332,6 +345,24 @@ while each full request URL keeps its own identity. The global emergency request
 ceiling is a finite admission limit, not a measured throughput or arbitrary-host
 capacity guarantee. Each Source Adapter Version keeps its separately declared
 capacity. [Source intake foundation](https://github.com/KeeprDigital/card-keepr/issues/327).
+
+Host pacing is adaptive and recorded per hostname with the Source Adapter
+registration: a page or asset kind, a floor (most aggressive interval), a
+ceiling (most polite) and a maximum concurrency, citing the retained
+robots/terms evidence. Publisher page hosts, including a publisher origin that
+also serves its images, stay sequential; static asset/CDN hosts may keep a
+bounded number in flight. A host starts at its floor and maximum concurrency,
+doubles its interval and halves concurrency on HTTP 429, 503, 502/504, any
+Retry-After on a refusal (always honoured as a hold), a transport timeout or
+connection failure, or a response clearly slower than its latency baseline,
+and recovers one step after 20 clean responses. Undeclared hosts are sequential
+page hosts starting at the deployment interval. A composed run merges declaring
+versions to the most polite bounds. The state lives in D1 per hostname and is
+written after every response, so the hostname-shard Workflow's later steps,
+replays and replacement attempts continue from it; only one shard owns a host
+at a time. Backoff and recovery are append-only receipts per run, shown with
+the per-host limits in `source show`.
+[Faster collection](https://github.com/KeeprDigital/card-keepr/issues/389).
 
 ## HTTP interface direction
 

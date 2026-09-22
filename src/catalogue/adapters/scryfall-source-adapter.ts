@@ -180,6 +180,27 @@ export const scryfallSourceAdapterRegistration: SourceAdapterRegistration = {
   },
   requestCapacity: 108_691,
   minimumRateLimitBackoffMilliseconds: 30_000,
+  // #389 adaptive pacing bounds, cited to the retained 2026-09-14 access policy.
+  hostPacing: [
+    {
+      hostname: "api.scryfall.com",
+      kind: "page",
+      floorMs: 200,
+      ceilingMs: 4_000,
+      maximumConcurrency: 1,
+      evidence:
+        "acceptance/fixtures/real-sources/2026-09-14-scryfall/README.md: retained rate-limit policy allows 10 requests/s on card endpoints (2/s search, 10/min bulk metadata) and bans for 30 s after HTTP 429; 5/s at the floor stays below it.",
+    },
+    {
+      hostname: "cards.scryfall.io",
+      kind: "asset",
+      floorMs: 50,
+      ceilingMs: 2_000,
+      maximumConcurrency: 4,
+      evidence:
+        "acceptance/fixtures/real-sources/2026-09-14-scryfall/README.md: file surfaces state no numerical limit but ask for considerate bounded acquisition, so concurrency is capped at 4.",
+    },
+  ],
   origin: "production",
   requestSurface: { kind: "credential-free-https" },
   reconciliationCapability: "catalogue",

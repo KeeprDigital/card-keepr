@@ -1,6 +1,6 @@
 import { operationalCallers } from "./http-callers.mjs";
 import { environmentNames } from "../src/http/environment-target.mjs";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { build } from "esbuild";
 import { parse } from "jsonc-parser";
 import Ajv2020 from "ajv/dist/2020.js";
@@ -178,16 +178,12 @@ for (const [worker, families] of Object.entries(workerFamilies)) {
 inventory.sort((a, b) => `${a.worker} ${a.path} ${a.method}`.localeCompare(`${b.worker} ${b.path} ${b.method}`, "en"));
 output("contracts/http-route-inventory.json", JSON.stringify(inventory, null, 2) + "\n");
 // Vite transports each module with its source map to the test Worker. Keep the
-// separate schema roots in separate modules so their combined validation code
-// does not exceed the Worker's per-message limit during test startup.
-const validatorModules = [];
-for (const worker of Object.keys(workerFamilies)) {
-  const names = new Set(
-    [...Object.entries(validatorKeys), ...Object.entries(headerValidatorKeys)]
-      .filter(([key]) => key.startsWith(`${worker} `))
-      .map(([, name]) => name),
-  );
-  const code = standaloneCode(ajv, Object.fromEntries([...names].map((name) => [name, name])));
+// separate schema roots in separate modules, and split a root's validators
+// into further modules when its code alone would approach the Worker's
+// per-message limit during test startup (the admin root crossed ~6.5 MB).
+const maximumValidatorModuleBytes = 4_000_000;
+async function compiledValidators(names) {
+  const code = standaloneCode(ajv, Object.fromEntries(names.map((name) => [name, name])));
   const compiled = await build({
     stdin: {
       contents: `import { fullFormats as formats } from "ajv-formats/dist/formats.js";\n${code}`,
@@ -199,12 +195,37 @@ for (const worker of Object.keys(workerFamilies)) {
     write: false,
     minify: true,
   });
-  const filename = `http-response-validators.${worker}.mjs`;
-  output(
-    `test/support/${filename}`,
-    `// Generated from HTTP registrations; run pnpm generate:http.\n${compiled.outputFiles[0].text}`,
-  );
-  validatorModules.push(`export * from "./${filename}";`);
+  return compiled.outputFiles[0].text;
+}
+async function validatorChunks(names) {
+  const text = await compiledValidators(names);
+  if (text.length <= maximumValidatorModuleBytes || names.length === 1) return [text];
+  const middle = Math.ceil(names.length / 2);
+  return [...(await validatorChunks(names.slice(0, middle))), ...(await validatorChunks(names.slice(middle)))];
+}
+const validatorModules = [];
+const generatedValidatorFiles = new Set();
+for (const worker of Object.keys(workerFamilies)) {
+  const names = [
+    ...new Set(
+      [...Object.entries(validatorKeys), ...Object.entries(headerValidatorKeys)]
+        .filter(([key]) => key.startsWith(`${worker} `))
+        .map(([, name]) => name),
+    ),
+  ];
+  const chunks = await validatorChunks(names);
+  for (const [index, text] of chunks.entries()) {
+    const filename = `http-response-validators.${worker}${chunks.length === 1 ? "" : `-${index + 1}`}.mjs`;
+    output(`test/support/${filename}`, `// Generated from HTTP registrations; run pnpm generate:http.\n${text}`);
+    generatedValidatorFiles.add(filename);
+    validatorModules.push(`export * from "./${filename}";`);
+  }
+}
+for (const filename of readdirSync("test/support")) {
+  if (!/^http-response-validators\.[a-z]+(?:-\d+)?\.mjs$/u.test(filename) || generatedValidatorFiles.has(filename))
+    continue;
+  if (check) throw new Error(`test/support/${filename} is stale; run pnpm generate:http.`);
+  unlinkSync(`test/support/${filename}`);
 }
 output(
   "test/support/http-response-validators.mjs",

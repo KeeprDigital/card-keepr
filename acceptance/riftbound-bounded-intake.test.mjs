@@ -362,7 +362,12 @@ test("qualified Riot intake keeps explicit exceptions through publication, refre
   api = await startWorker({ config: restoredApiConfigPath, statePath: restored, vars: { API_BEARER_KEY: apiKey } });
   await waitForHealth(`${api.url}/health`, apiKey, api);
   assert.deepEqual(await reader.records(api.url, apiKey, publication.resulting_revision_id, "printings"), printings);
-  const unavailableImageUrl = page.data.find((card) => card.id === "ogn-001-298").cardImage.url;
+  // Unchanged image URLs are reused without a request on refresh (#389), so the
+  // refresh publishes a changed URL for one front to exercise a current outage.
+  const refreshPage = structuredClone(page);
+  const outageCard = refreshPage.data.find((card) => card.id === "ogn-001-298");
+  const unavailableImageUrl = `${outageCard.cardImage.url}${outageCard.cardImage.url.includes("?") ? "&" : "?"}refresh-outage=1`;
+  outageCard.cardImage.url = unavailableImageUrl;
   let imageOutages = 0;
   restoredAdmin = await startWorker({
     ...checkpoint,
@@ -370,7 +375,7 @@ test("qualified Riot intake keeps explicit exceptions through publication, refre
     statePath: restored,
     vars: { ...checkpoint.vars, ADMINISTRATION_KEY: key, SOURCE_HOST_PACING_MODE: "immediate" },
     outboundService: (request) => {
-      if (request.url === url) return Response.json(page);
+      if (request.url === url) return Response.json(refreshPage);
       if (request.url === unavailableImageUrl) {
         imageOutages++;
         return new Response(null, { status: 404 });

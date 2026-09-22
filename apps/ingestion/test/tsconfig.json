@@ -2,14 +2,15 @@
   "extends": "../tsconfig.json",
   "compilerOptions": {
     "types": ["@cloudflare/vitest-plugin/types", "node"],
-    "allowJs": true
+    "allowJs": true,
   },
   "include": [
     "../worker-configuration.d.ts",
     "./**/*.ts",
     "../vitest.config.ts",
     "../../../test/support/**/*.ts",
-    "../../../test/support/**/*.mjs"
+    "../../../test/support/**/*.mjs",
   ],
-  "exclude": ["../../../test/support/api-worker.ts"]
+  // Generated validator bundles are typed by their .d.mts declaration.
+  "exclude": ["../../../test/support/api-worker.ts", "../../../test/support/http-response-validators*.mjs"],
 }

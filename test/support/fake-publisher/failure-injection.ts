@@ -120,6 +120,15 @@ export function transportOutcomeForPath(
     });
   }
   if (pathname === "/retry-after-empty") return unavailable("");
+  if (pathname === "/rate-limited-once") {
+    // One HTTP 429 with an immediate Retry-After, then the normal document:
+    // adaptive host pacing must back off and record the receipt (#389).
+    if (context.failures.attempt(request) === 1)
+      return new Response("slow down", { status: 429, headers: { "retry-after": "0" } });
+    return new Response('{"cards":[{"card_number":"OP01-004","name":"Paced Card"}]}', {
+      headers: { "content-type": "application/json" },
+    });
+  }
   if (pathname === "/retry-once") {
     if (context.failures.attempt(request) === 1) return unavailable("2");
     return new Response('{"cards":[{"card_number":"OP01-002","name":"Retry Card"}]}', {
@@ -198,6 +207,16 @@ export function transportOutcomeForPath(
   if (pathname.startsWith("/sequence/")) {
     return new Response(`{"cards":[{"sequence":"${url.hostname}${pathname}"}]}`, {
       headers: { "content-type": "application/json" },
+    });
+  }
+  if (pathname.startsWith("/png/")) {
+    // Distinct non-empty image bytes per path for Printing Image requests,
+    // with the CORS Vary a retained CDN front carries (2026-09-15-limitless).
+    return new Response(new TextEncoder().encode(`\u0089PNG\r\n\u001a\n${url.hostname}${pathname}`), {
+      headers: {
+        "content-type": "image/png",
+        vary: "Origin, Access-Control-Request-Headers, Access-Control-Request-Method",
+      },
     });
   }
   if (pathname === "/invalid-json") {

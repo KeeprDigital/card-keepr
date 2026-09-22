@@ -2214,6 +2214,8 @@ test("source show renders aggregated collection progress in human-readable form"
         fetch_attempt_count: 6010,
         retry_attempt_count: 7,
         failed_attempt_count: 7,
+        revalidated_attempt_count: 5,
+        skipped_request_count: 4,
         latest_failure: {
           request_id: "fusion-world-en:detail:abc",
           hostname: "www.dbs-cardgame.com",
@@ -2247,8 +2249,46 @@ test("source show renders aggregated collection progress in human-readable form"
             captured_request_count: 3,
             next_request_not_before: "2026-09-01T03:00:01.000Z",
             waiting_ms: 800,
+            interval_ms: 1000,
+            concurrency: 1,
           },
         ],
+        limits: [
+          {
+            hostname: "www.dbs-cardgame.com",
+            kind: "page",
+            source: "registration",
+            floor_ms: 500,
+            ceiling_ms: 4000,
+            maximum_concurrency: 1,
+            interval_ms: 1000,
+            concurrency: 1,
+            clean_streak: 4,
+            backoff_count: 1,
+            recovery_count: 0,
+          },
+        ],
+        events: {
+          count: 1,
+          detail_limit: 50,
+          truncated: false,
+          recent: [
+            {
+              hostname: "www.dbs-cardgame.com",
+              request_id: "fusion-world-en:detail:abc",
+              occurred_at: "2026-09-01T02:59:00.000Z",
+              kind: "backoff",
+              reason: "unavailable",
+              interval_before_ms: 500,
+              interval_after_ms: 1000,
+              concurrency_before: 1,
+              concurrency_after: 1,
+              http_status: 503,
+              retry_after_ms: 2000,
+              latency_ms: 120,
+            },
+          ],
+        },
       },
       estimate: {
         advisory: true,
@@ -2334,6 +2374,7 @@ test("source show renders aggregated collection progress in human-readable form"
   assert.match(out, /6003 Source Snapshots \(1234567890 bytes\)/);
   assert.match(out, /6000 Source Observation sets/);
   assert.match(out, /6010 fetch attempts \(7 retries, 7 failures\)/);
+  assert.match(out, /5 revalidated unchanged \(304\), 4 unchanged images skipped/);
   assert.match(out, /Requests: 15003 \(pending 9000, captured 3, observed 6000; surface 5, detail 12000, image 2998\)/);
   assert.match(out, /Capacity fusion-world-en: 15003 used of 20000 \(generation 2, 4997 remaining\)/);
   assert.match(
@@ -2343,7 +2384,15 @@ test("source show renders aggregated collection progress in human-readable form"
   assert.match(out, /Current request: fusion-world-en:detail:def \(www.dbs-cardgame.com, detail, pending, 1 attempt\)/);
   assert.match(
     out,
-    /Pacing: production 1000ms; 1 host: www.dbs-cardgame.com 9000 pending, 3 captured \(waiting 800ms\)/,
+    /Pacing: production 1000ms; 1 host: www.dbs-cardgame.com 9000 pending, 3 captured at 1000ms x1 \(waiting 800ms\)/,
+  );
+  assert.match(
+    out,
+    /Host pacing www.dbs-cardgame.com: page \(registration\) 500-4000ms, up to 1 in flight; now 1000ms x1; 1 backoff, 0 recoveries/,
+  );
+  assert.match(
+    out,
+    /Pacing backoff www.dbs-cardgame.com \(unavailable, HTTP 503, Retry-After 2000ms\): 500ms x1 -> 1000ms x1 at 2026-09-01T02:59:00.000Z/,
   );
   assert.match(out, /Estimated minimum remaining: 2h 30m 0s \(advisory\)/);
   assert.match(out, /Expected Catalogue Revision: catrev_current_cli/);

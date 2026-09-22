@@ -5591,6 +5591,14 @@
                     "type": "integer",
                     "minimum": 0
                   },
+                  "revalidated_attempt_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "skipped_request_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
                   "latest_failure": {
                     "type": [
                       "object",
@@ -5655,6 +5663,8 @@
                   "fetch_attempt_count",
                   "retry_attempt_count",
                   "failed_attempt_count",
+                  "revalidated_attempt_count",
+                  "skipped_request_count",
                   "latest_failure",
                   "detail_limit",
                   "snapshots_truncated",
@@ -5808,6 +5818,14 @@
                         "waiting_ms": {
                           "type": "integer",
                           "minimum": 0
+                        },
+                        "interval_ms": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "concurrency": {
+                          "type": "integer",
+                          "minimum": 0
                         }
                       },
                       "required": [
@@ -5815,16 +5833,206 @@
                         "pending_request_count",
                         "captured_request_count",
                         "next_request_not_before",
-                        "waiting_ms"
+                        "waiting_ms",
+                        "interval_ms",
+                        "concurrency"
                       ],
                       "additionalProperties": false
                     }
+                  },
+                  "limits": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "hostname": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "page",
+                            "asset"
+                          ]
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "registration",
+                            "default"
+                          ]
+                        },
+                        "floor_ms": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "ceiling_ms": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "maximum_concurrency": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "interval_ms": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "concurrency": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "clean_streak": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "backoff_count": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "recovery_count": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "hostname",
+                        "kind",
+                        "source",
+                        "floor_ms",
+                        "ceiling_ms",
+                        "maximum_concurrency",
+                        "interval_ms",
+                        "concurrency",
+                        "clean_streak",
+                        "backoff_count",
+                        "recovery_count"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "events": {
+                    "type": "object",
+                    "properties": {
+                      "count": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "detail_limit": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "truncated": {
+                        "type": "boolean"
+                      },
+                      "recent": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "hostname": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "request_id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "occurred_at": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "backoff",
+                                "recovery"
+                              ]
+                            },
+                            "reason": {
+                              "type": "string",
+                              "enum": [
+                                "rate_limited",
+                                "unavailable",
+                                "gateway",
+                                "retry_after",
+                                "timeout",
+                                "connection",
+                                "latency",
+                                "clean_streak"
+                              ]
+                            },
+                            "interval_before_ms": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "interval_after_ms": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "concurrency_before": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "concurrency_after": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "http_status": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ]
+                            },
+                            "retry_after_ms": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "latency_ms": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "hostname",
+                            "request_id",
+                            "occurred_at",
+                            "kind",
+                            "reason",
+                            "interval_before_ms",
+                            "interval_after_ms",
+                            "concurrency_before",
+                            "concurrency_after",
+                            "http_status",
+                            "retry_after_ms",
+                            "latency_ms"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "count",
+                      "detail_limit",
+                      "truncated",
+                      "recent"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
                   "mode",
                   "interval_ms",
-                  "hosts"
+                  "hosts",
+                  "limits",
+                  "events"
                 ],
                 "additionalProperties": false
               },

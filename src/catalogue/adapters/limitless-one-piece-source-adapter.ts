@@ -290,6 +290,28 @@ export const limitlessOnePieceSourceAdapterRegistration: SourceAdapterRegistrati
   // It is a finite admission bound, not measured full-import throughput.
   requestCapacity: 9_559,
   retainedParentContext: { maximumDepth: 3, maximumTotalBytes: 3 * 1024 * 1024 },
+  // #389 adaptive pacing bounds. Pages stay sequential; the static front CDN
+  // is a separate host with bounded concurrency.
+  hostPacing: [
+    {
+      hostname: new URL(origin).hostname,
+      kind: "page",
+      floorMs: 250,
+      ceilingMs: 4_000,
+      maximumConcurrency: 1,
+      evidence:
+        "acceptance/fixtures/real-sources/2026-09-15-limitless/README.md: retained robots has an empty Disallow and the inspected legal notice, Products, Promos and Advanced Search pages state no automation prohibition; #334 made 4,852 page requests at >=2 s, all HTTP 200.",
+    },
+    {
+      hostname: new URL(imageOrigin).hostname,
+      kind: "asset",
+      floorMs: 50,
+      ceilingMs: 2_000,
+      maximumConcurrency: 8,
+      evidence:
+        "Static WebP fronts on a DigitalOcean Spaces CDN; no CDN-specific terms are retained (2026-09-15-limitless README). #334 made 4,687 front requests, all HTTP 200.",
+    },
+  ],
   origin: "production",
   requestSurface: { kind: "credential-free-https" },
   reconciliationCapability: "catalogue",
