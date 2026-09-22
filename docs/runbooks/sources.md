@@ -210,7 +210,18 @@ The [Scryfall facts plan](../examples/scryfall-magic-facts-plan.json) is the
 first Magic import (tranche 0). Its `facts-only` scope reads the same root and
 archive but admits no image request, so the run needs only the metadata and
 archive dispatches and each Printing publishes with an explicit image gap.
-Later image tranches use the bulk plan under an owner-approved budget; see
+
+Later image tranches use the [image tranche plan](../examples/scryfall-magic-images-tranche-plan.json)
+under an owner-approved budget. Its `image-tranche` scope reads the same root and
+archive; `discovery_selection` lists the set codes to acquire (newest first) and
+caps the tranche with `maximum_requests`. Build the next tranche by editing the
+set list; the plan is immutable once a run starts. Every unselected image request
+is deferred, never fetched: `source show` prints `Deferred: N discovered requests`
+with the largest groups, and the JSON `collection.deferred_requests` has exact
+counts. Publish each tranche before starting the next. Images published earlier
+stay on their Printings, and re-selected ones are skipped unchanged with no
+dispatch. Budget one dispatch per newly selected image plus the two root
+dispatches and retry headroom; see
 [paused collection](#paused-or-failed-collection) for extensions.
 
 `source show` reports coverage, request counts, successful check time and actual

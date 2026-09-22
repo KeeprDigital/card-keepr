@@ -130,12 +130,17 @@ export async function selectedDiscoveryRequests<T extends SelectableRequest>(
     return { selected: [...requests], deferral: null, maximumGuard: null };
   const lineagePattern = `${plan.source_lineage}:%`;
   const counted = { runId, role: selection.role, lineagePattern };
-  const [admittedRows, roleCount] = await Promise.all([
-    admittedDiscoveryRequestsStatement(database, runId, JSON.stringify(candidates.map(({ id }) => id))).all<{
-      request_id: string;
-    }>(),
-    admittedDiscoveryRoleCountStatement(database, counted).first<{ count: number }>(),
-  ]);
+  // Only a maximum depends on what the run already holds; a group decision is
+  // a pure function of the request, so replays reproduce it without reads.
+  const [admittedRows, roleCount] =
+    selection.maximum_requests === undefined
+      ? [{ results: [] }, { count: 0 }]
+      : await Promise.all([
+          admittedDiscoveryRequestsStatement(database, runId, JSON.stringify(candidates.map(({ id }) => id))).all<{
+            request_id: string;
+          }>(),
+          admittedDiscoveryRoleCountStatement(database, counted).first<{ count: number }>(),
+        ]);
   if (roleCount === null) throw new Error("The admitted discovery count is unavailable.");
   const admitted = new Set(admittedRows.results.map(({ request_id }) => request_id));
   const { selected, deferred } = partitionDiscoveredRequests(selection, requests, admitted, roleCount.count);
