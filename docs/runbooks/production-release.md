@@ -154,8 +154,12 @@ Release.
 Before checkout, the workflow resolves `expected_head_sha` through the
 GitHub API with its own read-only token: the value must be a full
 40-character commit id, `main` must contain it (compare status `identical` or
-`behind`), and every expected `ci.yml` check must have exactly one successful
-latest GitHub Actions check run on that exact commit (issue #235). A green
+`behind`), `main` must have exactly one successful `push` `ci.yml` run for
+that commit, and every expected `ci.yml` check must have exactly one successful
+latest GitHub Actions check run on that exact commit within that run's check
+suite (issue #235). The merge queue's `merge_group` run executes on the
+same SHA that then fast-forwards onto `main`, so the commit carries a second
+suite of identically named checks; the suite binding ignores it. A green
 PR head cannot authorize its merge commit. `ci` runs on pull requests and
 pushes to `main`; a newer merge never substitutes the requested commit.
 

@@ -20,6 +20,7 @@ export const githubDevApiMock: PublisherScenario = ({ request, url }) => {
       head_sha: headSha,
       status: "completed",
       conclusion: "success",
+      check_suite_id: 777,
     });
   if (url.pathname === `${root}/compare/main...${headSha}`) return Response.json({ status: "identical" });
   if (url.pathname === `${root}/commits/${headSha}/check-runs`)
@@ -28,6 +29,7 @@ export const githubDevApiMock: PublisherScenario = ({ request, url }) => {
       check_runs: requiredCiChecks.map((name) => ({
         name,
         app: { slug: "github-actions" },
+        check_suite: { id: 777 },
         head_sha: headSha,
         status: "completed",
         conclusion: "success",

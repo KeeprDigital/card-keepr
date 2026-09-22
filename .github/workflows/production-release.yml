@@ -97,9 +97,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: production
-    # checks are read for the exact-SHA gate below;
+    # actions and checks are read for the exact-SHA gate below;
     # the workflow token writes nothing.
     permissions:
+      actions: read
       contents: read
       checks: read
     env:
@@ -135,6 +136,8 @@ jobs:
       # Before checkout or mutation, require complete successful checks on the
       # exact immutable deployed commit. PR-head evidence cannot authorize a
       # merge commit. The contract test pins the expected jobs to ci.yml.
+      # A merge-queue commit also carries the merge_group run's checks on the
+      # same SHA, so checks are bound to the single push CI run's own suite.
       - name: Verify the release SHA is contained in main and passed ci
         env:
           GH_TOKEN: ${{ github.token }}
@@ -147,7 +150,15 @@ jobs:
             identical|behind) ;;
             *) printf 'expected_head_sha %s is not contained in main: %s\n' "${EXPECTED_HEAD_SHA}" "$(jq -c '{status, ahead_by, behind_by}' <<<"${compare}")"; exit 1 ;;
           esac
-          runs="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${EXPECTED_HEAD_SHA}/check-runs?filter=latest&per_page=100" --paginate --slurp | jq -c '[.[].check_runs[] | select(.app.slug == "github-actions") | {name, head_sha, status, conclusion}]')"
+          ci_runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?event=push&branch=main&head_sha=${EXPECTED_HEAD_SHA}&per_page=100" | jq -c --arg sha "${EXPECTED_HEAD_SHA}" '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and .event == "push" and .head_branch == "main" and .head_sha == $sha)]')"
+          if test "$(jq 'length' <<<"${ci_runs}")" != 1; then
+            printf 'expected_head_sha %s does not have exactly one push ci run on main\n' "${EXPECTED_HEAD_SHA}"; exit 1
+          fi
+          suite="$(jq -r '.[0] | select(.status == "completed" and .conclusion == "success" and (.check_suite_id | type == "number" and . >= 1 and . == floor)) | .check_suite_id' <<<"${ci_runs}")"
+          if test -z "${suite}"; then
+            printf 'push ci run for %s did not succeed or has no check suite: %s\n' "${EXPECTED_HEAD_SHA}" "$(jq -c '.[0] | {id, status, conclusion, check_suite_id}' <<<"${ci_runs}")"; exit 1
+          fi
+          runs="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${EXPECTED_HEAD_SHA}/check-runs?filter=latest&per_page=100" --paginate --slurp | jq -c --argjson suite "${suite}" '[.[].check_runs[] | select(.app.slug == "github-actions" and .check_suite.id == $suite) | {name, head_sha, status, conclusion}]')"
           while IFS= read -r job; do
             matched="$(jq -c --arg job "${job}" '[.[] | select(.name == $job)]' <<<"${runs}")"
             if test "$(jq 'length' <<<"${matched}")" != 1; then

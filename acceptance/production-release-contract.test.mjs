@@ -125,13 +125,17 @@ test("the release SHA is resolved through the GitHub API before checkout and ci 
   assert.match(gate, /compare\/main\.\.\.\$\{EXPECTED_HEAD_SHA\}/u);
   assert.match(gate, /identical\|behind\) ;;/u);
   assert.doesNotMatch(gate, /\/pulls|ci_sha/u);
+  // Merge-queue commits carry a second (merge_group) suite on the same SHA;
+  // required checks bind to the single push ci.yml run's own check suite.
+  assert.match(gate, /actions\/workflows\/ci\.yml\/runs\?event=push&branch=main&head_sha=\$\{EXPECTED_HEAD_SHA\}/u);
+  assert.match(gate, /exactly one push ci run on main/u);
   assert.match(gate, /commits\/\$\{EXPECTED_HEAD_SHA\}\/check-runs\?filter=latest/u);
   assert.match(gate, /--paginate --slurp/u);
-  assert.match(gate, /app\.slug == "github-actions"/u);
+  assert.match(gate, /app\.slug == "github-actions" and \.check_suite\.id == \$suite/u);
   assert.match(gate, /status != "completed" or \.conclusion != "success"/u);
   assert.doesNotMatch(gate, /secrets\./u);
-  // The workflow token reads contents and checks and writes nothing.
-  assert.match(release, /permissions:\n {6}contents: read\n {6}checks: read\n/u);
+  // The workflow token reads actions, contents and checks and writes nothing.
+  assert.match(release, /permissions:\n {6}actions: read\n {6}contents: read\n {6}checks: read\n/u);
   assert.doesNotMatch(release, /:\s*write\b/u);
   // Expand each actual matrix so a newly added shard cannot silently become
   // optional. These checks deliberately support only the current shard shape;

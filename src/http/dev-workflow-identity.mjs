@@ -156,7 +156,9 @@ async function verifyCommit(githubToken, intent, allowManual) {
     ci.head_branch !== "main" ||
     ci.head_sha !== intent.head_sha ||
     ci.status !== "completed" ||
-    ci.conclusion !== "success"
+    ci.conclusion !== "success" ||
+    !Number.isSafeInteger(ci.check_suite_id) ||
+    ci.check_suite_id < 1
   )
     denied();
   const compare = await document(`${root}/compare/main...${intent.head_sha}`, githubToken);
@@ -172,8 +174,13 @@ async function verifyCommit(githubToken, intent, allowManual) {
     if (checks.length >= result.total_count) break;
     if (page === 10) denied();
   }
+  // A merge-queue commit also carries the merge_group run's suite on the same
+  // SHA; bind every required check to the named CI run's own suite.
   for (const name of requiredCiChecks) {
-    const matches = checks.filter((check) => check.name === name && check.app?.slug === "github-actions");
+    const matches = checks.filter(
+      (check) =>
+        check.name === name && check.app?.slug === "github-actions" && check.check_suite?.id === ci.check_suite_id,
+    );
     if (
       matches.length !== 1 ||
       matches[0].head_sha !== intent.head_sha ||

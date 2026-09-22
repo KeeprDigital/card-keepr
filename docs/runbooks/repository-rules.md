@@ -36,7 +36,9 @@ admins are bound too. It replaces the classic branch protection rule.
   (#374).
 - Merge queue on: squash, all-green grouping, build 3, merge 1–3 entries,
   5-minute wait, 60-minute check timeout. `ci.yml` and `pr-title.yml` both
-  trigger on `merge_group`.
+  trigger on `merge_group`. The queued run executes on the SHA that lands, so
+  exact-commit release gates bind checks to the named `push` CI run's check
+  suite rather than counting all check runs on the commit.
 - Linear history required. Force pushes and deletion blocked.
 
 ## Tags and environments
