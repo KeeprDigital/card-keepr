@@ -27,7 +27,20 @@ export type OfficialReleaseDate = {
   value: string | null;
   /** Present only when the Publisher states the date as subject to change. */
   tentative?: true;
+  /** Free text the Publisher appends after a recognised day date, retained verbatim. */
+  qualifier?: string;
 };
+
+// Bandai also appends event text to a day date, e.g. "March 8, 2025 Pre-Sale
+// at ONE PIECE DAY Dallas -Card Game Celebration-" (live ib-ex01.php,
+// 2026-09-22). The leading date is the Release date; the qualifier is kept as
+// unmapped evidence for review (issue #334). Only a recognised day date may
+// lead; anything else still fails closed.
+const leadingDayDate = [
+  /^([A-Za-z]+\s+\d{1,2},?\s+\d{4})\s+(\S.*)$/u,
+  /^(\d{1,2}\s+[A-Za-z]+\s+\d{4})\s+(\S.*)$/u,
+  /^(\d{4}-\d{2}-\d{2})\s+(\S.*)$/u,
+];
 
 // Bandai marks some announced dates "September 30, 2022 (Subject to change)"
 // (live One Piece pre-release decks, 2026-09-21). The stated date is kept and
@@ -47,10 +60,29 @@ export function tentativeOfficialReleaseDateText(value: string): { text: string;
 // this vocabulary; earlier registered parser contracts keep failing closed.
 export function normalizedOfficialReleaseDate(value: string, options: { seasons?: boolean } = {}): OfficialReleaseDate {
   const { text, tentative } = tentativeOfficialReleaseDateText(value);
-  const date = statedOfficialReleaseDate(text, options);
+  const date = qualifiedOfficialReleaseDate(text, options);
   if (!tentative) return date;
   if (date.value === null) throw new AdapterParseFailure(`Unrecognized official Release date: ${value.trim()}.`);
   return { ...date, tentative: true };
+}
+
+function qualifiedOfficialReleaseDate(text: string, options: { seasons?: boolean }): OfficialReleaseDate {
+  try {
+    return statedOfficialReleaseDate(text, options);
+  } catch (error) {
+    for (const pattern of leadingDayDate) {
+      const match = text.normalize("NFC").trim().match(pattern);
+      if (match === null) continue;
+      let leading: OfficialReleaseDate;
+      try {
+        leading = statedOfficialReleaseDate(match[1]!, {});
+      } catch {
+        continue;
+      }
+      if (leading.precision === "day") return { ...leading, qualifier: match[2]!.trim() };
+    }
+    throw error;
+  }
 }
 
 function statedOfficialReleaseDate(value: string, options: { seasons?: boolean }): OfficialReleaseDate {

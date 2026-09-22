@@ -46,6 +46,7 @@ import {
   parseEvidencePlans,
   printingImageRetriesExhaustedFailureCode,
   toleratesRequestFailure,
+  redirectDiscoveredFailureCode,
 } from "../source-evidence";
 import {
   reconciliationEvidencePlanStatement,
@@ -165,14 +166,21 @@ async function collectRetainedReconciliationObservation(
   const selectedPlans = evidencePlans.filter((plan) => !omittedLineages.has(plan.source_lineage));
   const requestById = async (id: string) =>
     (await retainedEvidenceSelectionRequest<EvidenceSelection>(database, runId, id))?.request;
-  const isToleratedImageFailure = (request: PlannedRequestRow): boolean =>
+  // Tolerated failures leave evidence selection: a Printing Image gap, or a
+  // page whose same-site redirect discovered the request carrying its content.
+  const isToleratedFailure = (request: PlannedRequestRow): boolean =>
     request.state === "failed" && toleratesRequestFailure(request.request_role, request.failure_code);
+  const isToleratedImageFailure = (request: PlannedRequestRow): boolean =>
+    request.request_role === "image" && isToleratedFailure(request);
+  const isRedirectDiscovery = (request: PlannedRequestRow): boolean =>
+    request.state === "failed" && request.failure_code === redirectDiscoveredFailureCode;
   const isSelected = (request: PlannedRequestRow) =>
-    !isToleratedImageFailure(request) &&
+    !isToleratedFailure(request) &&
     !omittedLineages.has(evidencePlanForRequest(evidencePlanRow, request.request_id).source_lineage);
   const selectedRequestById = async (id: string) => {
     const request = await requestById(id);
-    return request !== undefined && isSelected(request) ? request : undefined;
+    // A redirect-discovered request closes over the retained redirect as its parent.
+    return request !== undefined && (isSelected(request) || isRedirectDiscovery(request)) ? request : undefined;
   };
   type MetadataCursor =
     { stage: "requests"; sequenceNumber: number; requestId: string } | { stage: "suffix"; index: number };

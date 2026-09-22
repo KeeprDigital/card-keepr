@@ -1335,6 +1335,7 @@
       "apps/ingestion/test/runtime-workflow-collection.spec.ts",
       "apps/ingestion/test/runtime-workflow-recovery.spec.ts",
       "apps/ingestion/test/source-http-contract.spec.ts",
+      "apps/ingestion/test/source-redirect-discovery.spec.ts",
       "cli/keepr.mjs"
     ]
   },

@@ -11,6 +11,7 @@ import {
   gameProfileCardClassification,
   requiredProfileContract,
   sourceFieldWarning,
+  releaseDateQualifierWarning,
   type ProfileWarning,
 } from "../shared";
 import { parsedOfficialArtworkIdentity, riftboundOriginsTargetName } from "../adapters";
@@ -418,13 +419,11 @@ function inspectSourceSidecar(
   }
   for (const item of unmapped) {
     const field = requiredRecord(item, "source_sidecar unmapped field");
+    const path = requiredString(field.path, "source_sidecar unmapped field path");
     warnings.push(
-      sourceFieldWarning(
-        sourceObservationId,
-        profile,
-        requiredString(field.path, "source_sidecar unmapped field path"),
-        field.value,
-      ),
+      path.includes(".release_date_qualifier:")
+        ? releaseDateQualifierWarning(sourceObservationId, profile, path, field.value)
+        : sourceFieldWarning(sourceObservationId, profile, path, field.value),
     );
   }
 }
