@@ -92,6 +92,40 @@ unchanged publisher image from `2026-09-06/raw/riftbound-image-ogn-001-298.png`.
 The accepted catalogue gains a second front, **no new Card or Printing**. Tests
 and source selection do not install production decisions.
 
+## Access evidence behind the pacing bounds
+
+The 14 September assessment retained `https://piltoverarchive.com/robots.txt`
+(HTTP 200, 144 bytes, SHA-256
+`c32637092216eb6cf03e1f875269e3105ee2d08f748948c2b8da6382f497ac12`, captured
+2026-09-14T13:41:30Z): `Allow: /`, disallowing only `/admin/`, `/api/`, `/_next/`
+and `/static/`, with no `Crawl-delay`. `/cards` is not disallowed. The gallery
+page is an uncached Next.js render served through Cloudflare (`cf-cache-status:
+DYNAMIC`, about 0.3 s origin time); the fronts are static WebP files on
+`cdn.piltoverarchive.com` and the Bunny host `piltoverarchive.b-cdn.net`, for
+which no separate robots or terms were retained. The registration's #389 bounds
+follow from that: the page host is sequential with a 1 s floor and 8 s ceiling;
+each art host allows up to 4 in flight with a 100 ms floor and 2 s ceiling.
+Robots is not a permission grant; the owner's 2026-09-21 decision is.
+
+## Gallery census scope (offline-ready, not yet run live)
+
+The `gallery-census` coverage ([plan](../../../../docs/examples/piltover-archive-census-plan.json))
+starts at `/cards?page=1`, the form the gallery's own pagination links use.
+Page 1 discovers pages 2 to N from its pagination; each page discovers the front
+of each of its rows on the two art hosts. Pages 2 to N are parsed with the
+retained page 1 as parent context and must repeat its page count and displayed
+total, with page 1's row count on every page but the last and the remainder
+(`total − (N − 1) × rows`) on the last; otherwise the parse fails closed.
+Every row becomes a source-record Entity Proposal with its front: standard rows
+carry `card_identity_unresolved` and `printing_locale_unresolved`, other
+treatments add `printing_treatment_unresolved`, and promos carry the ARC-001
+triple (locale, treatment, issuance). The two pinned rows keep their qualified
+outputs while they fit; a pinned row that changed is retained as a census review
+record with `pinned_qualification: "changed"` in its sidecar. The capacity is
+1,400 requests. The offline rehearsal `pnpm run test:acceptance
+piltover-archive-census` replays the shipped plan against a two-page synthetic
+envelope around the 48 unchanged records of page 1.
+
 ## Intended full-import scope, not executed
 
 The gallery exposes 26 pages of 48 rows (`?page=N`) with set, type, rarity and

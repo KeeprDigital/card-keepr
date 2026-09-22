@@ -236,6 +236,14 @@ no English Printing is evidenced and the Card, Printing and finish claims remain
 source labels. Unselected gallery rows are retained bytes only. Riot's authority
 is unchanged.
 [Piltover Archive pilot](https://github.com/KeeprDigital/card-keepr/issues/330).
+Its separate `gallery-census` scope starts at `/cards?page=1`, follows the page
+count that page reports, and checks each later page against the retained page 1
+(page count, displayed total, page size), failing closed on drift. Every row is
+retained as a source-record Entity Proposal with its own front; there is no
+general rule from Piltover numbers or wording to Riot identities, so no census
+row allocates or links an entity without owner review. A pinned row that no
+longer fits becomes a census review record rather than failing the census. The
+census is the gallery's display inventory, not proof of physical issuance.
 
 HexDeck's bounded English pilot reads two pages of its Images-format search
 (a set slice and the OGN token tail) as a supplementary Source under an

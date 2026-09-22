@@ -1,0 +1,12 @@
+{
+  "plans": [
+    {
+      "supported_game": "riftbound",
+      "source_lineage": "piltover-archive-en",
+      "adapter_version": "piltover-archive-en@1",
+      "subset": "gallery-census",
+      "participation": "required",
+      "requests": [{ "id": "piltover-archive-en:gallery-census", "url": "https://piltoverarchive.com/cards?page=1" }]
+    }
+  ]
+}

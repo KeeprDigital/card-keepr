@@ -137,6 +137,13 @@ record the budgeted acquisition, the Blazing Scorcher overlap that an owner may
 link, and the Vi ARC-001 lead whose retained front is a Chinese-language print
 and therefore stays an unresolved proposal. Other gallery rows are retained bytes
 only; the plan establishes neither the gallery inventory nor promo coverage.
+The [census plan](../examples/piltover-archive-census-plan.json) selects the
+`gallery-census` scope: `/cards?page=1`, every page it reports and the front of
+every row on the two registered art hosts, under a 1,400-request capacity (26
+pages and 1,240 rows on 2026-09-21, plus headroom). A later page whose page count,
+displayed total or page size differs from page 1 fails the parse; retry the run
+rather than resuming a changed gallery. Every row becomes a source-record Entity
+Proposal for owner review; the census does not qualify issuance or English print.
 
 The HexDeck [pilot plan](../examples/hexdeck-pilot-plan.json) selects pages 1
 and 7 of the Images-format search sorted by Set under a four-request capacity,

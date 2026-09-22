@@ -53,6 +53,13 @@ export type PiltoverGalleryPage = Readonly<{
   rows: readonly PiltoverVariant[];
 }>;
 
+/** The census form of a gallery page, exactly as the gallery's own pagination links it. */
+export function piltoverCensusPageUrl(page: number): string {
+  if (!Number.isSafeInteger(page) || page < 1 || page > 999)
+    throw new AdapterParseFailure("Piltover Archive gallery page number is outside its bound.");
+  return `${piltoverArchiveOrigin}${galleryPath}?page=${page}`;
+}
+
 export function piltoverGalleryPageNumber(value: string): number {
   const url = adapterUrl(value);
   const page = url.searchParams.get("page");
