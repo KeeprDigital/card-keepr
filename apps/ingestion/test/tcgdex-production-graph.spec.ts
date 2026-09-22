@@ -11,9 +11,7 @@ import {
   pendingEvidenceRequests,
   requiredEvidenceRun,
   startEvidenceRun,
-  extendRunRequestCapacity,
   finalizeEvidenceRun,
-  resumePausedEvidenceRun,
   recordWorkflowIds,
   parentWorkflowAttemptId,
   appendDiscoveredEvidenceRequests,
@@ -90,15 +88,6 @@ test("production rejects competing Set/local claims for one opaque Card ID while
   const sets = await pendingEvidenceRequests(database, runId);
   expect(sets.map(({ url }) => url)).toEqual([`${api}/sets/a`, `${api}/sets/a-b`]);
   await collect(sets[0]!);
-  expect((await requiredEvidenceRun(database, runId)).state).toBe("paused");
-  await extendRunRequestCapacity(database, runId, {
-    expected_request_capacity: 4,
-    expected_capacity_generation: 1,
-    request_capacity: 6,
-    idempotency_key: "production-competing-membership-extension",
-  });
-  await resumePausedEvidenceRun(database, runId);
-  await collect(sets[0]!);
   const run = await requiredEvidenceRun(database, runId);
   const detail = { role: "detail" as const, url: `${api}/cards/a-b-1`, headers: { accept: "application/json" } };
   const admitted = await appendDiscoveredEvidenceRequests(database, run, sets[0]!, [detail, detail]);
@@ -125,10 +114,9 @@ test("production rejects competing Set/local claims for one opaque Card ID while
     discovered_from_request_id: sets[0]!.request_id,
   });
   expect(fetched).toEqual([`${api}/sets`, `${api}/series/tcgp`, `${api}/sets/a`, detail.url, `${api}/sets/a-b`]);
-  expect(tcgdexPokemonSourceAdapterRegistration.requestCapacity).toBe(4);
 });
 
-test("production TCGdex preserves exact retained graph evidence through both capacity pauses and interrupted leaf storage", async () => {
+test("production TCGdex preserves exact retained graph evidence within its census capacity and through interrupted leaf storage", async () => {
   const captures = [
     {
       url: "https://api.tcgdex.net/v2/en/sets",
@@ -194,61 +182,15 @@ test("production TCGdex preserves exact retained graph evidence through both cap
     });
   };
   const counts = () => productionGraphCounts(env.CATALOGUE_DB).bind(runId).first();
-  const pauses = async () => (await productionGraphPauses(env.CATALOGUE_DB).bind(runId).all()).results;
-  const extend = async (previous: number, next: number, generation: number) => {
-    const request = {
-      expected_request_capacity: previous,
-      expected_capacity_generation: generation,
-      request_capacity: next,
-      idempotency_key: `production-tcgdex-extension-${generation}`,
-    };
-    const result = await extendRunRequestCapacity(database, runId, request);
-    expect(result).toMatchObject({ request_capacity: next, capacity_generation: generation + 1 });
-    expect(await extendRunRequestCapacity(database, runId, request)).toEqual(result);
-    expect((await requiredEvidenceRun(database, runId)).state).toBe("paused");
-    await resumePausedEvidenceRun(database, runId);
-    expect((await requiredEvidenceRun(database, runId)).state).toBe("collecting");
-  };
-  expect(tcgdexPokemonSourceAdapterRegistration.requestCapacity).toBe(4);
+  expect(tcgdexPokemonSourceAdapterRegistration.requestCapacity).toBe(45_000);
   await collect(captures[0]!.url);
   await collect(captures[1]!.url);
-  expect((await requiredEvidenceRun(database, runId)).state).toBe("paused");
-  expect(await counts()).toEqual({ planned: 2, captured: 2, pending: 0, failed: 0 });
-  const firstPause = await pauses();
-  expect(firstPause).toMatchObject([
-    {
-      request_capacity: 4,
-      capacity_generation: 1,
-      used_capacity: 2,
-      overflow_request_count: 8,
-      required_capacity: 10,
-    },
-  ]);
-  await finalizeEvidenceRun(database, runId);
-  expect((await requiredEvidenceRun(database, runId)).state).toBe("paused");
-  expect((await collect(captures[1]!.url)).halt).toEqual({ kind: "run_not_collecting" });
-  expect(await pauses()).toEqual(firstPause);
-  await extend(4, 205, 1);
-  await collect(captures[1]!.url);
-  expect(fetched).toEqual(captures.slice(0, 2).map(({ url }) => url));
+  expect((await requiredEvidenceRun(database, runId)).state).toBe("collecting");
+  expect(await productionGraphPauses(env.CATALOGUE_DB).bind(runId).all()).toMatchObject({ results: [] });
   expect(await counts()).toEqual({ planned: 205, captured: 2, pending: 203, failed: 0 });
   const setRequests = await pendingEvidenceRequests(database, runId);
   expect(setRequests).toHaveLength(203);
   expect(setRequests.some(({ url }) => url === "https://api.tcgdex.net/v2/en/sets/A1")).toBe(false);
-  await collect(captures[2]!.url);
-  expect((await requiredEvidenceRun(database, runId)).state).toBe("paused");
-  expect(await counts()).toEqual({ planned: 205, captured: 3, pending: 202, failed: 0 });
-  expect(await pauses()).toMatchObject([
-    ...firstPause,
-    {
-      request_capacity: 205,
-      capacity_generation: 2,
-      used_capacity: 205,
-      overflow_request_count: 8,
-      required_capacity: 213,
-    },
-  ]);
-  await extend(205, 215, 2);
   await collect(captures[2]!.url);
   expect(fetched).toEqual(captures.slice(0, 3).map(({ url }) => url));
   expect(await counts()).toEqual({ planned: 215, captured: 3, pending: 212, failed: 0 });
@@ -293,13 +235,9 @@ test("production TCGdex preserves exact retained graph evidence through both cap
   const observation = await readSourceObservation(database, contexts[3]!.observation_set_id, 0);
   expect(observation).toMatchObject({
     value: {
-      observation_type: "source_admission_evidence",
-      game: "pokemon",
-      source_lineage: "tcgdex-pokemon-en",
-      locator: "tk-ex-latia-8",
-      source_membership: { set_id: "tk-ex-latia", local_id: "8" },
-      target: { kind: "unresolved_record" },
-      source_sidecar: { source_record_json: cardBody },
+      card: { game: "pokemon", name: "Potion" },
+      card_identity_evidence: { source_design_key: "tk-ex-latia-8" },
+      printing: { game_data: { attributes: { set_code: "tk-ex-latia", collector_number: "8" } } },
       appearance_evidence: { images: [] },
     },
   });
@@ -307,7 +245,6 @@ test("production TCGdex preserves exact retained graph evidence through both cap
   expect(await reviewProposals(database).bind("tcgdex-pokemon-en").all()).toMatchObject({ results: [] });
   expect(await reviewAllocations(database).all()).toMatchObject({ results: [] });
   await finalizeEvidenceRun(database, runId);
-  expect(tcgdexPokemonSourceAdapterRegistration.requestCapacity).toBe(4);
   // Discovery is complete for these bodies. The other discovered requests are
   // still pending: this bounded slice cannot claim whole-source coverage.
   expect((await pendingEvidenceRequests(database, runId)).length).toBe(211);

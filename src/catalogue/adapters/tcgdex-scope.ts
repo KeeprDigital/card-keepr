@@ -3,8 +3,31 @@ import { AdapterParseFailure, decodeAdapterUtf8, withAdapterParseFailure } from 
 const api = "https://api.tcgdex.net/v2/en";
 const maximumSets = 512;
 const maximumCardsPerSet = 1024;
-// Qualified by the retained Base Set, Base Set 2, Trainer Kit and Brilliant Stars contexts.
-const physicalSeries = new Set(["base", "tk", "swsh"]);
+// Every English series in the retained 2026-09-15 inventory other than Pocket
+// (tcgp) is issued physical product (#329 census). A series first seen later
+// stays unresolved until it is classified explicitly.
+const physicalSeries = new Set([
+  "base",
+  "bw",
+  "col",
+  "dp",
+  "ecard",
+  "ex",
+  "gym",
+  "hgss",
+  "lc",
+  "mc",
+  "me",
+  "misc",
+  "neo",
+  "pl",
+  "pop",
+  "sm",
+  "sv",
+  "swsh",
+  "tk",
+  "xy",
+]);
 
 type SetSummary = Readonly<{
   id: string;
