@@ -15,6 +15,7 @@
     "keepr": "node cli/keepr.mjs",
     "release:staging": "node cli/keepr.mjs release run staging",
     "release:production": "node cli/keepr.mjs release run production",
+    "release:promote": "node cli/keepr.mjs release promote",
     "test": "pnpm run test:domain && pnpm run test:api && pnpm run test:acceptance:smoke",
     "test:full": "pnpm run test:domain && pnpm run test:api && pnpm run test:ingestion && pnpm run test:acceptance",
     "test:domain": "vitest run --config test/domain/vitest.config.ts",

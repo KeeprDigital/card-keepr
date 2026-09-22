@@ -1,24 +1,26 @@
 name: release-please
 
 # Maintains one open release pull request from the conventional commits merged
-# to main since the last release. Merging that pull request is the owner's
-# release initiation: release-please then creates the vX.Y.Z tag and the GitHub
-# Release whose notes are the generated changelog (#238). This workflow deploys
-# nothing; release-please.json and .release-please-manifest.json own its policy.
+# to main since the last release. Merging that pull request versions the code:
+# release-please creates the vX.Y.Z tag and the GitHub Release whose notes are
+# the generated changelog, then this workflow records the extended-scenarios
+# evidence on the tagged commit. It deploys nothing. The owner starts a release
+# with `pnpm release:staging` (#238); release-please.json and
+# .release-please-manifest.json own the versioning policy.
 on:
   push:
     branches: [main]
 
 permissions: {}
 
-concurrency:
-  group: release-please
-  cancel-in-progress: false
-
 jobs:
   release-please:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Job-level so a release's extended scenarios never hold the next push's update.
+    concurrency:
+      group: release-please
+      cancel-in-progress: false
     permissions:
       contents: write
       issues: write
@@ -33,3 +35,16 @@ jobs:
         with:
           config-file: release-please.json
           manifest-file: .release-please-manifest.json
+
+  # A tag pushed with GITHUB_TOKEN starts no workflow, so the release's tag commit
+  # gets its extended-scenarios record here, before `pnpm release:promote` checks
+  # it. That check accepts this run (a release-please.yml push at the SHA).
+  extended:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: read
+      statuses: write
+    uses: ./.github/workflows/extended-scenarios.yml
+    with:
+      sha: ${{ needs.release-please.outputs.sha }}

@@ -124,6 +124,14 @@ is an owner-authenticated production route. The production authorization and
 staging preparation/outcome POST routes accept the exact signed workflow identity,
 never an administration key. Selecting a profile alone does not provision resources.
 
+`release promote` reads both staging-status documents for the latest successful
+staging release and verifies its commit's extended-scenarios run before it
+prepares an ordinary `release production` for that commit. Its refusals happen
+before preparation: `6` when no successful staging release or outcome exists and
+`7` for a failed or mismatched outcome, missing, pending, failed or unverified
+extended scenarios, or a commit production already runs. See the
+[release procedure](../docs/runbooks/production-release.md#promote-a-staged-release).
+
 Exit codes are `0` success, `2` usage, `3` confirmation declined, `4`
 authentication, `5` authorization, `6` not found, `7` conflict or stale
 precondition, `8` contract validation or terminal publication failure, `9`

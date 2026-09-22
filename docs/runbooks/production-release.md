@@ -12,9 +12,17 @@ deployment credentials. Catalogue backup and recovery use the separate
 
 ## Release process
 
-The accepted front door ([#238](https://github.com/KeeprDigital/card-keepr/issues/238))
-is a release pull request. Today it only versions, tags and publishes notes; it
-does not start staging or production. Use the guarded commands below to deploy.
+The routine release ([#238](https://github.com/KeeprDigital/card-keepr/issues/238))
+is three owner steps:
+
+1. **Merge the release PR.** release-please tags the merge commit `vX.Y.Z`,
+   publishes the notes and runs the extended scenarios on that commit.
+2. **`pnpm release:staging`** ([staging](manual-staging.md#one-command-staging-release)).
+   The newest `main` commit with green push CI and dev delivery is normally
+   that tag commit; `--tag vX.Y.Z` pins it.
+3. **`pnpm release:promote`** ([promotion](#promote-a-staged-release)). One
+   `y/N`, then the guarded Production Release of that exact commit runs
+   automatically.
 
 - **Titles:** every pull request title is a conventional commit,
   `type(scope)?: summary` with type `feat`, `fix`, `perf`, `refactor`, `docs`,
@@ -28,14 +36,16 @@ does not start staging or production. Use the guarded commands below to deploy.
   `test`/`chore` do not. Before 1.0, `feat` and breaking changes bump the minor
   version and fixes the patch version. The first release is `0.1.0` and collects
   commits after `bootstrap-sha` in `release-please.json`.
-- **Initiation:** merging the release PR is the owner's release initiation.
-  release-please then creates the `vX.Y.Z` tag on that exact merge commit and a
-  GitHub Release whose notes are the changelog entry.
+- **Versioning:** merging the release PR creates the `vX.Y.Z` tag on that exact
+  merge commit and a GitHub Release whose notes are the changelog entry. The
+  same `release-please.yml` run then calls `extended-scenarios.yml` for the tag
+  commit, so its `extended-scenarios` record exists before promotion. Merging
+  deploys nothing.
 - **Token limits:** release-please uses the workflow `GITHUB_TOKEN`. Its tag
   pushes start no workflow, and its release PR's `pull_request` runs wait for
   approval. Approve those runs (or close and reopen the PR) so the required checks
-  report before queueing. A later release workflow must chain from
-  `release-please.yml` or dispatch, not rely on a tag `push` trigger.
+  report before queueing. That is why `release-please.yml` calls the extended
+  scenarios itself instead of relying on a tag `push` trigger.
 
 `release-please.json` and `.release-please-manifest.json` own the exact policy.
 Edit the manifest by hand only to bootstrap or correct a version.
@@ -58,9 +68,43 @@ GitHub `production` secrets and the rotation and probe procedures. Set the exact
 owner CORS origins. Use the existing secret stores; credentials never belong in
 command arguments or Git.
 
+## Promote a staged release
+
+```sh
+pnpm release:promote                   # or --release-id <staging release>, --yes
+```
+
+`keepr release promote` is the routine production step after a successful
+`pnpm release:staging`. It:
+
+- selects the newest `staging-deploy.yml` run that completed successfully, or the
+  named staging release, and says how many newer staging runs did not succeed;
+- refuses (`already_in_production`) when the newest successful
+  `production-release.yml` run already deployed that commit;
+- reads, with that commit's own CLI, production's intent and claim
+  (`staging-status --target production`) and staging's outcome
+  (`--target staging`). Both must name that run and commit, and the outcome
+  must have succeeded;
+- verifies the commit's `extended-scenarios` evidence the same way production's
+  promotion endpoint does: the latest status only points to a run, which must be
+  a completed, successful `extended-scenarios.yml` or `release-please.yml` run
+  for that commit with all three scenario jobs green. Pending, failed, missing
+  and forged records stop it;
+- then runs the [production command](#one-command-release) for that commit
+  (`--sha`). Its one `Proceed? [y/N]` shows the staging release, outcome and
+  extended run above the exact production envelope. `--yes` confirms without a
+  terminal.
+
+Every stop happens before preparation, so nothing is dispatched. Fix the
+cause, or run `pnpm release:staging` again, then retry. It needs the production
+command's names plus `KEEPR_STAGING_ADMINISTRATION_KEY`; the release token needs
+no new grant.
+
 ## One-command release
 
-After the one-time checks in steps 1–2 below, the routine path is:
+`pnpm release:promote` runs this path for a staged commit. Run it directly
+only as the manual or break-glass path (for example when staging is
+unavailable). After the one-time checks in steps 1–2 below:
 
 ```sh
 pnpm release:production                # or --sha <sha> / --tag vX.Y.Z, --release-id, --yes
@@ -279,14 +323,17 @@ After migration begins, a failure is recorded with
 roll back a Worker unless its compatibility with the migrated schema has been
 separately proven and recorded.
 
-## Automatic promotion from staging
+## Dormant promotion endpoint
 
-`POST /v1/production-promotions` (production only) turns a successful staging
-release into a Production Release plan for the same commit without a second
-owner confirmation. The caller is the `production`-environment job of the
+The owner promotes with [`pnpm release:promote`](#promote-a-staged-release).
+Production's `POST /v1/production-promotions` stays deployed but nothing calls
+it; it is kept for a possible hands-off promotion later
+([decision](https://github.com/KeeprDigital/card-keepr/issues/238#issuecomment-5773132010)).
+It turns a successful staging release into a Production Release plan for the
+same commit. Its caller would be a `production`-environment job of the
 `staging-deploy.yml` run that claimed the owner's staging intent, with its OIDC
 token (audience `…/v1/production-promotions`) and a GitHub token that can read
-actions, checks and statuses. It is available code; no workflow calls it yet.
+actions, checks and statuses.
 
 Production then, in order:
 

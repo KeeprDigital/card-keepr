@@ -16,7 +16,7 @@ import {
   approveNativeCandidateThroughBinding as approveNativeCandidate,
   prepareNativeCandidateThroughBinding as prepareNativeCandidate,
 } from "./native-publication-helpers";
-import { collect } from "./reconciliation-helpers";
+import { collect, requiredString } from "./reconciliation-helpers";
 import { installWorkflowIsolation } from "./workflow-isolation";
 import * as promotionQueries from "./query-helpers/production-promotion";
 
@@ -342,6 +342,57 @@ test("a revision published after the intent is re-resolved, not reused, and requ
   expect(problem.code).toBe("promotion_preflight_failed");
   expect(await promotionQueries.promotionPlanCount(testEnv.CATALOGUE_DB).first("count")).toBe(0);
 });
+
+// The non-Bootstrap path end to end (#238): four real publications with verified
+// backups and exports leave current-plus-two recovery evidence and an archived
+// revision, so the promotion resolves an ordinary guarded plan from that evidence.
+// The endpoint is dormant (the owner promotes with `pnpm release:promote`); this
+// keeps its shared resolver path proven for a later hands-off promotion.
+test("a populated catalogue promotes through a fresh plan bound to its recovery evidence", async () => {
+  let head = "catrev_spine_000";
+  for (let sequence = 1; sequence <= 4; sequence += 1) {
+    const collection = await collect(
+      `/reconciliation/search-repair-retention-${sequence}`,
+      `promotion-retention-${sequence}`,
+    );
+    const candidate = await prepareNativeCandidate(
+      collection.id,
+      "one-piece",
+      head,
+      `promotion-retention-candidate-${sequence}`,
+    );
+    const published = await approveNativeCandidate(candidate, `promotion-retention-publish-${sequence}`);
+    expect(published.response.status).toBe(200);
+    head = requiredString(published.document, "resulting_revision_id");
+  }
+  const status = await worker.fetch(
+    new Request(`${base}/v1/status`, { headers: { authorization: "Bearer vitest-administration-key" } }),
+    testEnv,
+  );
+  const preflight = (await status.json<{ release_preflight: Record<string, unknown> }>()).release_preflight;
+  expect(preflight).toMatchObject({ bootstrap: false, retention_ready: true });
+
+  const response = await promote();
+  expect(response.status, await response.clone().text()).toBe(201);
+  await assertHttpResponse(document, "/v1/production-promotions", "post", response.clone());
+  const receipt = await response.json<{ production_release: { dispatch_inputs: Record<string, string> } }>();
+  const inputs = receipt.production_release.dispatch_inputs;
+  expect(inputs).toMatchObject({
+    operation: "production_release",
+    release_id: `promotion-${releaseId}`,
+    idempotency_key: `promotion:${releaseId}:${run}`,
+    expected_head_sha: selected,
+    expected_actor: "github-actions[bot]",
+    expected_current_revision: head,
+    bootstrap: "false",
+    recovery_bookmark: preflight.recovery_bookmark,
+    recovery_backup_attempt_id: preflight.recovery_backup_attempt_id,
+    replacement_recovery_id: "none",
+  });
+  expect(JSON.parse(inputs.retained_revision_evidence_json!)).toEqual(preflight.retained_revision_evidence);
+  expect(JSON.parse(inputs.smoke_targets_json!)).toEqual(preflight.smoke_targets);
+  expect(JSON.parse(inputs.smoke_targets_json!).revisions[0].revision_id).toBe(head);
+}, 120_000);
 
 test("staging serves its recorded outcome only to the run and owner that recorded it", async () => {
   const stagingEnv = { ...testEnv, KEEPR_ENVIRONMENT: "staging" } as unknown as Env;

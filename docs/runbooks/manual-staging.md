@@ -128,7 +128,8 @@ under `.artifacts/237` did by hand:
    (ignoring runs that existed before dispatch, never "the latest run"), watches
    it, then prints failed steps and the staging outcome: state, deployment,
    migration levels and each check. It exits non-zero unless both the run and
-   the outcome succeeded.
+   the outcome succeeded. On success, promote the commit with
+   [`pnpm release:promote`](production-release.md#promote-a-staged-release).
 
 Credentials come from the main checkout's git-ignored `.env`, read literally
 (no shell expansion); explicit variables win. See
@@ -190,7 +191,8 @@ Staging does not replay retained-source scenarios. `composed-recovery`,
 `one-piece-two-source` and `riftbound-catalogue` run once per release candidate
 in `extended-scenarios.yml`, which records the `extended-scenarios` commit status
 on that exact SHA ([#238](https://github.com/KeeprDigital/card-keepr/issues/238)).
-It runs on a `v*` tag push, when another workflow calls it, and on manual dispatch:
+`release-please.yml` calls it for the tag commit of every release it creates.
+It also runs on a `v*` tag push by another identity and on manual dispatch:
 
 ```sh
 gh workflow run extended-scenarios.yml --ref main -f sha=<full-sha-contained-in-main>
@@ -228,12 +230,13 @@ and outcome. Status returns exit 0 for a retrieved document, including `failed`;
 read its outcome state. Dispatch returns exit 10, which only acknowledges the
 request. No status code substitutes for a successful immutable outcome.
 
-Production continuation uses the
-[automatic promotion](production-release.md#automatic-promotion-from-staging)
-endpoint: the same intent/SHA, the successful staging outcome, a verified
-`extended-scenarios` record and fresh production guards, with no second owner
-approval. It never reuses staging's expired preparation. The broader retained
-intent and the short deployment lease are separate authorities.
+Production continuation is the owner's
+[`pnpm release:promote`](production-release.md#promote-a-staged-release): it
+checks the same intent/SHA, the successful staging outcome and a verified
+`extended-scenarios` run, then runs an ordinary guarded Production Release of
+that commit after one `y/N`, with fresh production guards. It never reuses
+staging's expired preparation. The broader retained intent and the short
+deployment lease are separate authorities.
 
 Keep #237 open until actual provisioning, first installation, owner initiation,
 successful exact-SHA staging validation and unchanged-production evidence are

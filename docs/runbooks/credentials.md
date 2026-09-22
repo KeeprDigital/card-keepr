@@ -305,14 +305,17 @@ serve only the local Wrangler runtime without `--target`, from the shell.
 `release run staging` needs `KEEPR_PRODUCTION_ADMINISTRATION_KEY`,
 `KEEPR_STAGING_ADMINISTRATION_KEY` and `KEEPR_GITHUB_RELEASE_TOKEN`; `release run
 production` needs `KEEPR_PRODUCTION_ADMINISTRATION_KEY`, `KEEPR_PRODUCTION_API_KEY`
-and `KEEPR_GITHUB_RELEASE_TOKEN`. Values pass only to the release checkout's
+and `KEEPR_GITHUB_RELEASE_TOKEN`; `release promote` needs those three plus
+`KEEPR_STAGING_ADMINISTRATION_KEY`. Values pass only to the release checkout's
 `keepr` process and are never printed.
 
 `KEEPR_GITHUB_RELEASE_TOKEN` needs only **Actions: write** on `KeeprDigital/card-keepr`
 (workflow dispatch, `cli/provider-github-release.mjs:43`). `release run` also uses
 the read access that grant includes to list `ci.yml`, `dev-deploy.yml` and release
 workflow runs and a run's jobs, and reads `GET /user` for the staging actor; it
-reads no contents or checks. Issue it as a fine-grained personal access token
+reads no contents or checks. `release promote` also reads the commit's
+`extended-scenarios` status, which every fine-grained token can read on this
+public repository, so it needs no further grant. Issue it as a fine-grained personal access token
 scoped to this repository and rotate it in GitHub's token settings, then update
 `.env`. `KEEPR_GITHUB_RELEASE_ACTOR` (not secret, never stored) is
 `github-actions[bot]` for `release production` and the dispatching owner's login

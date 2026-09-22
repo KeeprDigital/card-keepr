@@ -201,7 +201,7 @@ Use the [scheduled stress procedure](runbooks/scheduled-stress.md) for hosted ru
 | Push to `main` or manual CI                  | Full checks on that exact commit, whatever changed                |
 | Weekly/default stress                        | Two bounded tests; five-minute job cap                            |
 | Manual full stress                           | Full stress selection; 45-minute cap; separate from merge/release |
-| Release candidate (`v*` tag) or manual SHA   | Three extended journeys once per SHA; `extended-scenarios` status |
+| Release created, `v*` tag or manual SHA      | Three extended journeys once per SHA; `extended-scenarios` status |
 | Focused diagnostics                          | Selected files, one or three independent runs; any failure fails  |
 
 The `changes` job classifies pull request and merge-queue diffs (#401). Heavy
