@@ -1,0 +1,40 @@
+name: pr-title
+
+# Squash merges make the pull request title the main commit's subject, and
+# release-please reads those subjects to choose the next version and write the
+# changelog. This check keeps every title a conventional commit so each main
+# commit is one line release-please can parse (#238). It is a separate
+# workflow so it never joins the ci.yml check set the guarded release requires.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+  merge_group:
+
+permissions: {}
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The queue reports the same required check on each merge group; the title
+  # was already validated on the pull request before it could enter the queue.
+  pr-title:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Validate the conventional commit title
+        if: github.event_name == 'pull_request'
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(feat|fix|perf|refactor|docs|test|build|ci|chore)(\([a-z0-9][a-z0-9._/-]*\))?!?: [^[:space:]].*$'
+          if [[ "$TITLE" =~ $pattern ]]; then
+            echo "Conventional title: $TITLE"
+          else
+            echo "::error title=Non-conventional pull request title::Use 'type(scope)?: summary' with type one of feat, fix, perf, refactor, docs, test, build, ci or chore; add '!' before ':' for a breaking change."
+            exit 1
+          fi
+      - name: Accept the merge group
+        if: github.event_name == 'merge_group'
+        run: echo "Title validated on the pull request."
