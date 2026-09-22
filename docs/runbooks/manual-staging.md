@@ -79,9 +79,54 @@ configuration declares that flag; without it staging reports
 `staging_authorization_refused` while production records nothing
 (`acceptance/staging-worker-config.test.mjs`).
 
-## One owner intent
+## One-command staging release
 
-Invoke `release staging --target production` because production owns the release
+The routine path is one command from any checkout of this repository:
+
+```sh
+export KEEPR_OWNER_ENV_FILE=~/secrets/card-keepr.env   # absolute path, outside the repo
+pnpm release:staging                   # newest main commit with green push CI and dev
+pnpm release:staging --tag v0.1.0      # or --sha <sha>; must be in main with green push CI
+```
+
+`keepr release run staging` (the script's target) does what the owner scripts
+under `.artifacts/237` did by hand:
+
+1. Fetches `origin/main` and selects the newest first-parent commit that has a
+   successful push `ci.yml` run **and** a successful `dev-deploy.yml` run for that
+   SHA, skipping newer commits without both. `--sha`/`--tag` override the commit;
+   the override must be contained in `main` with a successful push CI run. The
+   CI run ID is read from that run.
+2. Creates (or reuses, if clean) a detached worktree of that exact commit under
+   `../card-keepr-worktrees/release-<sha12>` (`KEEPR_RELEASE_WORKTREE_ROOT`
+   overrides the parent) and runs `pnpm install --frozen-lockfile` there. Every
+   request to production, staging and GitHub dispatch is made by **that commit's**
+   `keepr` CLI, which its green CI tested. The current checkout only selects,
+   prompts and watches, so a dirty, older or unmerged checkout cannot shape the
+   request.
+3. Generates `staging-YYYY-MM-DD-NN` (UTC day, next free `NN`) from the
+   `staging-deploy.yml` run names, then asks production for each candidate
+   (`staging-status --target production`) because production records an intent
+   on confirmation even if its dispatch failed. `--release-id` overrides it. The
+   idempotency key equals the release ID; the actor is the token's GitHub login.
+4. Prepares, prints a summary of the exact server envelope (release, commit and
+   subject, CI run, actor, production's starting schema level and target) and
+   asks `Proceed? [y/N]`. Without a terminal it refuses unless `--yes` is given.
+   The confirmation sent back is the server's string, byte for byte.
+5. Dispatches, finds the run by its exact run name `staging-<release>-<sha>`
+   (ignoring runs that existed before dispatch, never "the latest run"), watches
+   it, then prints failed steps and the staging outcome: state, deployment,
+   migration levels and each check. It exits non-zero unless both the run and
+   the outcome succeeded.
+
+The env file holds `export NAME=value` lines read literally (no shell
+expansion); see [credentials](credentials.md#owner-shell-profile) for the
+required names. Values are never printed.
+
+## One owner intent (underlying and break-glass commands)
+
+`release run` wraps the commands below; use them directly only to diagnose or
+recover. Invoke `release staging --target production` because production owns the release
 intent and actual starting state. This command dispatches only staging. Supply
 `--release-id`, `--expected-head-sha` (full SHA), `--ci-run-id`,
 `--idempotency-key`, `--yes` and `--json`.
