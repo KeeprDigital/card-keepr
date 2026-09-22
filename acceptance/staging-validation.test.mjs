@@ -1,26 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-test("server-owned transition scope rejects omitted mandatory checks and incomplete success", async () => {
-  const { stagingValidationRequirements, selectStagingValidation, validateStagingOutcome } =
-    await import("../src/catalogue/shared/staging-validation.mjs");
-  assert.deepEqual(stagingValidationRequirements("full"), [
-    "exact-commit-ci",
-    "migration-rehearsal",
-    "retained-source-rehearsal",
-    "live-smoke",
-  ]);
-  for (const scope of ["smoke", "none", null])
-    assert.throws(() => stagingValidationRequirements(scope), /invalid_staging_validation_scope/u);
-  assert.equal(selectStagingValidation(null).reason, "unknown_transition");
-  assert.equal(selectStagingValidation(["docs/runbooks/maintenance.md"]).scope, "routine");
-  assert.equal(selectStagingValidation(["src/catalogue/backup-recovery/recovery.ts"]).scope, "recovery");
-  assert.equal(selectStagingValidation(["src/catalogue/adapters/source-adapters.ts"]).scope, "sources");
-  assert.equal(selectStagingValidation(["src/catalogue/shared/types.ts"]).scope, "full");
-  assert.equal(selectStagingValidation(["future-module.ts"]).scope, "full");
+test("staging requires exactly exact-commit CI, migration rehearsal and live smoke, and rejects incomplete success", async () => {
+  const validation = await import("../src/catalogue/shared/staging-validation.mjs");
+  const { stagingValidationChecks, validateStagingOutcome } = validation;
+  // Extended scenarios are a per-commit CI record (#238), never a release-time staging check.
+  assert.deepEqual(stagingValidationChecks, ["exact-commit-ci", "migration-rehearsal", "live-smoke"]);
+  assert.ok(Object.isFrozen(stagingValidationChecks));
+  assert.equal(validation.selectStagingValidation, undefined);
   const intent = {
     expected_head_sha: "a".repeat(40),
-    validation_scope: "full",
+    required_checks: [...stagingValidationChecks],
     production_start: { migration_level: 31 },
   };
   const result = {
@@ -30,17 +20,19 @@ test("server-owned transition scope rejects omitted mandatory checks and incompl
     state: "succeeded",
     deployment: { state: "succeeded", release_id: "staging-237", dispatch_digest: "d".repeat(64) },
     migration: { state: "succeeded", starting_level: 31, ending_level: 32, migration_digest: "f".repeat(64) },
-    checks: ["exact-commit-ci", "migration-rehearsal", "retained-source-rehearsal", "live-smoke"].map((name) => ({
-      name,
-      state: "succeeded",
-      evidence_sha256: "f".repeat(64),
-    })),
+    checks: stagingValidationChecks.map((name) => ({ name, state: "succeeded", evidence_sha256: "f".repeat(64) })),
     failure_code: null,
   };
   assert.equal(validateStagingOutcome(result, intent, "c".repeat(64)).state, "succeeded");
   for (const changed of [
     { expected_head_sha: "b".repeat(40) },
     { checks: result.checks.slice(1) },
+    {
+      checks: [
+        ...result.checks,
+        { name: "retained-source-rehearsal", state: "succeeded", evidence_sha256: "f".repeat(64) },
+      ],
+    },
     { checks: result.checks.map((check) => ({ ...check, state: "pending" })) },
     { migration: { ...result.migration, starting_level: 32 } },
     { migration: { ...result.migration, migration_digest: "e".repeat(64) } },
@@ -48,4 +40,10 @@ test("server-owned transition scope rejects omitted mandatory checks and incompl
     { deployment: { ...result.deployment, state: "requested" } },
   ])
     assert.throws(() => validateStagingOutcome({ ...result, ...changed }, intent, "c".repeat(64)));
+  // A retained intent from the classifier era demanded the replay; no outcome can satisfy it now.
+  const classified = {
+    ...intent,
+    required_checks: ["exact-commit-ci", "migration-rehearsal", "retained-source-rehearsal", "live-smoke"],
+  };
+  assert.throws(() => validateStagingOutcome(result, classified, "c".repeat(64)), /invalid_staging_outcome/u);
 });

@@ -1,40 +1,10 @@
 import { isReleaseDigest, isReleaseHead, isReleaseIdentity } from "./release-input-shapes.mjs";
 
-const scenarios = {
-  routine: [],
-  recovery: ["composed-recovery"],
-  sources: ["one-piece-two-source", "riftbound-catalogue"],
-  full: ["composed-recovery", "one-piece-two-source", "riftbound-catalogue"],
-};
-
-export function stagingValidationScenarios(scope) {
-  if (!Object.hasOwn(scenarios, scope)) throw new Error("invalid_staging_validation_scope");
-  return [...scenarios[scope]];
-}
-
-export function stagingValidationRequirements(scope) {
-  return [
-    "exact-commit-ci",
-    "migration-rehearsal",
-    ...(stagingValidationScenarios(scope).length ? ["retained-source-rehearsal"] : []),
-    "live-smoke",
-  ];
-}
-
-/** Call only with complete, provider-verified starting-to-selected paths, including rename sources. */
-export function selectStagingValidation(paths) {
-  if (!Array.isArray(paths) || paths.some((path) => typeof path !== "string"))
-    return { scope: "full", reason: "unknown_transition" };
-  const families = new Set();
-  for (const path of paths) {
-    if (/^src\/catalogue\/backup-recovery\//u.test(path)) families.add("recovery");
-    else if (/^src\/catalogue\/(?:adapters|source-evidence)\//u.test(path)) families.add("sources");
-    else if (/^(?:docs\/|README\.md$|cli\/|acceptance\/|test\/|apps\/(?:api|ingestion)\/test\/)/u.test(path)) continue;
-    else return { scope: "full", reason: "shared_or_unclassified_change" };
-  }
-  const scope = families.size > 1 ? "full" : ([...families][0] ?? "routine");
-  return { scope, reason: "verified_transition" };
-}
+/**
+ * Every staging release verifies these, in order. Extended retained-source scenarios
+ * are a per-commit CI record (#238), not a release-time staging check.
+ */
+export const stagingValidationChecks = Object.freeze(["exact-commit-ci", "migration-rehearsal", "live-smoke"]);
 
 /** Deployment acknowledgement alone is never a staging validation result. */
 export function validateStagingOutcome(value, intent, intentDigest) {
@@ -61,8 +31,10 @@ export function validateStagingOutcome(value, intent, intentDigest) {
     !["succeeded", "failed"].includes(value.state)
   )
     invalid();
-  const required = stagingValidationRequirements(intent.validation_scope);
+  const required = stagingValidationChecks;
   if (
+    !Array.isArray(intent.required_checks) ||
+    intent.required_checks.join("|") !== required.join("|") ||
     !Array.isArray(value.checks) ||
     value.checks.length !== required.length ||
     value.checks.some(

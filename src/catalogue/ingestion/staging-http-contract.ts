@@ -9,48 +9,53 @@ import {
   releaseJsonBody as body,
 } from "./release-http-schemas";
 
-const scope = z.enum(["routine", "recovery", "sources", "full"]);
-export const freshStagingScope = z.union([z.literal("auto"), scope]);
-type RetainedScope = z.infer<typeof scope> | RetainedScope[];
-// The old boundary retained singleton arrays after validating String(scope).
-// This branch admits exact historical replay only; the domain checks fresh input.
-const retainedScope: z.ZodType<RetainedScope> = z
-  .lazy(() => z.union([scope, z.array(retainedScope).min(1).max(1)]))
-  .openapi("RetainedStagingScope");
 const command = z.strictObject({
   release_id: releaseIdentity,
   idempotency_key: releaseIdentity,
   expected_head_sha: releaseHead,
   expected_actor: z.string().regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/),
   ci_run_id: z.string().regex(/^\d+$/),
-  validation_scope: z.union([freshStagingScope, retainedScope]),
   prepare: z.literal(true).optional(),
   confirmation: identifier.optional(),
 });
 const timestamp = z.string().datetime();
-export const stagingIntentSchema = z
+const intentFields = {
+  release_id: releaseIdentity,
+  idempotency_key: releaseIdentity,
+  expected_head_sha: releaseHead,
+  expected_actor: identifier,
+  ci_run_id: z.string().regex(/^\d+$/),
+  required_checks: z.array(identifier),
+  authorized_at: timestamp,
+  expires_at: timestamp,
+};
+const productionStartFields = {
+  target: releaseTargetSchema,
+  target_digest: digest,
+  migration_level: z.number().int().min(1),
+};
+const currentIntent = z
+  .strictObject({ ...intentFields, production_start: z.strictObject(productionStartFields) })
+  .openapi("CurrentStagingReleaseIntent");
+// Intents recorded before #238 retired the scope classifier stay readable by exact
+// inspection. No current release can claim or complete one: their required checks
+// include the retired release-time replay.
+const scope = z.enum(["routine", "recovery", "sources", "full"]);
+const retainedClassifiedIntent = z
   .strictObject({
-    release_id: releaseIdentity,
-    idempotency_key: releaseIdentity,
-    expected_head_sha: releaseHead,
-    expected_actor: identifier,
-    ci_run_id: z.string().regex(/^\d+$/),
+    ...intentFields,
     validation_scope: scope,
     validation_reason: z.enum(["unknown_transition", "shared_or_unclassified_change", "verified_transition"]),
-    required_checks: z.array(identifier),
     extended_scenarios: z.array(identifier),
     production_start: z.strictObject({
-      target: releaseTargetSchema,
-      target_digest: digest,
-      migration_level: z.number().int().min(1),
+      ...productionStartFields,
       head_sha: releaseHead.nullable(),
       worker_versions: z.array(z.strictObject({ worker: identifier, version_id: identifier })).nullable(),
       comparison_sha256: digest.nullable(),
     }),
-    authorized_at: timestamp,
-    expires_at: timestamp,
   })
-  .openapi("StagingReleaseIntent");
+  .openapi("RetainedClassifiedStagingReleaseIntent");
+export const stagingIntentSchema = z.union([currentIntent, retainedClassifiedIntent]).openapi("StagingReleaseIntent");
 const stagingReceiptFields = {
   contract: z.literal("card-keepr-staging-release-request@1"),
   release_id: releaseIdentity,

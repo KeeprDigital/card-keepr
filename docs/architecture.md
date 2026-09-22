@@ -475,10 +475,13 @@ production, including the actual production starting target/schema and exact
 selected commit. A signed manual staging workflow claims it once; lost-response
 replay preserves the original claim and deadline. Staging prepares against its
 own catalogue through the shared guarded executor and retains separate deployment,
-migration-rehearsal and required-validation outcomes. Scope is derived from
-verified active production release provenance and a complete code transition;
-unknown provenance requires full validation. No merge deploys staging, and no
-staging catalogue is copied to production. The
+migration-rehearsal and required-validation outcomes. Every staging release
+requires the same checks: exact-commit CI, migration rehearsal and live smoke.
+Extended retained-source scenarios run once per release candidate and are
+recorded as a per-commit `extended-scenarios` status. They are not replayed at
+release time, and no production-version read or transition classifier selects
+them ([owner direction](https://github.com/KeeprDigital/card-keepr/issues/238#issuecomment-5760797529)).
+No merge deploys staging, and no staging catalogue is copied to production. The
 [staging procedure](runbooks/manual-staging.md) distinguishes available code from
 live acceptance under [#237](https://github.com/KeeprDigital/card-keepr/issues/237).
 [#238](https://github.com/KeeprDigital/card-keepr/issues/238) owns continuation of

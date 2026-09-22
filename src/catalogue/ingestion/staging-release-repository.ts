@@ -11,14 +11,6 @@ export function stagingRecordStatement(database: CatalogueStore, key: string): D
     .bind(key);
 }
 
-export function lastSuccessfulReleaseStatement(database: CatalogueStore): D1PreparedStatement {
-  return repositoryStatements(database).prepare(`SELECT request_json FROM (
-    SELECT request_json, created_at AS completed_at FROM administration_idempotency
-      WHERE operation='production_release_succeeded' AND outcome='success'
-    UNION ALL SELECT request_json, terminal_at AS completed_at FROM production_releases WHERE state='succeeded'
-  ) ORDER BY completed_at DESC LIMIT 1`);
-}
-
 export function stagingDeploymentSucceededStatement(
   database: CatalogueStore,
   releaseId: string,

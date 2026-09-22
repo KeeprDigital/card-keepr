@@ -13,14 +13,12 @@ export type StagingOutcome = {
   checks: Array<{ name: string; state: "succeeded" | "failed" | "not_run"; evidence_sha256: string | null }>;
   failure_code: string | null;
 };
-export function stagingValidationRequirements(scope: unknown): string[];
-export function stagingValidationScenarios(scope: unknown): string[];
-export function selectStagingValidation(paths: readonly string[] | null): { scope: string; reason: string };
+export const stagingValidationChecks: readonly ["exact-commit-ci", "migration-rehearsal", "live-smoke"];
 export function validateStagingOutcome(
   value: unknown,
   intent: {
     expected_head_sha: string;
-    validation_scope: string;
+    required_checks: readonly string[];
     production_start: { migration_level: number };
   },
   intentDigest: string,

@@ -27,7 +27,7 @@ export async function runStagingReleaseStatusCommand(args, environment, json) {
 export async function runStagingReleaseCommand(args, environment, json) {
   const options = parseOptions(
     args,
-    ["--release-id", "--expected-head-sha", "--ci-run-id", "--validation-scope", "--idempotency-key", "--confirm"],
+    ["--release-id", "--expected-head-sha", "--ci-run-id", "--idempotency-key", "--confirm"],
     ["--json", "--yes"],
   );
   const fail = (code, detail, exitCode) => writeCliFailure(json, { code, detail }, exitCode);
@@ -41,21 +41,14 @@ export async function runStagingReleaseCommand(args, environment, json) {
   if (
     options.error ||
     !options.flags.has("--yes") ||
-    ["--release-id", "--expected-head-sha", "--ci-run-id", "--validation-scope", "--idempotency-key"].some(
-      (key) => !value[key],
-    )
+    ["--release-id", "--expected-head-sha", "--ci-run-id", "--idempotency-key"].some((key) => !value[key])
   )
-    return fail(
-      "invalid_arguments",
-      "Release identity, exact SHA, CI run, validation scope, idempotency key and --yes are required.",
-      2,
-    );
+    return fail("invalid_arguments", "Release identity, exact SHA, CI run, idempotency key and --yes are required.", 2);
   const body = {
     release_id: value["--release-id"],
     expected_head_sha: value["--expected-head-sha"],
     expected_actor: environment.KEEPR_GITHUB_RELEASE_ACTOR ?? "",
     ci_run_id: value["--ci-run-id"],
-    validation_scope: value["--validation-scope"],
     idempotency_key: value["--idempotency-key"],
     ...(value["--confirm"] === undefined ? { prepare: true } : { confirmation: value["--confirm"] }),
   };

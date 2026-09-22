@@ -36,7 +36,6 @@ export async function stagingStateFixture(t) {
     expected_head_sha: "a".repeat(40),
     expected_actor: "owner",
     ci_run_id: "123",
-    validation_scope: "full",
   };
   return { vite, sql, database, bucket, target, choices, migrations, resolveStagingRelease, showStagingRelease };
 }

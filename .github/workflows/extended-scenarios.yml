@@ -1,0 +1,128 @@
+name: extended-scenarios
+run-name: extended-scenarios-${{ inputs.sha || github.sha }}
+
+# Runs the three explicit extended retained-source journeys once per release
+# candidate and records the result as the `extended-scenarios` commit status on
+# that exact SHA (#238). Staging no longer replays them; automatic production
+# promotion requires this record alongside a successful staging outcome.
+#
+# release-please tags with GITHUB_TOKEN, and GitHub starts no workflow for a
+# tag pushed with that token, so release-please.yml calls this workflow
+# directly. The tag trigger covers a v* tag pushed by any other identity.
+# A caller must grant `statuses: write` and `contents: read`.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full commit SHA contained in main
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      sha:
+        required: true
+        type: string
+
+permissions: {}
+
+# One record per commit: a second request for the same SHA waits, then finds
+# the first run's success and skips.
+concurrency:
+  group: extended-scenarios-${{ inputs.sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  # Trusted workflow code only: no selected checkout, no write token.
+  select:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      statuses: read
+    outputs:
+      sha: ${{ steps.select.outputs.sha }}
+      run: ${{ steps.select.outputs.run }}
+    steps:
+      - id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ inputs.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::sha must be a full 40-character commit id"; exit 1; }
+          contained=$(gh api "repos/$REPO/compare/main...$SHA" --jq .status)
+          [[ "$contained" == identical || "$contained" == behind ]] ||
+            { echo "::error::$SHA is not contained in main ($contained)"; exit 1; }
+          # Statuses list newest first; only a success this workflow recorded counts.
+          latest=$(gh api "repos/$REPO/commits/$SHA/statuses" --paginate \
+            --jq '[.[] | select(.context == "extended-scenarios")][0] // empty | "\(.state) \(.creator.login)"' | sed -n 1p)
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          if [[ "$latest" == "success github-actions[bot]" ]]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "extended-scenarios already succeeded on $SHA; skipping."
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  pending:
+    needs: select
+    if: needs.select.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      statuses: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ needs.select.outputs.sha }}
+          TARGET: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh api -X POST "repos/$REPO/statuses/$SHA" -f state=pending -f context=extended-scenarios \
+            -f target_url="$TARGET" -f description="Extended retained-source scenarios running" --silent
+
+  # Offline retained fixtures; no deployment, administration, OIDC or write credentials.
+  scenario:
+    needs: [select, pending]
+    runs-on: ubuntu-latest
+    # riftbound-catalogue and one-piece-two-source each measured 26-27 minutes on the runner (#237).
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [composed-recovery, one-piece-two-source, riftbound-catalogue]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.select.outputs.sha }}
+          persist-credentials: false
+      - name: Set up repository tooling
+        uses: ./.github/actions/setup-toolchain
+      - run: pnpm run test:acceptance:extended "$SCENARIO"
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+          WRANGLER_SEND_METRICS: "false"
+
+  record:
+    needs: [select, scenario]
+    if: always() && needs.select.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      statuses: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ needs.select.outputs.sha }}
+          RESULT: ${{ needs.scenario.result }}
+          TARGET: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [[ "$RESULT" == success ]]; then state=success; else state=failure; fi
+          gh api -X POST "repos/$REPO/statuses/$SHA" -f state="$state" -f context=extended-scenarios \
+            -f target_url="$TARGET" -f description="composed-recovery, one-piece-two-source, riftbound-catalogue: $RESULT" --silent

@@ -99,7 +99,6 @@ export const ingestionRoutes: HttpRoute<Context>[] = [
           ),
         ),
       observedAt,
-      env.D1_VERIFICATION_TOKEN,
     );
     return body.prepare === true
       ? c.json(stagingConfirmationSchema.parse(result), 200, { "Cache-Control": "no-store" })

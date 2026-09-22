@@ -13,7 +13,7 @@ function request(path: string) {
   });
 }
 
-test("staging generated requests preserve singleton replay shape while rejecting changed types and extra fields", () => {
+test("staging generated requests carry no validation scope and reject changed types and extra fields", () => {
   const validate = request("/v1/staging-releases");
   const command = {
     release_id: "stage",
@@ -21,16 +21,14 @@ test("staging generated requests preserve singleton replay shape while rejecting
     expected_head_sha: "a".repeat(40),
     expected_actor: "owner",
     ci_run_id: "123",
-    validation_scope: "full",
     prepare: true,
   };
-  for (const validation_scope of ["auto", "full", ["full"], [["full"]]])
-    expect(validate({ ...command, validation_scope }), JSON.stringify(validate.errors)).toBe(true);
+  expect(validate(command), JSON.stringify(validate.errors)).toBe(true);
   for (const change of [
-    { validation_scope: [] },
-    { validation_scope: ["full", "full"] },
-    { validation_scope: [["full", "full"]] },
-    { validation_scope: null },
+    // The release-time scope classifier is retired (#238); its input no longer exists.
+    { validation_scope: "auto" },
+    { validation_scope: "full" },
+    { validation_scope: ["full"] },
     { ci_run_id: 123 },
     { unexpected: true },
     { prepare: "true" },

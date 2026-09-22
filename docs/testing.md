@@ -131,7 +131,10 @@ and real binding publication/checkpoint behavior.
 ## Extended journeys and benchmarks
 
 `composed-recovery`, `one-piece-two-source` and `riftbound-catalogue` are explicit
-extended journeys. Routine mixed-game recovery already crosses current-plus-two
+extended journeys. `extended-scenarios.yml` runs all three once per release
+candidate and records the `extended-scenarios` commit status on that SHA; see
+[manual staging](runbooks/manual-staging.md#validation-and-retained-outcomes).
+Routine mixed-game recovery already crosses current-plus-two
 retention and performs actual SQL restore; it has no large-disk preflight.
 Only the full Riftbound journey requires 6 GiB free space. Its retained source
 inventory and incomplete image coverage are described with the
@@ -197,6 +200,7 @@ Use the [scheduled stress procedure](runbooks/scheduled-stress.md) for hosted ru
 | Push to `main` or manual CI                  | Full checks on that exact commit                                  |
 | Weekly/default stress                        | Two bounded tests; five-minute job cap                            |
 | Manual full stress                           | Full stress selection; 45-minute cap; separate from merge/release |
+| Release candidate (`v*` tag) or manual SHA   | Three extended journeys once per SHA; `extended-scenarios` status |
 | Focused diagnostics                          | Selected files, one or three independent runs; any failure fails  |
 
 Production Release requires the complete successful CI check set on its selected

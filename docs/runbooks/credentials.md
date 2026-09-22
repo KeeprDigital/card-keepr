@@ -158,23 +158,19 @@ Disposable Restore database.
 
 ### `D1_VERIFICATION_TOKEN` (ingestion Worker secret)
 
-| Call the code makes                                                                | Code                                                                                                             | Grant                                                                  |
-| ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `GET /d1/database?name=<disposable>` resolve the live Disposable Restore identity  | `backup-recovery.ts:1163`; callers `ingestion/routes.ts:96`, `staging-deployment.ts:115`, `dev-deployment.ts:44` | D1 Read (in D1 Edit)                                                   |
-| `DELETE /d1/database/{id}`, `POST /d1/database` recreate Disposable Restore        | `backup-recovery.ts:1085,1087` via `:693`                                                                        | D1 Edit                                                                |
-| `POST /d1/database/{disposable}/import`, `…/query` restore and verify              | `backup-recovery.ts:1097,1126` via `:714,733`                                                                    | D1 Edit                                                                |
-| `GET /d1/database/{catalogue}/time_travel/bookmark`                                | `recovery.ts:1248` via `:254`                                                                                    | D1 Read (in D1 Edit)                                                   |
-| `POST /d1/database/{catalogue}/time_travel/restore` **on the catalogue database**  | `recovery.ts:1259` via `:317`                                                                                    | D1 Edit; this token can rewrite the live catalogue                     |
-| `POST /d1/database` replacement database, then import and query on it              | `recovery.ts:1273,1284,1288` via `:333-345,488`                                                                  | D1 Edit                                                                |
-| **Production only:** `GET /workers/scripts/{w}/deployments`, `GET …/versions/{id}` | `ingestion/routes.ts:102` → `staging-release.ts:114` → `src/http/staging-transition.mjs:9,19`                    | Workers Scripts Read (`Metadata Read-Only`) on both production Workers |
+| Call the code makes                                                               | Code                                                                                                             | Grant                                              |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `GET /d1/database?name=<disposable>` resolve the live Disposable Restore identity | `backup-recovery.ts:1163`; callers `ingestion/routes.ts:96`, `staging-deployment.ts:115`, `dev-deployment.ts:44` | D1 Read (in D1 Edit)                               |
+| `DELETE /d1/database/{id}`, `POST /d1/database` recreate Disposable Restore       | `backup-recovery.ts:1085,1087` via `:693`                                                                        | D1 Edit                                            |
+| `POST /d1/database/{disposable}/import`, `…/query` restore and verify             | `backup-recovery.ts:1097,1126` via `:714,733`                                                                    | D1 Edit                                            |
+| `GET /d1/database/{catalogue}/time_travel/bookmark`                               | `recovery.ts:1248` via `:254`                                                                                    | D1 Read (in D1 Edit)                               |
+| `POST /d1/database/{catalogue}/time_travel/restore` **on the catalogue database** | `recovery.ts:1259` via `:317`                                                                                    | D1 Edit; this token can rewrite the live catalogue |
+| `POST /d1/database` replacement database, then import and query on it             | `recovery.ts:1273,1284,1288` via `:333-345,488`                                                                  | D1 Edit                                            |
 
-Grant: D1 Edit for every environment; production additionally Workers Scripts
-Read scoped to `card-keepr-api` and `card-keepr-ingestion`. Without that read,
-`observeStagingTransition` swallows the 403 to `null`
-(`staging-transition.mjs:106`) and every staging release records
-`validation_scope: full` with `unknown_transition` (observed 2026-09-21 on #237).
-Dev and staging never call the Workers endpoints with this token; do not grant
-them there. Because it can time-travel the live catalogue, this token is the most
+Grant: D1 Edit in every environment, and nothing else. No environment calls the
+Workers endpoints with this token. Do not add the former production Workers
+Scripts Read grant: it served only the staging scope classifier that #238 removed.
+Because it can time-travel the live catalogue, this token is the most
 powerful Worker secret and is the one to rotate first after any exposure.
 
 ## Worker secrets
@@ -190,12 +186,12 @@ names with independently issued values.
 | `API_BEARER_KEY`                | random bearer, token68, ≥ 128 bits | `apps/api/src/index.ts:64` | GitHub `API_TRAFFIC_TOKEN` (smoke), owner `KEEPR_<ENV>_API_KEY`, external readers |
 | `API_BEARER_KEY_REPLACEMENT`    | random bearer, same shape          | `apps/api/src/index.ts:64` | Next key during rotation; must always exist                                       |
 
-| Worker (`card-keepr-ingestion[-env]`) | Kind                               | Read at                                                                                                                                        | Consumers of the same value                               |
-| ------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `ADMINISTRATION_KEY`                  | random bearer, token68, ≥ 128 bits | `apps/ingestion/src/index.ts:60`                                                                                                               | Owner `KEEPR_<ENV>_ADMINISTRATION_KEY` only; never GitHub |
-| `ADMINISTRATION_KEY_REPLACEMENT`      | random bearer, same shape          | `apps/ingestion/src/index.ts:60`                                                                                                               | Next key during rotation; must always exist               |
-| `D1_EXPORT_TOKEN`                     | Cloudflare API token (table above) | `apps/ingestion/src/backup-workflow.ts:45`                                                                                                     | None                                                      |
-| `D1_VERIFICATION_TOKEN`               | Cloudflare API token (table above) | `backup-workflow.ts:46`, `backup-recovery/routes.ts:88,104`, `ingestion/routes.ts:97,102`, `staging-deployment.ts:116`, `dev-deployment.ts:45` | None                                                      |
+| Worker (`card-keepr-ingestion[-env]`) | Kind                               | Read at                                                                                                                                    | Consumers of the same value                               |
+| ------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| `ADMINISTRATION_KEY`                  | random bearer, token68, ≥ 128 bits | `apps/ingestion/src/index.ts:60`                                                                                                           | Owner `KEEPR_<ENV>_ADMINISTRATION_KEY` only; never GitHub |
+| `ADMINISTRATION_KEY_REPLACEMENT`      | random bearer, same shape          | `apps/ingestion/src/index.ts:60`                                                                                                           | Next key during rotation; must always exist               |
+| `D1_EXPORT_TOKEN`                     | Cloudflare API token (table above) | `apps/ingestion/src/backup-workflow.ts:45`                                                                                                 | None                                                      |
+| `D1_VERIFICATION_TOKEN`               | Cloudflare API token (table above) | `backup-workflow.ts:46`, `backup-recovery/routes.ts:88,104`, `ingestion/routes.ts:97`, `staging-deployment.ts:116`, `dev-deployment.ts:45` | None                                                      |
 
 Both bearer slots are accepted equally (`authenticateBearer` takes the pair), so a
 client may hold either value. The ingestion Worker also reads the non-secret vars
@@ -309,9 +305,7 @@ the live Disposable Restore database with each D1 token, which is the only
 read-only way to tell D1 Edit from D1 Read. Write capabilities (version upload,
 route deploy, migrations, import, time-travel restore) are listed as `not_probed`.
 
-A failed `D1_VERIFICATION_TOKEN` `workers-deployments-read` row is the cause of
-`unknown_transition` on every staging release; a failed `d1-list-by-name` row
-is the cause of the staging `POST /v1/staging-deployments` 500 seen on
+A failed `D1_VERIFICATION_TOKEN` `d1-list-by-name` row is the cause of the staging `POST /v1/staging-deployments` 500 seen on
 2026-09-21 when the ingestion secrets were random strings instead of tokens.
 Exit 0 means every probed row passed; the probe cannot prove grants it does not
 exercise, so a green probe followed by a failed release still needs the
