@@ -371,6 +371,7 @@ function runCli(args, base, ingestionBase = base) {
     const child = spawn(process.execPath, ["cli/keepr.mjs", ...args], {
       env: {
         ...process.env,
+        KEEPR_OWNER_ENV_FILE: "/dev/null",
         KEEPR_INGESTION_URL: ingestionBase,
         KEEPR_ADMINISTRATION_KEY: "admin-key",
         KEEPR_GITHUB_RELEASE_TOKEN: "github-token-at-least-twenty",

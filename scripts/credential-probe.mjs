@@ -302,7 +302,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.exit(2);
   }
   const tokens = {
-    deployment: process.env.KEEPR_PROBE_DEPLOYMENT_TOKEN,
+    // Staging and dev fall back to the owner env file's deploy token name (.env.example).
+    deployment:
+      process.env.KEEPR_PROBE_DEPLOYMENT_TOKEN ||
+      (environment === "production" ? undefined : process.env[`${environment.toUpperCase()}_DEPLOYMENT_TOKEN`]),
     d1Export: process.env.KEEPR_PROBE_D1_EXPORT_TOKEN,
     d1Verification: process.env.KEEPR_PROBE_D1_VERIFICATION_TOKEN,
   };

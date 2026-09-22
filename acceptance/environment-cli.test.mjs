@@ -6,6 +6,7 @@ test("selecting dev never falls back to unscoped production credentials", () => 
   const result = spawnSync(process.execPath, ["cli/keepr.mjs", "status", "--target", "dev", "--json"], {
     encoding: "utf8",
     env: {
+      KEEPR_OWNER_ENV_FILE: "/dev/null",
       KEEPR_ADMINISTRATION_KEY: "synthetic-production-key",
       KEEPR_API_KEY: "synthetic-production-api-key",
     },

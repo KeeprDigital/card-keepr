@@ -19,25 +19,6 @@ export const releaseKinds = Object.freeze({
 
 const confirmationPrefix = "Confirmation must exactly equal ";
 
-/**
- * Parse `NAME=value` / `export NAME=value` lines literally: no expansion,
- * command substitution or multi-line values. Matching outer quotes are removed.
- * @param {string} text
- */
-export function parseOwnerEnv(text) {
-  /** @type {Record<string, string>} */
-  const values = {};
-  for (const line of text.split(/\r?\n/u)) {
-    const match = /^\s*(?:export\s+)?([A-Za-z_]\w*)=(.*)$/u.exec(line);
-    if (match === null) continue;
-    let value = match[2].trim();
-    if (value.length >= 2 && (value[0] === '"' || value[0] === "'") && value.at(-1) === value[0])
-      value = value.slice(1, -1);
-    values[match[1]] = value;
-  }
-  return values;
-}
-
 /** Latest successful push `ci.yml` run on main for an exact commit, or null. */
 export function ciRunFor(sha, ciRuns) {
   const runs = ciRuns
