@@ -21958,6 +21958,32 @@
               ],
               "additionalProperties": false
             }
+          },
+          "source_image_link": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "retrieved_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "source",
+              "url",
+              "retrieved_at"
+            ],
+            "additionalProperties": false,
+            "description": "Unverified Source Image Link; not a Printing Image (#425)."
           }
         },
         "required": [
@@ -26414,6 +26440,32 @@
               ],
               "additionalProperties": false
             }
+          },
+          "source_image_link": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "retrieved_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "source",
+              "url",
+              "retrieved_at"
+            ],
+            "additionalProperties": false,
+            "description": "Unverified Source Image Link; not a Printing Image (#425)."
           }
         },
         "required": [
@@ -30644,6 +30696,32 @@
               ],
               "additionalProperties": false
             }
+          },
+          "source_image_link": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "retrieved_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "source",
+              "url",
+              "retrieved_at"
+            ],
+            "additionalProperties": false,
+            "description": "Unverified Source Image Link; not a Printing Image (#425)."
           }
         },
         "required": [
@@ -33004,6 +33082,32 @@
               ],
               "additionalProperties": false
             }
+          },
+          "source_image_link": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "retrieved_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "source",
+              "url",
+              "retrieved_at"
+            ],
+            "additionalProperties": false,
+            "description": "Unverified Source Image Link; not a Printing Image (#425)."
           }
         },
         "required": [
@@ -38348,6 +38452,10 @@
                   "additionalProperties": false
                 }
               },
+              "claimedFrontImageUrl": {
+                "type": "string",
+                "format": "uri"
+              },
               "memberships": {
                 "type": "object",
                 "properties": {
@@ -39072,6 +39180,10 @@
                   ],
                   "additionalProperties": false
                 }
+              },
+              "claimedFrontImageUrl": {
+                "type": "string",
+                "format": "uri"
               },
               "memberships": {
                 "type": "object",

@@ -46,6 +46,13 @@ export {
   repositoryStatements,
 } from "./catalogue-store-repository";
 export { consumerContent } from "./consumer-content";
+export {
+  scryfallSourceImageLinks,
+  sourceImageLinkPolicy,
+  sourceImageLinkUrl,
+  sourceImageRepresentation,
+  type SourceImageLinkPolicy,
+} from "./source-image-links";
 export type {
   CuratedEvidence,
   CuratedFieldTarget,

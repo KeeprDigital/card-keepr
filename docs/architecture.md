@@ -320,6 +320,21 @@ predecessor revision's images, and a re-selected image is skipped unchanged, so 
 later tranche adds only new bytes. Scryfall's `image-tranche` scope selects its
 normal JPEG images, the only form it discovers, by set code
 ([image tranches](https://github.com/KeeprDigital/card-keepr/issues/409)).
+A Source Adapter registration may opt its lineage into Source Image Links;
+only Scryfall does, by owner decision. Riftbound is collected locally before
+launch; TCGdex, Bandai and Limitless stay off until their terms are clarified.
+Reconciliation stores an opted-in observation's claimed front image URL
+verbatim with its capture time on the Printing record while that observation
+retained no image. The latest opted-in observation replaces or removes the
+link, so a refresh carries Scryfall's changed `?timestamp` URL. The URL is part
+of the candidate's semantics; the capture time alone is not. Reads serve it as
+`source_image` (`verified: false`, attribution with the Wizards of the Coast Fan
+Content Policy notice) only while the Printing has no Printing Image and a
+policy still grants its source. We never fetch, transform or proxy it. Catalogue
+Exports omit it: they hold accepted Catalogue Data for offline use, and a
+bulk list of source URLs that go stale is neither accepted data nor usable
+offline. Private candidate artifacts, backup and restore retain it with the
+Printing record. [Source image links](https://github.com/KeeprDigital/card-keepr/issues/425).
 The named four-card pilot retains
 its exact requests. Its pre-Go-Live capacity migration requires current/latest-event state
 agreement and completed or terminal collection, except permanently abandoned

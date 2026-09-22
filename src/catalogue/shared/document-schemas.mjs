@@ -195,6 +195,7 @@ const printing = object(
     locator_evidence: array(
       object({ source_lineage: string, locator: string, variant_key: nullable(string), source_observation_id: string }),
     ),
+    source_image_link: object({ source: string, url: string, retrieved_at: nullable(string) }),
     rarity: object({ normalized: nullable(string), raw: nullable(string) }),
     printed_rules_text: nullable(string),
     game_data: nullable(gameData),

@@ -155,7 +155,15 @@ test("tranche 0 imports Scryfall facts with zero image requests and publishes ex
   };
   const printings = (await get("/v1/printings?game=magic")).data;
   assert.equal(printings.length, 7);
-  for (const printing of printings)
-    assert.deepEqual((await get(`/v1/printings/${printing.id}`)).data.printing_images, []);
+  for (const printing of printings) {
+    const detail = (await get(`/v1/printings/${printing.id}`)).data;
+    assert.deepEqual(detail.printing_images, []);
+    // Each image gap serves the claimed Scryfall image as an unverified, attributed link (#425).
+    assert.equal(detail.source_image.verified, false);
+    assert.equal(detail.source_image.source, "scryfall");
+    assert.match(detail.source_image.url, /^https:\/\/cards\.scryfall\.io\/normal\/front\/.+\.jpg\?\d+$/u);
+    assert.equal(detail.source_image.attribution.policy_url, "https://company.wizards.com/en/legal/fancontentpolicy");
+    assert.deepEqual(printing.source_image, detail.source_image);
+  }
   passed = true;
 });

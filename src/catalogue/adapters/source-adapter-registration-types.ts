@@ -1,8 +1,9 @@
 // Registration shapes of a Source Adapter Version that both the adapter
 // registry and the raw Official Source contracts describe. This module is a
-// leaf: it declares types only and imports nothing, so the raw contracts can
-// name these shapes without importing the registry that registers them.
-// `source-adapters` re-exports them.
+// leaf: it declares types only and imports no adapter module, so the raw
+// contracts can name these shapes without importing the registry that
+// registers them. `source-adapters` re-exports them.
+import type { SourceImageLinkPolicy } from "../shared";
 
 // Registration facts reconciliation reads about a lineage's listing
 // evidence (ADR 0004: these lived in code-side version lists before).
@@ -145,6 +146,12 @@ export type SourceAdapterRegistration = Readonly<{
    * with an explicit image gap until image bytes are acquired.
    */
   printingNoveltyProof?: "printing_image" | "qualified_source_record";
+  /**
+   * Opt-in Source Image Link policy (#425). A Printing this lineage observes
+   * without a retained Printing Image then publishes its claimed front image
+   * URL as an unverified link. Absent means never.
+   */
+  sourceImageLinks?: SourceImageLinkPolicy;
   /** Source-scoped design evidence may associate Cards only under this exact parser qualification. */
   qualifiesCardDesignIdentity?: (evidence: SourcePrintingIdentityEvidence) => boolean;
   reconciliationAreas?: readonly ("catalogue" | "errata")[];

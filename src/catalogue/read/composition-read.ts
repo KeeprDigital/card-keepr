@@ -6,6 +6,7 @@ import {
   gameProfileForGame,
   normalizeCardSearchText,
   sha256Text,
+  sourceImageRepresentation,
 } from "../shared";
 import { parseRange } from "./byte-range";
 import {
@@ -180,6 +181,9 @@ async function representation(
       content_byte_length: image.content_byte_length,
       links: { content: `/v1/printing-images/${image.id}/content?revision=${revision.id}` },
     }));
+    // Exports omit images and therefore never carry the unverified link (#425).
+    const sourceImage = includeImages ? sourceImageRepresentation(value.source_image_link, images.length) : undefined;
+    if (sourceImage) data.source_image = sourceImage;
     const relationships = await related(db, revision.selection ?? revision.id, "product_relationships", "from.id", id);
     const products: Value[] = [];
     const contexts: Value[] = [];

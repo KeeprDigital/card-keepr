@@ -292,6 +292,8 @@ function semantic(entry: Entry) {
     "source_observations",
     "source_observation_ids",
     "locator_evidence",
+    // A Source Image Link's capture time alone is not a change; its URL is (#425).
+    "retrieved_at",
     "included",
     "provenance",
     "curated_provenance",

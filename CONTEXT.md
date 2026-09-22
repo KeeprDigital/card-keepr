@@ -126,7 +126,11 @@ _Avoid_: Card, owned copy
 
 **Printing Image**:
 An evidence-bearing image from a Source depicting a specific role or face of a Printing. One Printing may have multiple Printing Images.
-_Avoid_: Card identity
+_Avoid_: Card identity, Source Image Link
+
+**Source Image Link**:
+An unverified pointer to a Source's own public image of a Printing, served only while that Printing has no Printing Image and its Source Adapter registration permits linking. Its bytes are never fetched, inspected or proxied by the catalogue, so it proves no appearance and is not a Printing Image; consumers load it from the Source and show its attribution.
+_Avoid_: Printing Image, hotlinked image, image proof
 
 **Source Snapshot**:
 A dated, unmodified observation captured from a Source. It preserves the source evidence independently of normalized Catalogue Data.

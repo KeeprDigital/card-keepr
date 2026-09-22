@@ -90,6 +90,16 @@ export type CataloguePrinting = CuratedProvenanceBearing & {
     variant_key: string | null;
     source_observation_id: string;
   }[];
+  /**
+   * Unverified Source Image Link (#425): the latest opted-in observation's
+   * claimed front image URL, kept verbatim. It is not a Printing Image, is
+   * never fetched by us and is served only while the Printing has none.
+   */
+  source_image_link?: {
+    source: string;
+    url: string;
+    retrieved_at: string | null;
+  };
   rarity: {
     normalized: string | null;
     raw: string | null;

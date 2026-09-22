@@ -167,6 +167,10 @@ const printingFields = {
       }),
     )
     .optional(),
+  source_image_link: z
+    .strictObject({ source: identifier, url: z.url(), retrieved_at: z.string().nullable() })
+    .optional()
+    .openapi({ description: "Unverified Source Image Link; not a Printing Image (#425)." }),
 };
 export const printingRecord = z.strictObject(printingFields).openapi("CandidatePrinting");
 export const historicalPrinting = printingRecord

@@ -120,6 +120,13 @@ router nor response validation reads or buffers image bodies. Hono's implicit
 HEAD-to-GET behavior is gated by the explicitly registered HEAD surface before
 any GET handler work; handlers use the original request method for R2 metadata.
 
+A Printing document may carry an optional `source_image`: an unverified Source
+Image Link, not a Printing Image. It is present only while `printing_images` is
+empty and the source permits linking (Scryfall only). Consumers load its exact
+`url` from the source, display it unmodified and show its `attribution`; the
+API never serves or proxies those bytes. Catalogue Exports omit it
+([#425](https://github.com/KeeprDigital/card-keepr/issues/425)).
+
 Worker middleware groups retain separate credentials, limits, CORS for consumers,
 readiness and administration recovery/fresh-baseline guards. Mount rejection and
 unauthenticated liveness stay ahead of these groups. Operational logging still
