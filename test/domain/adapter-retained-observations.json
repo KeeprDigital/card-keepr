@@ -263,6 +263,10 @@
     "bytes_sha256": "b2e1c643c4e9b3ec519b370107d53f40bf653c900e70dd1dab4ee01d8e3f7f4c",
     "observations_sha256": "2fb017401c2a1ef72c6768ce149ddf43fba38549ece3f7b15162e7e089e6461a"
   },
+  "one-piece-en-product-event-qualified-release.json": {
+    "bytes_sha256": "8c5da9950aab16ada79bbd22ea3b152f704af9c1d6c5b636294bc75a60cac71e",
+    "observations_sha256": "682101bbe6553dae9b56341286d60d484ef56371b4a251a84727f6e72c4a322e"
+  },
   "one-piece-en-product-card-collection.json": {
     "bytes_sha256": "38683e6759993bdc6617e7622209325f0bd53b5e6518c6e6ad98694153b559a0",
     "observations_sha256": "f1273822ce9679c18b66c614aaf36c56501a1c5c8a9b91332cbe8134494db2c9"

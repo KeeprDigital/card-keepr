@@ -22,6 +22,10 @@ import {
   officialReleaseDateNeedsSchemaReview,
   officialReleaseStatusNeedsSchemaReview,
 } from "./official-source-release-normalization";
+/** Unmapped-field path prefix marking the free-text qualifier after a Release date. */
+export const releaseDateQualifierPathPrefix =
+  "source_sidecar.raw.official_surfaces[0].document.release_date_qualifier:";
+
 export type ProductDetailFields = {
   titleSuffix: RegExp;
   seasonPrecisionReleases: boolean;
@@ -71,7 +75,10 @@ export function parseProductDetail(
   }
   const code = liveOfficialProductCode(title);
   const product = { code, title };
-  const releaseDateText = field("Release Date", "Available Date", "On Sale") ?? liveInlineOfficialReleaseDate(html);
+  const releaseDateLabels = ["Release Date", "Available Date", "On Sale"];
+  const releaseDateLabel = releaseDateLabels.find((label) => field(label) !== null) ?? null;
+  const releaseDateText = field(...releaseDateLabels) ?? liveInlineOfficialReleaseDate(html);
+  let releaseDateQualifier: string | null = null;
   const releaseStatus = field("Status");
   const releases = new Map<string, Record<string, unknown>[]>();
   if (releaseDateText !== null) {
@@ -79,6 +86,7 @@ export function parseProductDetail(
     const date = normalizedOfficialReleaseDate(releaseEvidence.date, {
       seasons: fields.seasonPrecisionReleases,
     });
+    releaseDateQualifier = date.qualifier ?? null;
     releases.set(productMapKey(product), [
       {
         event_key: productEventKey("product-release", product),
@@ -95,15 +103,32 @@ export function parseProductDetail(
     revision: "captured-by-policy-surface",
     entries: [],
   });
-  return attachRawSurfaceEvidenceV1(observation, sourceLineage, "product-detail", rawDocument, true, [
-    "document_title",
-    "Product Code",
-    ...(officialReleaseDateNeedsSchemaReview(releaseDateText) ? [] : ["Release Date", "Available Date", "On Sale"]),
-    "Region",
-    "Market",
-    "Territory",
-    ...(officialReleaseStatusNeedsSchemaReview(releaseStatus) ? [] : ["Status"]),
-  ]);
+  return attachRawSurfaceEvidenceV1(
+    observation,
+    sourceLineage,
+    "product-detail",
+    rawDocument,
+    true,
+    [
+      "document_title",
+      "Product Code",
+      ...(officialReleaseDateNeedsSchemaReview(releaseDateText) ? [] : releaseDateLabels),
+      "Region",
+      "Market",
+      "Territory",
+      ...(officialReleaseStatusNeedsSchemaReview(releaseStatus) ? [] : ["Status"]),
+    ],
+    // The qualifier after a leading Release date is retained verbatim as an
+    // unmapped field so reconciliation raises a review warning for it.
+    releaseDateQualifier === null
+      ? []
+      : [
+          {
+            path: `${releaseDateQualifierPathPrefix}${releaseDateLabel ?? "Release Date"}`,
+            value: releaseDateQualifier,
+          },
+        ],
+  );
 }
 
 function liveOfficialProductTitle(html: string, fields: ProductDetailFields, sourceLineage: string): string {

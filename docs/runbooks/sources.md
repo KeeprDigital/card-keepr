@@ -248,6 +248,16 @@ requests; candidates carry `printing_image_unavailable`. They publish without
 those images. Collect again after recovery. Storage retry exhaustion still pauses
 the run. Redirects are never followed as if they were the original evidence.
 
+A listing, detail or product-detail request answered by a 301/302/303/307/308
+whose HTTPS `Location` is on the same registrable domain keeps that redirect
+response as its retained evidence and ends as `source_request_redirect_discovered`.
+The resolved Location is enqueued once as a new Source Request with the same role,
+discovered from the redirected request, and charged to the Acquisition Budget like
+any dispatch. One hop only: a redirect from a redirect-discovered request, a
+cross-site or non-HTTPS target, a root surface, a Printing Image, and adapters
+that read retained parent context still fail as `source_redirect_rejected` (or the
+tolerated image gap).
+
 ## Resolve an uncertain existing identity
 
 ```sh

@@ -51,8 +51,11 @@ import {
   defaultSourceHostPacingIntervalMilliseconds,
   headersRecord,
   parseStringRecord,
+  redirectDiscoveredFailureCode,
+  redirectDiscoveryRoles,
   requestFailureCode,
   responseVary,
+  sameSiteRedirectTarget,
   type SourceRequestFailureClass,
   terminalHttpFailureClass,
   transportPolicyForRole,
@@ -63,6 +66,7 @@ import { discoverArchiveRequestsBatch } from "./source-archive-discovery";
 import {
   appendDiscoveredEvidenceRequests,
   captureAttemptsPerRetryGeneration,
+  type DiscoveredEvidenceRequest,
   type EvidenceRequestRow,
   requiredEvidenceRun,
   evidencePlanForRequest,
@@ -467,6 +471,43 @@ export async function capturePreparedAttempt(
 
   if (!response.ok) {
     const redirect = response.status >= 300 && response.status < 400;
+    // A same-site redirect of a page request is retained as that request's
+    // evidence and its Location continues as one newly discovered Source
+    // Request (issue #334): one hop only, budget-counted like any dispatch.
+    const redirectTarget =
+      redirect &&
+      [301, 302, 303, 307, 308].includes(response.status) &&
+      redirectDiscoveryRoles.includes(request.request_role) &&
+      capturingAdapter.retainedParentContext === undefined &&
+      !(await discoveredByRedirect(database, request))
+        ? sameSiteRedirectTarget(request.url, response.headers.get("location"))
+        : null;
+    if (redirectTarget !== null) {
+      if (response.body !== null) await response.body.cancel();
+      await settleAcquisitionDispatch(database, dispatchId, operation.attempt_id, 0);
+      try {
+        await appendDiscoveredEvidenceRequests(database, run, request, [
+          {
+            role: request.request_role as DiscoveredEvidenceRequest["role"],
+            url: redirectTarget,
+            headers: JSON.parse(request.request_headers_json) as Record<string, string>,
+          },
+        ]);
+      } catch (error) {
+        if (!(error instanceof RequestCapacityProblem)) throw error;
+        await pauseEvidenceRunForRequestCapacity(database, run.id, request.request_id, error);
+        return { kind: "done", failure_code: null, request_made: true };
+      }
+      return recordRejectedAttempt(database, run, request, operation, {
+        outcome: "redirect",
+        completedAt,
+        status: response.status,
+        headers: responseHeaders,
+        diagnostic: `Same-site redirect retained as evidence; its Location continues as a discovered Source Request: ${redirectTarget}`,
+        failureClass: "redirected",
+        failureCode: redirectDiscoveredFailureCode,
+      });
+    }
     const reportedRetryAfterMs = parseRetryAfter(response.headers.get("retry-after"), Date.parse(completedAt));
     const rateLimitFloor =
       response.status === 429
@@ -787,6 +828,13 @@ function publicPreparedAttempt(operation: CaptureOperationRow): Extract<Prepared
     content_object_key: operation.content_object_key,
     requested_at: operation.requested_at,
   };
+}
+
+// One hop only: a request discovered from a redirect never discovers another.
+async function discoveredByRedirect(database: CatalogueStore, request: EvidenceRequestRow): Promise<boolean> {
+  if (request.discovered_from_request_id === null) return false;
+  const parent = await currentRequest(database, request.ingestion_run_id, request.discovered_from_request_id);
+  return parent.state === "failed" && parent.failure_code === redirectDiscoveredFailureCode;
 }
 
 async function currentRequest(database: CatalogueStore, runId: string, requestId: string): Promise<EvidenceRequestRow> {
@@ -1206,6 +1254,8 @@ async function recordRejectedAttempt(
     retryAfterMs?: number | null;
     diagnostic: string;
     failureClass: SourceRequestFailureClass | null;
+    /** An explicit terminal code overriding the role policy (a redirect discovery). */
+    failureCode?: string;
   },
 ): Promise<CaptureTransportResult> {
   const exhausted = operation.attempt_number >= retryBudget(request);
@@ -1217,7 +1267,8 @@ async function recordRejectedAttempt(
   // terminal for the request under the code its role's policy assigns:
   // fatal for the run on a catalogue-fact role, a tolerated gap on an image.
   const failureCode =
-    rejection.failureClass === null ? null : requestFailureCode(request.request_role, rejection.failureClass);
+    rejection.failureCode ??
+    (rejection.failureClass === null ? null : requestFailureCode(request.request_role, rejection.failureClass));
   const exhaustion =
     exhausted && failureCode === null
       ? recoverableExhaustion(database, run, request, operation.attempt_number, "http_failure", rejection.status)

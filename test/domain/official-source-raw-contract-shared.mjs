@@ -45,8 +45,9 @@ export function retainedOfficialSourceFixture(slug) {
   // 08-12 captured the fusion live-shape pages (anchored product status
   // sections, errata-annotated details, the season Release, and the
   // legality-history restriction lift); 09-21 captured the live One Piece
-  // OP16 series page that proves the bounded-intake observation contract.
-  assert.match(metadata.retrieved_at, /^2026-(?:08-(?:0[2-7]|1[12])|09-21)T/u);
+  // OP16 series page that proves the bounded-intake observation contract;
+  // 09-22 captured the live event-qualified Release date (ib-ex01.php).
+  assert.match(metadata.retrieved_at, /^2026-(?:08-(?:0[2-7]|1[12])|09-2[12])T/u);
   return { bytes, metadata };
 }
 

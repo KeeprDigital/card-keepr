@@ -23,7 +23,7 @@ export function derivedCardModel(
 }
 
 export type ProfileWarning = Readonly<{
-  code: "unknown_source_vocabulary" | "unknown_source_field";
+  code: "unknown_source_vocabulary" | "unknown_source_field" | "release_date_qualifier_retained";
   source_observation_id: string;
   profile: string;
   path: string;
@@ -808,6 +808,24 @@ export function sourceFieldWarning(
     raw_value: rawSourceValue(raw),
     detail:
       "The unknown Source field remains retained Source Observation evidence. Review the named field and raw value; update the adapter for presentation changes or the Game Profile for changed meaning, then collect fresh evidence.",
+  };
+}
+
+/** A recognised Release date carried free-text Publisher qualification (issue #334). */
+export function releaseDateQualifierWarning(
+  sourceObservationId: string,
+  profile: string,
+  path: string,
+  raw: unknown,
+): ProfileWarning {
+  return {
+    code: "release_date_qualifier_retained",
+    source_observation_id: sourceObservationId,
+    profile,
+    path,
+    raw_value: rawSourceValue(raw),
+    detail:
+      "The Release date was taken from the leading date; the Publisher's qualifying text is retained verbatim as Source Observation evidence. Review whether it describes a different availability event.",
   };
 }
 
