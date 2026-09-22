@@ -2633,7 +2633,9 @@ export function reconciliationSourceDocument(scenario: string, surface: string, 
                   distribution_contexts: [],
                   source_buckets: ["identity-product-list"],
                 }
-              : scenario === "product-release" || scenario === "product-release-multiple-events"
+              : scenario === "product-release" ||
+                  scenario === "product-release-multiple-events" ||
+                  scenario === "product-release-season"
                 ? {
                     products: ["ST-15"],
                     distribution_contexts: ["championship-2026-pack"],
@@ -2678,7 +2680,11 @@ function productReleaseCatalogueForScenario(scenario: string): Record<string, un
     kind: "official_code",
     value,
   });
-  if (scenario === "product-release" || scenario === "product-release-multiple-events") {
+  if (
+    scenario === "product-release" ||
+    scenario === "product-release-multiple-events" ||
+    scenario === "product-release-season"
+  ) {
     return {
       products: [
         {
@@ -2699,6 +2705,16 @@ function productReleaseCatalogueForScenario(scenario: string): Record<string, un
                     region: "EN-OCEANIA",
                     date: { precision: "day", value: "2026-09-18" },
                     status: "released",
+                  },
+                ]
+              : []),
+            ...(scenario === "product-release-season"
+              ? [
+                  {
+                    event_key: "oceania-season-release",
+                    region: "EN-OCEANIA",
+                    date: { precision: "season", value: "2027-spring" },
+                    status: "announced",
                   },
                 ]
               : []),

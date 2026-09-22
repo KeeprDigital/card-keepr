@@ -195,6 +195,14 @@ test("the Catalogue Export schema carries typed Product and Release facts withou
   assert.equal(exportManifest.properties.export_schema_major.const, 5);
   assert.equal(exportSchema.$defs.ReleaseRecord.required.includes("event_key"), true);
   assert.equal(exportSchema.$defs.ReleaseRecord.required.includes("status"), true);
+  // A published Release must export with the precision the read contract serves (issue #396).
+  const readContract = JSON.parse(await readFile(resolve(root, "contracts/read-openapi.json"), "utf8"));
+  assert.deepEqual(
+    exportSchema.$defs.ReleaseRecord.properties.date.properties.precision.enum,
+    readContract.components.schemas.Product.properties.releases.items.properties.date.properties.precision.enum.filter(
+      (precision) => precision !== null,
+    ),
+  );
   assert.ok(
     exportManifest.$defs.Component.properties.record_schema.enum.includes(`${exportSchema.$id}#/$defs/ReleaseRecord`),
   );

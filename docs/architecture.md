@@ -92,6 +92,10 @@ without the marker replaces it through reconciliation, and it never implies a
 scheduled update. Before Go-Live this edits the Release definition and export
 schema v5 in place.
 [Tentative release dates](https://github.com/KeeprDigital/card-keepr/issues/334#issuecomment-5769592182).
+Release date precision (`day`, `month`, `quarter`, `season`, `year`, `unknown`)
+is one vocabulary across storage, the read contract and export schema v5, which
+was edited in place before Go-Live to admit `season`
+([#396](https://github.com/KeeprDigital/card-keepr/issues/396)).
 A recognised day date followed by free Publisher text (for example an event
 pre-sale) keeps the leading date as the Release date; the text stays verbatim as
 unmapped evidence and raises `release_date_qualifier_retained` at inspection,
