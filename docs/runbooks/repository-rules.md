@@ -34,6 +34,14 @@ admins are bound too. It replaces the classic branch protection rule.
   The ten `ci.yml` checks equal `production-release.yml`'s `REQUIRED_CI_CHECKS`.
   "Require branches to be up to date" is off because the merge queue replaces it
   (#374).
+- For documentation-only pull requests and queue candidates, `ci.yml` skips the
+  domain, ingestion and acceptance work but still reports all ten checks (#401).
+  `domain-tests` is skipped, which satisfies a required check. The matrix shards
+  succeed with a no-op step, because GitHub reports a matrix job skipped at job
+  level as one unsuffixed check (`ingestion-tests`), and the required
+  `ingestion-tests (1)` would never report. A `push` to `main` always runs every
+  check, so the release gates see successful checks. The classifier job
+  `changes` is not a required check.
 - Merge queue on: squash, all-green grouping, build 3, merge 1–3 entries,
   5-minute wait, 60-minute check timeout. `ci.yml` and `pr-title.yml` both
   trigger on `merge_group`. The queued run executes on the SHA that lands, so
