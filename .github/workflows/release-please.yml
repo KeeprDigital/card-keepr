@@ -1,0 +1,35 @@
+name: release-please
+
+# Maintains one open release pull request from the conventional commits merged
+# to main since the last release. Merging that pull request is the owner's
+# release initiation: release-please then creates the vX.Y.Z tag and the GitHub
+# Release whose notes are the generated changelog (#238). This workflow deploys
+# nothing; release-please.json and .release-please-manifest.json own its policy.
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          config-file: release-please.json
+          manifest-file: .release-please-manifest.json
