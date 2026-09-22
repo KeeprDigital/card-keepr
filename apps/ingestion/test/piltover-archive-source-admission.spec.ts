@@ -10,8 +10,82 @@ import { prepareNativeEvidence } from "./native-publication-helpers";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
 import { inspectEntityProposal } from "../../../src/catalogue/reconciliation/entity-admission";
 import { reviewProposals } from "./query-helpers/source-admission-evidence";
+import { parsePiltoverGalleryPage } from "../../../src/catalogue/adapters/piltover-archive-gallery";
+import { syntheticPiltoverGalleryPage } from "../../../test/support/synthetic-flight-pages.mjs";
 
 installReconciliationSuite({ directPreparation: true });
+
+// Two synthetic census pages carry the 48 unchanged records of the retained
+// page 1; only the pagination envelope is synthetic. Every front is an injected
+// outage, so this proves discovery, parent-checked pages and retained review
+// records, not image coverage.
+test("the Piltover Archive census follows page 1's pagination and retains every row for owner review", async () => {
+  const adapter = requiredSourceAdapter("piltover-archive-en@1");
+  const db = catalogueStore(testEnv.CATALOGUE_DB);
+  const records = parsePiltoverGalleryPage(gallery, "https://piltoverarchive.com/cards").rows.map((row) => row.record);
+  const pages = new Map(
+    [records.slice(0, 24), records.slice(24)].map((variants, index) => [
+      `https://piltoverarchive.com/cards?page=${index + 1}`,
+      syntheticPiltoverGalleryPage({ page: index + 1, pages: 2, total: 48, variants }),
+    ]),
+  );
+  const started = await startEvidenceRun(db, {
+    acquisition_budget: fixtureAcquisitionBudget,
+    idempotency_key: "piltover-archive-census",
+    plans: [
+      {
+        supported_game: "riftbound",
+        source_lineage: "piltover-archive-en",
+        adapter_version: adapter.adapterVersion,
+        subset: "gallery-census",
+        requests: [{ id: "piltover-archive-en:gallery-census", url: "https://piltoverarchive.com/cards?page=1" }],
+      },
+    ],
+  });
+  const runId = String(started.id);
+  const requested: string[] = [];
+  await collectFixtureEvidence(
+    testEnv.CATALOGUE_DB,
+    testEnv.EVIDENCE_OBJECTS,
+    {
+      async fetch(input: RequestInfo | URL) {
+        const url = new Request(input).url;
+        requested.push(url);
+        const page = pages.get(url);
+        if (page) return new Response(page, { headers: { "content-type": "text/html; charset=utf-8" } });
+        return new Response("Injected image outage", { status: 404 });
+      },
+    } as Fetcher,
+    runId,
+  );
+  expect(requested.filter((url) => pages.has(url)).sort()).toEqual([...pages.keys()]);
+  expect(requested.filter((url) => !pages.has(url))).toHaveLength(48);
+  const candidate = await prepareNativeEvidence({
+    runId,
+    game: "riftbound",
+    predecessor: "catrev_spine_000",
+    key: "piltover-archive-census-candidate",
+  });
+  const candidateRecords = await nativeCandidateRecords(requiredString(candidate, "id"), ["cards", "printings"]);
+  expect(candidateRecords.cards ?? []).toHaveLength(0);
+  expect(candidateRecords.printings ?? []).toHaveLength(0);
+  const proposals = (await reviewProposals(db).bind("piltover-archive-en").all<{ id: string; reference: string }>())
+    .results;
+  expect(proposals).toHaveLength(48);
+  const ogn002 = proposals.find(
+    (proposal) =>
+      JSON.parse(proposal.reference)[0] === records.find((record) => record.variantNumber === "OGN-002")!.id,
+  )!;
+  const inspected = await inspectEntityProposal(db, ogn002.id);
+  expect(inspected.status).toBe("unresolved");
+  expect(inspected.evidence.issues.map((issue: { code: string }) => issue.code)).toEqual([
+    "card_identity_unresolved",
+    "printing_locale_unresolved",
+  ]);
+  expect(inspected.evidence.source_images).toEqual([
+    expect.objectContaining({ source_url: "https://cdn.piltoverarchive.com/cards/OGN-002.webp" }),
+  ]);
+});
 
 test.each(["missing", "mismatched"])(
   "Piltover Archive %s fronts distinguish tolerated absence from contradictory retained bytes",

@@ -1,7 +1,8 @@
 {
   "extends": "../../apps/ingestion/tsconfig.json",
   "compilerOptions": {
-    "types": ["node"]
+    "types": ["node"],
+    "allowJs": true,
   },
-  "include": ["../../apps/ingestion/worker-configuration.d.ts", "./**/*.ts"]
+  "include": ["../../apps/ingestion/worker-configuration.d.ts", "./**/*.ts"],
 }

@@ -117,7 +117,14 @@ function requirePinned(row: PiltoverVariant): PinnedFields | null {
   return expected;
 }
 
-function galleryPageSidecar(page: PiltoverGalleryPage) {
+/** Whether a record is pinned and, if so, still fits its retained qualification. */
+export function piltoverPinnedStatus(row: PiltoverVariant): "unpinned" | "fits" | "changed" {
+  const expected = pinnedFieldsByKey[row.source_key];
+  if (expected === undefined) return "unpinned";
+  return JSON.stringify(pinnedFields(row)) === JSON.stringify(expected) ? "fits" : "changed";
+}
+
+export function galleryPageSidecar(page: PiltoverGalleryPage) {
   return { url: page.url, page: page.page, pages: page.pages, rows: page.rows.length, total: page.total };
 }
 
@@ -253,7 +260,8 @@ export function piltoverPinnedObservation(row: PiltoverVariant, page: PiltoverGa
     : viArcanePromoReview(row, page);
 }
 
-const artHosts = new Set(["cdn.piltoverarchive.com", "piltoverarchive.b-cdn.net"]);
+export const piltoverArtHosts: ReadonlySet<string> = new Set(["cdn.piltoverarchive.com", "piltoverarchive.b-cdn.net"]);
+const artHosts = piltoverArtHosts;
 
 /** Only a pinned record's own front art, from Piltover's two observed art hosts, is fetched. */
 export function piltoverPinnedImageRequest(row: PiltoverVariant) {
