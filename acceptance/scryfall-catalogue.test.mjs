@@ -240,7 +240,9 @@ test("retained Scryfall Cards publish with stable finish identities, private evi
     printings.map((p) => [p.id, p.card_id, p.game_data]).sort(),
   );
   const repeated = await collect("scryfall-duplicate-replay");
-  assert.equal(fetched.length, 20);
+  // The repeat re-fetches the four Card documents; its six unchanged images are
+  // reused without a request (#389).
+  assert.equal(fetched.length, 14);
   assert.deepEqual(repeated.inspection.records.cards.map((c) => c.id).sort(), cards.map((c) => c.id).sort());
   assert.deepEqual(repeated.inspection.records.printings.map((p) => p.id).sort(), printings.map((p) => p.id).sort());
   for (const [id, history] of histories)
