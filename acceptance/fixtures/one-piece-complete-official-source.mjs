@@ -68,7 +68,7 @@ export function onePieceCompleteOfficialSourceResponse(request) {
 function recordingLeaf(recording) {
   const cards = recording === "2201"
     ? [liveCard("OP31-001")]
-    : [liveCard("OP31-001"), liveCard("OP31-002")];
+    : [liveCard("OP31-001"), liveCard("OP31-002"), liveCard("OP31-003")];
   return new Response(
     `<html><title>BANDAI ONE PIECE CARD LIST</title>
       <select name="series" id="series"><option value="${recording}">Recording ${recording}</option></select>
@@ -147,29 +147,77 @@ function seriesSelect() {
       </select>`;
 }
 
+// OP31-003 mirrors the live shape of the 23 Event Cards whose printed cost
+// Bandai omits as "-" (retained OP16-020, issue #334). The publisher prints
+// that same placeholder for an inapplicable Power, Counter or Attribute.
+const liveCards = {
+  "OP31-001": {
+    rarity: "L",
+    category: "LEADER",
+    name: "Straw Hat Captain",
+    costLabel: "Life",
+    cost: "5",
+    colour: "Red/Green",
+    attribute: "Strike",
+    power: "5000",
+    counter: "-",
+    type: "Straw Hat Crew",
+    blockIcon: "1",
+    effect: "Give up to 1 rested DON!! card to this Leader.",
+  },
+  "OP31-002": {
+    rarity: "R",
+    category: "CHARACTER",
+    name: "Synthetic Navigator",
+    costLabel: "Cost",
+    cost: "3",
+    colour: "Blue",
+    attribute: "Special",
+    power: "4000",
+    counter: "1000",
+    type: "Straw Hat Crew/Navigator",
+    blockIcon: "2",
+    effect: "Draw 1 card.",
+    trigger: "Play this card.",
+    optionalLabel: "New optional publisher vocabulary",
+  },
+  "OP31-003": {
+    rarity: "UC",
+    category: "EVENT",
+    name: "Synthetic Omitted Cost",
+    costLabel: "Cost",
+    cost: "-",
+    colour: "Blue",
+    attribute: "-",
+    power: "-",
+    counter: "-",
+    type: "Straw Hat Crew",
+    blockIcon: "2",
+    effect: "Draw 1 card, then trash 1 card from your hand.",
+  },
+};
+
 function liveCard(number) {
-  const leader = number === "OP31-001";
-  const rarity = leader ? "L" : "R";
-  const category = leader ? "LEADER" : "CHARACTER";
-  const name = leader ? "Straw Hat Captain" : "Synthetic Navigator";
-  const effect = leader
-    ? "Give up to 1 rested DON!! card to this Leader."
-    : "Draw 1 card.";
+  const card = liveCards[number];
   return `<dl class="modalCol" id="${number}_p1" data-artwork-id="${number.toLowerCase()}-base">
-    <dt><div class="infoCol"><span>${number}</span> | <span>${rarity}</span> | <span>${category}</span></div>
-      <div class="cardName">${name}</div></dt>
+    <dt><div class="infoCol"><span>${number}</span> | <span>${card.rarity}</span> | <span>${card.category}</span></div>
+      <div class="cardName">${card.name}</div></dt>
     <dd><div class="frontCol"><img data-src="/images/cardlist/card/${number}.png"></div>
       <div class="backCol">
-        <div><h3>${leader ? "Life" : "Cost"}</h3>${leader ? "5" : "3"}</div>
-        <div><h3>Color</h3>${leader ? "Red/Green" : "Blue"}</div>
-        <div><h3>Attribute</h3>${leader ? "Strike" : "Special"}</div>
-        <div><h3>Power</h3>${leader ? "5000" : "4000"}</div>
-        <div><h3>Counter</h3>${leader ? "-" : "1000"}</div>
-        <div><h3>Type</h3>${leader ? "Straw Hat Crew" : "Straw Hat Crew/Navigator"}</div>
-        <div><h3>Block icon</h3>${leader ? "1" : "2"}</div>
-        <div><h3>Effect</h3>${effect}</div>
-        ${leader ? "" : "<div><h3>Trigger</h3>Play this card.</div>"}
-        ${leader ? "" : "<div><h3>New Optional Label</h3>New optional publisher vocabulary</div>"}
+        <div><h3>${card.costLabel}</h3>${card.cost}</div>
+        <div><h3>Color</h3>${card.colour}</div>
+        <div><h3>Attribute</h3>${card.attribute}</div>
+        <div><h3>Power</h3>${card.power}</div>
+        <div><h3>Counter</h3>${card.counter}</div>
+        <div><h3>Type</h3>${card.type}</div>
+        <div><h3>Block icon</h3>${card.blockIcon}</div>
+        <div><h3>Effect</h3>${card.effect}</div>
+        ${card.trigger === undefined ? "" : `<div><h3>Trigger</h3>${card.trigger}</div>`}
+        ${
+    card.optionalLabel === undefined
+      ? ""
+      : `<div><h3>New Optional Label</h3>${card.optionalLabel}</div>`
+  }
         <div class="getInfo"><h3>Card Set(s)</h3>Complete One Piece Product</div>
       </div>
     </dd>
@@ -285,6 +333,9 @@ function cardList() {
         partition("2202", [sharedEntry, {
           number: "OP31-002",
           detail: "/cards/OP31-002_p1",
+        }, {
+          number: "OP31-003",
+          detail: "/cards/OP31-003_p1",
         }]),
       ],
     },
@@ -331,6 +382,27 @@ function cardList() {
         illustrationTypes: ["Experimental foil vocabulary"],
         productCodes: ["OP-COMPLETE-01"],
         Notes: "New optional publisher vocabulary",
+      }),
+      card({
+        source_record_id: "/cards/OP31-003_p1",
+        card_number: "OP31-003",
+        name: "Synthetic Omitted Cost",
+        Category: "Event",
+        Color: ["Blue"],
+        Cost: "-",
+        Life: null,
+        Attribute: null,
+        Power: null,
+        Counter: null,
+        Type: ["Straw Hat Crew"],
+        "Block icon": ["2"],
+        Effect: "Draw 1 card, then trash 1 card from your hand.",
+        Trigger: null,
+        image_url:
+          "https://en.onepiece-cardgame.com/images/cardlist/card/OP31-003.png",
+        rarity: "UC",
+        illustrationTypes: ["Animation"],
+        productCodes: ["OP-COMPLETE-01"],
       }),
     ],
     products: [product()],

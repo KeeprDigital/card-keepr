@@ -65,7 +65,14 @@ export function normalizeOnePieceCardPage(value: Readonly<Record<string, unknown
           .map((item) => illustrationTypes.get(normalizedToken(item)))
           .filter((item): item is string => item !== undefined)
           .sort();
-  const cost = nonNegativeIntegerOrNull(value.Cost, "One Piece Cost");
+  // Bandai omits a printed value by publishing "-", the same placeholder it
+  // publishes for an inapplicable Power, Counter or Attribute. On the Card
+  // types the Game Profile requires a cost for, the printed cost is 0
+  // (owner decision on #334); `onePieceUnmappedOptionalFields` retains the
+  // omitted token as review evidence.
+  const cost = onePieceOmittedPrintedCost(cardType, value.Cost)
+    ? 0
+    : nonNegativeIntegerOrNull(value.Cost, "One Piece Cost");
   const life = nonNegativeIntegerOrNull(value.Life, "One Piece Life");
   assertOnePieceTypeNullability(cardType, cost, life);
   return {
@@ -162,6 +169,19 @@ export function normalizedOnePieceRarity(value: unknown): string | null {
     throw new AdapterParseFailure(`One Piece rarity has unrecognized value ${raw}.`);
   }
   return normalized;
+}
+
+/** The `one-piece@1` Card types whose printed cost the Game Profile requires. */
+const onePieceCostRequiredTypes = ["character", "event", "stage"];
+
+/** True when the Publisher omitted a required printed cost by publishing "-". */
+export function onePieceOmittedPrintedCost(cardType: unknown, cost: unknown): boolean {
+  return (
+    typeof cardType === "string" &&
+    onePieceCostRequiredTypes.includes(cardTypes.get(normalizedToken(cardType)) ?? cardType) &&
+    typeof cost === "string" &&
+    cost.normalize("NFC").trim() === "-"
+  );
 }
 
 function assertOnePieceTypeNullability(cardType: string, cost: number | null, life: number | null): void {

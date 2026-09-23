@@ -12,6 +12,7 @@ import {
   requiredProfileContract,
   sourceFieldWarning,
   releaseDateQualifierWarning,
+  printedCostOmittedWarning,
   type ProfileWarning,
 } from "../shared";
 import { parsedOfficialArtworkIdentity, riftboundOriginsTargetName } from "../adapters";
@@ -423,7 +424,9 @@ function inspectSourceSidecar(
     warnings.push(
       path.includes(".release_date_qualifier:")
         ? releaseDateQualifierWarning(sourceObservationId, profile, path, field.value)
-        : sourceFieldWarning(sourceObservationId, profile, path, field.value),
+        : path.includes(".printed_cost_omitted:")
+          ? printedCostOmittedWarning(sourceObservationId, profile, path, field.value)
+          : sourceFieldWarning(sourceObservationId, profile, path, field.value),
     );
   }
 }

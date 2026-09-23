@@ -108,7 +108,7 @@ test("native publication: the owner publishes a complete One Piece catalogue for
   assert.ok(ready.snapshots.some(({ request }) => new URL(request.url).searchParams.get("series") === "2202"));
   for (const [recording, expectedCount] of [
     ["2201", 1],
-    ["2202", 2],
+    ["2202", 3],
   ]) {
     const snapshot = ready.snapshots.find(
       ({ request }) => new URL(request.url).searchParams.get("series") === recording,
@@ -121,13 +121,19 @@ test("native publication: the owner publishes a complete One Piece catalogue for
     partitionKinds: ["warnings", "shared_warnings"],
   });
   const candidate = inspected;
-  assert.equal(candidate.counts.cards.added, 2);
-  assert.equal(candidate.counts.printings.added, 2);
+  assert.equal(candidate.counts.cards.added, 3);
+  assert.equal(candidate.counts.printings.added, 3);
   assert.ok(
     candidate.warnings.some(
       ({ code, raw_value }) => code === "unknown_source_field" && raw_value === "New optional publisher vocabulary",
     ),
   );
+  // Bandai omits the Event Card's printed cost as "-"; inspection shows the
+  // normalisation before approval (issue #334).
+  const omittedCost = candidate.warnings.filter(({ code }) => code === "printed_cost_omitted_normalized");
+  assert.ok(omittedCost.length > 0, JSON.stringify(candidate.warnings));
+  assert.ok(omittedCost.every(({ raw_value }) => raw_value === "-"));
+  assert.ok(omittedCost.every(({ path }) => path.includes("printed_cost_omitted:OP31-003")));
   const approved = await publishNativeCollection(candidate, "one-piece-complete-approve", cliEnvironment, ingestion);
   const catalogueRevisionId = approved.resulting_revision_id;
 
@@ -176,9 +182,9 @@ test("native publication: the owner publishes a complete One Piece catalogue for
       nativeExportRecords(api.url, apiKey, revisionId, component),
     ),
   );
-  assert.equal(cards.length, 2);
-  assert.equal(printings.length, 2);
-  assert.equal(images.length, 2);
+  assert.equal(cards.length, 3);
+  assert.equal(printings.length, 3);
+  assert.equal(images.length, 3);
   assert.equal(products.length, 1);
   assert.equal(releases.length, 1);
   assert.equal(errata.length, 1);
@@ -207,6 +213,32 @@ test("native publication: the owner publishes a complete One Piece catalogue for
     cards.every(({ official_identity }) => official_identity.kind === "card_number"),
     "policy-only DON hub data does not invent a Card outside collected card content",
   );
+
+  // The Event Card whose printed cost Bandai omits publishes with cost 0 and
+  // keeps every genuinely inapplicable field absent (issue #334).
+  const omittedCostCard = cards.find(({ official_identity }) => official_identity.value === "OP31-003");
+  assert.deepEqual(omittedCostCard.game_data, {
+    profile: "one-piece@1",
+    attributes: {
+      card_type: "event",
+      colours: ["blue"],
+      cost: 0,
+      life: null,
+      battle_attributes: [],
+      power: null,
+      counter: null,
+      traits: ["Straw Hat Crew"],
+      block_icons: ["2"],
+      effect_text: "Draw 1 card, then trash 1 card from your hand.",
+      trigger_text: null,
+    },
+  });
+  const omittedCostResponse = await fetch(`${api.url}/v1/cards/${omittedCostCard.id}`, {
+    headers: { authorization: `Bearer ${apiKey}` },
+  });
+  assert.equal(omittedCostResponse.status, 200);
+  assert.equal((await omittedCostResponse.json()).data.game_data.attributes.cost, 0);
+  assert.ok(printings.some(({ card_id }) => card_id === omittedCostCard.id));
 
   const leaderPrinting = printings.find(({ card_id }) => card_id === leader.id);
   assert.equal(leaderPrinting.printed_rules_text, "Give up to 1 rested DON!! card to this Leader.");
