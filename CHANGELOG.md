@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.2.0](https://github.com/KeeprDigital/card-keepr/compare/v0.1.0...v0.2.0) (2026-09-23)
+
+
+### Features
+
+* **one-piece:** identify a Printing by the Publisher's front-image asset name ([#334](https://github.com/KeeprDigital/card-keepr/issues/334)) ([#436](https://github.com/KeeprDigital/card-keepr/issues/436)) ([b9a88d8](https://github.com/KeeprDigital/card-keepr/commit/b9a88d8fb0b16cc133511a0166ec856198959bab))
+* **one-piece:** publish the designated authority's Card facts ([#334](https://github.com/KeeprDigital/card-keepr/issues/334)) ([#437](https://github.com/KeeprDigital/card-keepr/issues/437)) ([f00dc5d](https://github.com/KeeprDigital/card-keepr/commit/f00dc5d7627f18cdd390d60e96462740d8f8f24c))
+* **read:** serve unverified Scryfall source image links ([#425](https://github.com/KeeprDigital/card-keepr/issues/425)) ([#430](https://github.com/KeeprDigital/card-keepr/issues/430)) ([a0782ee](https://github.com/KeeprDigital/card-keepr/commit/a0782ee88057075c8fc91e024b0553ca32bf8aad))
+* **riftbound:** make a full Riot refresh retain every publisher front ([#428](https://github.com/KeeprDigital/card-keepr/issues/428)) ([e8bd4f2](https://github.com/KeeprDigital/card-keepr/commit/e8bd4f27bb34c9147e70b87cce297529e57bf745))
+
+
+### Bug Fixes
+
+* **ingestion:** continue healthy host shards and record a wedged collection barrier ([#445](https://github.com/KeeprDigital/card-keepr/issues/445)) ([#446](https://github.com/KeeprDigital/card-keepr/issues/446)) ([05b384e](https://github.com/KeeprDigital/card-keepr/commit/05b384e1e197f9b440a11fc607626234efc8a681))
+* **ingestion:** resume archive intake and collection waits across bounded steps ([#431](https://github.com/KeeprDigital/card-keepr/issues/431)) ([e64228c](https://github.com/KeeprDigital/card-keepr/commit/e64228c39ee5a649042239c72a56fb535b43339c))
+* **ingestion:** stop the archive decoder spinning at a compressed range boundary ([#439](https://github.com/KeeprDigital/card-keepr/issues/439)) ([1a01956](https://github.com/KeeprDigital/card-keepr/commit/1a0195659be3b3cb618e6683607a2785985d60d6))
+* **one-piece:** read source placeholders as absent facts, not values ([#334](https://github.com/KeeprDigital/card-keepr/issues/334)) ([#435](https://github.com/KeeprDigital/card-keepr/issues/435)) ([b09a616](https://github.com/KeeprDigital/card-keepr/commit/b09a6166b870009e26b07af8d34b11df0f6fafb1))
+* **one-piece:** record an omitted printed cost without a retained Printing record ([#334](https://github.com/KeeprDigital/card-keepr/issues/334)) ([#434](https://github.com/KeeprDigital/card-keepr/issues/434)) ([b54a3e2](https://github.com/KeeprDigital/card-keepr/commit/b54a3e253be7940a7d91c9037f3a0ebaefbcc9d1))
+* **one-piece:** record the printed cost 0 Bandai omits as "-" ([#334](https://github.com/KeeprDigital/card-keepr/issues/334)) ([#432](https://github.com/KeeprDigital/card-keepr/issues/432)) ([f0d857f](https://github.com/KeeprDigital/card-keepr/commit/f0d857fee02ab92ad8c1d998987a420b461be07f))
+* **one-piece:** record the printed power 0 Bandai omits as "-" ([#334](https://github.com/KeeprDigital/card-keepr/issues/334)) ([#440](https://github.com/KeeprDigital/card-keepr/issues/440)) ([535c648](https://github.com/KeeprDigital/card-keepr/commit/535c64874de28c998a56a2a93f7a7d67314ad28a))
+* **reconciliation:** settle committed seals on retry; prove remaining [#276](https://github.com/KeeprDigital/card-keepr/issues/276) response-loss boundaries ([#427](https://github.com/KeeprDigital/card-keepr/issues/427)) ([7532870](https://github.com/KeeprDigital/card-keepr/commit/7532870f275ffea1d291135301ebbf5c9aca5c01))
+
 ## 0.1.0 (2026-09-22)
 
 
