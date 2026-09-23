@@ -734,7 +734,7 @@ function onePieceUnmappedOptionalFields(
 ): { path: string; value: unknown }[] {
   if (surface !== "card-list" || !Array.isArray(raw.card_pages)) return [];
   return raw.card_pages.flatMap((value, cardIndex) => {
-    if (!isPlainRecord(value) || !isPlainRecord(value.printing)) return [];
+    if (!isPlainRecord(value)) return [];
     // The Publisher omitted this Card's cost; the normalised 0 keeps the
     // printed token visible for review (issue #334).
     const omittedPrintedCost = onePieceOmittedPrintedCost(value.Category, value.Cost)
@@ -745,6 +745,7 @@ function onePieceUnmappedOptionalFields(
           },
         ]
       : [];
+    if (!isPlainRecord(value.printing)) return omittedPrintedCost;
     const printingAttributes = isPlainRecord(value.printing.attributes) ? value.printing.attributes : {};
     const illustrationWarnings = Array.isArray(printingAttributes.illustration_types)
       ? printingAttributes.illustration_types.flatMap((illustration, illustrationIndex) =>
