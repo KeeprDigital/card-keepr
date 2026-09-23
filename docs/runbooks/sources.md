@@ -133,6 +133,19 @@ selected official publications are a separate supplement; run their plans
 after the TCGdex Cards are published; how official Garchomp joins TCGdex `swsh9-109`
 remains an open owner decision in [#329](https://github.com/KeeprDigital/card-keepr/issues/329).
 
+The Riot [refresh plan](../examples/riftbound-riot-refresh-plan.json) selects
+Riot's complete registered English scope: the first gallery page and every page
+it links, one publisher front per returned record, and the errata and products
+articles. The retained inventory has 1,189 returned records (1,197 declared) and an
+estimated 1.1 GB of PNG fronts; 26 overnumbered or signature fronts are 1488x2078,
+within the registration's 8 MiB body bound. Pacing keeps the gallery API and
+`playriftbound.com` sequential at 1 s or slower and allows up to four fronts in
+flight on `cmsassets.rgpub.io`. Each retained front lets its Printing qualify
+automatically; a failed front is an explicit image gap, and a record whose front
+was never retained stays an Entity Proposal. Fronts already retained at the same
+URL are skipped. Budget one dispatch per page, article and front not yet
+retained, plus retry headroom.
+
 The Riftbound DB [pilot plan](../examples/riftbound-db-pilot-plan.json) selects only
 the retained facet surface and first three results of each PR/Bird query, with four
 inspected original images. Its seven-request bound is not a full PR inventory.
