@@ -25,6 +25,8 @@ test("every retained fixture preserves its registered adapter observations and d
   // card-list observation hashes change and retained raw-byte digests are unchanged.
   // #334 also reads Bandai's "-" Effect box as no rules text; the same two One
   // Piece hashes change again and the retained raw bytes stay untouched.
+  // #334 then designates the Bandai front-image stem the artwork identity, so
+  // the three One Piece card-list hashes change; retained raw bytes are unchanged.
   // Hash the serialized output itself;
   // canonicalizing it would hide an observable property-order change.
   const result: Record<string, unknown> = {};

@@ -587,6 +587,9 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
     redistributed[0].identity_evidence.artwork_fingerprint,
     observations[0].identity_evidence.artwork_fingerprint,
   );
+  // The live card list publishes no artwork attribute. Its front-image stem is
+  // the Publisher's own per-Printing asset name, which the owner designated the
+  // Official Source artwork identity (issue #334).
   const unidentified = adapter.parseBytes(
     new TextEncoder().encode(html.replace(' data-artwork-id="op99-001-standard-art"', "")),
     {
@@ -596,6 +599,23 @@ test("production decoders accept real Bandai-shaped HTML without a Keepr payload
   );
   assert.equal(
     unidentified[0].identity_evidence.artwork_fingerprint,
+    'official-artwork:{"official_card_identity":"OP99-001","roles":["front"],"artwork_id":"op99-001"}',
+  );
+  // A redistributed or reprocessed filename is not that asset name, so a
+  // changed source image alone still establishes no artwork identity.
+  const unidentifiedRedistribution = adapter.parseBytes(
+    new TextEncoder().encode(
+      html
+        .replace(' data-artwork-id="op99-001-standard-art"', "")
+        .replaceAll("OP99-001.png", "unrelated-distribution-filename.webp?width=2048&encoding=next"),
+    ),
+    {
+      mediaType: "text/html; charset=utf-8",
+      url: cardListUrl,
+    },
+  );
+  assert.equal(
+    unidentifiedRedistribution[0].identity_evidence.artwork_fingerprint,
     'official-artwork:{"official_card_identity":"OP99-001","roles":["front"],"artwork_id":null}',
   );
   const unfamiliarTreatment = adapter.parseBytes(
