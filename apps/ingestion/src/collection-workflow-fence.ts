@@ -18,15 +18,25 @@ export function fenceCollectionWorkflow(
       throw new NonRetryableError("The collection Workflow Attempt has been superseded.", supersededName);
     }
   };
+  // Replay is a prefix of each invocation: one check before its first step
+  // fences every replayed result, and once a callback has run live every
+  // later step is checked as before. Checking before each replayed step made
+  // replay cost one query per retained step, unbounded in one invocation (#327).
+  let replayFenced = false,
+    live = false;
   return new Proxy(step, {
     get(target, property) {
       if (property === "do") {
         return async (name: string, configOrCallback: unknown, possibleCallback?: unknown) => {
-          await assertCurrent();
+          if (live || !replayFenced) {
+            await assertCurrent();
+            replayFenced = true;
+          }
           const callback = (typeof configOrCallback === "function" ? configOrCallback : possibleCallback) as (
             ...args: unknown[]
           ) => Promise<unknown>;
           const fenced = async (...args: unknown[]) => {
+            live = true;
             // This runs again on an actual durable callback retry, including
             // a retry restored after the run has paused and resumed.
             await assertCurrent();

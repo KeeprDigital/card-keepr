@@ -95,7 +95,10 @@ export type SourceRequestBatchHalt =
   // pause, or termination); the requests from `processed` on are untouched.
   | { kind: "run_not_collecting" }
   // The time budget elapsed; the next batch step continues from `processed`.
-  | { kind: "time_budget" };
+  | { kind: "time_budget" }
+  // A bounded archive decode/normalize/discovery step retained progress; the
+  // request at `processed` continues in the next batch step without waiting.
+  | { kind: "archive_continuation" };
 
 export type SourceRequestBatchOutcome = Readonly<{
   // Requests from the front of the batch that are settled: observed, failed,
@@ -124,6 +127,7 @@ export async function collectSourceRequestBatch(input: SourceRequestBatchInput):
   const haltAt = (index: number, value: SourceRequestBatchHalt): void => {
     if (halt === null || index < halt.index) halt = { index, value };
   };
+  const continued: number[] = [];
   const inFlight = new Set<Promise<void>>();
   let taskFailure: { error: unknown } | null = null;
   let loopFailure: { error: unknown } | null = null;
@@ -159,11 +163,16 @@ export async function collectSourceRequestBatch(input: SourceRequestBatchInput):
       if (prepared.kind === "captured") {
         const snapshotId = prepared.source_snapshot_id;
         enqueuePersistence(() =>
-          persistCapturedRequest(input, request, {
-            kind: "captured",
-            source_snapshot_id: snapshotId,
-            request_made: false,
-          }),
+          persistCapturedRequest(
+            input,
+            request,
+            {
+              kind: "captured",
+              source_snapshot_id: snapshotId,
+              request_made: false,
+            },
+            () => continued.push(index),
+          ),
         );
         settled[index] = true;
         continue;
@@ -174,7 +183,9 @@ export async function collectSourceRequestBatch(input: SourceRequestBatchInput):
       if (skipped !== null) {
         const attemptId = prepared.attempt_id;
         enqueuePersistence(() =>
-          persistCapturedRequest(input, request, { kind: "uploaded", attempt_id: attemptId, request_made: false }),
+          persistCapturedRequest(input, request, { kind: "uploaded", attempt_id: attemptId, request_made: false }, () =>
+            continued.push(index),
+          ),
         );
         settled[index] = true;
         continue;
@@ -216,7 +227,8 @@ export async function collectSourceRequestBatch(input: SourceRequestBatchInput):
           haltAt(index, { kind: "retry_wait", request_id: request.request_id, wait_ms: result.wait_ms });
           return;
         }
-        if (result.kind !== "done") enqueuePersistence(() => persistCapturedRequest(input, request, result));
+        if (result.kind !== "done")
+          enqueuePersistence(() => persistCapturedRequest(input, request, result, () => continued.push(index)));
         settled[index] = true;
       })();
       const tracked: Promise<void> = task
@@ -239,9 +251,15 @@ export async function collectSourceRequestBatch(input: SourceRequestBatchInput):
   }
   if (loopFailure !== null) throw loopFailure.error;
   if (taskFailure !== null) throw (taskFailure as { error: unknown }).error;
+  // Another halt keeps precedence; a continued request then resumes through
+  // the shard's next stage, exactly as before continuations existed.
+  if (halt === null && continued.length) haltAt(Math.min(...continued), { kind: "archive_continuation" });
   const unsettled = settled.indexOf(false);
-  const processed = unsettled === -1 ? settled.length : unsettled;
+  const settledPrefix = unsettled === -1 ? settled.length : unsettled;
   const finalHalt = halt as { index: number; value: SourceRequestBatchHalt } | null;
+  // A continued archive request is settled for this step but not processed.
+  const processed =
+    finalHalt?.value.kind === "archive_continuation" ? Math.min(settledPrefix, finalHalt.index) : settledPrefix;
   return { processed, halt: finalHalt !== null && finalHalt.index <= processed ? finalHalt.value : null };
 }
 
@@ -252,6 +270,7 @@ async function persistCapturedRequest(
   input: SourceRequestBatchInput,
   request: EvidenceRequestRow,
   fetched: Extract<CaptureTransportResult, { kind: "uploaded" | "captured" }>,
+  continuation: () => void,
 ): Promise<void> {
   if (!(await ownsCollectionAttempt(input))) return;
   let result: CaptureTransportResult = fetched;
@@ -271,6 +290,7 @@ async function persistCapturedRequest(
       request,
       result.source_snapshot_id,
       input.workflowAttempt,
+      continuation,
     );
   }
 }

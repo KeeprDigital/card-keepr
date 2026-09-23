@@ -190,3 +190,12 @@ export { stagingValidationChecks, validateStagingOutcome, type StagingOutcome } 
 export { sourceValue, retainedSourceObject } from "./http-source-value";
 export { magicLayouts, magicFaceRoles } from "./magic-layout";
 export { gzipJsonlRecords, gzipJsonlBlocks, SourceArchiveFailure, type SourceArchiveLimits } from "./gzip-jsonl";
+export {
+  crc32,
+  gunzipChunkBytes,
+  gunzipRangeBytes,
+  ResumableGunzip,
+  type GunzipCheckpoint,
+  type GunzipSource,
+} from "./resumable-gunzip";
+export { JsonlBlockAssembler, type JsonlBlock, type JsonlBlockCursor } from "./resumable-jsonl-blocks";

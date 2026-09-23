@@ -7,7 +7,7 @@ export {
   type CollectionProgressFacts,
   classifyCollectionProgress,
   classifyCollectionWorkflow,
-  collectionBarrierSleepDuration,
+  collectionBarrierWaitMilliseconds,
   collectionStallGraceMilliseconds,
   parentAttemptNumber,
   parentWorkflowAttemptId,

@@ -141,3 +141,29 @@ export function archiveBoundaryObservationSet(db: CatalogueStore) {
     SELECT ?1,?1,id,source_lineage,supported_game,game_profile_version,adapter_version,?3,?4,?5,?6,?7
     FROM source_snapshots WHERE id=?2`);
 }
+
+/** One snapshot's decode, normalization and discovery cursors. */
+export function archiveStepCursors(db: CatalogueStore) {
+  return repositoryStatements(db).prepare(`SELECT d.next_block AS blocks,d.state AS decode_state,
+    COALESCE(p.next_record,0) AS records,COALESCE(p.discovery_ordinal,0) AS discovered,p.state AS parse_state
+    FROM source_archive_decodes d
+    LEFT JOIN source_parse_operations o ON o.source_snapshot_id=d.source_snapshot_id
+    LEFT JOIN source_archive_parse_progress p ON p.observation_set_id=o.observation_set_id
+    WHERE d.source_snapshot_id=?`);
+}
+export function archiveReceiptCoverage(db: CatalogueStore) {
+  return repositoryStatements(db).prepare(`SELECT COUNT(*) AS receipts,MIN(r.ordinal) AS first,MAX(r.ordinal) AS last,
+    COUNT(DISTINCT r.source_key) AS keys,SUM(r.exclusion IS NULL) AS selected
+    FROM source_archive_record_receipts r JOIN source_parse_operations o ON o.observation_set_id=r.observation_set_id
+    WHERE o.source_snapshot_id=?`);
+}
+export function archiveDecodeDigest(db: CatalogueStore) {
+  return repositoryStatements(db).prepare(
+    "SELECT decoded_digest FROM source_archive_decodes WHERE source_snapshot_id=?",
+  );
+}
+export function archiveRecordPageCoverage(db: CatalogueStore) {
+  return repositoryStatements(db).prepare(`SELECT COUNT(*) AS rows,COUNT(DISTINCT r.ordinal) AS ordinals,
+    MAX(r.ordinal) AS last FROM source_record_pages r
+    JOIN source_parse_operations o ON o.observation_set_id=r.observation_set_id WHERE o.source_snapshot_id=?`);
+}

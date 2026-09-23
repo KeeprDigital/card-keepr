@@ -4,6 +4,7 @@ import contract from "../../../contracts/admin-openapi.json";
 import { assertHttpResponse } from "../../../test/support/http-contract";
 import { administrationRequest, installRuntimeSuite } from "./runtime-helpers";
 import { seedArchive, version } from "./source-archive-fixture";
+import { archiveNormalizationStepBudget } from "../../../src/catalogue/source-evidence/source-archive-parse";
 
 installRuntimeSuite();
 
@@ -11,7 +12,7 @@ test("archive reparse HTTP continues bounded progress with the same intent and r
   // Synthetic distinct locators isolate continuation at one record beyond the
   // callback's bound; this is a transport fixture, not real source coverage.
   const input = new TextEncoder().encode(
-    Array.from({ length: 129 }, (_, index) => {
+    Array.from({ length: archiveNormalizationStepBudget.records + 1 }, (_, index) => {
       const record = JSON.parse(etched);
       record.id = `00000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`;
       record.uri = `https://api.scryfall.com/cards/${record.id}`;
@@ -36,7 +37,10 @@ test("archive reparse HTTP continues bounded progress with the same intent and r
   const finished = await administrationRequest(path, "POST", intent);
   expect(finished.status, await finished.clone().text()).toBe(201);
   const document = await finished.json();
-  expect(document).toMatchObject({ id: progress.observation_set_id, observation_count: 129 });
+  expect(document).toMatchObject({
+    id: progress.observation_set_id,
+    observation_count: archiveNormalizationStepBudget.records + 1,
+  });
   await assertHttpResponse(contract, definition, "post", finished, document);
   const replay = await administrationRequest(path, "POST", intent);
   expect(replay.status).toBe(201);

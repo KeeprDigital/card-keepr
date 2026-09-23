@@ -186,6 +186,13 @@ production capacity. Tier admission without fetched bodies cannot prove 5/50 GiB
 capture. Native elapsed time is diagnostic; collection's per-request overhead
 requirement remains. Timing is neither active CPU nor provider billing.
 
+Local runtimes enforce no Worker CPU or subrequest limit. Archive and barrier
+structure checks therefore drive the production Workflow bodies with a recording
+step and assert declared per-step budgets, lost-response retries without
+duplicates and invocation yields. Routine files use a few thousand records and
+a dozen polls; the 150,000-record archive and 600-poll barrier run only in
+`test:stress:full`.
+
 Run comparable heavy experiments sequentially with exclusive host resources.
 Record the exact commit, runtime, complete selection and failed/incomplete results.
 Resource-bound arguments do not replace measured heap/CPU or real-source coverage.

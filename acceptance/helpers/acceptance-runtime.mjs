@@ -226,6 +226,8 @@ export async function startWorker({
     // overridden with the bound local origin unless the caller passes one.
     const allVars = {
       SOURCE_HOST_PACING_MODE: pacingMode,
+      // Local runtimes enforce no Worker limits; keep Workflow waits short.
+      WORKFLOW_WAIT_MODE: "immediate",
       PUBLIC_BASE_URL: `http://127.0.0.1:${boundPort}`,
       ...vars,
     };
