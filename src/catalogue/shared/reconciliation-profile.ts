@@ -27,7 +27,8 @@ export type ProfileWarning = Readonly<{
     | "unknown_source_vocabulary"
     | "unknown_source_field"
     | "release_date_qualifier_retained"
-    | "printed_cost_omitted_normalized";
+    | "printed_cost_omitted_normalized"
+    | "printed_effect_omitted_normalized";
   source_observation_id: string;
   profile: string;
   path: string;
@@ -855,6 +856,24 @@ export function printedCostOmittedWarning(
     raw_value: rawSourceValue(raw),
     detail:
       "The Publisher's card list omitted this Card's cost and printed the same placeholder it prints for inapplicable fields; the owner-confirmed printed cost 0 was recorded and the omitted token is retained verbatim as Source Observation evidence. Review whether the Publisher has begun publishing a different cost.",
+  };
+}
+
+/** The Publisher printed "-" in the Effect box for a Card with no ability (#334). */
+export function printedEffectOmittedWarning(
+  sourceObservationId: string,
+  profile: string,
+  path: string,
+  raw: unknown,
+): ProfileWarning {
+  return {
+    code: "printed_effect_omitted_normalized",
+    source_observation_id: sourceObservationId,
+    profile,
+    path,
+    raw_value: rawSourceValue(raw),
+    detail:
+      "The Publisher's card list printed its inapplicable-field placeholder in the Effect box; the Card was recorded with no rules text and the printed token is retained verbatim as Source Observation evidence. Review whether the Publisher has begun publishing rules text for this Card.",
   };
 }
 

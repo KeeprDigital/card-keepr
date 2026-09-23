@@ -23,6 +23,8 @@ test("every retained fixture preserves its registered adapter observations and d
   // The two affected One Piece observation hashes change; retained raw-byte digests are unchanged.
   // #334 records cost 0 for a printed cost Bandai omits as "-"; the two One Piece
   // card-list observation hashes change and retained raw-byte digests are unchanged.
+  // #334 also reads Bandai's "-" Effect box as no rules text; the same two One
+  // Piece hashes change again and the retained raw bytes stay untouched.
   // Hash the serialized output itself;
   // canonicalizing it would hide an observable property-order change.
   const result: Record<string, unknown> = {};

@@ -241,7 +241,7 @@
   },
   "one-piece-en-card-list-op16-series.json": {
     "bytes_sha256": "9efff60c30161e3835e998832b2d33784359e710bdf263bad122f18c8d347a7e",
-    "observations_sha256": "33a42e94ae85a2e24d588aef06df93979405dbea4c03394a4770b88724c02708"
+    "observations_sha256": "f5dc40105aaedabbcedc346de3af6bf85b85d7045c1c27a18481562e345b43f6"
   },
   "one-piece-en-card-list.json": {
     "bytes_sha256": "93a49866c157de61bf503a81beb0b9951e98f658bf68687e060a4d616eb3872d",
@@ -281,7 +281,7 @@
   },
   "one-piece-en-restructured-discovery.json": {
     "bytes_sha256": "27e169e3345d29cbe60c8e4db87647a16b3adf37de299c5ca64dc3b185a09fe6",
-    "observations_sha256": "6b21dc6645a261a69a1788b977a931b93080d60a02bba08f3ed67ede44b35fa0"
+    "observations_sha256": "075834616e9dd15b55b924acf38d72f36256a3b25426077ae09e2ea8b6012e86"
   },
   "one-piece-en-rules-hub.json": {
     "bytes_sha256": "c9de2076bf785f2a42b94aecdd6fac97540f488ae709e726b216ec0be787e916",

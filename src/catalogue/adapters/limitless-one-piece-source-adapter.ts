@@ -155,6 +155,13 @@ function parsePage(bytes: Uint8Array, url: string, parents: SourceAdapterParseCo
   const name = htmlText(required(/<span class="card-text-name">([\s\S]*?)<\/span>/u, "card name"));
   const tooltip = (label: string) =>
     htmlText(required(new RegExp(`<span data-tooltip="${label}">([\\s\\S]*?)<\\/span>`, "u"), label));
+  // Limitless leaves an unresolved translation key in the rendered value for a
+  // few records (OP13-079 publishes "card.attribute.?", #334). An unresolved key
+  // is not a source fact: the field is recorded as not stated.
+  const statedTooltip = (label: string) => {
+    const value = tooltip(label);
+    return /^card\.[a-z_.]+/u.test(value) ? null : value;
+  };
   const text = required(/<div class="card-text">([\s\S]*?)<div class="card-legality">/u, "card content");
   const sections = [...text.matchAll(/<div class="card-text-section">([\s\S]*?)<\/div>/gu)].map((match) => match[1]!);
   const rulesSections = sections.filter(
@@ -174,7 +181,15 @@ function parsePage(bytes: Uint8Array, url: string, parents: SourceAdapterParseCo
     )
     .split(/<br>\s*<br>\s*\[Trigger\]/u);
   if (rules.length > 2) throw new AdapterParseFailure("Limitless repeats the Trigger section.");
-  const effect = htmlText(rules[0]!);
+  // Limitless renders an inline "[Trigger]" reference inside rules text with the
+  // same "<br><br>[Trigger]" shape it uses for a real Trigger section
+  // (OP17-105, OP17-109 against Bandai, #334). A real Trigger opens a sentence;
+  // an inline reference continues one, so a lower-case continuation is rejoined
+  // rather than split into a Trigger that the Card does not have.
+  const triggerOpensASentence = rules[1] === undefined || /^\s*(?:[A-Z[]|$)/u.test(htmlText(rules[1]));
+  const effect = htmlText(
+    triggerOpensASentence ? rules[0]! : `${rules[0]!.replace(/\s+$/u, "")} [Trigger]${rules[1]!}`,
+  );
   const category = tooltip("Category");
   const hasCombatProperties = category === "Leader" || category === "Character";
   const raw = {
@@ -182,7 +197,7 @@ function parsePage(bytes: Uint8Array, url: string, parents: SourceAdapterParseCo
     Color: tooltip("Color"),
     Cost: category === "Leader" ? null : htmlText(required(/([0-9]+) Cost/u, "cost")),
     Life: category === "Leader" ? htmlText(required(/([0-9]+) Life/u, "life")) : null,
-    Attribute: hasCombatProperties ? tooltip("Attribute") : null,
+    Attribute: hasCombatProperties ? statedTooltip("Attribute") : null,
     Power: hasCombatProperties ? htmlText(required(/([0-9]+) Power/u, "power")) : null,
     Counter: /\+([0-9]+) Counter/u.exec(text)?.[1] ?? null,
     Type: tooltip("Type").split("/"),
@@ -190,7 +205,7 @@ function parsePage(bytes: Uint8Array, url: string, parents: SourceAdapterParseCo
       htmlText(match[1]!),
     ),
     Effect: effect.length === 0 ? null : effect,
-    Trigger: rules[1] === undefined ? null : `[Trigger] ${htmlText(rules[1])}`,
+    Trigger: rules[1] === undefined || !triggerOpensASentence ? null : `[Trigger] ${htmlText(rules[1])}`,
   };
   // Retained raw fields keep the source's slash-joined text; the shared profile
   // receives each listed colour and attribute (e.g. Red/Green, Slash/Strike).

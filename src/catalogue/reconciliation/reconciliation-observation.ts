@@ -13,6 +13,7 @@ import {
   sourceFieldWarning,
   releaseDateQualifierWarning,
   printedCostOmittedWarning,
+  printedEffectOmittedWarning,
   type ProfileWarning,
 } from "../shared";
 import { parsedOfficialArtworkIdentity, riftboundOriginsTargetName } from "../adapters";
@@ -429,7 +430,9 @@ function inspectSourceSidecar(
         ? releaseDateQualifierWarning(sourceObservationId, profile, path, field.value)
         : path.includes(".printed_cost_omitted:")
           ? printedCostOmittedWarning(sourceObservationId, profile, path, field.value)
-          : sourceFieldWarning(sourceObservationId, profile, path, field.value),
+          : path.includes(".printed_effect_omitted:")
+            ? printedEffectOmittedWarning(sourceObservationId, profile, path, field.value)
+            : sourceFieldWarning(sourceObservationId, profile, path, field.value),
     );
   }
 }
