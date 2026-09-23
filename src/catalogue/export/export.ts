@@ -305,7 +305,8 @@ function retainedEntityFields(entity: CatalogueCandidate["cards"][number] | Cata
     throw new Error("Retained aggregate exports cannot encode art Cards or Card relationships.");
   return Object.fromEntries(
     Object.entries(entity).filter(
-      ([field]) => !["category", "gameplay_applicability", "related_cards"].includes(field),
+      // Exports never carry the unverified Source Image Link (#425).
+      ([field]) => !["category", "gameplay_applicability", "related_cards", "source_image_link"].includes(field),
     ),
   );
 }

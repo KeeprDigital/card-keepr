@@ -6,10 +6,17 @@ import split from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall
 import gameplayPiece from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/token-layout-gameplay.json?raw";
 import { requiredSourceAdapter } from "../../../src/catalogue/adapters";
 import { collectFixtureEvidence } from "../../../test/support/fixture-evidence-plan";
-import { get, installReconciliationSuite, postFixtureEvidence, testEnv } from "./reconciliation-helpers";
-import { prepareNativeEvidence } from "./native-publication-helpers";
+import {
+  exportComponentRecords,
+  get,
+  installReconciliationSuite,
+  postFixtureEvidence,
+  testEnv,
+} from "./reconciliation-helpers";
+import { approveNativeCandidate, prepareNativeEvidence } from "./native-publication-helpers";
 import { nativeCandidateRecords } from "./native-candidate-helpers";
-import { catalogueStore } from "../../../src/catalogue/shared";
+import { catalogueStore, scryfallSourceImageLinks } from "../../../src/catalogue/shared";
+import { compositionEntityResponse } from "../../../src/catalogue/read/composition-read";
 import {
   appendDiscoveredEvidenceRequests,
   pendingEvidenceRequests,
@@ -180,4 +187,162 @@ test("a facts-only run admits qualified Printings without image bytes and keeps 
       .filter((proposal) => JSON.parse(proposal.reference)[0] === JSON.parse(bloomvine).id)
       .map(({ status }) => status),
   ).toEqual(["unresolved", "unresolved"]);
+});
+
+const consumerBase = { origin: "https://catalogue.example", basePath: "" };
+type PublishedPrinting = {
+  id: string;
+  game_data: { attributes: { collector_number: string } };
+  printing_images: unknown[];
+  source_image?: Record<string, unknown>;
+};
+const png = Uint8Array.from(
+  atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGP4/x8AAwAB//wl3FEAAAAASUVORK5CYII="),
+  (c) => c.charCodeAt(0),
+);
+const frontImageUrl = (raw: string) => String(JSON.parse(raw).image_uris.normal);
+
+/** Collect and prepare exact Scryfall records; only the listed image URLs are acquired. */
+async function prepareScryfallRecords(input: {
+  adapterVersion: string;
+  key: string;
+  raws: readonly string[];
+  imageUrls: readonly string[];
+  predecessor: string;
+}) {
+  const adapter = requiredSourceAdapter("scryfall-magic-en@1");
+  const values: unknown[] = [];
+  for (const raw of input.raws)
+    values.push(
+      ...(await adapter.parseBytes!(new TextEncoder().encode(raw), {
+        url: JSON.parse(raw).uri,
+        mediaType: "application/json",
+      })),
+    );
+  const started = await postFixtureEvidence({
+    supported_game: "magic",
+    source_lineage: "scryfall-magic-en",
+    adapter_version: input.adapterVersion,
+    idempotency_key: input.key,
+    requests: [{ id: "cards", url: `https://official-source.invalid/${input.key}` }],
+  });
+  expect(started.response.status).toBe(201);
+  const db = catalogueStore(testEnv.CATALOGUE_DB);
+  const run = await requiredEvidenceRun(db, String(started.document.id));
+  if (input.imageUrls.length) {
+    const [root] = await pendingEvidenceRequests(db, run.id);
+    await appendDiscoveredEvidenceRequests(
+      db,
+      run,
+      root!,
+      input.imageUrls.map((url) => ({ role: "image", url, headers: { accept: "image/png" } })),
+    );
+  }
+  const requested: string[] = [];
+  const transport = {
+    async fetch(request: RequestInfo | URL) {
+      const url = new Request(request).url;
+      requested.push(url);
+      return url.startsWith("https://cards.scryfall.io/")
+        ? new Response(png, { headers: { "content-type": "image/png" } })
+        : Response.json({ cards: values });
+    },
+  } as Fetcher;
+  await collectFixtureEvidence(testEnv.CATALOGUE_DB, testEnv.EVIDENCE_OBJECTS, transport, run.id);
+  // A Source Image Link is never fetched: only the planned requests were sent.
+  expect(requested.sort()).toEqual([`https://official-source.invalid/${input.key}`, ...input.imageUrls].sort());
+  return prepareNativeEvidence({
+    runId: run.id,
+    game: "magic",
+    predecessor: input.predecessor,
+    key: `${input.key}-candidate`,
+  });
+}
+
+async function publishedPrintings() {
+  const list = (await (await compositionEntityResponse(
+    catalogueStore(testEnv.CATALOGUE_DB),
+    new Request(`${consumerBase.origin}/v1/printings?game=magic`),
+    consumerBase,
+    "printings",
+  ))!.json()) as { data: PublishedPrinting[] };
+  const byNumber = new Map<string, PublishedPrinting>();
+  for (const printing of list.data) {
+    const detail = (await (await compositionEntityResponse(
+      catalogueStore(testEnv.CATALOGUE_DB),
+      new Request(`${consumerBase.origin}/v1/printings/${printing.id}`),
+      consumerBase,
+      "printings",
+      printing.id,
+    ))!.json()) as { data: PublishedPrinting };
+    expect(detail.data.source_image).toEqual(printing.source_image);
+    byNumber.set(printing.game_data.attributes.collector_number, detail.data);
+  }
+  return byNumber;
+}
+
+test("an opted-in Printing without a retained image serves its claimed URL as an unverified link that a refresh replaces", async () => {
+  const withImage = JSON.parse(control).collector_number as string;
+  const imageless = JSON.parse(gameplayPiece).collector_number as string;
+  const first = await prepareScryfallRecords({
+    adapterVersion: "fixture-scryfall-source-record@1",
+    key: "source-image-link-first",
+    raws: [control, gameplayPiece],
+    imageUrls: [frontImageUrl(control)],
+    predecessor: "catrev_spine_000",
+  });
+  const published = await approveNativeCandidate(first, "source-image-link-first-publish");
+  const revision = String(published.document.resulting_revision_id);
+  const expectedLink = (url: string) => ({
+    url,
+    role: "front",
+    source: "scryfall",
+    retrieved_at: expect.any(String),
+    verified: false,
+    attribution: { ...scryfallSourceImageLinks.attribution },
+  });
+  let printings = await publishedPrintings();
+  expect(printings.get(withImage)!.printing_images).toHaveLength(1);
+  expect(printings.get(withImage)).not.toHaveProperty("source_image");
+  expect(printings.get(imageless)!.printing_images).toEqual([]);
+  expect(printings.get(imageless)!.source_image).toEqual(expectedLink(frontImageUrl(gameplayPiece)));
+  // Exports carry accepted Catalogue Data only, never the unverified link.
+  const exported = await exportComponentRecords(revision, "printings");
+  expect(exported).toHaveLength(2);
+  for (const record of exported) {
+    expect(record).not.toHaveProperty("source_image");
+    expect(record).not.toHaveProperty("source_image_link");
+  }
+
+  // Scryfall's cache-busting timestamp changes; the refreshed record's exact URL replaces the stale one.
+  const refreshedUrl = frontImageUrl(gameplayPiece).replace(/\?\d+$/u, "?1799999999");
+  const refreshed = JSON.parse(gameplayPiece);
+  refreshed.image_uris.normal = refreshedUrl;
+  const second = await prepareScryfallRecords({
+    adapterVersion: "fixture-scryfall-source-record@1",
+    key: "source-image-link-refresh",
+    raws: [control, JSON.stringify(refreshed)],
+    imageUrls: [],
+    predecessor: revision,
+  });
+  await approveNativeCandidate(second, "source-image-link-refresh-publish");
+  printings = await publishedPrintings();
+  // The carried Printing Image still suppresses the link although this run acquired no image.
+  expect(printings.get(withImage)!.printing_images).toHaveLength(1);
+  expect(printings.get(withImage)).not.toHaveProperty("source_image");
+  expect(printings.get(imageless)!.source_image).toEqual(expectedLink(refreshedUrl));
+});
+
+test("a registration without the Source Image Link opt-in never records a link", async () => {
+  const candidate = await prepareScryfallRecords({
+    adapterVersion: "fixture-scryfall-source-record-unlinked@1",
+    key: "source-image-link-unlinked",
+    raws: [control, gameplayPiece],
+    imageUrls: [],
+    predecessor: "catrev_spine_000",
+  });
+  const records = await nativeCandidateRecords(String(candidate.id), ["printings", "printing_images"]);
+  expect(records.printings).toHaveLength(2);
+  expect(records.printing_images ?? []).toEqual([]);
+  for (const printing of records.printings!) expect(printing).not.toHaveProperty("source_image_link");
 });

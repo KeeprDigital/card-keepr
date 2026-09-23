@@ -5263,6 +5263,9 @@
               "additionalProperties": false
             }
           },
+          "source_image": {
+            "$ref": "#/components/schemas/SourceImageLink"
+          },
           "products": {
             "type": "array",
             "items": {
@@ -5397,6 +5400,83 @@
           "links"
         ],
         "additionalProperties": false
+      },
+      "SourceImageLink": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Exact source URL, kept as retained; load it directly from the source."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "front"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "scryfall"
+            ]
+          },
+          "retrieved_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Capture time of the retained source record that claimed this URL."
+          },
+          "verified": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "attribution": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string"
+              },
+              "provider_url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "notice": {
+                "type": "string"
+              },
+              "policy_url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "terms_url": {
+                "type": "string",
+                "format": "uri"
+              }
+            },
+            "required": [
+              "provider",
+              "provider_url",
+              "notice",
+              "policy_url",
+              "terms_url"
+            ],
+            "additionalProperties": false,
+            "description": "Display this notice with the image and never modify the image."
+          }
+        },
+        "required": [
+          "url",
+          "role",
+          "source",
+          "retrieved_at",
+          "verified",
+          "attribution"
+        ],
+        "additionalProperties": false,
+        "description": "Unverified Source Image Link, present only while the Printing has no Printing Image and its source permits linking. It is not a Printing Image: Card Keepr never fetched, inspected or proxied its bytes, and it may depict another treatment. Exports omit it."
       },
       "PrintingCollection": {
         "type": "object",

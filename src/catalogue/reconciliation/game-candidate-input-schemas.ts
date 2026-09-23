@@ -43,6 +43,7 @@ const cardObservation = z.strictObject({
   demonstrablyNovel: z.boolean(),
   noveltyProofComplete: z.boolean(),
   printingImages: z.array(imageRecord.omit({ id: true, printing_id: true, object_key: true })),
+  claimedFrontImageUrl: z.url().optional(),
   memberships: z.strictObject({
     products: z.array(text),
     distribution_contexts: z.array(text),

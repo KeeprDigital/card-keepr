@@ -98,6 +98,7 @@ import {
   derivedCardModel,
   catalogueCandidateContract,
   type IngestionRunState,
+  sourceImageLinkUrl,
   type SupportedGame,
 } from "../shared";
 import { type DigimonCardAuthority, reconcileDigimonCardAuthority } from "./digimon-reconciliation";
@@ -498,6 +499,7 @@ export async function reconcileRetainedCardPrintingEvidence(
   const printingIdentityQualifications = new Map<string, SourceAdapterRegistration["qualifiesPrintingIdentity"]>();
   const printingNoveltyProofs = new Map<string, SourceAdapterRegistration["printingNoveltyProof"]>();
   const cardDesignQualifications = new Map<string, SourceAdapterRegistration["qualifiesCardDesignIdentity"]>();
+  const sourceImageLinkPolicies = new Map<string, SourceAdapterRegistration["sourceImageLinks"]>();
   let errataOnlyEvidence = true;
   const evidencePlanSnapshot: unknown[] = [];
   for await (const plan of retained.evidencePlans) {
@@ -513,6 +515,7 @@ export async function reconcileRetainedCardPrintingEvidence(
       plan.sourceLineage,
       requiredSourceAdapter(plan.adapterVersion).qualifiesCardDesignIdentity,
     );
+    sourceImageLinkPolicies.set(plan.sourceLineage, requiredSourceAdapter(plan.adapterVersion).sourceImageLinks);
     // Source-record novelty is meaningful only where source qualification governs admission.
     printingNoveltyProofs.set(
       plan.sourceLineage,
@@ -1469,13 +1472,26 @@ export async function reconcileRetainedCardPrintingEvidence(
               });
             } else {
               await localPrintingFacts.set(printingId, acceptedPrinting);
+              const retainedPrinting = await printings.get(printingId);
+              // An opted-in lineage's latest observation replaces the link (a
+              // refreshed URL) or removes it; other lineages leave it untouched.
+              const linkPolicy = sourceImageLinkPolicies.get(observation.sourceLineage);
+              const linkUrl =
+                linkPolicy && observation.printingImages.length === 0
+                  ? sourceImageLinkUrl(linkPolicy, observation.claimedFrontImageUrl)
+                  : null;
+              const sourceImageLink = linkPolicy
+                ? linkUrl === null
+                  ? undefined
+                  : { source: linkPolicy.source, url: linkUrl, retrieved_at: observation.sourceCapturedAt ?? null }
+                : retainedPrinting?.source_image_link;
               await printings.set(printingId, {
                 id: printingId,
                 card_id: cardId,
                 ...acceptedPrinting,
                 ...(run.supported_game !== null
                   ? {
-                      locator_evidence: retainPrintingLocator(await printings.get(printingId), {
+                      locator_evidence: retainPrintingLocator(retainedPrinting, {
                         source_lineage: observation.sourceLineage,
                         locator,
                         variant_key: observation.variantKey,
@@ -1483,6 +1499,7 @@ export async function reconcileRetainedCardPrintingEvidence(
                       }),
                     }
                   : {}),
+                ...(sourceImageLink === undefined ? {} : { source_image_link: sourceImageLink }),
               });
             }
             if (observation.printingImages.length > 500)
@@ -2563,7 +2580,10 @@ function semanticCatalogueCandidate(candidate: CatalogueCandidate): Record<strin
       ...card,
       related_cards: card.related_cards.map(({ evidence: _evidence, ...relationship }) => relationship),
     })),
-    printings: candidate.printings.map(({ locator_evidence: _locators, ...printing }) => printing),
+    // A Source Image Link's URL is published data; its capture time alone is not (#425).
+    printings: candidate.printings.map(({ locator_evidence: _locators, source_image_link: link, ...printing }) =>
+      link === undefined ? printing : { ...printing, source_image_link: { source: link.source, url: link.url } },
+    ),
     printing_images: (candidate.printing_images ?? []).map((image) => ({
       id: image.id,
       printing_id: image.printing_id,

@@ -367,6 +367,31 @@ export const printingSchema = z
         links: z.strictObject({ content: z.url() }),
       }),
     ),
+    source_image: z
+      .strictObject({
+        url: z.url().openapi({ description: "Exact source URL, kept as retained; load it directly from the source." }),
+        role: z.literal("front"),
+        source: z.enum(["scryfall"]),
+        retrieved_at: z
+          .string()
+          .nullable()
+          .openapi({ description: "Capture time of the retained source record that claimed this URL." }),
+        verified: z.literal(false),
+        attribution: z
+          .strictObject({
+            provider: z.string(),
+            provider_url: z.url(),
+            notice: z.string(),
+            policy_url: z.url(),
+            terms_url: z.url(),
+          })
+          .openapi({ description: "Display this notice with the image and never modify the image." }),
+      })
+      .optional()
+      .openapi("SourceImageLink", {
+        description:
+          "Unverified Source Image Link, present only while the Printing has no Printing Image and its source permits linking. It is not a Printing Image: Card Keepr never fetched, inspected or proxied its bytes, and it may depict another treatment. Exports omit it.",
+      }),
     products: z.array(
       z.strictObject({ id: identifier, official_code: z.string().nullable(), name: z.string().nullable() }),
     ),

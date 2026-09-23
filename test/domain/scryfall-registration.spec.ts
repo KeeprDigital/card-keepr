@@ -2,7 +2,8 @@ import { expect, test } from "vitest";
 import pilot from "../../docs/examples/scryfall-magic-pilot-plan.json";
 import bulk from "../../docs/examples/scryfall-magic-bulk-plan.json";
 import facts from "../../docs/examples/scryfall-magic-facts-plan.json";
-import { requiredSourceAdapter } from "../../src/catalogue/adapters";
+import { installedSourceAdapterRegistrations, requiredSourceAdapter } from "../../src/catalogue/adapters";
+import { sourceImageLinkUrl, sourceImageRepresentation } from "../../src/catalogue/shared";
 import { validateEvidencePlan } from "../../src/catalogue/source-evidence/source-evidence-model";
 
 test("Scryfall keeps its registered identity with the selected dated request envelope", () => {
@@ -13,6 +14,32 @@ test("Scryfall keeps its registered identity with the selected dated request env
     gameProfileVersion: "magic@1",
     parserContract: "scryfall-magic-card-pilot@1",
     requestCapacity: 108_691,
+  });
+});
+
+test("only Scryfall opts into Source Image Links, and only for exact https URLs on its image host", () => {
+  // Owner decision (#425): no other source may be hotlinked until its terms are clarified.
+  expect(
+    installedSourceAdapterRegistrations
+      .filter(({ sourceImageLinks }) => sourceImageLinks !== undefined)
+      .map(({ adapterVersion }) => adapterVersion),
+  ).toEqual(["scryfall-magic-en@1"]);
+  const policy = requiredSourceAdapter("scryfall-magic-en@1").sourceImageLinks!;
+  const url = "https://cards.scryfall.io/normal/front/0/7/076ad38c-30ec-41a4-be18-c287f65d1d86.jpg?1783939390";
+  expect(sourceImageLinkUrl(policy, url)).toBe(url);
+  for (const rejected of [
+    url.replace("https:", "http:"),
+    url.replace("cards.scryfall.io", "cdn.piltoverarchive.com"),
+    `${url}#fragment`,
+    "not a url",
+  ])
+    expect(sourceImageLinkUrl(policy, rejected)).toBeNull();
+  expect(sourceImageRepresentation({ source: "scryfall", url, retrieved_at: null }, 1)).toBeUndefined();
+  expect(sourceImageRepresentation({ source: "tcgdex", url, retrieved_at: null }, 0)).toBeUndefined();
+  expect(sourceImageRepresentation({ source: "scryfall", url, retrieved_at: null }, 0)).toMatchObject({
+    url,
+    verified: false,
+    attribution: { policy_url: "https://company.wizards.com/en/legal/fancontentpolicy" },
   });
 });
 

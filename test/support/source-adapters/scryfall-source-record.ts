@@ -17,6 +17,7 @@ export const scryfallSourceRecordAdapter: SourceAdapterRegistration = {
   reconciliationCapability: "catalogue",
   printingAdmission: scryfall.printingAdmission,
   printingNoveltyProof: scryfall.printingNoveltyProof,
+  sourceImageLinks: scryfall.sourceImageLinks,
   qualifiesCardDesignIdentity: scryfall.qualifiesCardDesignIdentity,
   qualifiesPrintingIdentity: scryfall.qualifiesPrintingIdentity,
   jsonRecordContainers: ["cards"],
@@ -25,4 +26,12 @@ export const scryfallSourceRecordAdapter: SourceAdapterRegistration = {
       return [];
     return document.cards;
   },
+};
+
+// The same evidence under a registration without the Source Image Link opt-in
+// (#425): its Printings keep a plain image gap and never carry a link.
+export const scryfallSourceRecordUnlinkedAdapter: SourceAdapterRegistration = {
+  ...scryfallSourceRecordAdapter,
+  adapterVersion: "fixture-scryfall-source-record-unlinked@1",
+  sourceImageLinks: undefined,
 };

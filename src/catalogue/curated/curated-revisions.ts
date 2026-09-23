@@ -48,6 +48,7 @@ const forbiddenRoots = new Set([
   "category",
   "gameplay_applicability",
   "related_cards",
+  "source_image_link",
   "source_snapshots",
   "source_observations",
   "provenance",

@@ -62,6 +62,8 @@ export type ParsedCardPrintingObservation = Readonly<{
   demonstrablyNovel: boolean;
   noveltyProofComplete: boolean;
   printingImages: readonly Omit<CataloguePrintingImage, "id" | "printing_id" | "object_key">[];
+  /** The adapter's claimed front image URL, verbatim; an unverified claim, never image proof. */
+  claimedFrontImageUrl?: string;
   memberships: Memberships;
   withdrawal: Withdrawal | null;
   productReleaseValue: unknown;
@@ -389,6 +391,7 @@ export function parseReconciliationObservation(
     demonstrablyNovel: identityEvidence.demonstrably_novel === true,
     noveltyProofComplete: appearance.complete && validNoveltyBasis(identityEvidence.novelty_basis, artworkFingerprint),
     printingImages: appearance.images,
+    ...claimedFrontImage(record.appearance_evidence),
     memberships: parseMemberships(record.memberships),
     withdrawal: parseWithdrawal(record.withdrawal, true),
     productReleaseValue: record.product_release_catalogue,
@@ -767,6 +770,14 @@ function appearanceEvidence(
     profile === "fusion-world@1" && cardAttributes.card_type === "leader" ? ["front", "back"] : ["front"];
   const complete = captured.length === value.images.length && requiredRoles.every((role) => capturedRoles.has(role));
   return { complete, images: captured };
+}
+
+function claimedFrontImage(value: unknown): { claimedFrontImageUrl?: string } {
+  if (!isRecord(value) || !Array.isArray(value.images)) return {};
+  const front = value.images.find((item) => isRecord(item) && item.role === "front");
+  return isRecord(front) && typeof front.source_url === "string" && front.source_url.startsWith("https://")
+    ? { claimedFrontImageUrl: front.source_url }
+    : {};
 }
 
 function decodeBase64(value: string): Uint8Array {

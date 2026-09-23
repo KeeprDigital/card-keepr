@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { magicFaceRoles, magicLayouts } from "../shared";
+import { magicFaceRoles, magicLayouts, scryfallSourceImageLinks } from "../shared";
 import type { ScryfallSourceAdmissionEvidenceObservation } from "./adapter-observations";
 import {
   scryfallArchiveLimits,
@@ -241,6 +241,10 @@ export const scryfallSourceAdapterRegistration: SourceAdapterRegistration = {
   // images, so the exact record/finish/illustration qualification establishes
   // a new Printing and its image stays an explicit gap.
   printingNoveltyProof: "qualified_source_record",
+  // Owner decision (#425, 2026-09-22): Scryfall permits embedding its image
+  // files, so a Printing without a retained image publishes its claimed normal
+  // image as an unverified Source Image Link. Every other lineage stays off.
+  sourceImageLinks: scryfallSourceImageLinks,
   qualifiesCardDesignIdentity: qualifiesDesign,
   qualifiesPrintingIdentity(evidence) {
     const attributes = evidence.observedCardAndPrinting.printing?.game_data?.attributes;

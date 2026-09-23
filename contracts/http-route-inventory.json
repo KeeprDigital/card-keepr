@@ -2896,6 +2896,7 @@
       "apps/api/test/public-mount.spec.ts",
       "apps/api/test/runtime.spec.ts",
       "apps/ingestion/test/reconciliation-product-release.spec.ts",
+      "apps/ingestion/test/scryfall-assembly-reconciliation.spec.ts",
       "scripts/production-smoke.mjs"
     ]
   },
@@ -2925,6 +2926,7 @@
       "apps/api/test/product-release.spec.ts",
       "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
       "apps/ingestion/test/reconciliation-erratum-recovery.spec.ts",
+      "apps/ingestion/test/scryfall-assembly-reconciliation.spec.ts",
       "cli/staging-release.mjs",
       "scripts/production-smoke.mjs"
     ]
