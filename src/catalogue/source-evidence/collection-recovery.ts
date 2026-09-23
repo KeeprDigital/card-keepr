@@ -17,7 +17,15 @@ export type SafeWorkflowStatus =
   | "unavailable";
 
 export type WorkflowPauseReason =
-  "source_workflow_stalled" | "source_workflow_errored" | "source_workflow_terminated" | "source_workflow_unavailable";
+  | "source_workflow_stalled"
+  | "source_workflow_errored"
+  | "source_workflow_terminated"
+  | "source_workflow_unavailable"
+  // The two reasons the parent's completion barrier records about itself
+  // before it stops driving collection (#445). Both leave the retained
+  // collection work valid and resume into a new Workflow Attempt.
+  | "source_collection_no_progress"
+  | "source_workflow_attempt_exhausted";
 
 // The owner's deliberate pause of a collecting run is recorded as a Workflow
 // Pause too: it abandons the current parent Workflow Attempt exactly like a
@@ -142,6 +150,46 @@ export function parentAttemptNumber(runId: string, instanceId: string): number |
   return suffix !== null && /^[1-9]\d*$/u.test(suffix) ? Number.parseInt(suffix, 10) + 1 : null;
 }
 
+/**
+ * Why a hostname shard was dispatched again under a successor identity.
+ *
+ * A `replacement` pays for recovery: the previous instance did not finish
+ * normally (it errored, was terminated, is absent, or was inherited from a
+ * superseded parent), so the shard's bounded replacement budget is spent.
+ *
+ * A `continuation` pays for nothing: the previous instance finished normally
+ * after draining every pending Source Request in its sequence window, and the
+ * shard is dispatched again only because later discovery admitted new requests
+ * into that same window. A Workflow instance identity is single-use, so a
+ * continuation still needs a fresh identity, but treating it as recovery
+ * exhausted the budget of a healthy shard and failed its Source Requests
+ * without ever attempting a fetch (#445).
+ */
+export type ChildWorkflowSuccession = "replacement" | "continuation";
+
+const childSuccessorSuffix: Record<ChildWorkflowSuccession, string> = {
+  replacement: "attempt",
+  continuation: "continue",
+};
+// Both kinds share one zero-based successor sequence, so a shard's append-only
+// attempt history stays a single ordered line whichever kind each successor is.
+const childSuccessorPattern = /-(attempt|continue)-(0|[1-9]\d*)$/u;
+
+export function childWorkflowSuccessorId(
+  baseWorkflowId: string,
+  successorIndex: number,
+  succession: ChildWorkflowSuccession,
+): string {
+  return `${baseWorkflowId}-${childSuccessorSuffix[succession]}-${successorIndex}`;
+}
+
+/** The successor kind an identity declares, or null for a shard's base identity. */
+export function childWorkflowSuccession(instanceId: string): ChildWorkflowSuccession | null {
+  const suffix = instanceId.match(childSuccessorPattern);
+  if (suffix === null) return null;
+  return suffix[1] === childSuccessorSuffix.continuation ? "continuation" : "replacement";
+}
+
 export type WorkflowAttemptRecord = Readonly<{
   workflow_kind: "parent" | "child";
   base_workflow_id: string;
@@ -162,7 +210,7 @@ export function workflowAttemptRecord(runId: string, instanceId: string): Workfl
       workflow_instance_id: instanceId,
     };
   }
-  const childSuffix = instanceId.match(/-attempt-(0|[1-9]\d*)$/u);
+  const childSuffix = instanceId.match(childSuccessorPattern);
   return childSuffix === null
     ? {
         workflow_kind: "child",
@@ -173,11 +221,11 @@ export function workflowAttemptRecord(runId: string, instanceId: string): Workfl
     : {
         workflow_kind: "child",
         base_workflow_id: instanceId.slice(0, -childSuffix[0].length),
-        // Child replacement suffixes are zero-based (see
+        // Child successor suffixes are zero-based (see
         // nextChildWorkflowIdentity in evidence-workflows.ts): the bare digest
-        // identity is attempt 1 and '-attempt-0' is the first replacement, so
-        // suffix N maps to attempt N + 2.
-        attempt_number: Number.parseInt(childSuffix[1]!, 10) + 2,
+        // identity is attempt 1 and successor 0 is the first successor, so
+        // suffix N maps to attempt N + 2 whichever succession it declares.
+        attempt_number: Number.parseInt(childSuffix[2]!, 10) + 2,
         workflow_instance_id: instanceId,
       };
 }
@@ -200,4 +248,59 @@ export function collectionBarrierWaitMilliseconds(input: {
   if (input.mode === "immediate") return 1000;
   if (input.maximumShardDepth > 1 && input.maximumActiveRequestCount > 10) return 60_000;
   return Math.min(60_000, 1000 * 2 ** Math.min(input.unchangedPolls, 6));
+}
+
+/**
+ * Barrier polls one parent Workflow Attempt may run before it hands the run
+ * back to the owner.
+ *
+ * Cloudflare ends a Workflow instance that reaches 10,000 durable steps, and
+ * the ending is an engine error the instance cannot observe or record: the
+ * #445 parent died at `finalize collection barrier stage 3288` with 2,457
+ * Source Requests still pending, and because nothing was recorded the run sat
+ * in `collecting` with an idle runtime and no owner signal. A poll costs at
+ * most five durable steps (shards, recovery, identity summary, finalize and
+ * the wait), so this ceiling keeps an attempt near 7,500 steps and leaves the
+ * remaining budget for the preamble, invocation yields and the step in flight.
+ * Reaching it is not a failure: the attempt is exhausted, not the run.
+ */
+export const collectionBarrierPollCeiling = 1500;
+
+/**
+ * The silence the barrier tolerates before it declares its own collection
+ * stalled. Production reuses the stall grace the owner-facing classification
+ * uses, so one definition of "legitimately quiet" governs both. Test runtimes
+ * run with "immediate" waits and need a bound they can reach.
+ */
+export function collectionNoProgressGraceMilliseconds(mode: "production" | "immediate"): number {
+  return mode === "immediate" ? 60_000 : collectionStallGraceMilliseconds;
+}
+
+export type CollectionBarrierHalt = Readonly<{
+  reason: "source_collection_no_progress" | "source_workflow_attempt_exhausted";
+}>;
+
+/**
+ * Decide whether the parent's completion barrier may poll again.
+ *
+ * Every input is derived from durable step results, so a replay reaches the
+ * same verdict. `quietSinceMs` is the most recent moment the run was observed
+ * moving: a change in its Source Request census, or work recorded by a current
+ * hostname-shard Workflow Attempt. A run with no active Source Request is
+ * never stalled — the barrier is simply waiting for finalization.
+ */
+export function classifyCollectionBarrier(input: {
+  barrierStage: number;
+  activeRequestCount: number;
+  observedAtMs: number;
+  quietSinceMs: number;
+  mode: "production" | "immediate";
+}): CollectionBarrierHalt | null {
+  if (input.barrierStage >= collectionBarrierPollCeiling) {
+    return { reason: "source_workflow_attempt_exhausted" };
+  }
+  if (input.activeRequestCount < 1) return null;
+  return input.observedAtMs - input.quietSinceMs > collectionNoProgressGraceMilliseconds(input.mode)
+    ? { reason: "source_collection_no_progress" }
+    : null;
 }

@@ -5296,7 +5296,9 @@
                       "source_workflow_stalled",
                       "source_workflow_errored",
                       "source_workflow_terminated",
-                      "source_workflow_unavailable"
+                      "source_workflow_unavailable",
+                      "source_workflow_attempt_exhausted",
+                      "source_collection_no_progress"
                     ]
                   },
                   "paused_at": {
@@ -5329,6 +5331,44 @@
                     ],
                     "format": "date-time"
                   },
+                  "stranded": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "pending_request_count": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "by_host": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "hostname": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "pending_request_count": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "hostname",
+                            "pending_request_count"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "pending_request_count",
+                      "by_host"
+                    ],
+                    "additionalProperties": false
+                  },
                   "actions": {
                     "type": "array",
                     "items": {
@@ -5350,6 +5390,7 @@
                   "workflow_instance_id",
                   "workflow_status",
                   "last_progress_at",
+                  "stranded",
                   "actions"
                 ],
                 "additionalProperties": false
@@ -8664,7 +8705,9 @@
                       "source_workflow_stalled",
                       "source_workflow_errored",
                       "source_workflow_terminated",
-                      "source_workflow_unavailable"
+                      "source_workflow_unavailable",
+                      "source_workflow_attempt_exhausted",
+                      "source_collection_no_progress"
                     ]
                   },
                   "paused_at": {
@@ -8697,6 +8740,44 @@
                     ],
                     "format": "date-time"
                   },
+                  "stranded": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "pending_request_count": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "by_host": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "hostname": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "pending_request_count": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "hostname",
+                            "pending_request_count"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "pending_request_count",
+                      "by_host"
+                    ],
+                    "additionalProperties": false
+                  },
                   "actions": {
                     "type": "array",
                     "items": {
@@ -8718,6 +8799,7 @@
                   "workflow_instance_id",
                   "workflow_status",
                   "last_progress_at",
+                  "stranded",
                   "actions"
                 ],
                 "additionalProperties": false

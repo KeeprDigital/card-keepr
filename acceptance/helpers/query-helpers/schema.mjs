@@ -164,6 +164,18 @@ export function retainedTerminations(database) {
   return database.prepare("SELECT * FROM ingestion_run_terminations ORDER BY ingestion_run_id");
 }
 
+export function retainedWorkflowPauseFacts(database) {
+  return database.prepare(`SELECT ingestion_run_id, workflow_instance_id, pause_reason, workflow_status,
+       paused_at, last_progress_at
+     FROM ingestion_run_workflow_pauses ORDER BY ingestion_run_id, workflow_instance_id`);
+}
+
+export function workflowPauseStrandedJson(database) {
+  return database.prepare(
+    "SELECT stranded_json FROM ingestion_run_workflow_pauses WHERE ingestion_run_id = ? AND workflow_instance_id = ?",
+  );
+}
+
 export function reconciliationContextColumns(database) {
   return database.prepare("PRAGMA table_info(reconciliation_contexts)");
 }

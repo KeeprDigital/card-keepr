@@ -514,6 +514,109 @@ function plan(statement) {
   return statement.all().map((row) => row.detail);
 }
 
+// Migration 0052 rebuilds the same two tables migration 0002 did, so the
+// parent's completion barrier can record why it stopped driving collection
+// (issue #445). The rebuild is proven on a populated database: retained pause
+// and termination rows survive with their reasons, every guard is back, the
+// two barrier reasons are accepted end to end, and the stranded census is
+// retained as validated JSON.
+test("migration 0052 retains pause and termination rows and accepts the barrier's own pause reasons", async () => {
+  const migrations = await readMigrations();
+  const rebuild = migrations.find(({ level }) => level === 52);
+  assert.ok(rebuild, "the collection barrier liveness migration must exist");
+  const database = new DatabaseSync(":memory:");
+  database.exec("PRAGMA foreign_keys = ON");
+  for (const earlier of migrations.filter(({ level }) => level < 52)) database.exec(earlier.sql);
+
+  const pauseRun = (id, reason, terminate) => {
+    database.exec(
+      `INSERT INTO ingestion_runs (id, started_at, expected_current_revision_id, idempotency_key)
+       VALUES ('${id}', '2026-09-23T00:00:00.000Z', 'catrev_spine_000', 'key_${id}');
+       INSERT INTO ingestion_run_events
+         (ingestion_run_id, sequence_number, event_id, event_kind, occurred_at, from_state, to_state, payload_json)
+       VALUES ('${id}', 1, 'event_${id}', 'created', '2026-09-23T00:00:00.000Z', NULL, 'planning', '{}');
+       INSERT INTO ingestion_run_current
+         (ingestion_run_id, last_event_sequence, last_event_id, state, completed_stage_count)
+       VALUES ('${id}', 1, 'event_${id}', 'paused', 1);
+       INSERT INTO ingestion_run_selected_games VALUES ('${id}', 0, 'one-piece');`,
+    );
+    database.exec(
+      `INSERT INTO ingestion_run_workflow_pauses
+         (ingestion_run_id, workflow_instance_id, pause_reason, workflow_status, paused_at, last_progress_at)
+       VALUES ('${id}', 'evidence-${id}', '${reason}', 'running', '2026-09-23T01:00:00.000Z', NULL)`,
+    );
+    if (!terminate) return;
+    database.exec(
+      `INSERT INTO ingestion_run_terminations VALUES
+         ('${id}', '${reason}', '2026-09-23T01:00:00.000Z',
+          '2026-09-23T02:00:00.000Z', 'terminate_${id}', '${"a".repeat(64)}', '{}')`,
+    );
+  };
+  pauseRun("run_barrier_retained", "source_workflow_errored", true);
+
+  const before = {
+    pauses: schemaQueries.retainedWorkflowPauseFacts(database).all(),
+    terminations: schemaQueries.retainedTerminations(database).all(),
+  };
+
+  database.exec(rebuild.sql);
+
+  assert.equal(schemaLevel(database), 52);
+  assert.deepEqual(
+    {
+      pauses: schemaQueries.retainedWorkflowPauseFacts(database).all(),
+      terminations: schemaQueries.retainedTerminations(database).all(),
+    },
+    before,
+  );
+  assert.equal(schemaQueries.integrityCheck(database).get().integrity_check, "ok");
+  assert.deepEqual(schemaQueries.foreignKeyViolations(database).all(), []);
+  assert.throws(
+    () => database.exec("UPDATE ingestion_run_workflow_pauses SET workflow_status = 'errored'"),
+    /workflow_pause_immutable/u,
+  );
+  assert.throws(() => database.exec("DELETE FROM ingestion_run_workflow_pauses"), /workflow_pause_immutable/u);
+  assert.throws(() => database.exec("DELETE FROM ingestion_run_terminations"), /termination_immutable/u);
+
+  // Both barrier reasons are accepted end to end, and one records the
+  // stranded census the owner needs.
+  pauseRun("run_barrier_budget", "source_workflow_attempt_exhausted", true);
+  pauseRun("run_barrier_quiet", "source_collection_no_progress", false);
+  const stranded =
+    '{"pending_request_count":2457,"by_host":[{"hostname":"example.invalid","pending_request_count":2}]}';
+  database.exec(
+    `INSERT INTO ingestion_run_workflow_pauses
+       (ingestion_run_id, workflow_instance_id, pause_reason, workflow_status, paused_at, stranded_json)
+     VALUES ('run_barrier_quiet', 'evidence-run_barrier_quiet-resume-1', 'source_collection_no_progress',
+             'running', '2026-09-23T03:00:00.000Z', '${stranded}')`,
+  );
+  assert.equal(
+    schemaQueries.workflowPauseStrandedJson(database).get("run_barrier_quiet", "evidence-run_barrier_quiet-resume-1")
+      .stranded_json,
+    stranded,
+  );
+  assert.throws(
+    () =>
+      database.exec(
+        `INSERT INTO ingestion_run_workflow_pauses
+           (ingestion_run_id, workflow_instance_id, pause_reason, workflow_status, paused_at, stranded_json)
+         VALUES ('run_barrier_quiet', 'late', 'source_collection_no_progress', 'running',
+                 '2026-09-23T03:00:00.000Z', 'not json')`,
+      ),
+    /CHECK constraint/u,
+  );
+  assert.throws(
+    () =>
+      database.exec(
+        `INSERT INTO ingestion_run_workflow_pauses
+           (ingestion_run_id, workflow_instance_id, pause_reason, workflow_status, paused_at)
+         VALUES ('run_barrier_quiet', 'late', 'invented_reason', 'running', '2026-09-23T03:00:00.000Z')`,
+      ),
+    /CHECK constraint/u,
+  );
+  database.close();
+});
+
 function schemaLevel(database) {
   return schemaQueries.schemaMigrationLevel(database).get().migration_level;
 }

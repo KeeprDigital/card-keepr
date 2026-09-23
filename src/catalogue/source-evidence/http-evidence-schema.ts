@@ -260,11 +260,21 @@ const pauseSchema = z.union([
       "source_workflow_errored",
       "source_workflow_terminated",
       "source_workflow_unavailable",
+      "source_workflow_attempt_exhausted",
+      "source_collection_no_progress",
     ]),
     paused_at: timestamp,
     workflow_instance_id: identifier,
     workflow_status: safeWorkflowStatus,
     last_progress_at: nullableTime,
+    // The collection still owed when the barrier abandoned its attempt; null
+    // for every Workflow Pause the barrier did not record about itself.
+    stranded: z
+      .strictObject({
+        pending_request_count: count,
+        by_host: z.array(z.strictObject({ hostname: identifier, pending_request_count: count })),
+      })
+      .nullable(),
     actions,
   }),
 ]);

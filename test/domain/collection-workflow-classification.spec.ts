@@ -8,6 +8,11 @@ import {
   parentWorkflowAttemptId,
   safeWorkflowStatus,
   workflowAttemptRecord,
+  childWorkflowSuccession,
+  childWorkflowSuccessorId,
+  classifyCollectionBarrier,
+  collectionBarrierPollCeiling,
+  collectionNoProgressGraceMilliseconds,
 } from "../../src/catalogue/source-evidence";
 
 const minute = 60_000;
@@ -230,4 +235,49 @@ test("attempt records derive their scope from the instance identity", () => {
     attempt_number: 3,
     workflow_instance_id: "evidence-host-abc123-attempt-1",
   });
+});
+
+// Issue #445: a shard successor's identity says why it exists, so recovery
+// and inspection derive the same attempt record wherever they see it.
+test("child successor identities declare replacement or continuation", () => {
+  expect(childWorkflowSuccessorId("evidence-host-abc123", 0, "replacement")).toBe("evidence-host-abc123-attempt-0");
+  expect(childWorkflowSuccessorId("evidence-host-abc123", 2, "continuation")).toBe("evidence-host-abc123-continue-2");
+  expect(childWorkflowSuccession("evidence-host-abc123")).toBe(null);
+  expect(childWorkflowSuccession("evidence-host-abc123-attempt-0")).toBe("replacement");
+  expect(childWorkflowSuccession("evidence-host-abc123-continue-7")).toBe("continuation");
+  // Both kinds share one successor sequence, so the append-only attempt
+  // history stays a single ordered line per shard.
+  expect(workflowAttemptRecord("run_1", "evidence-host-abc123-continue-1")).toEqual({
+    workflow_kind: "child",
+    base_workflow_id: "evidence-host-abc123",
+    attempt_number: 3,
+    workflow_instance_id: "evidence-host-abc123-continue-1",
+  });
+});
+
+test("the completion barrier stops before the Workflow engine ends its instance", () => {
+  const quiet = { activeRequestCount: 5, observedAtMs: nowMs, quietSinceMs: nowMs, mode: "production" as const };
+  expect(classifyCollectionBarrier({ ...quiet, barrierStage: collectionBarrierPollCeiling - 1 })).toBe(null);
+  expect(classifyCollectionBarrier({ ...quiet, barrierStage: collectionBarrierPollCeiling })).toEqual({
+    reason: "source_workflow_attempt_exhausted",
+  });
+});
+
+test("the completion barrier declares its own collection stalled only while work remains", () => {
+  const grace = collectionNoProgressGraceMilliseconds("production");
+  expect(grace).toBe(collectionStallGraceMilliseconds);
+  const stalled = {
+    barrierStage: 3,
+    activeRequestCount: 2457,
+    observedAtMs: nowMs,
+    quietSinceMs: nowMs - grace - 1,
+    mode: "production" as const,
+  };
+  expect(classifyCollectionBarrier(stalled)).toEqual({ reason: "source_collection_no_progress" });
+  // Quiet for exactly the grace period is still legitimate silence.
+  expect(classifyCollectionBarrier({ ...stalled, quietSinceMs: nowMs - grace })).toBe(null);
+  // A run with nothing left to collect is waiting for finalization, not stalled.
+  expect(classifyCollectionBarrier({ ...stalled, activeRequestCount: 0 })).toBe(null);
+  // Test runtimes wait a second between polls and need a bound they can reach.
+  expect(collectionNoProgressGraceMilliseconds("immediate")).toBeLessThan(grace);
 });

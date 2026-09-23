@@ -1327,6 +1327,7 @@
     "callers": [
       "acceptance/operational-diagnostics-leak.test.mjs",
       "acceptance/source-evidence-cli.test.mjs",
+      "apps/ingestion/test/collection-shard-succession.spec.ts",
       "apps/ingestion/test/reconciliation-completeness-profiles.spec.ts",
       "apps/ingestion/test/runtime-acquisition-backup.spec.ts",
       "apps/ingestion/test/runtime-acquisition-budget.spec.ts",

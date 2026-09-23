@@ -1,5 +1,6 @@
 import { readWorkerConfig } from "../../cli/lib/config.mjs";
 import { createHash } from "node:crypto";
+import { appendFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { createFixtureServer } from "./http-fixture.mjs";
 import { dirname, join, resolve } from "node:path";
@@ -40,6 +41,26 @@ after(async () => {
   groups.clear();
   if (failures.length) throw new AggregateError(failures, "Native runtime cleanup failed");
 });
+
+/**
+ * Append the runtime's own output to `worker-live.log` beside its state as it
+ * arrives, in addition to the buffer `getOutput()` returns.
+ *
+ * A harness that only reports the buffer at teardown loses everything a run
+ * printed when the run never reaches teardown: the #445 collection wedged with
+ * its runtime idle, the job was killed, and the exception the parent Workflow
+ * took with it was never written anywhere. The append is synchronous so a
+ * killed process still leaves the file behind, and a write failure must never
+ * fail the test it is only diagnosing.
+ */
+function appendLiveRuntimeLog(group, text) {
+  if (group.liveLogFailed === true) return;
+  try {
+    appendFileSync(group.liveLogPath, text);
+  } catch {
+    group.liveLogFailed = true;
+  }
+}
 
 function identity(statePath, id) {
   return `${id}-${createHash("sha256").update(resolve(statePath)).digest("hex").slice(0, 16)}`;
@@ -130,6 +151,7 @@ export async function startInprocessWorker({
       serial: Promise.resolve(),
       options: persistence(statePath),
       output: "",
+      liveLogPath: join(dirname(resolve(statePath)), "worker-live.log"),
     };
     groups.set(key, group);
   }
@@ -195,6 +217,7 @@ export async function startInprocessWorker({
         for (const stream of [stdout, stderr])
           stream.on("data", (chunk) => {
             group.output += chunk.toString();
+            appendLiveRuntimeLog(group, chunk.toString());
             group.timeline?.observe(chunk.toString(), stream);
           });
       },
@@ -249,6 +272,9 @@ export async function startInprocessWorker({
     port,
     url: `http://127.0.0.1:${port}`,
     getOutput: () => group.output,
+    // Where the same output is being flushed as it arrives, for a run that
+    // never reaches teardown (#445).
+    liveLogPath: group.liveLogPath,
     closed: false,
     async dispose() {
       if (handle.closed) return;

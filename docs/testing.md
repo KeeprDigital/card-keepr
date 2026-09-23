@@ -247,6 +247,11 @@ Three ingestion shards measured 7-12 minutes against a 12-minute cap (#374);
 retain four until measurements justify another change. Acceptance keeps three.
 Test/operational results are never cached.
 
+The in-process acceptance runtime also appends the worker's own output to
+`worker-live.log` beside its state directory as it arrives. `getOutput()` still
+returns the buffer, but a run that hangs never reaches teardown and would
+otherwise report nothing at all; the live file survives a killed job (#445).
+
 The ingestion runtime runs workerd without `--verbose`. With it, every Workflow
 dispatch logged `uncaught exception ... Engine was never started` and
 `instance.not_found`: miniflare's Workflows binding rejects `get()` for an

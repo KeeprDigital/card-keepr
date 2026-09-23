@@ -496,6 +496,37 @@ consumed, so the ceiling costs nothing until it is used; what it buys is a
 larger invocation step budget (96 live steps for archive Workflows) and so far
 fewer six-minute hibernations across a full archive.
 
+A hostname shard's bounded replacement identities pay for recovery only. A
+shard instance that runs to normal completion has drained every pending Source
+Request in its sequence window; that window holding pending work again is
+later discovery, so its successor continues the shard rather than spending a
+replacement. Counting a normal completion as a failed attempt exhausted a
+healthy shard's four identities in four polls and then failed every Source
+Request landing in that window without attempting a fetch. Only an instance
+that errored, was terminated, is confirmed absent, or was inherited from a
+superseded parent spends one. A continuation supersedes the instance it
+continues, so the run retains each shard's base identity, its replacements and
+the continuation now driving it rather than one identity per poll; the complete
+history stays in the append-only Workflow Attempt records.
+
+A collection that cannot advance is recorded, never silent. Cloudflare ends a
+Workflow instance at 10,000 durable steps, and that ending is an engine error
+the instance cannot observe: the parent barrier died mid-collection with
+thousands of Source Requests pending and no pause of any kind, leaving the run
+in `collecting` forever with an idle runtime. The barrier therefore bounds its
+own polls and pauses itself before the platform ends it, and pauses itself when
+its Source Request census and its current shards' recorded work are both quiet
+for the stall grace period while requests remain pending. Both are Workflow
+Pauses — non-terminal, resumable into a new Workflow Attempt — and both record
+the stranded pending work by host, so `source show` reports what collection is
+still owed. Liveness is judged only from durable step results, so a replay
+reaches the same verdict, and the parent's own progress never counts as
+liveness. The completion barrier itself can never declare a run complete while
+work is pending: finalization is a no-op while any Source Request is pending or
+captured. Automatic handoff to a successor attempt without owner action remains
+[bounded Workflow growth](https://github.com/KeeprDigital/card-keepr/issues/442).
+[Silent collection wedge](https://github.com/KeeprDigital/card-keepr/issues/445).
+
 Host pacing is adaptive and recorded per hostname with the Source Adapter
 registration: a page or asset kind, a floor (most aggressive interval), a
 ceiling (most polite) and a maximum concurrency, citing the retained

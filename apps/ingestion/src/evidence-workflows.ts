@@ -22,6 +22,11 @@ import {
   workflowSteps,
 } from "../../../src/catalogue/shared";
 import {
+  type ChildWorkflowSuccession,
+  childWorkflowSuccession,
+  childWorkflowSuccessorId,
+  classifyCollectionBarrier,
+  collectionBarrierFacts,
   collectionBarrierWaitMilliseconds,
   collectionBatchSize,
   collectSourceRequestBatch,
@@ -31,6 +36,7 @@ import {
   failActiveEvidenceRequestsForWorkflowExhaustion,
   finalizeEvidenceRun,
   isCurrentCollectionWorkflowAttempt,
+  pauseEvidenceRunForWorkflowRecovery,
   pendingEvidenceRequestPage,
   pendingEvidenceHostShards,
   evidenceHostShardRequestCapacity,
@@ -40,6 +46,7 @@ import {
   requiredEvidenceRun,
   sourceHostPacingIntervalMilliseconds,
   sourceHostPacingMode,
+  strandedCollectionWork,
   workflowAttemptStatements,
 } from "../../../src/catalogue/source-evidence";
 import { observeOperationalWorkflow } from "../../../src/http/operational-log";
@@ -69,7 +76,12 @@ const workflowRequestPageSize = 100;
 const hostShardRequestCapacity = evidenceHostShardRequestCapacity;
 // One stable hostname identity plus three replacement identities exceeds the
 // deepest discovery chain while placing a hard ceiling on durable recovery.
+// Only a replacement — a successor for an instance that did not finish
+// normally — spends one. A shard whose instance drained its window and
+// returned is healthy, and later discovery admitting new Source Requests into
+// that same sequence window continues it instead (#445).
 const maximumHostWorkflowIdentities = 4;
+const maximumHostWorkflowReplacements = maximumHostWorkflowIdentities - 1;
 
 type HostShard = Readonly<{
   hostname: string;
@@ -118,7 +130,9 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
       // Derived only from durable step results, so replay reproduces them.
       let previousShardSet: string | null = null,
         unchangedPolls = 0,
-        previouslyRecorded: string | null = null;
+        previouslyRecorded: string | null = null,
+        previousCensus: string | null = null,
+        censusChangedAt: string | null = null;
       for (;;) {
         const pendingShards = await loadPendingHostShards(
           step,
@@ -156,7 +170,8 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
               for (const child of activeChildren) {
                 const attempts = [...allChildIds]
                   .filter((id) => isChildWorkflowIdentity(child.id, id))
-                  .sort((left, right) => childAttempt(left) - childAttempt(right));
+                  .sort((left, right) => childSuccessor(left) - childSuccessor(right));
+                const replacements = attempts.filter((id) => childWorkflowSuccession(id) === "replacement").length;
                 const latestId = attempts.at(-1);
                 if (latestId === undefined) {
                   selected.push(child);
@@ -174,7 +189,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
                   // failing the shard's Source Requests.
                   if (!isWorkflowInstanceNotFound(error)) throw error;
                   if (!(await stillCurrent())) return [];
-                  if (attempts.length >= maximumHostWorkflowIdentities) {
+                  if (replacements >= maximumHostWorkflowReplacements) {
                     await failActiveEvidenceRequestsForWorkflowExhaustion(
                       catalogueStore(this.env.CATALOGUE_DB),
                       runId,
@@ -188,7 +203,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
                   }
                   selected.push({
                     ...child,
-                    id: nextChildWorkflowIdentity(child.id, attempts),
+                    id: nextChildWorkflowIdentity(child.id, attempts, "replacement"),
                   });
                   continue;
                 }
@@ -207,7 +222,16 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
                       async (instanceId) => instanceId === latestId,
                     );
                   }
-                  if (attempts.length >= maximumHostWorkflowIdentities) {
+                  // A shard that ran to normal completion drained every
+                  // pending Source Request its sequence window held. The
+                  // window showing pending work again is later discovery, not
+                  // a failed attempt, so its successor continues the shard
+                  // rather than spending one of the bounded replacements. An
+                  // inherited child is taken over, not continued: this parent
+                  // never observed it finish its own work.
+                  const succession: ChildWorkflowSuccession =
+                    !inheritedChild && status.status === "complete" ? "continuation" : "replacement";
+                  if (succession === "replacement" && replacements >= maximumHostWorkflowReplacements) {
                     await failActiveEvidenceRequestsForWorkflowExhaustion(
                       catalogueStore(this.env.CATALOGUE_DB),
                       runId,
@@ -221,7 +245,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
                   }
                   selected.push({
                     ...child,
-                    id: nextChildWorkflowIdentity(child.id, attempts),
+                    id: nextChildWorkflowIdentity(child.id, attempts, succession),
                   });
                 } else {
                   if (status.status === "paused") {
@@ -264,6 +288,7 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
           );
         }
         for (const id of selectedChildIds) allChildIds.add(id);
+        retireSupersededContinuations(allChildIds, selectedChildIds);
         const recordedChildIds = [...allChildIds].sort();
         // An unchanged identity set is already recorded; re-recording it on
         // every poll only spent a step and its subrequests.
@@ -279,15 +304,60 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
           );
           previouslyRecorded = recordedKey;
         }
-        const run = await step.do(
+        const { run, facts } = await step.do(
           workflowStepName(workflowSteps.parent.finalize, { stage: barrierStage }),
           deterministicDatabaseStep,
           async () => {
             await finalizeEvidenceRun(catalogueStore(this.env.CATALOGUE_DB), runId);
-            return requiredEvidenceRun(catalogueStore(this.env.CATALOGUE_DB), runId);
+            return {
+              run: await requiredEvidenceRun(catalogueStore(this.env.CATALOGUE_DB), runId),
+              facts: await collectionBarrierFacts(catalogueStore(this.env.CATALOGUE_DB), runId),
+            };
           },
         );
         if (run.state === "collecting") {
+          // Liveness is judged from durable step results only, so a replay
+          // reaches the same verdict: the census of this run's Source
+          // Requests, and the work its current hostname shards recorded.
+          const censusKey = `${facts.active_request_count}:${facts.settled_request_count}`;
+          if (censusKey !== previousCensus) {
+            previousCensus = censusKey;
+            censusChangedAt = facts.observed_at;
+          }
+          const halt = classifyCollectionBarrier({
+            barrierStage,
+            activeRequestCount: facts.active_request_count,
+            observedAtMs: Date.parse(facts.observed_at),
+            quietSinceMs: Math.max(
+              Date.parse(censusChangedAt ?? facts.observed_at),
+              facts.shard_progress_at === null ? Number.NEGATIVE_INFINITY : Date.parse(facts.shard_progress_at),
+            ),
+            mode: waitMode,
+          });
+          if (halt !== null) {
+            const stranded = await step.do(
+              workflowStepName(workflowSteps.parent.halt, { stage: barrierStage }),
+              deterministicDatabaseStep,
+              async () => {
+                const owed = await strandedCollectionWork(catalogueStore(this.env.CATALOGUE_DB), runId);
+                await pauseEvidenceRunForWorkflowRecovery(catalogueStore(this.env.CATALOGUE_DB), runId, {
+                  workflow_instance_id: event.instanceId,
+                  pause_reason: halt.reason,
+                  // This attempt is still running as it records why it stops.
+                  workflow_status: "running",
+                  last_progress_at: facts.shard_progress_at,
+                  stranded: owed,
+                });
+                return owed;
+              },
+            );
+            return {
+              ingestion_run_id: runId,
+              child_workflow_ids: [...allChildIds].sort(),
+              state: "paused",
+              paused: { reason: halt.reason, barrier_stage: barrierStage, stranded },
+            };
+          }
           await step.sleep(
             workflowStepName(workflowSteps.parent.wait, { stage: barrierStage }),
             collectionBarrierWaitMilliseconds({
@@ -390,20 +460,46 @@ export class EvidenceIngestionWorkflow extends WorkflowEntrypoint<Env, EvidenceP
 // Shards of one hostname run sequentially, so a deep multi-shard collection
 // waits on the barrier for whole shard durations; a minute of poll slack per
 // stage keeps the parent under its step budget without dominating wall clock.
-function childAttempt(id: string): number {
-  const value = id.match(/-attempt-(\d+)$/u)?.[1];
+/** Position in a shard's single successor sequence; the base identity is 0. */
+function childSuccessor(id: string): number {
+  const value = id.match(/-(?:attempt|continue)-(\d+)$/u)?.[1];
   return value === undefined ? 0 : Number.parseInt(value, 10) + 1;
 }
 
 function isChildWorkflowIdentity(baseId: string, id: string): boolean {
   if (id === baseId) return true;
-  if (!id.startsWith(`${baseId}-attempt-`)) return false;
-  return /^(?:0|[1-9]\d*)$/u.test(id.slice(`${baseId}-attempt-`.length));
+  for (const suffix of ["-attempt-", "-continue-"]) {
+    if (!id.startsWith(`${baseId}${suffix}`)) continue;
+    if (/^(?:0|[1-9]\d*)$/u.test(id.slice(`${baseId}${suffix}`.length))) return true;
+  }
+  return false;
 }
 
-function nextChildWorkflowIdentity(baseId: string, attempts: readonly string[]): string {
-  const attemptNumber = Math.max(...attempts.map(childAttempt));
-  return `${baseId}-attempt-${attemptNumber}`;
+function nextChildWorkflowIdentity(
+  baseId: string,
+  attempts: readonly string[],
+  succession: ChildWorkflowSuccession,
+): string {
+  return childWorkflowSuccessorId(baseId, Math.max(...attempts.map(childSuccessor)), succession);
+}
+
+/**
+ * Drop the continuations a newly selected continuation supersedes.
+ *
+ * A shard that later discovery keeps feeding is continued for as long as the
+ * collection runs, so retaining every continuation would grow the run's
+ * retained identity list without bound. Only the shard's replacements carry
+ * its bounded recovery budget and must stay; the complete history of every
+ * identity is the append-only Workflow Attempt record in D1 (#445).
+ */
+function retireSupersededContinuations(retained: Set<string>, selected: readonly string[]): void {
+  for (const id of selected) {
+    if (childWorkflowSuccession(id) !== "continuation") continue;
+    const baseId = id.slice(0, id.lastIndexOf("-continue-"));
+    for (const other of [...retained])
+      if (other !== id && childWorkflowSuccession(other) === "continuation" && isChildWorkflowIdentity(baseId, other))
+        retained.delete(other);
+  }
 }
 
 async function loadPendingHostShards(
