@@ -1,9 +1,14 @@
 import { readFileSync } from "node:fs";
-import { expect, test } from "vitest";
-import { requiredSourceAdapter } from "../../src/catalogue/adapters/source-adapters";
+import { describe, expect, test } from "vitest";
+import { requiredSourceAdapter, sourceAdapterForCoverage } from "../../src/catalogue/adapters/source-adapters";
 import { parseSourceAdmissionEvidence } from "../../src/catalogue/reconciliation/source-admission-evidence";
 import { parseReconciliationObservation } from "../../src/catalogue/reconciliation/reconciliation-observation";
 import { AdapterParseFailure } from "../../src/catalogue/adapters/adapter-parse-failure";
+import {
+  syntheticRiftboundDbCardsPage,
+  syntheticRiftboundDbFacets,
+  syntheticRiftboundDbRecords,
+} from "../support/synthetic-riftbound-db-pages.mjs";
 
 const fixture = "acceptance/fixtures/real-sources/2026-09-14-riftbound-db/raw/";
 const origin = "https://www.riftbound-db.com";
@@ -129,4 +134,155 @@ test("Riftbound DB rejects contradictory raw source identity before qualifying t
       mediaType: "application/json",
     }),
   ).toThrow(AdapterParseFailure);
+});
+
+describe("Riftbound DB set census", () => {
+  const adapter = () => requiredSourceAdapter("riftbound-db-en@1");
+  const json = "application/json";
+  const facetsUrl = `${origin}/api/facets`;
+  const censusPage = (set: string, page: number) => `${origin}/api/cards?set=${set}&page=${page}&pageSize=80`;
+  const facetsBytes = readFileSync(`${fixture}facets.json`);
+  const promo = JSON.parse(readFileSync(`${fixture}pr-page-1-size-3.json`, "utf8")).cards;
+  const search = JSON.parse(readFileSync(`${fixture}bird-page-1-size-3.json`, "utf8")).cards;
+  const [eclipse, anivia] = [search[1], search[2]];
+  const facetsParent = {
+    requestId: "riftbound-db-en:set-census",
+    snapshotId: "snapshot-facets",
+    role: "listing",
+    url: facetsUrl,
+    mediaType: json,
+    retrievedAt: "2026-09-14T14:09:12.000Z",
+    contentSha256: "retained",
+    bytes: facetsBytes,
+  };
+  const bytes = (body: string) => new TextEncoder().encode(body);
+  const pageBytes = (page: number, total: number, cards: unknown[]) =>
+    bytes(syntheticRiftboundDbCardsPage({ page, total, cards }));
+  const pageParent = (set: string, total: number, cards: unknown[]) => ({
+    ...facetsParent,
+    requestId: "page-1",
+    url: censusPage(set, 1),
+    bytes: pageBytes(1, total, cards),
+  });
+  const parse = async (body: Uint8Array, set: string, page: number, parents: unknown[]) =>
+    (await adapter().parseBytes!(body, {
+      url: censusPage(set, page),
+      mediaType: json,
+      parents: parents as never,
+    })) as Record<string, unknown>[];
+
+  test("the census root discovers page 1 of every set bucket the facets list, while the pilot facets discover nothing", () => {
+    const root = { url: facetsUrl, mediaType: json, requestId: "riftbound-db-en:set-census" };
+    const requests = adapter().discoverRequests!(facetsBytes, root);
+    expect(requests.map((request) => request.url)).toEqual(
+      ["ARC", "JDG", "LGC", "OGN", "OGS", "OPP", "PR", "RAD", "SFD", "UNL", "VEN"].map((set) => censusPage(set, 1)),
+    );
+    expect(requests.every((request) => request.role === "listing")).toBe(true);
+    expect(adapter().discoverRequests!(facetsBytes, { ...root, requestId: "riftbound-db-en:facets" })).toEqual([]);
+    const sets = (value: unknown) =>
+      adapter().discoverRequests!(bytes(syntheticRiftboundDbFacets(JSON.parse(facetsBytes.toString()), value)), root);
+    for (const invalid of [[], ["PR", "PR"], ["pr"], Array.from({ length: 33 }, (_, index) => `S${index + 10}`)])
+      expect(() => sets(invalid), JSON.stringify(invalid)).toThrow(AdapterParseFailure);
+    expect(sourceAdapterForCoverage(adapter(), "set-census").requestUrlForSurface!("set-census")).toBe(facetsUrl);
+  });
+
+  test("a bucket page retains every record for review and fetches only fronts hosted on OpenRift", async () => {
+    const values = await parse(pageBytes(1, 3, promo), "PR", 1, [facetsParent]);
+    expect(values).toHaveLength(3);
+    for (const value of values) {
+      const review = parseSourceAdmissionEvidence(value, adapter());
+      expect(review).toMatchObject({ target: { kind: "unresolved_record" } });
+      expect(review.issues.map((issue) => issue.code)).toEqual([
+        "card_identity_unresolved",
+        "printing_treatment_unresolved",
+        "physical_issuance_unresolved",
+      ]);
+      expect(JSON.parse(review.source_sidecar.source_record_json).census_page).toEqual({
+        set: "PR",
+        page: 1,
+        page_size: 80,
+        total: 3,
+      });
+    }
+    // Pinned promo fronts keep their retained digests.
+    expect(
+      values.map((value) => (value as { appearance_evidence: { images: unknown[] } }).appearance_evidence.images),
+    ).toEqual(
+      promo.map((card: { imageSourceUrl: string }) => [
+        expect.objectContaining({ source_url: card.imageSourceUrl, content_sha256: expect.any(String) }),
+      ]),
+    );
+    const unpinned = { ...promo[0], id: "openrift-synthetic", raw: { ...promo[0].raw, id: "openrift-synthetic" } };
+    delete unpinned.raw.openrift;
+    const mixed = [unpinned, eclipse, anivia];
+    const requests = adapter().discoverRequests!(pageBytes(1, 3, mixed), {
+      url: censusPage("OGN", 1),
+      mediaType: json,
+      parents: [facetsParent],
+    });
+    // Anivia's front is on Riot's CDN and is not fetched; Eclipse keeps its pinned overlap front.
+    expect(requests.map((request) => new URL(request.url).hostname)).toEqual(["openrift.app", "cmsassets.rgpub.io"]);
+    const observations = await parse(pageBytes(1, 3, mixed), "OGN", 1, [facetsParent]);
+    expect(observations[1]).toHaveProperty("card.name", "Eclipse Herald");
+    expect(observations[2]).toMatchObject({ locator: anivia.id, appearance_evidence: { images: [] } });
+    expect(observations[0]).not.toHaveProperty("appearance_evidence.images.0.content_sha256");
+  });
+
+  test("page 1 discovers every page its total implies and later pages must match it", async () => {
+    const first = syntheticRiftboundDbRecords(anivia, 80, "first");
+    const last = syntheticRiftboundDbRecords(anivia, 5, "last");
+    const requests = adapter().discoverRequests!(pageBytes(1, 165, first), {
+      url: censusPage("OGN", 1),
+      mediaType: json,
+      parents: [facetsParent],
+    });
+    expect(requests.map((request) => request.url)).toEqual([censusPage("OGN", 2), censusPage("OGN", 3)]);
+    const parent = pageParent("OGN", 165, first);
+    expect(await parse(pageBytes(3, 165, last), "OGN", 3, [parent])).toHaveLength(5);
+    const drifted: [Uint8Array, number, unknown[]][] = [
+      [pageBytes(3, 165, last), 3, []],
+      [pageBytes(3, 166, [...last, anivia]), 3, [parent]],
+      [pageBytes(2, 165, first.slice(0, 79)), 2, [parent]],
+      [pageBytes(3, 165, last.slice(0, 4)), 3, [parent]],
+      [pageBytes(4, 165, last.slice(0, 1)), 4, [parent]],
+      [pageBytes(1, 165, first), 1, []],
+      [pageBytes(1, 2, [anivia, anivia]), 1, [facetsParent]],
+      [
+        bytes(JSON.stringify({ cards: last, pagination: { page: 3, pageSize: 80, total: 165, hasMore: true } })),
+        3,
+        [parent],
+      ],
+      [pageBytes(1, 80 * 200 + 1, first), 1, [facetsParent]],
+    ];
+    for (const [index, [body, page, parents]] of drifted.entries())
+      await expect(parse(body, "OGN", page, parents), `drift case ${index}`).rejects.toThrow(AdapterParseFailure);
+    await expect(parse(pageBytes(1, 0, []), "ZZZ", 1, [facetsParent])).rejects.toThrow(AdapterParseFailure);
+    expect(await parse(pageBytes(1, 0, []), "ARC", 1, [facetsParent])).toEqual([]);
+  });
+
+  test("a changed Eclipse Herald becomes a census review record while the pilot fails closed", async () => {
+    const changed = { ...eclipse, artist: "Another Studio" };
+    const [value] = await parse(pageBytes(1, 1, [changed]), "OGN", 1, [facetsParent]);
+    expect(JSON.parse(parseSourceAdmissionEvidence(value, adapter()).source_sidecar.source_record_json)).toMatchObject({
+      pinned_qualification: "changed",
+      artist: "Another Studio",
+    });
+    const pilot = JSON.parse(readFileSync(`${fixture}bird-page-1-size-3.json`, "utf8"));
+    pilot.cards[1].artist = "Another Studio";
+    expect(() =>
+      adapter().parseBytes!(bytes(JSON.stringify(pilot)), {
+        url: `${origin}/api/cards?q=Bird&page=1&pageSize=3`,
+        mediaType: json,
+      }),
+    ).toThrow(AdapterParseFailure);
+  });
+
+  test("the census declares polite pacing for the API and the OpenRift front host", () => {
+    expect(
+      adapter().hostPacing?.map((policy) => [policy.hostname, policy.kind, policy.floorMs, policy.maximumConcurrency]),
+    ).toEqual([
+      ["www.riftbound-db.com", "page", 2_000, 1],
+      ["openrift.app", "asset", 250, 2],
+    ]);
+  });
 });

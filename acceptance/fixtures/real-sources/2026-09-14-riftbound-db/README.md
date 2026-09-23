@@ -101,6 +101,12 @@ remaining private. Tests and source selection do not install production decision
 
 ## Intended full-source scope, not executed
 
+The installed `set-census` scope (#333) supersedes the proposed traversal below
+in two respects: it follows the facets' live set list rather than a pinned copy,
+and it uses the site's own set-traversal page size of 80 (observed in the
+retained frontend) instead of 30. Its bounds, drift checks and pacing are in the
+[sources runbook](../../../../docs/runbooks/sources.md). It has not run live.
+
 The intended import is all eligible English physical-card records from every
 agreed source bucket, rather than PR alone. The retained facet inventory is
 `ARC,JDG,LGC,OGN,OGS,OPP,PR,RAD,SFD,UNL,VEN`. The frontend treats JDG/OPP/PR as promo

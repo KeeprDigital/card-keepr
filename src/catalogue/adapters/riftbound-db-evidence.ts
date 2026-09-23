@@ -1,6 +1,12 @@
 import { createHash } from "node:crypto";
+import type { RiftboundSupplementarySourceAdmissionEvidenceObservation } from "./adapter-observations";
 import { AdapterParseFailure } from "./adapter-parse-failure";
 import { officialArtworkFingerprint } from "./official-artwork-identity";
+
+export const riftboundDbLineage = "riftbound-db-en" as const;
+export const riftboundDbOrigin = "https://www.riftbound-db.com";
+
+type SourceImage = RiftboundSupplementarySourceAdmissionEvidenceObservation["appearance_evidence"]["images"][number];
 
 // #331 retained front depictions. These pins qualify an image association only;
 // OpenRift IDs and foil/distribution assertions never allocate canonical entities.
@@ -170,3 +176,76 @@ const knownFields = new Set([
   "thumbnailUrl",
   "imageSourceUrl",
 ]);
+
+/** Raw and presented source identities and attributed upstream IDs must agree. */
+export function assertRiftboundDbRecordIdentity(card: Record<string, unknown>): string {
+  const id = riftboundDbText(card.id);
+  const raw = riftboundDbRecord(card.raw);
+  if (
+    raw.id !== id ||
+    raw.riftbound_id !== card.riftboundId ||
+    (raw.media !== undefined && riftboundDbRecord(raw.media).image_url !== card.imageSourceUrl)
+  )
+    throw new AdapterParseFailure(
+      "Riftbound DB raw and presented source identities or original image locators disagree.",
+    );
+  if (raw.openrift !== undefined) {
+    const upstream = riftboundDbRecord(raw.openrift);
+    riftboundDbText(upstream.cardId);
+    if (id !== `openrift-${riftboundDbText(upstream.printingId)}`)
+      throw new AdapterParseFailure("Riftbound DB upstream Printing identifier attribution disagrees.");
+  }
+  return id;
+}
+
+/**
+ * An unresolved source record: its evidence and complete record are retained
+ * for owner review, and no Card, Printing or Game Profile is inferred from it.
+ */
+export function riftboundDbReviewRecord(
+  card: Record<string, unknown>,
+  images: readonly SourceImage[],
+  sourceRecord: Record<string, unknown> = card,
+): RiftboundSupplementarySourceAdmissionEvidenceObservation {
+  const id = assertRiftboundDbRecordIdentity(card);
+  riftboundDbText(card.name);
+  const number = Number.isSafeInteger(card.number) ? String(card.number) : riftboundDbText(card.number);
+  return {
+    observation_type: "source_admission_evidence",
+    game: "riftbound",
+    source_lineage: riftboundDbLineage,
+    locator: id,
+    source_membership: { set_id: riftboundDbText(card.setCode), local_id: number },
+    target: { kind: "unresolved_record" },
+    issues: [
+      { code: "card_identity_unresolved", source_paths: ["raw.openrift.cardId", "name"] },
+      { code: "printing_treatment_unresolved", source_paths: ["raw.openrift", "imageSourceUrl"] },
+      { code: "physical_issuance_unresolved", source_paths: ["previewed", "raw.openrift.channelPath"] },
+    ],
+    appearance_evidence: { images: [...images] },
+    source_sidecar: { source_record_json: JSON.stringify(sourceRecord) },
+    completeness: {
+      structurally_complete: true,
+      required_surfaces_complete: true,
+      partitions_complete: true,
+      declared_record_count: 1,
+      parsed_record_count: 1,
+    },
+  };
+}
+
+export function riftboundDbRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new AdapterParseFailure("Riftbound DB requires an object.");
+  return value as Record<string, unknown>;
+}
+export function riftboundDbText(value: unknown, maximum = 256): string {
+  if (typeof value !== "string" || !value.length || value.length > maximum)
+    throw new AdapterParseFailure("Riftbound DB source text is missing or exceeds its bound.");
+  return value;
+}
+export function riftboundDbList(value: unknown, maximum: number): unknown[] {
+  if (!Array.isArray(value) || value.length > maximum)
+    throw new AdapterParseFailure("Riftbound DB source list exceeds its bound.");
+  return value;
+}
