@@ -42,11 +42,15 @@ import {
 
 /** Unmapped-field path prefix marking a printed cost Bandai omitted as "-". */
 export const printedCostOmittedPathPrefix = "source_sidecar.raw.official_surfaces[0].document.printed_cost_omitted:";
+/** Unmapped-field path prefix marking a printed power Bandai omitted as "-". */
+export const printedPowerOmittedPathPrefix = "source_sidecar.raw.official_surfaces[0].document.printed_power_omitted:";
 /** Unmapped-field path prefix marking an Effect box Bandai printed as "-". */
 export const printedEffectOmittedPathPrefix =
   "source_sidecar.raw.official_surfaces[0].document.printed_effect_omitted:";
 /** The `one-piece@1` Card types whose printed cost the Game Profile requires. */
 const onePieceCostRequiredTypes = ["character", "event", "stage"];
+/** The `one-piece@1` Card types that carry a printed power at all. */
+const onePiecePowerBearingTypes = ["leader", "character"];
 const productRelease = productReleaseNormalizers({
   gameLabel: "One Piece",
   productCode: "product_code",
@@ -499,6 +503,19 @@ function parseOnePieceBandaiCardListV1(
       omittedPrintedFields.push({ path: `${printedCostOmittedPathPrefix}${locator}`, value: printedCost });
     }
     const cost = printedCostOmitted ? 0 : integerOrNull(printedCost);
+    // A Character carries a printed power, and Bandai omits a printed 0 with the
+    // same "-" placeholder it uses for cost (owner confirmed from OP16-034 on
+    // #334). An Event or Stage prints no power at all, so its "-" stays absent.
+    const printedPower = field("Power");
+    const printedPowerOmitted =
+      expandedOnePieceCatalogue &&
+      onePiecePowerBearingTypes.includes(cardType) &&
+      printedPower !== null &&
+      printedPower.normalize("NFC").trim() === "-";
+    if (printedPowerOmitted) {
+      omittedPrintedFields.push({ path: `${printedPowerOmittedPathPrefix}${locator}`, value: printedPower });
+    }
+    const power = printedPowerOmitted ? 0 : integerOrNull(printedPower);
     const life = expandedOnePieceCatalogue
       ? integerOrNull(field("Life"))
       : cardType === "leader"
@@ -521,7 +538,7 @@ function parseOnePieceBandaiCardListV1(
         battle_attributes: textValues(field("Attribute")).map((value) =>
           expandedOnePieceCatalogue ? value.toLocaleLowerCase() : value,
         ),
-        power: integerOrNull(field("Power")),
+        power,
         counter: integerOrNull(field("Counter")),
         traits: textValues(field("Type", "Traits")),
         block_icons: textValues(field("Block icon", "Block")),

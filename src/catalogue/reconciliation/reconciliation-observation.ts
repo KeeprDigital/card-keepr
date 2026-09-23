@@ -14,6 +14,7 @@ import {
   releaseDateQualifierWarning,
   printedCostOmittedWarning,
   printedEffectOmittedWarning,
+  printedPowerOmittedWarning,
   type ProfileWarning,
 } from "../shared";
 import { parsedOfficialArtworkIdentity, riftboundOriginsTargetName } from "../adapters";
@@ -432,7 +433,9 @@ function inspectSourceSidecar(
           ? printedCostOmittedWarning(sourceObservationId, profile, path, field.value)
           : path.includes(".printed_effect_omitted:")
             ? printedEffectOmittedWarning(sourceObservationId, profile, path, field.value)
-            : sourceFieldWarning(sourceObservationId, profile, path, field.value),
+            : path.includes(".printed_power_omitted:")
+              ? printedPowerOmittedWarning(sourceObservationId, profile, path, field.value)
+              : sourceFieldWarning(sourceObservationId, profile, path, field.value),
     );
   }
 }

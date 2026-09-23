@@ -117,6 +117,12 @@ retained verbatim as unmapped evidence and raises
 altogether remains unmodelled drift and still fails the parse.
 [Omitted printed cost](https://github.com/KeeprDigital/card-keepr/issues/334#issuecomment-5787884463).
 
+The same reading applies to a printed power: a Leader and a Character carry one,
+so Bandai's placeholder there is a printed 0 and is recorded with its own
+evidenced normalisation. An Event or Stage prints no power at all, so its
+placeholder stays an absent value that no source states.
+[Omitted printed power](https://github.com/KeeprDigital/card-keepr/issues/334#issuecomment-5790369334).
+
 The same placeholder in Bandai's Effect box is the absence of rules text, not the
 text `-`: the Card publishes with no rules text, the printed token stays retained
 as unmapped evidence and `printed_effect_omitted_normalized` is raised at
