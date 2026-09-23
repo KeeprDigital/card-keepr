@@ -473,10 +473,13 @@ while its pending shard set is unchanged, and skips re-recording an unchanged
 child identity set, so a long shard costs a bounded number of polls, steps and
 subrequests. Waiting on a recovery fence backs off to five minutes. Test
 runtimes set `WORKFLOW_WAIT_MODE=immediate` to keep these waits at one second.
-The ingestion Worker's configured limits (30 s CPU, 20,000 subrequests) are
+The ingestion Worker's configured limits (120 s CPU, 20,000 subrequests) are
 headroom above these budgets, not the bound: a step is designed for well under
 a second of CPU, and the 5,000-call yield leaves room for the step in flight,
-replay and one missed hibernation.
+replay and one missed hibernation. Cloudflare charges the CPU actually
+consumed, so the ceiling costs nothing until it is used; what it buys is a
+larger invocation step budget (96 live steps for archive Workflows) and so far
+fewer six-minute hibernations across a full archive.
 
 Host pacing is adaptive and recorded per hostname with the Source Adapter
 registration: a page or asset kind, a floor (most aggressive interval), a

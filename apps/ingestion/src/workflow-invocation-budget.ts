@@ -25,14 +25,16 @@ export const workflowInvocationSubrequestBudget = 5000;
 /**
  * Live steps one invocation may run before hibernating, for the Workflows that
  * run archive steps. The costliest bounded step (an archive decode) inflates
- * and hashes about 4 MiB, measured at ~0.15 s of isolate CPU; this keeps an
- * engine lifetime near a third of the deployed 30 s ceiling even if production
- * hardware is several times slower. A Workflow whose steps only wait on
- * bindings leaves `steps` unset: hibernating a cheap poll costs six minutes of
- * wall time and saves no CPU, and its invocation is already bounded by the
- * subrequest budget.
+ * and hashes about 4.2 MiB, measured at ~130 ms of isolate CPU; sized
+ * pessimistically at 3x for slower production hardware (~390 ms), 96 steps
+ * keep an engine lifetime near a third of the deployed 120 s ceiling
+ * (96 x 390 ms is about 37.4 s), the same margin 24 steps gave against the
+ * earlier 30 s ceiling. A Workflow whose steps only wait on bindings leaves
+ * `steps` unset: hibernating a cheap poll costs six minutes of wall time and
+ * saves no CPU, and its invocation is already bounded by the subrequest
+ * budget.
  */
-export const workflowInvocationStepBudget = 24;
+export const workflowInvocationStepBudget = 96;
 
 export type WorkflowWaitMode = "production" | "immediate";
 
