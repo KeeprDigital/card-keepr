@@ -241,11 +241,11 @@
   },
   "one-piece-en-card-list-op16-series.json": {
     "bytes_sha256": "9efff60c30161e3835e998832b2d33784359e710bdf263bad122f18c8d347a7e",
-    "observations_sha256": "f5dc40105aaedabbcedc346de3af6bf85b85d7045c1c27a18481562e345b43f6"
+    "observations_sha256": "cf3421af01c48bb51546a645fd30d93821530879dcc0addc5185ee9a89d0527c"
   },
   "one-piece-en-card-list.json": {
     "bytes_sha256": "93a49866c157de61bf503a81beb0b9951e98f658bf68687e060a4d616eb3872d",
-    "observations_sha256": "56845268ccca7016144311646225308d53a2daee74719be75f5bd9e2a612233a"
+    "observations_sha256": "2516d65ddd460e22898fdadcac76b204a6ea297dc406c2d54e3b39a313c06433"
   },
   "one-piece-en-don-rules-hub.json": {
     "bytes_sha256": "b532c2761fb8621b744a9618f48e1141030b82f77c07ece02e5a00ad3f8414b8",
@@ -281,7 +281,7 @@
   },
   "one-piece-en-restructured-discovery.json": {
     "bytes_sha256": "27e169e3345d29cbe60c8e4db87647a16b3adf37de299c5ca64dc3b185a09fe6",
-    "observations_sha256": "075834616e9dd15b55b924acf38d72f36256a3b25426077ae09e2ea8b6012e86"
+    "observations_sha256": "28ca9d63fffbd0fa2ba80a149fad3ee4fe51132e110ccff69f46c7aadb4265e1"
   },
   "one-piece-en-rules-hub.json": {
     "bytes_sha256": "c9de2076bf785f2a42b94aecdd6fac97540f488ae709e726b216ec0be787e916",

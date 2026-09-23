@@ -128,6 +128,14 @@ markup as a real section, the parser keeps the reference inside the text it
 belongs to rather than inventing the section.
 [Composed-candidate blocker decisions](https://github.com/KeeprDigital/card-keepr/issues/334#issuecomment-5789662887).
 
+Bandai's One Piece card list publishes no artwork attribute, so the front-image
+file stem is its Official Source artwork identity: it is the Publisher's own
+per-Printing asset name and is one-to-one with the listed record. Only that
+asset name qualifies — the Card number with the Printing's optional suffix — so a
+redistributed or reprocessed filename still establishes no identity and a
+changed source image alone cannot create a Printing. An explicit artwork
+attribute, where a Source publishes one, continues to take precedence.
+
 ## Identity and owner decisions
 
 Canonical IDs are persistent allocations with retained evidence mappings, not

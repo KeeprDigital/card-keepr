@@ -437,8 +437,16 @@ function parseOnePieceBandaiCardListV1(
     const colour = requiredNullableText(field("Color", "Colour"), "Official colour");
     const variant = locator === cardNumber ? "base" : locator.slice(cardNumber.length);
     const modalTag = match[0]!.slice(0, match[0]!.indexOf(">") + 1);
+    // The live card list publishes no artwork attribute, but it names one front
+    // image per record and that stem is 1:1 with the Printing (155 distinct
+    // stems for 155 records on the retained OP16 series page). The owner
+    // designated the stem the Official Source artwork identity, so every
+    // Printing of a number is distinguishable by retained evidence instead of
+    // sharing one fingerprint (issue #334).
     const artworkId =
-      htmlAttribute(modalTag, "data-artwork-id") ?? field("Artwork ID", "Artwork Identifier", "Illustration ID");
+      htmlAttribute(modalTag, "data-artwork-id") ??
+      field("Artwork ID", "Artwork Identifier", "Illustration ID") ??
+      (expandedOnePieceCatalogue ? officialFrontImageStem(imageUrl, cardNumber) : null);
     const rawTreatment = htmlAttribute(modalTag, "data-artwork-treatment") ?? field("Artwork Treatment", "Treatment");
     const treatment = officialArtworkTreatment(rawTreatment);
     if (rawTreatment !== null && treatment === null) {
@@ -633,6 +641,23 @@ function assertOnePieceTypeNullability(cardType: string, cost: number | null, li
   if (cardType === "leader" && life === null) {
     throw new AdapterParseFailure("One Piece Leader life must be non-null.");
   }
+}
+
+/** The Publisher's front-image file stem, its per-Printing artwork identity.
+ * Only the Publisher's own card asset name qualifies: it is the Card number
+ * with the Printing's optional suffix. A redistributed or reprocessed filename
+ * establishes no identity, so a changed source image alone still cannot create
+ * a Printing.
+ */
+function officialFrontImageStem(url: string, cardNumber: string): string | null {
+  const name = adapterUrl(url).pathname.split("/").at(-1);
+  if (name === undefined) return null;
+  const stem = name
+    .replace(/\.[a-z0-9]+$/iu, "")
+    .normalize("NFC")
+    .trim();
+  const publisherAsset = new RegExp(`^${cardNumber.replaceAll(/[^A-Za-z0-9-]/gu, "")}(?:_[A-Za-z0-9]+)?$`, "iu");
+  return publisherAsset.test(stem) ? stem : null;
 }
 
 function officialArtworkTreatment(value: string | null): "standard" | "alternate" | null {
