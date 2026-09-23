@@ -42,6 +42,9 @@ import {
 
 /** Unmapped-field path prefix marking a printed cost Bandai omitted as "-". */
 export const printedCostOmittedPathPrefix = "source_sidecar.raw.official_surfaces[0].document.printed_cost_omitted:";
+/** Unmapped-field path prefix marking an Effect box Bandai printed as "-". */
+export const printedEffectOmittedPathPrefix =
+  "source_sidecar.raw.official_surfaces[0].document.printed_effect_omitted:";
 /** The `one-piece@1` Card types whose printed cost the Game Profile requires. */
 const onePieceCostRequiredTypes = ["character", "event", "stage"];
 const productRelease = productReleaseNormalizers({
@@ -390,7 +393,7 @@ function parseOnePieceBandaiCardListV1(
     field: string;
     value: string;
   }[] = [];
-  const omittedPrintedCosts: { path: string; value: unknown }[] = [];
+  const omittedPrintedFields: { path: string; value: unknown }[] = [];
   const observations = modalMatches.map((match) => {
     const locator = decodeHtmlText(match[1]!);
     const body = match[2]!;
@@ -419,7 +422,17 @@ function parseOnePieceBandaiCardListV1(
     const imageUrl = adapterUrl(imagePath, base).href;
     const pairs = htmlLabelPairs(body).map((pair) => ({ ...pair, label: pair.label.replaceAll(/\s+/gu, " ") }));
     const field = (...labels: string[]): string | null => firstLabelValue(pairs, labels);
-    const effect = requiredNullableText(field("Effect", "Card Text", "Text"), "Official effect");
+    // Bandai prints "-" in the Effect box for a Card with no ability, the same
+    // placeholder it prints for an inapplicable Power, Counter or Attribute
+    // (owner decision on #334). It is the absence of rules text, not the text
+    // "-"; the printed token stays retained review evidence.
+    const printedEffect = field("Effect", "Card Text", "Text");
+    const printedEffectOmitted =
+      expandedOnePieceCatalogue && printedEffect !== null && printedEffect.normalize("NFC").trim() === "-";
+    if (printedEffectOmitted) {
+      omittedPrintedFields.push({ path: `${printedEffectOmittedPathPrefix}${locator}`, value: printedEffect });
+    }
+    const effect = printedEffectOmitted ? null : requiredNullableText(printedEffect, "Official effect");
     const setLabel = field("Card Set(s)", "Where to get it") ?? "Unclassified Card List";
     const colour = requiredNullableText(field("Color", "Colour"), "Official colour");
     const variant = locator === cardNumber ? "base" : locator.slice(cardNumber.length);
@@ -452,7 +465,7 @@ function parseOnePieceBandaiCardListV1(
         card_number: cardNumber,
         rarity,
         card_type: cardType,
-        rules: effect ?? "",
+        rules: printedEffect ?? "",
         colour,
         cost: field("Cost"),
         life: field("Life"),
@@ -475,7 +488,7 @@ function parseOnePieceBandaiCardListV1(
       printedCost !== null &&
       printedCost.normalize("NFC").trim() === "-";
     if (printedCostOmitted) {
-      omittedPrintedCosts.push({ path: `${printedCostOmittedPathPrefix}${locator}`, value: printedCost });
+      omittedPrintedFields.push({ path: `${printedCostOmittedPathPrefix}${locator}`, value: printedCost });
     }
     const cost = printedCostOmitted ? 0 : integerOrNull(printedCost);
     const life = expandedOnePieceCatalogue
@@ -490,7 +503,7 @@ function parseOnePieceBandaiCardListV1(
       path: locator,
       number: cardNumber,
       title: name,
-      rules: effect ?? "",
+      rules: effect,
       profile: "one-piece@1",
       attributes: {
         card_type: cardType,
@@ -519,7 +532,7 @@ function parseOnePieceBandaiCardListV1(
         attributes: expandedOnePieceCatalogue ? {} : { illustration_types: [] },
       },
       treatment,
-      printed_rules: effect ?? "",
+      printed_rules: effect,
       variant,
       artwork_fingerprint: artworkFingerprint,
       printed_fields_digest: printedFieldsDigest,
@@ -576,7 +589,7 @@ function parseOnePieceBandaiCardListV1(
       "parsed_locators",
       ...(expandedOnePieceCatalogue ? ["raw_label_pairs"] : []),
     ],
-    unmappedOptionalFields: omittedPrintedCosts,
+    unmappedOptionalFields: omittedPrintedFields,
   };
 }
 

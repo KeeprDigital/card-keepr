@@ -117,6 +117,17 @@ retained verbatim as unmapped evidence and raises
 altogether remains unmodelled drift and still fails the parse.
 [Omitted printed cost](https://github.com/KeeprDigital/card-keepr/issues/334#issuecomment-5787884463).
 
+The same placeholder in Bandai's Effect box is the absence of rules text, not the
+text `-`: the Card publishes with no rules text, the printed token stays retained
+as unmapped evidence and `printed_effect_omitted_normalized` is raised at
+inspection. A supplementary source contributes a fact only where its page states
+one: an unresolved translation key is not a stated value, and a section a page
+does not render is not an empty value that can conflict with another observation.
+Where a supplementary page renders an inline keyword reference with the same
+markup as a real section, the parser keeps the reference inside the text it
+belongs to rather than inventing the section.
+[Composed-candidate blocker decisions](https://github.com/KeeprDigital/card-keepr/issues/334#issuecomment-5789662887).
+
 ## Identity and owner decisions
 
 Canonical IDs are persistent allocations with retained evidence mappings, not

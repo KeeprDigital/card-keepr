@@ -1,0 +1,54 @@
+{
+  "classification": "retained-source-evidence",
+  "issue": "https://github.com/KeeprDigital/card-keepr/issues/334",
+  "headerRepresentation": "Raw initial response header bytes as received (CRLF); transfer framing retained separately outside this pack. Entity bodies unchanged.",
+  "scope": "Three Limitless English One Piece card pages retained by the composed full-scope run on 2026-09-22, each pinning one parser gap the owner ruled on: OP17-109 and OP17-105 render an inline [Trigger] reference with the same markup as a real Trigger section, and OP13-079 publishes an unresolved 'card.attribute.?' translation key. No image was acquired.",
+  "acquisition": {
+    "run": "run_7cc57e47be9e99a2820e853da98829f748a50920629093f29fb41b9e67853bdd",
+    "note": "Bodies copied unchanged from that run's retained ledger and verified against its recorded SHA-256."
+  },
+  "captures": [
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://onepiece.limitlesstcg.com/cards/OP17-109"
+      },
+      "body": "raw/limitless-op17-109.body",
+      "headers": "raw/limitless-op17-109.headers",
+      "retrievedAt": "2026-09-22T02:56:12.797Z",
+      "status": 200,
+      "mediaType": "text/html; charset=UTF-8",
+      "bytes": 16794,
+      "sha256": "b4476a5b7f07bfdf29124f8edf8a7db91a6755e64c8978343a5b5d47945972ed",
+      "headersSha256": "d6a3ad28067ff14df9eb7d7414bd196c3ccc2b21b48f4e624df1c2b041621774"
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://onepiece.limitlesstcg.com/cards/OP17-105"
+      },
+      "body": "raw/limitless-op17-105.body",
+      "headers": "raw/limitless-op17-105.headers",
+      "retrievedAt": "2026-09-22T02:56:02.574Z",
+      "status": 200,
+      "mediaType": "text/html; charset=UTF-8",
+      "bytes": 16855,
+      "sha256": "73e6bf8be52aafc29821dfc4a50ddd1f6bdd70287093b704cce2338ad1c5aecf",
+      "headersSha256": "a6cace841b71065efcc4474e4493f6e04e6db387075276af925c89d857ec12cd"
+    },
+    {
+      "request": {
+        "method": "GET",
+        "url": "https://onepiece.limitlesstcg.com/cards/OP13-079"
+      },
+      "body": "raw/limitless-op13-079.body",
+      "headers": "raw/limitless-op13-079.headers",
+      "retrievedAt": "2026-09-22T03:31:21.578Z",
+      "status": 200,
+      "mediaType": "text/html; charset=UTF-8",
+      "bytes": 20531,
+      "sha256": "b4838fc1f7a8bdfa10c541ed86c49f8a39fc6b38779fb6a1b99b84ee839cc6f1",
+      "headersSha256": "e0e4a889f2f2a55a1d1e9c08e775a38efa84678a4bf78a57c079d00385d830dd"
+    }
+  ]
+}
