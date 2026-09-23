@@ -1698,6 +1698,7 @@ test("a workflow-paused Ingestion Run reports its recovery facts through source 
       workflow_instance_id: "evidence-run_workflow_paused_cli",
       workflow_status: "running",
       last_progress_at: "2026-08-31T22:00:00.000Z",
+      stranded: null,
       actions: ["resume", "terminate"],
     },
     actions: ["resume", "terminate"],

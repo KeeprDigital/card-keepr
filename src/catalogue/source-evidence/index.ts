@@ -4,10 +4,17 @@
 // See ../README.md (issue #96).
 
 export {
+  type ChildWorkflowSuccession,
+  childWorkflowSuccession,
+  childWorkflowSuccessorId,
+  type CollectionBarrierHalt,
   type CollectionProgressFacts,
+  classifyCollectionBarrier,
   classifyCollectionProgress,
   classifyCollectionWorkflow,
+  collectionBarrierPollCeiling,
   collectionBarrierWaitMilliseconds,
+  collectionNoProgressGraceMilliseconds,
   collectionStallGraceMilliseconds,
   parentAttemptNumber,
   parentWorkflowAttemptId,
@@ -103,6 +110,10 @@ export {
   pauseEvidenceRunOnOwnerRequest,
   pendingEvidenceRequestPage,
   evidenceHostShardRequestCapacity,
+  type CollectionBarrierFacts,
+  collectionBarrierFacts,
+  type StrandedCollectionWork,
+  strandedCollectionWork,
   pendingEvidenceRequests,
   persistOfficialSourceCollectionPlan,
   RequestCapacityProblem,

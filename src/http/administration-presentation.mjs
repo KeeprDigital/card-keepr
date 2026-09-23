@@ -563,6 +563,19 @@ function formatEvidencePause(pause) {
   if (lastProgressAt !== null) {
     lines.push(`Last progress: ${lastProgressAt}`);
   }
+  // A barrier pause also says how much collection the abandoned attempt left
+  // owed, so an operator sees the stranded work without querying D1 (#445).
+  const stranded = pause.stranded;
+  if (typeof stranded === "object" && stranded !== null && Number.isSafeInteger(stranded.pending_request_count)) {
+    lines.push(`Stranded: ${formatCount(stranded.pending_request_count, "pending request")}`);
+    if (Array.isArray(stranded.by_host)) {
+      for (const host of stranded.by_host) {
+        const hostname = safeDiagnosticReference(host?.hostname);
+        if (hostname === null || !Number.isSafeInteger(host.pending_request_count)) continue;
+        lines.push(`  ${hostname}: ${formatCount(host.pending_request_count, "pending request")}`);
+      }
+    }
+  }
   return lines;
 }
 

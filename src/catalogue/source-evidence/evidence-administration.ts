@@ -14,6 +14,7 @@ import {
   parentWorkflowAttemptId,
   type SafeWorkflowStatus,
   safeWorkflowStatus,
+  type WorkflowPauseReason,
 } from "./collection-recovery";
 import { bindInitialParentWorkflowStatement } from "./ingestion-run-repository";
 import type { EvidenceHostWorkflowParams, EvidenceParentWorkflowParams } from "./source-evidence-model";
@@ -338,11 +339,7 @@ async function recoverParentWorkflow(
   supersededWorkflowId: string,
   superseded: AcquiredParent | null,
   progress: CollectionProgressFacts,
-  reason:
-    | "source_workflow_stalled"
-    | "source_workflow_errored"
-    | "source_workflow_terminated"
-    | "source_workflow_unavailable",
+  reason: WorkflowPauseReason,
 ): Promise<{
   run: IngestionEvidenceRow;
   workflowId: string;

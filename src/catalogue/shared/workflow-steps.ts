@@ -9,6 +9,7 @@ export const workflowSteps = {
     recordSummary: "record hostname Workflow identity count stage {stage}",
     finalize: "finalize collection barrier stage {stage}",
     wait: "await collection barrier stage {stage}",
+    halt: "pause stalled collection barrier stage {stage}",
     reconcile: "reconcile retained Official Source evidence",
     prepareGame: "dispatch retained evidence preparation for {game}",
   },

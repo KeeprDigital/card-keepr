@@ -275,7 +275,15 @@ same run; collection must complete before reconciliation/publication.
 | `source_transport_retries_exhausted`                                                                   | Resume after the source recovers                           |
 | `source_storage_retries_exhausted`                                                                     | Resume after R2 recovers, including image storage failures |
 | `source_workflow_stalled`, `errored`, `terminated` or `unavailable` with the `source_workflow_` prefix | Resume through owner administration                        |
+| `source_workflow_attempt_exhausted`                                                                    | Resume; the next attempt continues the same retained work  |
+| `source_collection_no_progress`                                                                        | Check the stranded hosts, then resume                      |
 | `owner_requested`                                                                                      | Resume or terminate                                        |
+
+The last two are recorded by the parent's completion barrier about itself. Both
+carry `pause.stranded`: the pending Source Requests the abandoned attempt left
+owed, and how they divide across hosts. `source_workflow_attempt_exhausted`
+means that attempt spent its bounded durable-step budget, not that anything
+failed; resuming opens the next Workflow Attempt over the same retained work.
 
 ```sh
 keepr source capacity extend --run-id RUN \

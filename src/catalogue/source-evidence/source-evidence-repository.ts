@@ -1140,6 +1140,86 @@ export async function pendingEvidenceRequestPage(
 
 export const evidenceHostShardRequestCapacity = 200;
 
+/** The bounded census of a run's still-owed collection work, by host. */
+export type StrandedCollectionWork = Readonly<{
+  pending_request_count: number;
+  by_host: ReadonlyArray<Readonly<{ hostname: string; pending_request_count: number }>>;
+}>;
+
+// Hosts listed with a stranded pause. A collection holds a handful of hosts,
+// and the bound keeps one pause record small whatever a future plan spans.
+const strandedHostLimit = 20;
+
+export async function strandedCollectionWork(database: CatalogueStore, runId: string): Promise<StrandedCollectionWork> {
+  // The total counts every host, including any beyond the listed bound, so a
+  // truncated list never understates what the run still owes.
+  const result = await repositoryStatements(database)
+    .prepare(
+      `WITH hosts AS (
+         SELECT ${sourceRequestHostnameSql("url")} AS hostname, COUNT(*) AS pending_request_count
+         FROM source_requests
+         WHERE ingestion_run_id = ? AND state IN ('pending', 'captured')
+         GROUP BY hostname
+       )
+       SELECT hostname, pending_request_count,
+         SUM(pending_request_count) OVER () AS pending_total
+       FROM hosts
+       ORDER BY pending_request_count DESC, hostname
+       LIMIT ${strandedHostLimit}`,
+    )
+    .bind(runId)
+    .all<{ hostname: string; pending_request_count: number; pending_total: number }>();
+  return {
+    pending_request_count: result.results[0]?.pending_total ?? 0,
+    by_host: result.results.map(({ hostname, pending_request_count }) => ({ hostname, pending_request_count })),
+  };
+}
+
+/**
+ * What the parent's completion barrier needs to tell a progressing collection
+ * from a wedged one, in one query it can run inside a step it already spends.
+ *
+ * `shard_progress_at` counts only the current hostname-shard Workflow
+ * Attempts, never the parent: the parent records progress on every poll, so
+ * including it would make a barrier that polls forever look alive forever.
+ */
+export type CollectionBarrierFacts = Readonly<{
+  observed_at: string;
+  active_request_count: number;
+  settled_request_count: number;
+  shard_progress_at: string | null;
+}>;
+
+export async function collectionBarrierFacts(database: CatalogueStore, runId: string): Promise<CollectionBarrierFacts> {
+  const row = await repositoryStatements(database)
+    .prepare(
+      `SELECT
+         (SELECT COUNT(*) FROM source_requests
+          WHERE ingestion_run_id = ?1 AND state IN ('pending', 'captured')) AS active_request_count,
+         (SELECT COUNT(*) FROM source_requests
+          WHERE ingestion_run_id = ?1 AND state IN ('observed', 'failed')) AS settled_request_count,
+         (SELECT MAX(progress.last_work_at)
+          FROM ingestion_workflow_progress AS progress
+          JOIN ingestion_workflow_attempts AS attempt USING (workflow_instance_id)
+          WHERE attempt.ingestion_run_id = ?1 AND attempt.workflow_kind = 'child'
+            AND NOT EXISTS (
+              SELECT 1 FROM ingestion_workflow_attempts AS later
+              WHERE later.ingestion_run_id = attempt.ingestion_run_id
+                AND later.workflow_kind = attempt.workflow_kind
+                AND later.base_workflow_id = attempt.base_workflow_id
+                AND later.attempt_number > attempt.attempt_number
+            )) AS shard_progress_at`,
+    )
+    .bind(runId)
+    .first<{ active_request_count: number; settled_request_count: number; shard_progress_at: string | null }>();
+  return {
+    observed_at: new Date().toISOString(),
+    active_request_count: row?.active_request_count ?? 0,
+    settled_request_count: row?.settled_request_count ?? 0,
+    shard_progress_at: row?.shard_progress_at ?? null,
+  };
+}
+
 export function pendingEvidenceHostShardsStatement(database: CatalogueStore, runId: string): D1PreparedStatement {
   return repositoryStatements(database)
     .prepare(
@@ -1428,6 +1508,10 @@ export type WorkflowRecoveryFacts = {
   pause_reason: RecordedWorkflowPauseReason;
   workflow_status: SafeWorkflowStatus;
   last_progress_at: string | null;
+  // The collection work the abandoned attempt left owed, recorded only by the
+  // barrier's own pauses so an owner reading `source show` sees how much is
+  // still pending and to which hosts (#445).
+  stranded?: StrandedCollectionWork | null;
 };
 
 // A stalled, errored, terminated, or unavailable collection Workflow is not
@@ -1481,9 +1565,9 @@ function workflowPauseStatements(
       .prepare(
         `INSERT INTO ingestion_run_workflow_pauses (
            ingestion_run_id, workflow_instance_id, pause_reason,
-           workflow_status, paused_at, last_progress_at
+           workflow_status, paused_at, last_progress_at, stranded_json
          )
-         SELECT ?1, ?2, ?3, ?4, ?5, ?6
+         SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
          WHERE EXISTS (
            SELECT 1 FROM ingestion_run_read WHERE id = ?1 AND state = 'paused'
          )
@@ -1499,6 +1583,7 @@ function workflowPauseStatements(
         facts.workflow_status,
         pausedAt,
         facts.last_progress_at,
+        facts.stranded === undefined || facts.stranded === null ? null : canonicalJson(facts.stranded),
       ),
   ];
 }
@@ -2080,6 +2165,7 @@ type WorkflowPauseRow = {
   workflow_instance_id: string;
   workflow_status: string;
   last_progress_at: string | null;
+  stranded_json: string | null;
 };
 
 // The current pause of a run: the newest record across the capacity,
@@ -2767,6 +2853,30 @@ function workflowPauseDocument(row: WorkflowPauseRow): Record<string, unknown> {
     workflow_instance_id: row.workflow_instance_id,
     workflow_status: row.workflow_status,
     last_progress_at: row.last_progress_at,
+    // Recorded only by the barrier's own pauses; every other Workflow Pause,
+    // and every record written before #445, reports null rather than a
+    // recomputed census that would not be evidence about that pause.
+    stranded: parseStrandedCollectionWork(row.stranded_json),
+  };
+}
+
+function parseStrandedCollectionWork(value: string | null): StrandedCollectionWork | null {
+  if (value === null) return null;
+  const parsed: unknown = JSON.parse(value);
+  if (parsed === null || typeof parsed !== "object") return null;
+  const record = parsed as Record<string, unknown>;
+  const total = record.pending_request_count;
+  const hosts = record.by_host;
+  if (!Number.isSafeInteger(total) || !Array.isArray(hosts)) return null;
+  return {
+    pending_request_count: total as number,
+    by_host: hosts.flatMap((entry) => {
+      if (entry === null || typeof entry !== "object") return [];
+      const host = entry as Record<string, unknown>;
+      return typeof host.hostname === "string" && Number.isSafeInteger(host.pending_request_count)
+        ? [{ hostname: host.hostname, pending_request_count: host.pending_request_count as number }]
+        : [];
+    }),
   };
 }
 

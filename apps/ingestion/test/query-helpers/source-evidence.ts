@@ -1477,6 +1477,30 @@ export function readParsedObservationSetForBandaiSurfaceDocumentParts(database: 
        WHERE operation.source_snapshot_id = ?`);
 }
 
+export function readSourceRequestStateFailureCodes(database: D1Database): D1PreparedStatement {
+  return database.prepare(`SELECT request_id, state, failure_code FROM source_requests
+     WHERE ingestion_run_id = ? ORDER BY sequence_number`);
+}
+
+export function readChildWorkflowAttempts(database: D1Database): D1PreparedStatement {
+  return database.prepare(`SELECT base_workflow_id, attempt_number, workflow_instance_id
+     FROM ingestion_workflow_attempts
+     WHERE ingestion_run_id = ? AND workflow_kind = 'child'
+     ORDER BY base_workflow_id, attempt_number`);
+}
+
+export function readCollectionRunState(database: D1Database): D1PreparedStatement {
+  return database.prepare(`SELECT run.state AS state,
+       (SELECT completion.collection_completed_at FROM ingestion_collection_completions AS completion
+         WHERE completion.ingestion_run_id = run.id) AS collection_completed_at
+     FROM ingestion_run_read AS run WHERE run.id = ?`);
+}
+
+export function readIngestionRunWorkflowPauses(database: D1Database): D1PreparedStatement {
+  return database.prepare(`SELECT workflow_instance_id, pause_reason, workflow_status, stranded_json
+     FROM ingestion_run_workflow_pauses WHERE ingestion_run_id = ? ORDER BY paused_at, workflow_instance_id`);
+}
+
 export function readRunHostPacingEvents(database: D1Database): D1PreparedStatement {
   return database.prepare(`SELECT kind, reason, interval_before_ms, interval_after_ms,
        concurrency_before, concurrency_after, http_status, retry_after_ms
