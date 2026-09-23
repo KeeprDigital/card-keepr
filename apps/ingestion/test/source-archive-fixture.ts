@@ -25,6 +25,40 @@ export const raw = utf8(
     .join(""),
 );
 
+/**
+ * Scryfall-shaped JSONL whose every field is distinct, so the archive
+ * compresses about as poorly as the real bulk export and its compressed form
+ * spans many `gunzipRangeBytes` ranges. Fixtures built by repeating a handful
+ * of records compress into a single range and never exercise the decoder's
+ * range boundaries at all; that is what hid #327's decode stall. The values
+ * are deterministic and are not a valid normalized source scope.
+ */
+export function distinctArchiveRecords(records: number, fillerBytes = 2600): Uint8Array {
+  let seed = 0x2f6e2b1;
+  const random = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+  const hex = (length: number) => Array.from({ length }, () => "0123456789abcdef"[(random() * 16) | 0]).join("");
+  const uuid = () => `${hex(8)}-${hex(4)}-4${hex(3)}-8${hex(3)}-${hex(12)}`;
+  const lines: string[] = [];
+  for (let index = 0; index < records; index++)
+    lines.push(
+      JSON.stringify({
+        object: "card",
+        id: uuid(),
+        oracle_id: uuid(),
+        name: hex(20),
+        oracle_text: Array.from({ length: 20 }, () => hex(6)).join(" "),
+        uri: `https://api.scryfall.com/cards/${uuid()}`,
+        image_uris: { normal: `https://cards.scryfall.io/normal/front/${uuid()}.jpg?${hex(8)}` },
+        lang: "ja",
+        games: ["paper"],
+        digital: false,
+        released_at: "2020-01-01",
+        printed_text: hex(fillerBytes),
+      }),
+    );
+  return utf8(`${lines.join("\n")}\n`);
+}
+
 export async function seedArchive(key: string, corrupt = false, input = raw, adapterVersion = version) {
   const db = catalogueStore(env.CATALOGUE_DB),
     adapter = sourceAdapterForCoverage(requiredSourceAdapter(adapterVersion), "representative-english-paper");

@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { expect, test } from "vitest";
 import etched from "../../../acceptance/fixtures/real-sources/2026-09-14-scryfall/bulk/etched.json?raw";
 import { parseCapturedRequest } from "../../../src/catalogue/source-evidence";
-import { catalogueStore, gunzipRangeBytes, sha256 } from "../../../src/catalogue/shared";
+import { catalogueStore, gunzipChunkBytes, gunzipRangeBytes, sha256 } from "../../../src/catalogue/shared";
 import {
   archiveDecodeStepBudget,
   decodeArchiveBatch,
@@ -12,7 +12,7 @@ import { parseSnapshotBatch } from "../../../src/catalogue/source-evidence/sourc
 import { discoveredSourceRecordRequests } from "../../../src/catalogue/source-evidence/source-record-intake";
 import * as queries from "./query-helpers/source-archive";
 import { installRuntimeSuite } from "./runtime-helpers";
-import { raw, version, seedArchive } from "./source-archive-fixture";
+import { distinctArchiveRecords, raw, version, seedArchive } from "./source-archive-fixture";
 
 installRuntimeSuite();
 
@@ -137,7 +137,11 @@ test("derived archive blocks replay a committed prefix without sealing partial e
   ).rejects.toBe(upstream);
   expect((await queries.archiveBlockReceipts(db).bind(snapshot.id).all()).results).toEqual(before.results);
   expect(await queries.archiveDecodeReceipt(db).bind(snapshot.id).first()).toEqual(beforeCursor);
-  const receipt = await decodeArchiveBatch(db, env.EVIDENCE_OBJECTS, snapshot, pin, guard, 4);
+  // Re-deriving the committed prefix spends the same per-call block budget as
+  // retaining it, so the replay reaches EOF over more than one bounded call.
+  let receipt = await decodeArchiveBatch(db, env.EVIDENCE_OBJECTS, snapshot, pin, guard, 4);
+  expect(receipt.state).toBe("decoding");
+  receipt = await decodeArchiveBatch(db, env.EVIDENCE_OBJECTS, snapshot, pin, guard, 4);
   expect(receipt).toMatchObject({
     state: "decoded",
     next_block: 2,
@@ -158,6 +162,65 @@ test("derived archive blocks replay a committed prefix without sealing partial e
     "source_parse_authority_superseded",
   );
   expect((await queries.archiveBlockReceipts(db).bind(snapshot.id).all()).results).toEqual(after.results);
+});
+
+/**
+ * The live #327 failure: an archive whose compressed form spans several
+ * `gunzipRangeBytes` ranges stalls the decoder at a range boundary, so the
+ * Workflow step burns its whole CPU allowance without decoding a byte,
+ * committing a block or reading another range. Every earlier archive fixture
+ * repeats a few records and compresses inside one range, which is why a step
+ * count alone never caught it. This holds each call to a decode budget and to
+ * the reads that budget allows.
+ */
+test("an archive spanning many compressed ranges decodes within its per-call budget", async () => {
+  const input = distinctArchiveRecords(3000, 4600);
+  const { db, run, snapshot, pin } = await seedArchive("archive-range-spanning", false, input);
+  expect(snapshot.content_byte_length).toBeGreaterThan(4 * gunzipRangeBytes);
+  // A call inflates its blocks, the open record it must finish, and at most
+  // one decoded chunk beyond them; it reads only the ranges those bytes need.
+  const decodeBound =
+    archiveDecodeStepBudget.blocks * archiveDecodeStepBudget.blockBytes + pin.limits.recordBytes + gunzipChunkBytes;
+  const readBound = Math.ceil(decodeBound / gunzipRangeBytes) + 1;
+  let ranges = 0;
+  const bucket = new Proxy(env.EVIDENCE_OBJECTS, {
+    get(target, property) {
+      if (property === "get")
+        return async (...args: Parameters<R2Bucket["get"]>) => {
+          if (args[0] === snapshot.content_object_key) ranges++;
+          return target.get(...args);
+        };
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const guard = () => sourceParseAuthorityGuard(db, run.id, { intent: "collection" });
+  let calls = 0;
+  let decoded = 0;
+  let receipt;
+  do {
+    const before = { blocks: receipt?.next_block ?? 0, decoded, ranges };
+    receipt = await decodeArchiveBatch(db, bucket, snapshot, pin, guard);
+    calls++;
+    // Each call advances the cursor and stays inside the declared budget:
+    // a stalled call decodes nothing and reads nothing however long it runs.
+    expect(receipt.decoded_bytes - before.decoded, `call ${calls} decoded`).toBeGreaterThan(0);
+    expect(receipt.decoded_bytes - before.decoded, `call ${calls} decoded`).toBeLessThanOrEqual(decodeBound);
+    expect(ranges - before.ranges, `call ${calls} ranges`).toBeLessThanOrEqual(readBound);
+    expect(receipt.next_block - before.blocks, `call ${calls} blocks`).toBeLessThanOrEqual(
+      archiveDecodeStepBudget.blocks + 1,
+    );
+    decoded = receipt.decoded_bytes;
+  } while (receipt.state !== "decoded" && calls <= 64);
+  expect(receipt).toMatchObject({
+    state: "decoded",
+    next_record: 3000,
+    decoded_bytes: input.byteLength,
+    decoded_digest: await sha256(input),
+  });
+  // Many calls, each bounded, over an archive no single call could hold.
+  expect(calls).toBeGreaterThanOrEqual(Math.ceil(receipt.next_block / archiveDecodeStepBudget.blocks));
+  expect(await queries.archiveObservationCount(db).bind(snapshot.id).first("count")).toBe(0);
 });
 
 test("a lost normalization response replays from its committed cursors without duplicate records", async () => {

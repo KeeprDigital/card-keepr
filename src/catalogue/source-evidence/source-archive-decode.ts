@@ -36,10 +36,18 @@ import type { SnapshotRow } from "./source-evidence-repository-types";
 /**
  * Declared per-call (one Workflow step) decode budget. A call verifies or
  * retains at most `blocks` derived blocks (plus the final block at EOF), each
- * at most 4 MiB / 1,024 records, so it inflates at most ~16 MiB and reads the
+ * at most 4 MiB / 1,024 records, so it inflates at most ~4 MiB and reads the
  * compressed archive in ranges of at most 1 MiB from its persisted cursor.
+ *
+ * Inflating and hashing run in JavaScript because neither a
+ * `DecompressionStream` nor a WebCrypto digest can serialize its state between
+ * steps, and measured on a Scryfall-shaped archive they cost roughly 27 MiB of
+ * decoded output per CPU-second, of which the two SHA-256 streams are about
+ * three quarters. One block per call keeps a step's decode near a tenth of a
+ * second locally and well inside a Worker's CPU limit on slower hardware
+ * (#327); four cost four times that and shared the step with an acquisition.
  */
-export const archiveDecodeStepBudget = Object.freeze({ blocks: 4, blockBytes: 4 * 1024 * 1024 });
+export const archiveDecodeStepBudget = Object.freeze({ blocks: 1, blockBytes: 4 * 1024 * 1024 });
 /**
  * Binding calls (D1, R2) one collection step may make while it advances an
  * archive by one bounded decode, normalization or discovery call, including

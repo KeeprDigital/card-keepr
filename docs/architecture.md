@@ -322,7 +322,9 @@ Archive intake retains the original compressed Source Snapshot and verified
 decoded blocks, with resumable record and finish progress. Each Workflow step
 advances one bounded window: decoding reads the retained archive in byte ranges
 from a persisted gzip/JSONL continuation (compressed bit cursor, 32 KiB history,
-open record bytes and running digests) and retains at most four derived blocks;
+open record bytes and running digests) and retains at most one derived block,
+because inflating and hashing in JavaScript cost roughly 27 MiB of decoded
+output per CPU-second and a step also carries its acquisition;
 normalization admits at most 1,024 records in atomic transactions that carry
 both cursors as a precondition; discovery admits at most 1,024 observations.
 A stale or lost continuation only re-derives and verifies committed blocks, so

@@ -11,8 +11,28 @@ import type { WorkflowSleepDuration, WorkflowStep } from "cloudflare:workers";
  * (5 minutes in workflows-shared) so the engine hibernates and the next step
  * starts a fresh invocation. Replayed step results make no binding calls and
  * issue no yield, so replay never repeats a yield.
+ *
+ * CPU is charged the same way, and the two do not move together. Archive
+ * decoding inflates and hashes in JavaScript across steps that make only a
+ * handful of binding calls each, so a subrequest budget alone never yields for
+ * them: the #327 live run spent 177 subrequests over an entire collection
+ * while one archive would have spent tens of CPU-seconds in a single engine
+ * lifetime. Live steps are therefore counted as well, because every step in
+ * these Workflows already declares a bounded window of work, which makes a
+ * step count a usable stand-in for the CPU no Workers API exposes.
  */
 export const workflowInvocationSubrequestBudget = 5000;
+/**
+ * Live steps one invocation may run before hibernating, for the Workflows that
+ * run archive steps. The costliest bounded step (an archive decode) inflates
+ * and hashes about 4 MiB, measured at ~0.15 s of isolate CPU; this keeps an
+ * engine lifetime near a third of the deployed 30 s ceiling even if production
+ * hardware is several times slower. A Workflow whose steps only wait on
+ * bindings leaves `steps` unset: hibernating a cheap poll costs six minutes of
+ * wall time and saves no CPU, and its invocation is already bounded by the
+ * subrequest budget.
+ */
+export const workflowInvocationStepBudget = 24;
 
 export type WorkflowWaitMode = "production" | "immediate";
 
@@ -27,7 +47,7 @@ export function workflowYieldDuration(mode: WorkflowWaitMode): WorkflowSleepDura
   return mode === "immediate" ? "1 second" : "6 minutes";
 }
 
-export type InvocationUsage = Readonly<{ subrequests: number; yields: number }>;
+export type InvocationUsage = Readonly<{ subrequests: number; steps: number; yields: number }>;
 
 type Bindings = Pick<
   Env,
@@ -50,13 +70,17 @@ export function boundedWorkflowInvocation<Environment extends Bindings>(
   options: {
     mode: WorkflowWaitMode;
     budget?: number;
+    steps?: number;
     // Observes each live callback's subrequests (structure tests).
     observe?: (name: string, subrequests: number) => void;
   },
 ): { env: Environment; step: WorkflowStep; usage: () => InvocationUsage } {
   const budget = options.budget ?? workflowInvocationSubrequestBudget;
+  const stepBudget = options.steps ?? Number.POSITIVE_INFINITY;
   let subrequests = 0,
     sinceYield = 0,
+    steps = 0,
+    stepsSinceYield = 0,
     yields = 0,
     active = 0;
   const charge = () => {
@@ -157,8 +181,13 @@ export function boundedWorkflowInvocation<Environment extends Bindings>(
         } finally {
           active--;
         }
-        if (live && active === 0 && sinceYield >= budget) {
+        if (live) {
+          steps++;
+          stepsSinceYield++;
+        }
+        if (live && active === 0 && (sinceYield >= budget || stepsSinceYield >= stepBudget)) {
           sinceYield = 0;
+          stepsSinceYield = 0;
           yields++;
           await target.sleep(
             `yield Workflow invocation after ${name.slice(0, 200)}`,
@@ -169,5 +198,5 @@ export function boundedWorkflowInvocation<Environment extends Bindings>(
       };
     },
   });
-  return { env: boundedEnv, step: boundedStep, usage: () => ({ subrequests, yields }) };
+  return { env: boundedEnv, step: boundedStep, usage: () => ({ subrequests, steps, yields }) };
 }

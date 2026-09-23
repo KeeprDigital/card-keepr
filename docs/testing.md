@@ -191,7 +191,10 @@ structure checks therefore drive the production Workflow bodies with a recording
 step and assert declared per-step budgets, lost-response retries without
 duplicates and invocation yields. Routine files use a few thousand records and
 a dozen polls; the 150,000-record archive and 600-poll barrier run only in
-`test:stress:full`.
+`test:stress:full`. Archive fixtures carry distinct per-record bytes so their
+compressed form spans several read ranges: a fixture built by repeating a few
+records compresses into one range whatever its record count, which leaves the
+decoder's range boundaries untested at every volume (#327).
 
 Run comparable heavy experiments sequentially with exclusive host resources.
 Record the exact commit, runtime, complete selection and failed/incomplete results.
