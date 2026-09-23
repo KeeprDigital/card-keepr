@@ -91,14 +91,19 @@ test("a new root pin cannot resurrect a derived child already reserved for delet
 
 test("unsealed archive blocks stay outside adopted backup closure and are reclaimed with their terminal run", async () => {
   const archive = await seedArchive("archive-cleanup-unsealed");
-  const partial = await decodeArchiveBatch(
-    archive.db,
-    env.EVIDENCE_OBJECTS,
-    archive.snapshot,
-    archive.pin,
-    () => sourceParseAuthorityGuard(archive.db, archive.run.id, { intent: "collection" }),
-    1,
-  );
+  // One-record blocks, retained a bounded call at a time; stopping at four of
+  // the archive's seven leaves the decode unsealed with blocks to reclaim.
+  let partial;
+  do {
+    partial = await decodeArchiveBatch(
+      archive.db,
+      env.EVIDENCE_OBJECTS,
+      archive.snapshot,
+      archive.pin,
+      () => sourceParseAuthorityGuard(archive.db, archive.run.id, { intent: "collection" }),
+      1,
+    );
+  } while (partial.state === "decoding" && partial.next_block < 4);
   expect(partial).toMatchObject({ state: "decoding", next_block: 4, next_record: 4 });
   expect(await archiveObservationCount(archive.db).bind(archive.snapshot.id).first("count")).toBe(0);
   const closure = await captureCompositionSourceArtifacts(

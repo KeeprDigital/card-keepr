@@ -26,15 +26,27 @@ test("archive reparse HTTP continues bounded progress with the same intent and r
   const intent = { adapter_version: version, idempotency_key: "archive-http-parse" };
   const pending = await administrationRequest(path, "POST", intent);
   expect(pending.status, await pending.clone().text()).toBe(202);
-  const progress = await pending.json<{ observation_set_id: string }>();
+  const progress = await pending.json<{ observation_set_id: string; phase: string }>();
   expect(progress).toMatchObject({
     source_snapshot_id: snapshot.id,
     adapter_version: version,
     kind: "pending",
-    phase: "normalizing",
+    phase: "decoding",
   });
   await assertHttpResponse(contract, definition, "post", pending, progress);
-  const finished = await administrationRequest(path, "POST", intent);
+  // Decoding and normalization each advance one bounded window per call, so
+  // the caller repeats the request until the set seals rather than assuming
+  // how many windows this archive takes.
+  const phases = [progress.phase];
+  let finished = await administrationRequest(path, "POST", intent);
+  for (let calls = 0; finished.status === 202 && calls < 16; calls++) {
+    const continued = await finished.json<{ observation_set_id: string; phase: string }>();
+    expect(continued).toMatchObject({ kind: "pending", observation_set_id: progress.observation_set_id });
+    phases.push(continued.phase);
+    finished = await administrationRequest(path, "POST", intent);
+  }
+  // The record beyond the normalization bound is what forces a continuation.
+  expect(phases).toContain("normalizing");
   expect(finished.status, await finished.clone().text()).toBe(201);
   const document = await finished.json();
   expect(document).toMatchObject({
