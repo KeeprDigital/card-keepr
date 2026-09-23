@@ -38,7 +38,7 @@ test("an invocation yields once its live binding calls reach the budget, and rep
       return index;
     });
   // Three replayed steps cost nothing; five live steps made 20 calls.
-  expect(bounded.usage()).toEqual({ subrequests: 20, yields: 1 });
+  expect(bounded.usage()).toEqual({ subrequests: 20, steps: 5, yields: 1 });
   expect(replay.sleeps).toEqual([{ name: "yield Workflow invocation after step 5", duration: "6 minutes" }]);
   await bounded.step.do("step 8", async () => {
     await bounded.env.EVIDENCE_OBJECTS.head("absent");
@@ -49,6 +49,30 @@ test("an invocation yields once its live binding calls reach the budget, and rep
   expect(workflowWaitMode(undefined)).toBe("production");
   expect(workflowWaitMode("immediate")).toBe("immediate");
   expect(() => workflowWaitMode("fast")).toThrow("WORKFLOW_WAIT_MODE");
+});
+
+/**
+ * Archive decoding spends its bound in the isolate, not on bindings: the #327
+ * live collection made 177 subrequests in total while a single archive would
+ * have spent tens of CPU-seconds, and CPU is charged per invocation just as
+ * subrequests are. Live steps must therefore yield on their own count.
+ */
+test("an invocation yields on its live step count even when the steps make almost no binding calls", async () => {
+  const replay = replayingStep(new Set(["step 0", "step 1"]));
+  const bounded = boundedWorkflowInvocation(env, replay.step, { mode: "production", steps: 4 });
+  for (let index = 0; index < 11; index++)
+    await bounded.step.do(`step ${index}`, async () => {
+      await query(bounded.env.CATALOGUE_DB);
+      return index;
+    });
+  // Nine live steps, far below the 5,000-call subrequest budget, still yield
+  // twice; the two replayed steps neither count nor yield.
+  expect(bounded.usage()).toEqual({ subrequests: 9, steps: 9, yields: 2 });
+  expect(replay.sleeps.map(({ name }) => name)).toEqual([
+    "yield Workflow invocation after step 5",
+    "yield Workflow invocation after step 9",
+  ]);
+  expect(replay.sleeps.every(({ duration }) => duration === "6 minutes")).toBe(true);
 });
 
 test("replaying a long collection history fences once, while every live callback is still fenced", async () => {

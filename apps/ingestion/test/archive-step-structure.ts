@@ -11,7 +11,11 @@ import {
 import { archiveDiscoveryStepBudget } from "../../../src/catalogue/source-evidence/source-archive-discovery";
 import { archiveNormalizationStepBudget } from "../../../src/catalogue/source-evidence/source-archive-parse";
 import { EvidenceHostWorkflow } from "../src/evidence-workflows";
-import { boundedWorkflowInvocation, workflowInvocationSubrequestBudget } from "../src/workflow-invocation-budget";
+import {
+  boundedWorkflowInvocation,
+  workflowInvocationStepBudget,
+  workflowInvocationSubrequestBudget,
+} from "../src/workflow-invocation-budget";
 import * as queries from "./query-helpers/source-archive";
 import { seedArchive } from "./source-archive-fixture";
 
@@ -27,11 +31,19 @@ const lostResponse = "lost archive step response";
 /**
  * A synthetic bulk archive of `records` small valid Scryfall records: most are
  * excluded as non-English, and every 500th is a distinct English Printing, so
- * decode, normalization and discovery all run at the requested volume. This
- * is a structure fixture, not real source coverage.
+ * decode, normalization and discovery all run at the requested volume. Each
+ * record carries deterministic incompressible text so the archive compresses
+ * about as poorly as a real bulk export: near-identical records used to
+ * compress the whole 150,000-record volume into 1.4 MiB, barely one
+ * `gunzipRangeBytes` range, which left the decoder's range boundaries
+ * untested at every volume (#327). This is a structure fixture, not real
+ * source coverage.
  */
 function syntheticArchive(records: number): Uint8Array {
   const english = JSON.parse(etched) as Record<string, unknown> & { image_uris: Record<string, string> };
+  let seed = 0x2f6e2b1;
+  const random = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+  const distinct = (length: number) => Array.from({ length }, () => "0123456789abcdef"[(random() * 16) | 0]).join("");
   const lines: string[] = [];
   for (let index = 0; index < records; index++) {
     const id = `00000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`;
@@ -42,6 +54,7 @@ function syntheticArchive(records: number): Uint8Array {
             ...english,
             id,
             uri,
+            flavor_text: distinct(128),
             image_uris: { ...english.image_uris, normal: `https://cards.scryfall.io/normal/front/0/0/${id}.jpg?1` },
           })
         : JSON.stringify({
@@ -52,6 +65,7 @@ function syntheticArchive(records: number): Uint8Array {
             games: ["paper"],
             digital: false,
             released_at: "2020-01-01",
+            flavor_text: distinct(128),
           }),
     );
   }
@@ -108,6 +122,7 @@ export async function assertArchiveStepStructure(key: string, records: number) {
   const steps: { name: string; subrequests: number; before: Cursors; after: Cursors }[] = [];
   const retried: string[] = [];
   const yields: number[] = [];
+  const liveSteps: number[] = [];
   const step = {
     async do(name: string, configOrCallback: unknown, possibleCallback?: unknown) {
       const callback = (typeof configOrCallback === "function" ? configOrCallback : possibleCallback) as (
@@ -128,7 +143,9 @@ export async function assertArchiveStepStructure(key: string, records: number) {
       }
     },
     async sleep(name: string) {
-      if (name.startsWith("yield Workflow invocation after ")) yields.push(measured.usage().subrequests);
+      if (!name.startsWith("yield Workflow invocation after ")) return;
+      yields.push(measured.usage().subrequests);
+      liveSteps.push(measured.usage().steps);
     },
     async sleepUntil() {},
   } as unknown as WorkflowStep;
@@ -206,6 +223,11 @@ export async function assertArchiveStepStructure(key: string, records: number) {
     expect(boundaries[index]! - boundaries[index - 1]!).toBeLessThanOrEqual(
       workflowInvocationSubrequestBudget + archiveStepSubrequestCeiling,
     );
+  // Archive steps spend CPU, not subrequests, so an engine lifetime is bounded
+  // by its live step count too: every invocation runs at most the step budget.
+  const lifetimes = [0, ...liveSteps, measured.usage().steps];
+  for (let index = 1; index < lifetimes.length; index++)
+    expect(lifetimes[index]! - lifetimes[index - 1]!).toBeLessThanOrEqual(workflowInvocationStepBudget);
   return {
     yields: yields.length,
     steps: archiveSteps.length,

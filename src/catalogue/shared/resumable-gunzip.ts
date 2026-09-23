@@ -19,7 +19,9 @@ const historyBytes = 32 * 1024;
 const maximumMatch = 258;
 // A dynamic block header needs at most ~570 bytes; one symbol at most 6.
 const headerLookahead = 1024;
-const symbolLookahead = 12;
+// Twice a symbol's 6 bytes, counted in bits because the cursor is a bit
+// cursor: a whole-byte demand is short by the cursor's offset in its byte.
+const symbolLookaheadBits = 12 * 8;
 const maximumCompressedBytes = 255 * 1024 * 1024;
 
 export type GunzipCheckpoint = Readonly<{
@@ -274,6 +276,22 @@ export class ResumableGunzip {
     return this.#bufferStart + this.#buffer.byteLength - (this.#bit >>> 3);
   }
 
+  /**
+   * Unread bits from the cursor. Symbol decoding is a bit cursor, so its
+   * lookahead has to be counted in bits: a cursor part-way through a byte
+   * reaches one byte less far than a byte-aligned one, and comparing a byte
+   * count against a bit lookahead left the decoder with a buffer it would
+   * neither refill nor read from (#327).
+   */
+  #availableBits(): number {
+    return (this.#bufferStart + this.#buffer.byteLength) * 8 - this.#bit;
+  }
+
+  /** Ensure `bits` unread bits are buffered, or report the retained end. */
+  async #ensureBits(bits: number): Promise<boolean> {
+    return this.#ensure(Math.ceil((bits + (this.#bit & 7)) / 8));
+  }
+
   /** Ensure `bytes` unread bytes are buffered, or report the retained end. */
   async #ensure(bytes: number): Promise<boolean> {
     while (this.#available() < bytes) {
@@ -437,11 +455,18 @@ export class ResumableGunzip {
     const literalMask = (1 << literal.bits) - 1,
       distanceMask = (1 << distance.bits) - 1;
     while (position < limit) {
-      if (this.#available() < symbolLookahead && !(await this.#ensure(symbolLookahead)) && this.#available() === 0)
+      // The refill demand and the decode condition are one predicate, so an
+      // iteration that neither refills nor ends the stream always decodes.
+      if (
+        this.#availableBits() < symbolLookaheadBits &&
+        !(await this.#ensureBits(symbolLookaheadBits)) &&
+        this.#availableBits() <= 0
+      )
         corrupt();
       // Decode synchronously while a whole symbol's bits are buffered.
-      const bufferEnd = (this.#bufferStart + this.#buffer.byteLength) * 8 - symbolLookahead * 8;
+      const bufferEnd = (this.#bufferStart + this.#buffer.byteLength) * 8 - symbolLookaheadBits;
       const atEnd = this.#bufferStart + this.#buffer.byteLength >= this.#source.length;
+      const before = this.#bit;
       while (position < limit && (this.#bit <= bufferEnd || atEnd)) {
         const entry = literal.entries[this.#peek(literal.bits) & literalMask]!;
         if (entry === 0) corrupt();
@@ -471,6 +496,9 @@ export class ResumableGunzip {
         if (atEnd) this.#checkTruncation();
       }
       this.#checkTruncation();
+      // A decode that consumed no input would spend the step's whole CPU
+      // allowance on an empty loop rather than failing the step.
+      if (this.#bit === before) throw new Error("Gunzip decode stalled without consuming input.");
     }
     return position;
   }

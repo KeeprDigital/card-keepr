@@ -1,5 +1,9 @@
 import { snapshotRecoveryWait } from "./snapshot-recovery-wait";
-import { boundedWorkflowInvocation, workflowWaitMode } from "./workflow-invocation-budget";
+import {
+  boundedWorkflowInvocation,
+  workflowInvocationStepBudget,
+  workflowWaitMode,
+} from "./workflow-invocation-budget";
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import { installedSourceAdapterRegistrations, requiredSourceAdapter } from "../../../src/catalogue/adapters";
 import {
@@ -472,7 +476,13 @@ export class EvidenceHostWorkflow extends WorkflowEntrypoint<Env, EvidenceHostWo
   override async run(event: Readonly<WorkflowEvent<EvidenceHostWorkflowParams>>, step: WorkflowStep): Promise<unknown> {
     try {
       const waitMode = workflowWaitMode(this.env.WORKFLOW_WAIT_MODE);
-      const invocation = boundedWorkflowInvocation(this.env, step, { mode: waitMode });
+      // This shard runs the archive steps, which spend their bound inflating
+      // and hashing in the isolate rather than on bindings, so its engine
+      // lifetime needs a step bound as well as a subrequest one (#327).
+      const invocation = boundedWorkflowInvocation(this.env, step, {
+        mode: waitMode,
+        steps: workflowInvocationStepBudget,
+      });
       this.env = invocation.env;
       step = invocation.step;
       const operational = observeOperationalWorkflow(snapshotRecoveryWait(this.env, step), event, this.env);
