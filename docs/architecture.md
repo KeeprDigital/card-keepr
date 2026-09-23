@@ -105,6 +105,18 @@ Request (one hop, budget-counted); the redirect is never the original content
 and cross-site redirects still fail.
 [Qualifier and redirect decisions](https://github.com/KeeprDigital/card-keepr/issues/334#issuecomment-5770068497).
 
+Bandai's One Piece card list omits a value by printing `-`, the same placeholder
+it prints for an inapplicable Power, Counter or Attribute. On the Card types the
+`one-piece@1` profile requires a cost for (Character, Event and Stage), an
+omitted printed cost is the printed cost 0, confirmed by the owner from the
+printed cards. The rule follows the Publisher's presentation convention rather
+than the Card types observed so far, so it applies to every cost-bearing type,
+while a Leader or DON!! Card keeps its absent cost. The omitted token stays
+retained verbatim as unmapped evidence and raises
+`printed_cost_omitted_normalized` at inspection; a cost field that is missing
+altogether remains unmodelled drift and still fails the parse.
+[Omitted printed cost](https://github.com/KeeprDigital/card-keepr/issues/334#issuecomment-5787884463).
+
 ## Identity and owner decisions
 
 Canonical IDs are persistent allocations with retained evidence mappings, not

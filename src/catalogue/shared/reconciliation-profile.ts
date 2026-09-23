@@ -23,7 +23,11 @@ export function derivedCardModel(
 }
 
 export type ProfileWarning = Readonly<{
-  code: "unknown_source_vocabulary" | "unknown_source_field" | "release_date_qualifier_retained";
+  code:
+    | "unknown_source_vocabulary"
+    | "unknown_source_field"
+    | "release_date_qualifier_retained"
+    | "printed_cost_omitted_normalized";
   source_observation_id: string;
   profile: string;
   path: string;
@@ -833,6 +837,24 @@ export function releaseDateQualifierWarning(
     raw_value: rawSourceValue(raw),
     detail:
       "The Release date was taken from the leading date; the Publisher's qualifying text is retained verbatim as Source Observation evidence. Review whether it describes a different availability event.",
+  };
+}
+
+/** The Publisher omitted a required printed cost and printed "-" (issue #334). */
+export function printedCostOmittedWarning(
+  sourceObservationId: string,
+  profile: string,
+  path: string,
+  raw: unknown,
+): ProfileWarning {
+  return {
+    code: "printed_cost_omitted_normalized",
+    source_observation_id: sourceObservationId,
+    profile,
+    path,
+    raw_value: rawSourceValue(raw),
+    detail:
+      "The Publisher's card list omitted this Card's cost and printed the same placeholder it prints for inapplicable fields; the owner-confirmed printed cost 0 was recorded and the omitted token is retained verbatim as Source Observation evidence. Review whether the Publisher has begun publishing a different cost.",
   };
 }
 

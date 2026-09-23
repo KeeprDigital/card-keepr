@@ -1126,6 +1126,7 @@ function bandaiSnapshotDecoder(
         parsed.retainedDocument,
         index === 0,
         parsed.consumedFields,
+        parsed.unmappedOptionalFields ?? [],
       ),
     );
   };

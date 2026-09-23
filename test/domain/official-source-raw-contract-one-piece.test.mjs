@@ -266,7 +266,7 @@ test("the restructured One Piece discovery root repeats every publisher navigati
   );
 });
 
-test("the restructured One Piece Card List leaf retains every live Card and its printed dash cost", () => {
+test("the restructured One Piece Card List leaf retains every live Card and its omitted printed cost", () => {
   const adapter = requiredSourceAdapter("one-piece-en@6");
   const { fixture, observations } = retainedRestructuredParse(adapter, "one-piece-en-restructured-discovery", {
     url: adapter.requestUrlForSurface("card-list"),
@@ -285,12 +285,13 @@ test("the restructured One Piece Card List leaf retains every live Card and its 
     ["recording:569116"],
   );
 
-  // The live Event Card prints an explicit "-" cost, which is retained as a
-  // Card without a cost rather than as a missing field.
+  // Bandai omits this Event Card's cost and prints "-"; the owner-confirmed
+  // printed cost 0 is recorded and the omitted token stays review evidence
+  // (see official-source-one-piece-printed-cost.test.mjs).
   const event = observations.find(({ card }) => card.official_identity.value === "OP16-020");
   assert.ok(event);
   assert.equal(event.card.game_data.attributes.card_type, "event");
-  assert.equal(event.card.game_data.attributes.cost, null);
+  assert.equal(event.card.game_data.attributes.cost, 0);
 
   const special = observations.filter(({ printing }) => printing.rarity.normalized === "special");
   assert.equal(special.length, 6);

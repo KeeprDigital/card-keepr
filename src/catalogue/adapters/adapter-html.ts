@@ -62,6 +62,8 @@ export type ParsedBandaiSurface = {
   observations: readonly OfficialSourceObservation[];
   retainedDocument: Record<string, unknown>;
   consumedFields: readonly string[];
+  /** Evidence the surface parse deliberately did not map, retained for review. */
+  unmappedOptionalFields?: readonly { path: string; value: unknown }[];
 };
 
 export function fusionWorldLocatorIdentity(value: string): {

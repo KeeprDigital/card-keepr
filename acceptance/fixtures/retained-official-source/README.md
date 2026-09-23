@@ -10,7 +10,9 @@ and provenance; filenames distinguish the publisher and source shape.
 (155 Cards, 414,702 bytes) captured on 2026-09-21 by the first composed One
 Piece Ingestion Run for [#334](https://github.com/KeeprDigital/card-keepr/issues/334);
 it shares the discovery fixture's URL and proves that a full series page parses
-within the bounded source intake. It is one dated page, not series coverage.
+within the bounded source intake. Its Event Card OP16-020 prints `Cost -`, one
+of the 23 Cards whose omitted printed cost is recorded as 0. It is one dated
+page, not series coverage.
 
 `one-piece-en-product-starter-deck-tentative.json` is the live One Piece
 `products/decks/st01-04_pre.php` page (45,117 bytes) captured on 2026-09-21 by the

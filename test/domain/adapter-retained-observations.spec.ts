@@ -21,6 +21,8 @@ function fragmentUrl(filename: string, lineage: string): string {
 test("every retained fixture preserves its registered adapter observations and discovery", async () => {
   // Card-content observations updated for #218; #231 correctly consumes line-broken Block icon labels.
   // The two affected One Piece observation hashes change; retained raw-byte digests are unchanged.
+  // #334 records cost 0 for a printed cost Bandai omits as "-"; the two One Piece
+  // card-list observation hashes change and retained raw-byte digests are unchanged.
   // Hash the serialized output itself;
   // canonicalizing it would hide an observable property-order change.
   const result: Record<string, unknown> = {};

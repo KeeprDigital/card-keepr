@@ -34,8 +34,16 @@ import { parseProductDetail } from "./adapter-product-html";
 import { createBandaiAdapter } from "./bandai-adapter-runtime";
 import { officialArtworkFingerprint } from "./official-artwork-identity";
 import { officialSourceAuthorities, officialUrl } from "./official-source-authority";
-import { normalizedOnePieceRarity, normalizeOnePieceCardPage } from "./one-piece-source-adapter";
+import {
+  normalizedOnePieceRarity,
+  normalizeOnePieceCardPage,
+  onePieceOmittedPrintedCost,
+} from "./one-piece-source-adapter";
 
+/** Unmapped-field path prefix marking a printed cost Bandai omitted as "-". */
+export const printedCostOmittedPathPrefix = "source_sidecar.raw.official_surfaces[0].document.printed_cost_omitted:";
+/** The `one-piece@1` Card types whose printed cost the Game Profile requires. */
+const onePieceCostRequiredTypes = ["character", "event", "stage"];
 const productRelease = productReleaseNormalizers({
   gameLabel: "One Piece",
   productCode: "product_code",
@@ -382,6 +390,7 @@ function parseOnePieceBandaiCardListV1(
     field: string;
     value: string;
   }[] = [];
+  const omittedPrintedCosts: { path: string; value: unknown }[] = [];
   const observations = modalMatches.map((match) => {
     const locator = decodeHtmlText(match[1]!);
     const body = match[2]!;
@@ -455,14 +464,27 @@ function parseOnePieceBandaiCardListV1(
         trigger: field("Trigger"),
       }),
     )}`;
-    const cost = integerOrNull(field("Cost"));
+    const printedCost = field("Cost");
+    // Bandai omits a printed value by rendering "-", exactly as it does for
+    // Power, Counter and Attribute. On the Card types the Game Profile
+    // requires a cost for, the printed cost is 0 (owner decision on #334);
+    // the omitted token stays visible as retained review evidence.
+    const printedCostOmitted =
+      expandedOnePieceCatalogue &&
+      onePieceCostRequiredTypes.includes(cardType) &&
+      printedCost !== null &&
+      printedCost.normalize("NFC").trim() === "-";
+    if (printedCostOmitted) {
+      omittedPrintedCosts.push({ path: `${printedCostOmittedPathPrefix}${locator}`, value: printedCost });
+    }
+    const cost = printedCostOmitted ? 0 : integerOrNull(printedCost);
     const life = expandedOnePieceCatalogue
       ? integerOrNull(field("Life"))
       : cardType === "leader"
         ? integerOrNull(field("Life"))
         : null;
     if (expandedOnePieceCatalogue) {
-      assertOnePieceTypeNullability(cardType, cost, life, field("Cost"));
+      assertOnePieceTypeNullability(cardType, cost, life);
     }
     const detail = {
       path: locator,
@@ -554,6 +576,7 @@ function parseOnePieceBandaiCardListV1(
       "parsed_locators",
       ...(expandedOnePieceCatalogue ? ["raw_label_pairs"] : []),
     ],
+    unmappedOptionalFields: omittedPrintedCosts,
   };
 }
 
@@ -584,22 +607,14 @@ function onePieceKnownCardListLabel(label: string): boolean {
   ].some((known) => known.localeCompare(label, undefined, { sensitivity: "accent" }) === 0);
 }
 
-function assertOnePieceTypeNullability(
-  cardType: string,
-  cost: number | null,
-  life: number | null,
-  printedCost: string | null = null,
-): void {
+function assertOnePieceTypeNullability(cardType: string, cost: number | null, life: number | null): void {
   if (cardType === "leader" && cost !== null) {
     throw new AdapterParseFailure("One Piece Leader cost must be null.");
   }
   if (cardType !== "leader" && life !== null) {
     throw new AdapterParseFailure(`One Piece ${cardType} life must be null.`);
   }
-  // The live publisher prints an explicit "-" cost for some Event Cards
-  // (verified 2026-08-07 on OP16-020); an entirely missing cost field is
-  // still unmodelled drift.
-  if (cardType !== "leader" && cost === null && printedCost?.normalize("NFC").trim() !== "-") {
+  if (cardType !== "leader" && cost === null) {
     throw new AdapterParseFailure(`One Piece ${cardType} cost must be non-null.`);
   }
   if (cardType === "leader" && life === null) {
@@ -720,6 +735,16 @@ function onePieceUnmappedOptionalFields(
   if (surface !== "card-list" || !Array.isArray(raw.card_pages)) return [];
   return raw.card_pages.flatMap((value, cardIndex) => {
     if (!isPlainRecord(value) || !isPlainRecord(value.printing)) return [];
+    // The Publisher omitted this Card's cost; the normalised 0 keeps the
+    // printed token visible for review (issue #334).
+    const omittedPrintedCost = onePieceOmittedPrintedCost(value.Category, value.Cost)
+      ? [
+          {
+            path: `${printedCostOmittedPathPrefix}${typeof value.card_number === "string" ? value.card_number : cardIndex}`,
+            value: value.Cost,
+          },
+        ]
+      : [];
     const printingAttributes = isPlainRecord(value.printing.attributes) ? value.printing.attributes : {};
     const illustrationWarnings = Array.isArray(printingAttributes.illustration_types)
       ? printingAttributes.illustration_types.flatMap((illustration, illustrationIndex) =>
@@ -737,6 +762,6 @@ function onePieceUnmappedOptionalFields(
               ],
         )
       : [];
-    return illustrationWarnings;
+    return [...omittedPrintedCost, ...illustrationWarnings];
   });
 }
