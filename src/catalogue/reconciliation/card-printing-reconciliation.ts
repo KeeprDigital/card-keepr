@@ -103,6 +103,11 @@ import {
 } from "../shared";
 import { type DigimonCardAuthority, reconcileDigimonCardAuthority } from "./digimon-reconciliation";
 import {
+  type OnePieceCardAuthority,
+  onePieceCardFactsAuthority,
+  reconcileOnePieceCardAuthority,
+} from "./one-piece-reconciliation";
+import {
   canonicalErratum,
   deriveEffectiveRulesText,
   ErratumRulesTextError,
@@ -466,6 +471,11 @@ export async function reconcileRetainedCardPrintingEvidence(
     runId,
     "digimon_authorities",
   );
+  const localOnePieceCardAuthorities = new ReconciliationReducerIndex<OnePieceCardAuthority>(
+    database,
+    runId,
+    "one_piece_authorities",
+  );
   const localPrintingFacts = new ReconciliationReducerIndex<Omit<CataloguePrinting, "id" | "card_id">>(
     database,
     runId,
@@ -587,6 +597,7 @@ export async function reconcileRetainedCardPrintingEvidence(
     localCardFacts,
     cardRelationshipEvidence,
     localDigimonCardAuthorities,
+    localOnePieceCardAuthorities,
     localPrintingFacts,
     localCompatibility,
     localLocators,
@@ -749,6 +760,7 @@ export async function reconcileRetainedCardPrintingEvidence(
             printingImages,
             localCardFacts,
             localDigimonCardAuthorities,
+            localOnePieceCardAuthorities,
             localPrintingFacts,
             localCompatibility,
             localLocators,
@@ -1134,12 +1146,53 @@ export async function reconcileRetainedCardPrintingEvidence(
               }
             }
           }
+          // Bandai is the designated card-facts authority and a base locator
+          // outranks a reprint, so a disagreement is recorded for review rather
+          // than blocking the whole-game candidate (owner decision on #334).
+          let onePieceSupersession: ReturnType<typeof reconcileOnePieceCardAuthority>["superseded"] = null;
+          if (proposedCard.game === "one-piece") {
+            const standing = {
+              fromAuthority: observation.sourceLineage === onePieceCardFactsAuthority,
+              isBaseRecord: observation.variantKey === "base",
+            };
+            const priorAuthority = await localOnePieceCardAuthorities.get(cardId);
+            if (priorAuthority === undefined) {
+              await localOnePieceCardAuthorities.set(cardId, {
+                card: acceptedCanonicalCard,
+                fromAuthority: standing.fromAuthority,
+                hasBaseRecord: standing.isBaseRecord,
+              });
+            } else {
+              const resolution = reconcileOnePieceCardAuthority(priorAuthority, acceptedCanonicalCard, standing);
+              acceptedCanonicalCard = resolution.authority.card;
+              await localOnePieceCardAuthorities.set(cardId, resolution.authority);
+              onePieceSupersession = resolution.superseded;
+            }
+          }
+          if (onePieceSupersession !== null) {
+            await sourceWarnings.push({
+              code: "card_facts_superseded_by_authority",
+              game: proposedCard.game,
+              source_observation_id: observation.sourceObservationId,
+              locator: observation.locator,
+              superseded_reason: onePieceSupersession.reason,
+              difference: onePieceSupersession.material ? "wording" : "spacing",
+              fields: onePieceSupersession.fields,
+              detail:
+                onePieceSupersession.reason === "supplementary_source"
+                  ? "A supplementary Source states different Card facts; the designated card-facts authority's values are published and this observation stays retained evidence."
+                  : onePieceSupersession.reason === "reprint"
+                    ? "A reprint of this Card states different printed facts; the base locator's values are published and the reprint stays retained evidence."
+                    : "Two retained observations of equal standing state different Card facts; the first retained values are published.",
+            });
+          }
           const canonicalFacts = canonicalJson(acceptedCanonicalCard);
           const priorFacts = newPublisherIdentity ? undefined : await localCardFacts.get(cardId);
           if (
             publishedConflict !== null ||
             digimonAuthorityConflict !== null ||
             (proposedCard.game !== "digimon" &&
+              proposedCard.game !== "one-piece" &&
               priorFacts !== undefined &&
               priorFacts !== canonicalFacts &&
               !(

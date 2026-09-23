@@ -136,6 +136,15 @@ redistributed or reprocessed filename still establishes no identity and a
 changed source image alone cannot create a Printing. An explicit artwork
 attribute, where a Source publishes one, continues to take precedence.
 
+For One Piece, Bandai is the designated card-facts authority and Limitless is
+supplementary, so Bandai's values are published for every Card-level field and a
+supplementary disagreement is recorded rather than published. Within Bandai the
+base locator's printed text outranks a reprint's, because the same number is
+listed on several series pages. A disagreement raises
+`card_facts_superseded_by_authority` at inspection, distinguishing a wording
+difference from spacing, and never blocks the candidate: a reprint may
+legitimately differ from its base printing.
+
 ## Identity and owner decisions
 
 Canonical IDs are persistent allocations with retained evidence mappings, not
