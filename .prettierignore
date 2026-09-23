@@ -14,5 +14,6 @@ contracts/read-openapi.json
 contracts/admin-openapi.json
 contracts/http-route-inventory.json
 test/support/http-response-validators.*
-# release-please generates the changelog
+# release-please generates the changelog and manifest
 CHANGELOG.md
+.release-please-manifest.json
