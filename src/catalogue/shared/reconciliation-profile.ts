@@ -28,7 +28,8 @@ export type ProfileWarning = Readonly<{
     | "unknown_source_field"
     | "release_date_qualifier_retained"
     | "printed_cost_omitted_normalized"
-    | "printed_effect_omitted_normalized";
+    | "printed_effect_omitted_normalized"
+    | "printed_power_omitted_normalized";
   source_observation_id: string;
   profile: string;
   path: string;
@@ -874,6 +875,24 @@ export function printedEffectOmittedWarning(
     raw_value: rawSourceValue(raw),
     detail:
       "The Publisher's card list printed its inapplicable-field placeholder in the Effect box; the Card was recorded with no rules text and the printed token is retained verbatim as Source Observation evidence. Review whether the Publisher has begun publishing rules text for this Card.",
+  };
+}
+
+/** The Publisher omitted a Character's printed power as "-" (issue #334). */
+export function printedPowerOmittedWarning(
+  sourceObservationId: string,
+  profile: string,
+  path: string,
+  raw: unknown,
+): ProfileWarning {
+  return {
+    code: "printed_power_omitted_normalized",
+    source_observation_id: sourceObservationId,
+    profile,
+    path,
+    raw_value: rawSourceValue(raw),
+    detail:
+      "The Publisher's card list omitted this Card's printed power and printed the placeholder it prints for an inapplicable field; the owner-confirmed printed power 0 was recorded and the omitted token is retained verbatim as Source Observation evidence. Review whether the Publisher has begun publishing a different power.",
   };
 }
 
